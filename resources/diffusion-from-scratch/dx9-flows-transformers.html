@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en" data-resource="diffusion-from-scratch" data-page="DX9">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Flow matching, diffusion transformers and modern architectures: the exact math in one dimension | Diffusion from scratch</title>
+<meta name="description" content="Flow matching worked out exactly on a one-dimensional mixture (the optimal velocity field, Euler integration versus step count, why paths curve), consistency and distillation objectives, diffusion transformers (patches, adaLN, MM-DiT), and compute scaling of modern text-to-image models.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Diffusion from scratch</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part DX9</p>
+      <h1>Flow matching, diffusion transformers and modern architectures: the exact math in one dimension</h1>
+      <p class="lede">Recent image and video models (Stable Diffusion 3, Flux, Sora-style systems) replace the U-Net with a transformer and the noise-prediction recipe with flow matching. Both are easiest to understand where everything can be written down exactly. This part works the ideas out in one dimension, then connects them to the large-scale architecture.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="flow" data-track>
+      <h2>Flow matching in one paragraph</h2>
+<p>Diffusion corrupts data with noise along a curved schedule and trains a network to undo each step. <strong>Flow matching</strong> takes a more direct view: define a <strong>path</strong> that connects a noise sample <code>x0</code> (Gaussian) to a data sample <code>x1</code>, for example the straight line <code>x_t = (1 - t) x0 + t x1</code> for <code>t</code> from 0 to 1. Its velocity is simply <code>x1 - x0</code>. Train a network <code>v(x, t)</code> to predict that velocity, and generate by <strong>integrating the ODE</strong> <code>dx/dt = v(x, t)</code> from <code>t = 0</code> (noise) to <code>t = 1</code> (data) with a few Euler steps. The training loss is a plain regression, <code>||v(x_t, t) - (x1 - x0)||^2</code>, with no noise schedule to tune. <strong>Rectified flow</strong> is exactly this straight-line version.</p>
+<p>Why does regressing onto <code>x1 - x0</code> work, when the network cannot know which <code>x0</code> and <code>x1</code> produced a given <code>x_t</code>? The best prediction is the <strong>average</strong> of <code>x1 - x0</code> over all pairs that could have produced that point: the <strong>marginal velocity field</strong>, which is the field that moves the whole noise distribution into the data distribution.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx9-q01" data-topic="Flows and transformers" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does a flow matching network predict?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The noise added <span class="q-why">That is DDPM epsilon prediction.</span></li>
+          <li data-key="B">The velocity x1 - x0 along the path from noise to data <span class="q-why">Correct.</span></li>
+          <li data-key="C">The image caption <span class="q-why">No.</span></li>
+          <li data-key="D">A class label <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Generation integrates dx/dt = v(x, t) from noise to data.</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx9-q02" data-topic="Flows and transformers" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why can the network learn a useful field when it cannot tell which (x0, x1) pair produced x_t?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It memorises pairs <span class="q-why">No.</span></li>
+          <li data-key="B">The regression target's best prediction is the average velocity over all pairs consistent with x_t, which is the marginal velocity field <span class="q-why">Correct.</span></li>
+          <li data-key="C">It guesses <span class="q-why">No.</span></li>
+          <li data-key="D">It uses labels <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The marginal field transports the whole noise distribution to the data distribution.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Write the rectified flow training pair.</summary><div class="answer"><p>x_t = (1 - t) x0 + t x1 with target velocity x1 - x0, trained with MSE.</p></div></details>
+      </div>
+    </section>
+
+    <section id="exact" data-track>
+      <h2>The exact velocity field for a Gaussian mixture</h2>
+<p>Take one-dimensional data that is a mixture of Gaussians, <code>x1 ~ sum_k w_k N(m_k, s_k^2)</code>, with noise <code>x0 ~ N(0, 1)</code>. For each component <code>k</code>, the point <code>x_t = (1 - t) x0 + t x1</code> is Gaussian with mean <code>t m_k</code> and variance <code>v_k(t) = (1 - t)^2 + t^2 s_k^2</code>. Then, for that component:</p>
+<ul><li><code>E[x1 | x_t] = m_k + t s_k^2 / v_k (x - t m_k)</code></li><li><code>E[x0 | x_t] = (1 - t) (x - t m_k) / v_k</code></li></ul>
+<p>and the true velocity is the <strong>posterior-weighted</strong> average over components of <code>E[x1 | x_t, k] - E[x0 | x_t, k]</code>, with weights proportional to <code>w_k N(x; t m_k, v_k)</code>. Because this is exact, we can integrate it and see precisely how the number of Euler steps affects sample quality, with no training noise in the way.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx9-01.py">import math, random
+random.seed(1)
+comps = [(-2.0, 0.3, 0.5), (2.5, 0.4, 0.5)]            # (mean, std, weight): a bimodal target
+def velocity(x, t, comps=comps):
+    weights, vels = [], []
+    for m, s, w in comps:
+        var = (1 - t) ** 2 + t * t * s * s
+        weights.append(w * math.exp(-0.5 * (x - t * m) ** 2 / var) / math.sqrt(var))              # posterior weight of this component
+        ex1 = m + t * s * s / var * (x - t * m); ex0 = (1 - t) * (x - t * m) / var
+        vels.append(ex1 - ex0)
+    z = sum(weights); return sum(w * v for w, v in zip(weights, vels)) / z
+def sample(steps, n=4000, comps=comps):
+    out = []
+    for _ in range(n):
+        x = random.gauss(0, 1)
+        for i in range(steps): x += velocity(x, i / steps, comps) / steps                           # Euler integration of dx/dt = v
+        out.append(x)
+    return out
+def target(n=4000, comps=comps):
+    return [random.gauss(m, s) for m, s, _ in (random.choice(comps) for _ in range(n))]
+def wasserstein1(a, b): a, b = sorted(a), sorted(b); return sum(abs(x - y) for x, y in zip(a, b)) / len(a)       # 1-D optimal transport distance
+reference = target()
+print("W1 distance between generated samples and the target (smaller is better):")
+for steps in (1, 2, 4, 8, 32):
+    print(f"  {steps:&gt;2} Euler steps: {wasserstein1(sample(steps), reference):.3f}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>W1 distance between generated samples and the target (smaller is better):
+   1 Euler steps: 2.244
+   2 Euler steps: 0.667
+   4 Euler steps: 0.253
+   8 Euler steps: 0.142
+  32 Euler steps: 0.027</code></pre>
+<p>Few steps fail on a bimodal target because the velocity field <strong>curves</strong> (points near the middle must choose a side), and a single Euler step moves in a straight line using the velocity at the start. Many steps follow the curved flow accurately.</p>
+<h3>What a single step returns: the average</h3>
+<p>Take the simplest target, a <strong>single Gaussian</strong>, and look at one Euler step. At <code>t = 0</code> the exact velocity is <code>m - x</code>, so one step maps every noise value to the data mean <code>m</code>:</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx9-02.py">import math, random
+random.seed(2)
+single = [(2.0, 0.5, 1.0)]
+def velocity(x, t, comps):
+    m, s, w = comps[0]; var = (1 - t) ** 2 + t * t * s * s
+    return (m + t * s * s / var * (x - t * m)) - (1 - t) * (x - t * m) / var
+def run(steps, comps, n=4000):
+    out = []
+    for _ in range(n):
+        x = random.gauss(0, 1)
+        for i in range(steps): x += velocity(x, i / steps, comps) / steps
+        out.append(x)
+    return out
+ref = sorted(random.gauss(2.0, 0.5) for _ in range(4000))
+for steps in (1, 2, 8):
+    out = sorted(run(steps, single)); w1 = sum(abs(a - b) for a, b in zip(out, ref)) / len(ref)
+    print(f"single Gaussian target, {steps} Euler step(s): W1 distance {w1:.3f}, sample mean {sum(out) / len(out):.2f}, sample std {(sum((x - sum(out) / len(out)) ** 2 for x in out) / len(out)) ** 0.5:.2f}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>single Gaussian target, 1 Euler step(s): W1 distance 0.397, sample mean 2.00, sample std 0.00
+single Gaussian target, 2 Euler step(s): W1 distance 0.239, sample mean 2.00, sample std 0.20
+single Gaussian target, 8 Euler step(s): W1 distance 0.065, sample mean 2.01, sample std 0.41</code></pre>
+<p>One step produces <strong>no variation at all</strong> (sample standard deviation 0.00): every noise input lands on the average of the data. On real images that average is a <strong>blurry mean image</strong>, the same failure as regressing with MSE in one shot. More steps restore the spread (the standard deviation climbs toward the target 0.5 as the step count grows), because each step uses the velocity at the current point and the current time. This is the motivation for <strong>reflow</strong> (rectified flow): train a model, generate (noise, data) pairs with it, and train again on those <strong>coupled</strong> pairs. The new paths are straighter, so a single velocity evaluation is a better guide and fewer steps suffice. Real data is far from Gaussian, so real flows still curve and 20 to 50 steps remain common; <strong>distillation</strong> squeezes them further.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx9-q03" data-topic="Flows and transformers" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why do few Euler steps fail on a bimodal target?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The network is small <span class="q-why">There is no network in the exact experiment.</span></li>
+          <li data-key="B">The flow curves near the middle, and a single straight step uses only the starting velocity <span class="q-why">Correct.</span></li>
+          <li data-key="C">Euler is unstable always <span class="q-why">No.</span></li>
+          <li data-key="D">The noise is wrong <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Higher-order solvers or more steps follow the curve.</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx9-q04" data-topic="Flows and transformers" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does one Euler step with the exact flow-matching velocity field return?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A sharp sample <span class="q-why">No.</span></li>
+          <li data-key="B">The mean of the data for every noise input, with no variation (a blurry average image on real data) <span class="q-why">Correct.</span></li>
+          <li data-key="C">Pure noise <span class="q-why">No.</span></li>
+          <li data-key="D">A perfect sample from the data <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>At t = 0 the exact velocity points from x to the data mean.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does reflow do?</summary><div class="answer"><p>Retrains on (noise, generated data) pairs from the current model so paths become straighter and fewer steps are needed.</p></div></details>
+        <details class="recall"><summary>Why is a single-step flow sample blurry?</summary><div class="answer"><p>The first-step velocity points to the conditional mean of the data, so every noise input maps to the average image.</p></div></details>
+      </div>
+    </section>
+
+    <section id="compare" data-track>
+      <h2>Diffusion versus flow matching</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>DDPM / score-based diffusion</th><th>Flow matching / rectified flow</th></tr></thead>
+<tbody>
+<tr><td>Path</td><td>Noise schedule (curved in data space)</td><td>Straight line (or any chosen interpolant)</td></tr><tr><td>Network predicts</td><td>Noise <code>eps</code>, clean image, score or <code>v</code></td><td>Velocity <code>x1 - x0</code></td></tr><tr><td>Loss</td><td>Weighted MSE on noise or <code>v</code></td><td>Plain MSE on velocity</td></tr><tr><td>Sampling</td><td>SDE or ODE solvers</td><td>ODE, usually Euler or higher-order</td></tr><tr><td>Schedule tuning</td><td>Matters a lot (cosine, SNR shifts)</td><td>Fewer knobs; <strong>timestep shifting</strong> for high resolution</td></tr><tr><td>Used by</td><td>SD 1.x/2.x, SDXL</td><td>SD3, Flux, many video models</td></tr>
+</tbody>
+</table>
+</div>
+<p>They are closely related: with the right parameterisation, a diffusion ODE and a flow are the <strong>same family</strong> (Gaussian paths differ only in their time and scale reparameterisation). The practical differences are simplicity, the straightness of the paths and the choice of weighting across noise levels.</p>
+<h3>Timestep shifting</h3>
+<p>At high resolution, neighbouring pixels are more redundant, so noise destroys less information at a given level. Models therefore <strong>shift the timestep distribution toward noisier levels</strong> when training and sampling at larger sizes (<code>t' = s t / (1 + (s - 1) t)</code> with shift <code>s &gt; 1</code>).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx9-03.py">def shift(t, s): return s * t / (1 + (s - 1) * t)
+for s in (1.0, 3.0):
+    print(f"shift s = {s}: t = " + ", ".join(f"{t:.1f}-&gt;{shift(t, s):.2f}" for t in (0.1, 0.3, 0.5, 0.7, 0.9)))
+print("with s = 3 half of the steps (t &lt;= 0.5) are spent where the shifted time is below", round(shift(0.5, 3.0), 2), "that is, there is more emphasis on high-noise levels where global structure forms")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>shift s = 1.0: t = 0.1-&gt;0.10, 0.3-&gt;0.30, 0.5-&gt;0.50, 0.7-&gt;0.70, 0.9-&gt;0.90
+shift s = 3.0: t = 0.1-&gt;0.25, 0.3-&gt;0.56, 0.5-&gt;0.75, 0.7-&gt;0.87, 0.9-&gt;0.96
+with s = 3 half of the steps (t &lt;= 0.5) are spent where the shifted time is below 0.75 that is, there is more emphasis on high-noise levels where global structure forms</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx9-q05" data-topic="Flows and transformers" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does timestep shifting do at high resolution?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Skips steps <span class="q-why">No.</span></li>
+          <li data-key="B">Moves the training and sampling emphasis toward noisier levels because neighbouring pixels are more redundant <span class="q-why">Correct.</span></li>
+          <li data-key="C">Doubles the steps <span class="q-why">No.</span></li>
+          <li data-key="D">Removes guidance <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Used in SD3-style models.</p></div>
+      </div>
+    </section>
+
+    <section id="consistency" data-track>
+      <h2>Distillation and consistency models</h2>
+<p>Fast generation compresses many steps into few.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Method</th><th>Idea</th></tr></thead>
+<tbody>
+<tr><td><strong>Progressive distillation</strong></td><td>Train a student to match two teacher steps in one; repeat to halve steps</td></tr><tr><td><strong>Consistency models</strong></td><td>Train <code>f(x_t, t)</code> to map any point on a trajectory to the <strong>same</strong> clean output: <code>f(x_t, t) = f(x_s, s)</code> for points on one ODE path; enables 1 to 4 step sampling</td></tr><tr><td><strong>Latent consistency (LCM)</strong></td><td>Consistency distillation in latent space with guidance folded in</td></tr><tr><td><strong>Adversarial distillation (SDXL-Turbo, Lightning)</strong></td><td>Add a discriminator so few-step samples look sharp</td></tr><tr><td><strong>Distribution matching (DMD)</strong></td><td>Match the generated distribution to the teacher's with score differences</td></tr><tr><td><strong>Guidance distillation</strong></td><td>Teach the student to output the guided prediction directly, halving cost</td></tr>
+</tbody>
+</table>
+</div>
+<p>Costs: lower diversity, less control from guidance, and a fidelity loss versus the multi-step teacher; quality is often judged by human preference rather than FID.</p>
+<p>For a deterministic flow, a <strong>consistency function</strong> exists: integrate the ODE from <code>t</code> to the end. In 1-D with the exact flow above we can compute it directly and check the defining property:</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx9-04.py">import math
+comps = [(-2.0, 0.3, 0.5), (2.5, 0.4, 0.5)]
+def velocity(x, t):
+    ws, vs = [], []
+    for m, s, w in comps:
+        var = (1 - t) ** 2 + t * t * s * s
+        ws.append(w * math.exp(-0.5 * (x - t * m) ** 2 / var) / math.sqrt(var))
+        vs.append((m + t * s * s / var * (x - t * m)) - (1 - t) * (x - t * m) / var)
+    z = sum(ws); return sum(w * v for w, v in zip(ws, vs)) / z
+def integrate(x, t0, t1, steps=2000):                      # fine Euler integration of the ODE along the flow
+    dt = (t1 - t0) / steps
+    for i in range(steps): x += velocity(x, t0 + i * dt) * dt
+    return x
+def consistency(x, t): return integrate(x, t, 0.999)       # where the trajectory through (x, t) ends up
+x_start = 0.7
+points = [(x_start, 0.0)]
+for t in (0.2, 0.4, 0.6):                                   # walk along the trajectory, then ask the consistency function from each point
+    points.append((integrate(x_start, 0.0, t), t))
+print("points on one trajectory:", [(round(x, 2), t) for x, t in points])
+print("consistency function output at each point:", [round(consistency(x, t), 2) for x, t in points], "(the same endpoint, up to integration error)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>points on one trajectory: [(0.7, 0.0), (0.7, 0.2), (1.03, 0.4), (1.52, 0.6)]
+consistency function output at each point: [2.51, 2.51, 2.51, 2.51] (the same endpoint, up to integration error)</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx9-q06" data-topic="Flows and transformers" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What property defines a consistency model?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It predicts noise <span class="q-why">No.</span></li>
+          <li data-key="B">Every point on the same ODE trajectory maps to the same clean output <span class="q-why">Correct.</span></li>
+          <li data-key="C">It needs a discriminator <span class="q-why">That is adversarial distillation.</span></li>
+          <li data-key="D">It is stochastic <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>That enables 1 to 4 step generation.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name three few-step distillation methods.</summary><div class="answer"><p>Progressive distillation, consistency or latent consistency distillation, and adversarial or distribution-matching distillation.</p></div></details>
+      </div>
+    </section>
+
+    <section id="dit" data-track>
+      <h2>Diffusion transformers (DiT)</h2>
+<p>A U-Net's convolutions are replaced by a <strong>transformer</strong> over <strong>patches</strong> of the latent, which scales predictably with parameters and data and shares tooling with language models.</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="Conditioning enters by adaptive layer norm and cross- or joint-attention." style="min-width:760px"><defs><marker id="ah4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah4a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah4b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah4d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah4)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah4)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah4)"/><line x1="747.0" y1="78.0" x2="747.0" y2="118.0" class="d-line" marker-end="url(#ah4)"/><line x1="662.0" y1="147.0" x2="618.0" y2="147.0" class="d-line" marker-end="url(#ah4)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">Noisy latent</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle" class="d-sm">Patchify into tokens (for example 2 x 2 patches)</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle" class="d-sm">Add positional embeddings</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle" class="d-sm">Transformer blocks conditioned on timestep and text</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="151.5" text-anchor="middle" class="d-sm">Linear head back to patches</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="151.5" text-anchor="middle" class="d-sm">Predicted velocity or noise</text></svg>
+</div>
+<figcaption>Conditioning enters by adaptive layer norm and cross- or joint-attention.</figcaption></figure>
+<p>Design points:</p>
+<ul><li><strong>Patchify</strong>: a 128 x 128 x 4 latent with 2 x 2 patches becomes <code>64 x 64 = 4096</code> tokens of dimension <code>2 x 2 x 4 = 16</code>, projected to the model width.</li><li><strong>adaLN-Zero</strong>: the timestep (and class or pooled text) embedding predicts per-block <strong>scale, shift and gate</strong> parameters for layer norm; gates are initialised to zero so each block starts as the identity and training is stable.</li><li><strong>Cross-attention versus joint attention</strong>: older models attend from image tokens to text tokens (cross-attention). <strong>MM-DiT</strong> (SD3) keeps <strong>separate weights for image and text streams</strong> but concatenates the tokens for one <strong>joint self-attention</strong>, letting information flow both ways.</li><li><strong>Positional information</strong>: learned or rotary (2-D RoPE) embeddings; support for several resolutions and aspect ratios by training with bucketed shapes.</li><li><strong>Text encoders</strong>: combine CLIP (pooled summary, good for style) with a large language-model-like encoder such as T5 for detailed prompts.</li><li><strong>VAE with more channels</strong> (16 instead of 4) retains finer detail and helps small text.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx9-05.py">def dit_stats(width, layers, tokens, mlp_ratio=4):
+    params_per_layer = (4 + 2 * mlp_ratio) * width * width + 6 * width * width      # attention (4w^2) + MLP (2*r*w^2) + adaLN modulation (6w^2)
+    params = layers * params_per_layer
+    flops_forward = 2 * params * tokens + layers * 4 * tokens * tokens * width        # matmuls + attention score and value products
+    return params, flops_forward
+for name, w, L in [("DiT-S", 384, 12), ("DiT-B", 768, 12), ("DiT-XL", 1152, 28), ("a 12B-class model", 4096, 48)]:
+    p, f = dit_stats(w, L, tokens=4096)
+    print(f"{name:&gt;18}: about {p / 1e9:6.2f}B parameters | one forward pass over 4096 tokens: {f / 1e12:7.2f} TFLOPs | 30 steps with CFG: {60 * f / 1e12:8.0f} TFLOPs per image")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>             DiT-S: about   0.03B parameters | one forward pass over 4096 tokens:    0.57 TFLOPs | 30 steps with CFG:       34 TFLOPs per image
+             DiT-B: about   0.13B parameters | one forward pass over 4096 tokens:    1.66 TFLOPs | 30 steps with CFG:      100 TFLOPs per image
+            DiT-XL: about   0.67B parameters | one forward pass over 4096 tokens:    7.64 TFLOPs | 30 steps with CFG:      459 TFLOPs per image
+ a 12B-class model: about  14.50B parameters | one forward pass over 4096 tokens:  131.94 TFLOPs | 30 steps with CFG:     7916 TFLOPs per image</code></pre>
+<p>At 4096 tokens the quadratic attention term is already comparable to the matrix multiplications for smaller widths, which is why high-resolution generation leans on FlashAttention, windowed or sparse attention, and token reduction.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx9-q07" data-topic="Flows and transformers" data-type="numeric" data-answer="4096" data-tol="0">
+        <div class="q-stem"><p>A 128 x 128 latent with 2 x 2 patches yields how many tokens?</p></div>
+        <div class="q-explain"><p>(128 / 2) x (128 / 2) = 64 x 64 = 4096.</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx9-q08" data-topic="Flows and transformers" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is adaLN-Zero?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A scheduler <span class="q-why">No.</span></li>
+          <li data-key="B">Adaptive layer norm whose scale, shift and gate come from the conditioning embedding, with gates initialised to zero so each block starts as identity <span class="q-why">Correct.</span></li>
+          <li data-key="C">A dataset <span class="q-why">No.</span></li>
+          <li data-key="D">A VAE <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It stabilises training of deep transformers.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is MM-DiT's key idea?</summary><div class="answer"><p>Separate weights for text and image streams with joint self-attention over the concatenated tokens.</p></div></details>
+      </div>
+    </section>
+
+    <section id="recipe" data-track>
+      <h2>Training objectives in modern recipes</h2>
+<ul><li><strong>Velocity or flow-matching loss</strong> with <strong>logit-normal timestep sampling</strong>, which spends more training on mid-noise levels where learning is hardest, instead of uniform <code>t</code>.</li><li><strong>EMA weights</strong> for sampling; <strong>bf16</strong> training; <strong>mixed-resolution</strong> and <strong>aspect-ratio bucketing</strong>; <strong>caption quality</strong> (synthetic detailed captions improve prompt following markedly; mix them with original alt text).</li><li><strong>Noise offset or zero-terminal-SNR</strong> fixes so the model can produce very dark and very bright images (<a href="dx1-math.html">DX1</a>).</li><li><strong>Preference optimisation</strong> (DPO, reward-weighted training) on human-ranked pairs to improve aesthetics and prompt faithfulness; <strong>RLHF-style fine-tuning</strong> for diffusion exists but is easy to over-optimise (reward hacking).</li><li><strong>Data</strong>: filtering for quality, de-duplication, and balanced concepts matter as much as architecture (<a href="dx5-evaluation.html">DX5</a>).</li></ul>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Flow matching trains a network to predict the velocity along a chosen path from noise to data, and generates by integrating an ODE; paths that are straight need few steps, curved ones need more, and distillation or consistency training collapses steps further. Diffusion transformers patchify the latent, condition through adaptive layer norm and joint attention, and scale like language models, with attention cost growing quadratically in tokens.</p></div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why logit-normal timestep sampling?</summary><div class="answer"><p>It concentrates training on intermediate noise levels where the model gains the most, rather than sampling uniformly.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Flows and transformers</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Flows and transformers">
+<details class="recall iq" data-level="basic" data-topic="Flows and transformers"><summary><span class="tag ok">Basic</span> What is flow matching?</summary><div class="answer"><p>Train a network to predict the velocity along a path from noise to data (for rectified flow x1 - x0 on a straight line) and generate by integrating the ODE.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Flows and transformers"><summary><span class="tag ok">Basic</span> What does a diffusion transformer do differently from a U-Net?</summary><div class="answer"><p>It patchifies the latent into tokens and processes them with transformer blocks conditioned on time and text, scaling like language models.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Flows and transformers"><summary><span class="tag warn">Medium</span> What is rectified flow and reflow?</summary><div class="answer"><p>Straight-line interpolation between noise and data; reflow retrains on the model&#x27;s own (noise, sample) pairs to straighten paths so fewer steps suffice.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Flows and transformers"><summary><span class="tag warn">Medium</span> Why do flow models need fewer hyperparameters than DDPM?</summary><div class="answer"><p>The loss is plain regression on velocity with no noise schedule or variance parameterisation to tune, though timestep sampling and shifting still matter.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Flows and transformers"><summary><span class="tag warn">Medium</span> What is adaLN-Zero?</summary><div class="answer"><p>Adaptive layer norm where the time and condition embedding predicts scale, shift and gate, with gates initialised to zero so blocks start as identity for stable training.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Flows and transformers"><summary><span class="tag warn">Medium</span> Explain MM-DiT.</summary><div class="answer"><p>Separate weights for text and image token streams with joint self-attention over the concatenated tokens, allowing two-way information flow.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Flows and transformers"><summary><span class="tag warn">Medium</span> What is timestep shifting?</summary><div class="answer"><p>A reparameterisation moving training and sampling toward noisier levels at higher resolutions because neighbouring pixels are more redundant.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Flows and transformers"><summary><span class="tag warn">Medium</span> How do consistency models enable one-step generation?</summary><div class="answer"><p>They learn a function mapping any point on an ODE trajectory to the same clean sample, so a single evaluation jumps to the end.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Flows and transformers"><summary><span class="tag bad">Advanced</span> Why do real flows still need 20 to 50 steps?</summary><div class="answer"><p>The marginal velocity field is curved, and one Euler step uses only the initial velocity, which points at the average of the data and gives a blurry result; more steps or higher-order solvers follow the curve.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Flows and transformers"><summary><span class="tag bad">Advanced</span> What is the marginal velocity field and why can a network learn it?</summary><div class="answer"><p>The conditional expectation of x1 - x0 given x_t over all consistent pairs. Regression to the per-pair velocity has this field as its minimiser.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Flows and transformers"><summary><span class="tag bad">Advanced</span> Compare progressive, consistency, adversarial and distribution-matching distillation.</summary><div class="answer"><p>Progressive halves steps repeatedly; consistency enforces trajectory consistency; adversarial distillation adds a discriminator for sharpness; distribution matching aligns the student&#x27;s distribution with the teacher&#x27;s through score differences.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Flows and transformers"><summary><span class="tag bad">Advanced</span> How does attention cost scale with image size in a DiT?</summary><div class="answer"><p>Tokens grow with area, and self-attention cost grows with the square of the token count, so doubling both sides raises attention cost about 16 times.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Flows and transformers"><summary><span class="tag bad">Advanced</span> Why use logit-normal timestep sampling?</summary><div class="answer"><p>It concentrates training on intermediate noise levels where the model benefits most instead of uniform sampling.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Flows and transformers"><summary><span class="tag bad">Advanced</span> How are diffusion models and flow models related?</summary><div class="answer"><p>With Gaussian paths the probability-flow ODE of a diffusion model and a flow-matching flow are the same family, differing in time and scale parameterisation and in the training weighting.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="dx8-using-diffusers.html"><span class="dir">Previous</span><span>DX8 Using pretrained diffusion models in practice: pipelines, schedulers, memory, parameters and workflows</span></a>
+      <a class="next" href="dx10-data-troubleshooting.html"><span class="dir">Next</span><span>DX10 Data curation and troubleshooting: building image datasets and fixing common diffusion failures</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

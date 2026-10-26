@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="X10">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Computational geometry and game theory: convex hull, intersections, sweep lines, Nim and minimax | DSA Master Guide</title>
+<meta name="description" content="Robust geometry with integer cross products, orientation, segment intersection, point in polygon, convex hull, closest pair and sweep lines, then combinatorial game theory: Nim, Sprague-Grundy numbers and minimax with alpha-beta pruning, all validated by brute force.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part X10</p>
+      <h1>Computational geometry and game theory: convex hull, intersections, sweep lines, Nim and minimax</h1>
+      <p class="lede">Geometry problems fail on precision and special cases; game problems fail when you try to simulate everything. This part shows how to avoid both: use exact integer predicates for geometry, and use invariants (XOR, Grundy values) or pruned search for games.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="basics" data-track>
+      <h2>Geometry without floating-point pain</h2>
+<p>Avoid angles, division and square roots when you can. Almost everything reduces to the <strong>cross product</strong> of two vectors, which is an exact integer when coordinates are integers:</p>
+<p><code>cross(a, b) = a.x * b.y - a.y * b.x</code></p>
+<p>Its sign gives the <strong>orientation</strong> of three points <code>p, q, r</code>: positive means counter-clockwise (a left turn), negative clockwise, zero collinear. Its magnitude is twice the area of the triangle.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x10-01.py">def cross(o, a, b): return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+def orient(p, q, r):
+    c = cross(p, q, r)
+    return "left turn (counter-clockwise)" if c &gt; 0 else "right turn (clockwise)" if c &lt; 0 else "collinear"
+print(orient((0, 0), (4, 0), (4, 3)), "|", orient((0, 0), (4, 0), (4, -3)), "|", orient((0, 0), (2, 2), (5, 5)))
+def polygon_area2(pts):                                                  # shoelace formula: twice the area, exact integer
+    return sum(pts[i][0] * pts[(i + 1) % len(pts)][1] - pts[(i + 1) % len(pts)][0] * pts[i][1] for i in range(len(pts)))
+square = [(0, 0), (4, 0), (4, 4), (0, 4)]
+print("twice the area of a 4x4 square:", polygon_area2(square), "| clockwise order gives a negative value:", polygon_area2(square[::-1]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>left turn (counter-clockwise) | right turn (clockwise) | collinear
+twice the area of a 4x4 square: 32 | clockwise order gives a negative value: -32</code></pre>
+<p>Use <strong>doubled</strong> quantities (twice the area) to stay in integers; compare squared distances instead of distances; use <code>fractions.Fraction</code> if you need exact rationals, and <code>math.isclose</code> or an epsilon only when floats are unavoidable.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x10-q01" data-topic="Geometry and games" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does a positive cross product cross(o, a, b) indicate?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Collinear points <span class="q-why">That is zero.</span></li>
+          <li data-key="B">A counter-clockwise (left) turn from o to a to b <span class="q-why">Correct.</span></li>
+          <li data-key="C">A right turn <span class="q-why">That is negative.</span></li>
+          <li data-key="D">A duplicate point <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Its magnitude is twice the triangle's area.</p></div>
+      </div>
+      <div class="quiz" data-qid="xd-x10-q02" data-topic="Geometry and games" data-type="numeric" data-answer="12" data-tol="0">
+        <div class="q-stem"><p>What is twice the area of the triangle with vertices (0,0), (4,0), (0,3)?</p></div>
+        <div class="q-explain"><p>The cross product of (4,0) and (0,3) is 12.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why prefer integer cross products over angles?</summary><div class="answer"><p>They are exact, fast, avoid division and trigonometry, and handle degenerate cases consistently.</p></div></details>
+      </div>
+    </section>
+
+    <section id="segments" data-track>
+      <h2>Segment intersection</h2>
+<p>Two segments <code>AB</code> and <code>CD</code> intersect if <code>C</code> and <code>D</code> lie on opposite sides of line <code>AB</code> <strong>and</strong> <code>A</code> and <code>B</code> lie on opposite sides of line <code>CD</code>, with special handling when points are collinear (check whether the projections overlap).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x10-02.py">import random
+random.seed(1)
+def sign(x): return (x &gt; 0) - (x &lt; 0)
+def on_segment(a, b, p): return min(a[0], b[0]) &lt;= p[0] &lt;= max(a[0], b[0]) and min(a[1], b[1]) &lt;= p[1] &lt;= max(a[1], b[1])
+def cross(o, a, b): return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+def segments_intersect(a, b, c, d):
+    d1, d2, d3, d4 = sign(cross(a, b, c)), sign(cross(a, b, d)), sign(cross(c, d, a)), sign(cross(c, d, b))
+    if d1 * d2 &lt; 0 and d3 * d4 &lt; 0: return True                           # proper crossing
+    if d1 == 0 and on_segment(a, b, c): return True                       # touching or collinear overlap cases
+    if d2 == 0 and on_segment(a, b, d): return True
+    if d3 == 0 and on_segment(c, d, a): return True
+    if d4 == 0 and on_segment(c, d, b): return True
+    return False
+def brute_intersect(a, b, c, d):                                          # exact rational check by sampling lattice points is not possible; use parametric form with Fractions
+    from fractions import Fraction as F
+    r = (b[0] - a[0], b[1] - a[1]); s = (d[0] - c[0], d[1] - c[1]); den = r[0] * s[1] - r[1] * s[0]
+    qp = (c[0] - a[0], c[1] - a[1])
+    if den == 0:
+        if qp[0] * r[1] - qp[1] * r[0] != 0: return False                  # parallel, not collinear
+        rr = r[0] * r[0] + r[1] * r[1]
+        if rr == 0: return on_segment(c, d, a)                             # degenerate segment ab is a point
+        t0 = F(qp[0] * r[0] + qp[1] * r[1], rr); t1 = t0 + F(s[0] * r[0] + s[1] * r[1], rr)
+        lo, hi = sorted((t0, t1)); return hi &gt;= 0 and lo &lt;= 1
+    t = F(qp[0] * s[1] - qp[1] * s[0], den); u = F(qp[0] * r[1] - qp[1] * r[0], den)
+    return 0 &lt;= t &lt;= 1 and 0 &lt;= u &lt;= 1
+for _ in range(3000):
+    pts = [(random.randint(0, 6), random.randint(0, 6)) for _ in range(4)]
+    a, b, c, d = pts
+    if a == b or c == d: continue
+    assert segments_intersect(a, b, c, d) == brute_intersect(a, b, c, d), pts
+print("segment intersection (orientation tests) agrees with an exact parametric check on 3000 random small cases, including collinear and touching ones")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>segment intersection (orientation tests) agrees with an exact parametric check on 3000 random small cases, including collinear and touching ones</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x10-q03" data-topic="Geometry and games" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the standard test for proper segment intersection?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Compare lengths <span class="q-why">No.</span></li>
+          <li data-key="B">Each segment's endpoints lie on opposite sides of the other's line (orientation signs differ) <span class="q-why">Correct.</span></li>
+          <li data-key="C">Compare slopes only <span class="q-why">Fails for vertical lines.</span></li>
+          <li data-key="D">Compare midpoints <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Handle collinear and touching cases separately.</p></div>
+      </div>
+    </section>
+
+    <section id="pip" data-track>
+      <h2>Point in polygon</h2>
+<p><strong>Ray casting</strong>: shoot a ray from the point to the right and count how many polygon edges it crosses; an odd count means inside. Handle vertices carefully by using a half-open rule (an edge counts if one endpoint is strictly above the ray and the other is at or below).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x10-03.py">import random
+def inside(poly, p):
+    x, y, c = p[0], p[1], False
+    for i in range(len(poly)):
+        (x1, y1), (x2, y2) = poly[i], poly[(i + 1) % len(poly)]
+        if (y1 &gt; y) != (y2 &gt; y):                                          # the edge straddles the horizontal line through p
+            x_cross = x1 + (y - y1) * (x2 - x1) / (y2 - y1)
+            if x &lt; x_cross: c = not c
+    return c
+square = [(0, 0), (10, 0), (10, 10), (0, 10)]
+concave = [(0, 0), (10, 0), (10, 10), (5, 3), (0, 10)]                       # a notch cut into the top
+print("square:", inside(square, (5, 5)), inside(square, (11, 5)), "| concave notch point (5, 8) is outside:", not inside(concave, (5, 8)), "| (5, 2) inside:", inside(concave, (5, 2)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>square: True False | concave notch point (5, 8) is outside: True | (5, 2) inside: True</code></pre>
+<p>For convex polygons you can also test that the point is on the same side of every edge (all cross products with the same sign).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x10-q04" data-topic="Geometry and games" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In ray casting, an odd number of edge crossings means:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Outside <span class="q-why">No.</span></li>
+          <li data-key="B">Inside <span class="q-why">Correct.</span></li>
+          <li data-key="C">On the boundary <span class="q-why">Special handling.</span></li>
+          <li data-key="D">Collinear <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Even means outside.</p></div>
+      </div>
+    </section>
+
+    <section id="hull" data-track>
+      <h2>Convex hull</h2>
+<p>The <strong>convex hull</strong> is the smallest convex polygon containing all points (a rubber band around nails). <strong>Andrew's monotone chain</strong>: sort points; build the lower hull then the upper hull, popping the last point while the last three do not make a left turn. <code>O(n log n)</code> for the sort.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x10-04.py">import random, itertools
+random.seed(2)
+def cross(o, a, b): return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+def convex_hull(points):
+    pts = sorted(set(points))
+    if len(pts) &lt;= 2: return pts
+    lower, upper = [], []
+    for p in pts:
+        while len(lower) &gt;= 2 and cross(lower[-2], lower[-1], p) &lt;= 0: lower.pop()
+        lower.append(p)
+    for p in reversed(pts):
+        while len(upper) &gt;= 2 and cross(upper[-2], upper[-1], p) &lt;= 0: upper.pop()
+        upper.append(p)
+    return lower[:-1] + upper[:-1]                                           # counter-clockwise, no repeated endpoints
+def hull_brute(points):                                                       # a point is a hull vertex if no triangle of the others contains it strictly or on an edge
+    pts = list(set(points)); keep = []
+    for p in pts:
+        others = [q for q in pts if q != p]
+        def in_tri(a, b, c):
+            d1, d2, d3 = cross(a, b, p), cross(b, c, p), cross(c, a, p)
+            has_neg = d1 &lt; 0 or d2 &lt; 0 or d3 &lt; 0; has_pos = d1 &gt; 0 or d2 &gt; 0 or d3 &gt; 0
+            return not (has_neg and has_pos) and cross(a, b, c) != 0
+        collinear_between = any(cross(a, b, p) == 0 and min(a[0], b[0]) &lt;= p[0] &lt;= max(a[0], b[0]) and min(a[1], b[1]) &lt;= p[1] &lt;= max(a[1], b[1]) for a, b in itertools.combinations(others, 2))
+        if not any(in_tri(a, b, c) for a, b, c in itertools.combinations(others, 3)) and not collinear_between: keep.append(p)
+    return sorted(keep)
+for _ in range(300):
+    pts = [(random.randint(0, 8), random.randint(0, 8)) for _ in range(random.randint(3, 9))]
+    assert sorted(convex_hull(pts)) == hull_brute(pts) or len(set(pts)) &lt; 3, pts
+print("monotone chain hull matches the brute-force definition on 300 random point sets")
+print("hull of a square with an interior point:", convex_hull([(0, 0), (4, 0), (4, 4), (0, 4), (2, 2)]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>monotone chain hull matches the brute-force definition on 300 random point sets
+hull of a square with an interior point: [(0, 0), (4, 0), (4, 4), (0, 4)]</code></pre>
+<p>Uses: bounding shapes, collision detection, farthest pair (rotating calipers), the "fence" problem, and as a building block for halfplane intersection.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x10-q05" data-topic="Geometry and games" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does Andrew's monotone chain do while building a hull?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Sorts by angle <span class="q-why">That is Graham scan.</span></li>
+          <li data-key="B">Sorts by x then y and pops the last point while the last three do not make a left turn, building lower and upper hulls <span class="q-why">Correct.</span></li>
+          <li data-key="C">Uses a heap <span class="q-why">No.</span></li>
+          <li data-key="D">Rotates the plane <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>O(n log n) because of the sort.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does the hull algorithm pop on a non-left turn?</summary><div class="answer"><p>The last point of the current chain, because it lies inside or on the hull edge.</p></div></details>
+      </div>
+    </section>
+
+    <section id="sweep" data-track>
+      <h2>Closest pair of points and sweep lines</h2>
+<p>The naive closest pair checks all <code>O(n^2)</code> pairs. <strong>Divide and conquer</strong> solves it in <code>O(n log n)</code>: split by <code>x</code>, solve both halves (best distance <code>d</code>), then only points within <code>d</code> of the dividing line can improve it, and each needs comparing with at most a constant number of neighbours when sorted by <code>y</code>.</p>
+<p>A <strong>sweep line</strong> moves a vertical line across the plane, processing <strong>events</strong> in order and keeping a structure of the "active" objects. It turns many 2D problems into 1D ones: count overlapping intervals, find any segment intersection (Bentley-Ottmann), skyline, rectangle union area.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x10-05.py">import random, math
+random.seed(3)
+def closest_pair(points):
+    pts = sorted(points)
+    def rec(lo, hi):                                                          # points sorted by x in [lo, hi)
+        if hi - lo &lt;= 3:
+            return min((math.dist(pts[i], pts[j]) for i in range(lo, hi) for j in range(i + 1, hi)), default=float("inf"))
+        mid = (lo + hi) // 2; midx = pts[mid][0]
+        d = min(rec(lo, mid), rec(mid, hi))
+        strip = sorted((p for p in pts[lo:hi] if abs(p[0] - midx) &lt; d), key=lambda p: p[1])
+        for i in range(len(strip)):
+            for j in range(i + 1, len(strip)):
+                if strip[j][1] - strip[i][1] &gt;= d: break                      # only a few neighbours are ever checked
+                d = min(d, math.dist(strip[i], strip[j]))
+        return d
+    return rec(0, len(pts))
+for _ in range(200):
+    pts = list({(random.randint(0, 50), random.randint(0, 50)) for _ in range(random.randint(2, 25))})
+    if len(pts) &lt; 2: continue
+    brute = min(math.dist(a, b) for i, a in enumerate(pts) for b in pts[i + 1:])
+    assert abs(closest_pair(pts) - brute) &lt; 1e-9
+print("closest pair (divide and conquer) verified against all-pairs")
+# sweep line: the maximum number of overlapping intervals (meeting rooms)
+def max_overlap(intervals):
+    events = sorted([(s, 1) for s, e in intervals] + [(e, -1) for s, e in intervals])    # ends sort before starts at equal times (-1 &lt; 1)
+    cur = best = 0
+    for _, delta in events: cur += delta; best = max(best, cur)
+    return best
+for _ in range(300):
+    iv = [(s, s + random.randint(1, 5)) for s in [random.randint(0, 12) for _ in range(random.randint(1, 8))]]
+    brute = max(sum(s &lt;= t &lt; e for s, e in iv) for t in range(0, 20))
+    assert max_overlap(iv) == brute
+print("sweep line maximum overlap verified | [(1,4),(2,5),(7,9)] overlaps at most:", max_overlap([(1, 4), (2, 5), (7, 9)]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>closest pair (divide and conquer) verified against all-pairs
+sweep line maximum overlap verified | [(1,4),(2,5),(7,9)] overlaps at most: 2</code></pre>
+<h3>Skyline by sweep line</h3>
+<p>Process building edges left to right while keeping a max-heap of active heights; whenever the maximum height changes, output a key point.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x10-06.py">import heapq
+def skyline(buildings):
+    events = sorted([(l, -h, r) for l, r, h in buildings] + [(r, 0, 0) for l, r, h in buildings])
+    result, heap = [], [(0, float("inf"))]                                     # (negative height, end)
+    for x, negh, r in events:
+        while heap[0][1] &lt;= x: heapq.heappop(heap)                           # drop buildings that have ended
+        if negh: heapq.heappush(heap, (negh, r))
+        top = -heap[0][0]
+        if not result or result[-1][1] != top: result.append([x, top])
+    return result
+print(skyline([(2, 9, 10), (3, 7, 15), (5, 12, 12), (15, 20, 10), (19, 24, 8)]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[[2, 10], [3, 15], [7, 12], [12, 0], [15, 10], [20, 8], [24, 0]]</code></pre>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What are the parts of a sweep-line algorithm?</summary><div class="answer"><p>A sorted list of events, a structure holding the active objects, and the rule for updating results at each event.</p></div></details>
+      </div>
+    </section>
+
+    <section id="games" data-track>
+      <h2>Combinatorial games</h2>
+<p>An <strong>impartial</strong> game has the same moves available to both players (only the position matters), players alternate, and the player who cannot move loses (<strong>normal play</strong>). Positions are either <strong>N</strong> (the player to move wins) or <strong>P</strong> (the previous player wins). Compute by recursion: a position is N if some move leads to a P position, and P if all moves lead to N positions.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x10-07.py">from functools import lru_cache
+@lru_cache(None)
+def wins(n):                                                   # take 1, 2 or 3 stones; taking the last stone wins
+    return any(not wins(n - k) for k in (1, 2, 3) if k &lt;= n)
+print("losing positions (multiples of 4):", [n for n in range(0, 21) if not wins(n)])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>losing positions (multiples of 4): [0, 4, 8, 12, 16, 20]</code></pre>
+<h3>Nim and the XOR rule</h3>
+<p>In <strong>Nim</strong> there are piles; a move removes any positive number of stones from one pile; the player who takes the last stone wins. <strong>Bouton's theorem</strong>: the position is <strong>P</strong> (losing for the mover) exactly when the XOR of all pile sizes is 0. From a nonzero XOR you can always move to XOR 0 by reducing one pile to <code>pile ^ xor</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x10-08.py">import random, itertools
+from functools import lru_cache
+random.seed(4)
+@lru_cache(None)
+def nim_wins(piles):
+    for i, p in enumerate(piles):
+        for take in range(1, p + 1):
+            nxt = tuple(sorted(piles[:i] + (p - take,) + piles[i + 1:]))
+            if not nim_wins(nxt): return True
+    return False
+def nim_by_xor(piles):
+    x = 0
+    for p in piles: x ^= p
+    return x != 0
+for _ in range(100):
+    piles = tuple(sorted(random.randint(0, 5) for _ in range(random.randint(1, 4))))
+    assert nim_wins(piles) == nim_by_xor(piles), piles
+print("Bouton's theorem verified against exhaustive game search on 100 random Nim positions")
+def winning_move(piles):
+    x = 0
+    for p in piles: x ^= p
+    for i, p in enumerate(piles):
+        if p ^ x &lt; p: return i, p - (p ^ x)                 # reduce pile i by this many stones
+print("from piles (3, 4, 5) the winning move is (pile index, stones to take):", winning_move((3, 4, 5)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>Bouton's theorem verified against exhaustive game search on 100 random Nim positions
+from piles (3, 4, 5) the winning move is (pile index, stones to take): (0, 2)</code></pre>
+<h3>Sprague-Grundy theorem</h3>
+<p>Every impartial game position has a <strong>Grundy number</strong> (nimber): <code>grundy(position) = mex { grundy(next) for each move }</code>, where <code>mex</code> is the smallest non-negative integer not in the set. A game that is a <strong>sum of independent games</strong> (you choose one component and move in it) has Grundy number equal to the <strong>XOR</strong> of the components' numbers, and is a loss for the mover exactly when that XOR is zero. So any such game reduces to Nim.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x10-09.py">import random
+from functools import lru_cache
+random.seed(5)
+MOVES = (1, 3, 4)                                            # subtraction game: remove 1, 3 or 4 stones from a pile
+@lru_cache(None)
+def grundy(n):
+    reach = {grundy(n - m) for m in MOVES if m &lt;= n}
+    g = 0
+    while g in reach: g += 1                                 # mex
+    return g
+print("Grundy numbers of pile sizes 0..15:", [grundy(n) for n in range(16)])
+@lru_cache(None)
+def sum_wins(piles):                                         # exhaustive search of the sum of subtraction games
+    for i, p in enumerate(piles):
+        for m in MOVES:
+            if m &lt;= p and not sum_wins(tuple(sorted(piles[:i] + (p - m,) + piles[i + 1:]))): return True
+    return False
+for _ in range(100):
+    piles = tuple(sorted(random.randint(0, 9) for _ in range(random.randint(1, 3))))
+    x = 0
+    for p in piles: x ^= grundy(p)
+    assert sum_wins(piles) == (x != 0), piles
+print("XOR of Grundy numbers predicts the winner of sums of subtraction games on 100 random positions")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>Grundy numbers of pile sizes 0..15: [0, 1, 0, 1, 2, 3, 2, 0, 1, 0, 1, 2, 3, 2, 0, 1]
+XOR of Grundy numbers predicts the winner of sums of subtraction games on 100 random positions</code></pre>
+<p>Recipe for a new impartial game: define the moves, compute Grundy numbers for single components (by DP, often with a visible pattern), XOR them, and a nonzero result means the first player wins. Examples: Nim, subtraction games, Kayles, Wythoff (needs more theory), and "cutting" games.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x10-q06" data-topic="Geometry and games" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In Nim, the position is losing for the player to move when:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Any pile is empty <span class="q-why">No.</span></li>
+          <li data-key="B">The XOR of the pile sizes is zero <span class="q-why">Correct.</span></li>
+          <li data-key="C">The sum is even <span class="q-why">No.</span></li>
+          <li data-key="D">There are two piles <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>From a nonzero XOR there is always a move to XOR zero.</p></div>
+      </div>
+      <div class="quiz" data-qid="xd-x10-q07" data-topic="Geometry and games" data-type="numeric" data-answer="2" data-tol="0">
+        <div class="q-stem"><p>What is the Grundy number (mex) of a position whose options have Grundy numbers {0, 1, 3}?</p></div>
+        <div class="q-explain"><p>The smallest non-negative integer missing from {0, 1, 3} is 2.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>State the Sprague-Grundy theorem.</summary><div class="answer"><p>Every impartial game position equals a Nim pile of its Grundy number, and a sum of games has the XOR of its components' numbers.</p></div></details>
+      </div>
+    </section>
+
+    <section id="minimax" data-track>
+      <h2>Minimax and alpha-beta pruning</h2>
+<p>For two-player <strong>zero-sum</strong> games with alternating turns and perfect information (tic-tac-toe, checkers, chess), <strong>minimax</strong> assigns each position the value under optimal play: the maximiser picks the child with the largest value, the minimiser the smallest. <strong>Alpha-beta pruning</strong> skips branches that cannot affect the result (<code>alpha</code> = best the maximiser can already guarantee, <code>beta</code> = best the minimiser can guarantee; if <code>alpha &gt;= beta</code> stop), preserving the answer while exploring about <code>sqrt</code> as many nodes with good move ordering. Depth limits plus an <strong>evaluation function</strong>, <strong>iterative deepening</strong>, <strong>transposition tables</strong> and <strong>move ordering</strong> make real engines feasible; MCTS (Monte Carlo tree search) handles huge branching factors such as Go.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x10-10.py">import itertools
+LINES = [(0, 1, 2), (3, 4, 5), (6, 7, 8), (0, 3, 6), (1, 4, 7), (2, 5, 8), (0, 4, 8), (2, 4, 6)]
+def winner(b):
+    for a, c, d in LINES:
+        if b[a] != " " and b[a] == b[c] == b[d]: return b[a]
+    return None
+nodes = {"plain": 0, "alpha_beta": 0}
+def minimax(b, player):                                               # returns +1 if X wins, -1 if O wins, 0 draw
+    nodes["plain"] += 1
+    w = winner(b)
+    if w: return 1 if w == "X" else -1
+    if " " not in b: return 0
+    vals = [minimax(b[:i] + player + b[i + 1:], "O" if player == "X" else "X") for i in range(9) if b[i] == " "]
+    return max(vals) if player == "X" else min(vals)
+def alphabeta(b, player, alpha=-2, beta=2):
+    nodes["alpha_beta"] += 1
+    w = winner(b)
+    if w: return 1 if w == "X" else -1
+    if " " not in b: return 0
+    if player == "X":
+        best = -2
+        for i in range(9):
+            if b[i] == " ":
+                best = max(best, alphabeta(b[:i] + "X" + b[i + 1:], "O", alpha, beta)); alpha = max(alpha, best)
+                if alpha &gt;= beta: break
+        return best
+    best = 2
+    for i in range(9):
+        if b[i] == " ":
+            best = min(best, alphabeta(b[:i] + "O" + b[i + 1:], "X", alpha, beta)); beta = min(beta, best)
+            if alpha &gt;= beta: break
+    return best
+start = "         "
+v1, v2 = minimax(start, "X"), alphabeta(start, "X")
+print("value of tic-tac-toe with perfect play (0 = draw):", v1, v2, "| same answer:", v1 == v2)
+print(f"positions examined: plain minimax {nodes['plain']:,} vs alpha-beta {nodes['alpha_beta']:,}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>value of tic-tac-toe with perfect play (0 = draw): 0 0 | same answer: True
+positions examined: plain minimax 549,946 vs alpha-beta 18,297</code></pre>
+<div class="callout key"><span class="callout-title">Key idea</span><p>For geometry, work in exact integers with cross products and sort-based algorithms (hull, sweep). For impartial games, reduce positions to Nim with Grundy numbers and XOR; for two-player scoring games use minimax with alpha-beta and good move ordering. Validate every geometric predicate and game theory claim with a brute-force check on tiny inputs.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x10-q08" data-topic="Geometry and games" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is alpha-beta pruning's effect on the result?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It approximates the value <span class="q-why">No.</span></li>
+          <li data-key="B">It returns the same value as minimax while skipping branches that cannot matter <span class="q-why">Correct.</span></li>
+          <li data-key="C">It randomises moves <span class="q-why">No.</span></li>
+          <li data-key="D">It needs no ordering <span class="q-why">Ordering improves it.</span></li>
+        </ul>
+        <div class="q-explain"><p>Good move ordering gives the biggest savings.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What are alpha and beta?</summary><div class="answer"><p>The best values the maximiser and minimiser can already guarantee; when alpha &gt;= beta the branch cannot change the outcome and is pruned.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Geometry and games</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Geometry and games">
+<details class="recall iq" data-level="basic" data-topic="Geometry and games"><summary><span class="tag ok">Basic</span> What does the cross product of two vectors tell you?</summary><div class="answer"><p>Its sign gives the orientation of the turn (counter-clockwise, clockwise or collinear) and its magnitude is twice the triangle area.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Geometry and games"><summary><span class="tag ok">Basic</span> Why avoid floating point in geometry?</summary><div class="answer"><p>Rounding breaks equality, collinearity and orientation tests. Use integer arithmetic (cross products, squared distances) or exact fractions when possible.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Geometry and games"><summary><span class="tag warn">Medium</span> How do you test whether two segments intersect?</summary><div class="answer"><p>Check that the endpoints of each segment lie on opposite sides of the other&#x27;s line using orientation signs, with special handling of collinear and touching cases via bounding boxes.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Geometry and games"><summary><span class="tag warn">Medium</span> Describe ray casting for point in polygon.</summary><div class="answer"><p>Count crossings of a horizontal ray from the point with the polygon&#x27;s edges using a half-open rule; odd means inside.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Geometry and games"><summary><span class="tag warn">Medium</span> Explain Andrew&#x27;s monotone chain for the convex hull.</summary><div class="answer"><p>Sort points, build lower and upper hulls by popping the last point while the last three do not turn left, then join them. O(n log n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Geometry and games"><summary><span class="tag warn">Medium</span> How do you compute polygon area?</summary><div class="answer"><p>The shoelace formula: half the absolute sum of cross products of consecutive vertices; use the doubled value to stay in integers.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Geometry and games"><summary><span class="tag warn">Medium</span> What is a sweep line?</summary><div class="answer"><p>A technique that processes sorted events while maintaining a structure of active objects, reducing 2D problems to 1D: interval overlaps, skyline, closest pair and segment intersection.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Geometry and games"><summary><span class="tag warn">Medium</span> State Bouton&#x27;s theorem for Nim.</summary><div class="answer"><p>A Nim position is losing for the player to move exactly when the XOR of the pile sizes is zero; from a nonzero XOR a move to zero exists.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Geometry and games"><summary><span class="tag bad">Advanced</span> Explain the Sprague-Grundy theorem.</summary><div class="answer"><p>Every impartial game position has a Grundy number equal to the mex of its options&#x27; numbers, and a sum of games has the XOR of its components&#x27; numbers; zero means the mover loses.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Geometry and games"><summary><span class="tag bad">Advanced</span> How do you solve an unfamiliar impartial game?</summary><div class="answer"><p>Define moves, compute Grundy numbers of one component by DP (often patterns appear), XOR the components, and a nonzero result means the first player wins.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Geometry and games"><summary><span class="tag bad">Advanced</span> Describe minimax and alpha-beta pruning.</summary><div class="answer"><p>Minimax values positions under optimal play; alpha-beta keeps bounds on what each side can guarantee and prunes branches that cannot change the result, giving big savings with good move ordering.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Geometry and games"><summary><span class="tag bad">Advanced</span> How does the closest pair of points algorithm run in O(n log n)?</summary><div class="answer"><p>Divide by x, solve halves, then check the strip of points within distance d of the dividing line sorted by y, where each point needs comparing with only a constant number of neighbours.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Geometry and games"><summary><span class="tag bad">Advanced</span> What is Monte Carlo tree search?</summary><div class="answer"><p>A game-tree search that uses random simulations to estimate move quality, balancing exploration and exploitation (UCT); effective for huge branching factors such as Go.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Geometry and games"><summary><span class="tag bad">Advanced</span> How do you find the farthest pair of points?</summary><div class="answer"><p>Compute the convex hull, then use rotating calipers to scan antipodal pairs in O(n) after the hull.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="x9-techniques.html"><span class="dir">Previous</span><span>X9 Problem-solving techniques: sqrt decomposition, Mo's algorithm, divide and conquer, meet in the middle, bit tricks and randomisation</span></a>
+      <a class="next" href="x11-design-problems.html"><span class="dir">Next</span><span>X11 Design-style coding problems: caches, limiters, iterators, games and thread-safe structures</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

@@ -47,7 +47,7 @@ window.LR_RESOURCE = {
     { id: "P18", file: "m18-problems.html", title: "Problems 18: Additional Important Topics", sections: 12 },
     { id: "PAT", file: "patterns.html", title: "Pattern playbook", sections: 30 },
     { id: "CLS", file: "classics.html", title: "Interview classics", sections: 31 },
-    { id: "IQ", file: "interview-questions.html", title: "Interview question bank", sections: 31 },
+    { id: "IQ", file: "interview-questions.html", title: "Interview question bank", sections: 36 },
     { id: "FA", file: "final-assessment.html", title: "Final assessment (112 questions)", sections: 1 },
     { id: "CHEAT", file: "cheat-sheet.html", title: "Cheat sheet (printable)", sections: 1 },
     { id: "X1", file: "x1-advanced-structures.html", title: "Advanced data structures: Fenwick tree, segment tree, sparse table, AVL, LFU and more", sections: 8 },
@@ -56,7 +56,12 @@ window.LR_RESOURCE = {
     { id: "X4", file: "x4-strings.html", title: "String algorithms: KMP, Z, Rabin-Karp, Manacher, tries and suffix structures", sections: 9 },
     { id: "X5", file: "x5-number-theory.html", title: "Number theory, combinatorics and probability for interviews", sections: 8 },
     { id: "X6", file: "x6-complexity.html", title: "Complexity theory: amortised analysis, recurrences, NP-completeness and lower bounds", sections: 7 },
-    { id: "X7", file: "x7-more-problems.html", title: "More interview problems with verified solutions", sections: 7 }
+    { id: "X7", file: "x7-more-problems.html", title: "More interview problems with verified solutions", sections: 7 },
+    { id: "X8", file: "x8-advanced-trees.html", title: "Advanced tree techniques: LCA, binary lifting, Euler tours, diameter, rerooting and treaps", sections: 9 },
+    { id: "X9", file: "x9-techniques.html", title: "Problem-solving techniques: sqrt decomposition, Mo's algorithm, divide and conquer, meet in the middle, bit tricks and randomisation", sections: 10 },
+    { id: "X10", file: "x10-geometry-games.html", title: "Computational geometry and game theory: convex hull, intersections, sweep lines, Nim and minimax", sections: 8 },
+    { id: "X11", file: "x11-design-problems.html", title: "Design-style coding problems: caches, limiters, iterators, games and thread-safe structures", sections: 14 },
+    { id: "X12", file: "x12-intuition.html", title: "Data structures and algorithms explained simply: intuition, analogies and pattern recognition", sections: 10 }
   ],
   topics: {
     "Programming & Problem-Solving Foundations": "m01-foundations.html",
@@ -83,6 +88,11 @@ window.LR_RESOURCE = {
     "String algorithms": "x4-strings.html",
     "Math and number theory": "x5-number-theory.html",
     "Complexity theory": "x6-complexity.html",
-    "Extra problems": "x7-more-problems.html"
+    "Extra problems": "x7-more-problems.html",
+    "Advanced trees": "x8-advanced-trees.html",
+    "Problem-solving techniques": "x9-techniques.html",
+    "Geometry and games": "x10-geometry-games.html",
+    "Design problems": "x11-design-problems.html",
+    "Intuition guide": "x12-intuition.html"
   }
 };

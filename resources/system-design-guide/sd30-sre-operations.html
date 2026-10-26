@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD30">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Site reliability engineering: SLOs, burn rates, capacity planning, load testing and incident response | System Design</title>
+<meta name="description" content="Running systems well: defining SLIs and SLOs, error budgets and burn-rate alerts with calculations, queueing theory for capacity, load and chaos testing, incident response roles, blameless postmortems, toil and runbooks.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD30</p>
+      <h1>Site reliability engineering: SLOs, burn rates, capacity planning, load testing and incident response</h1>
+      <p class="lede">Designing a system is half the job; keeping it healthy under change is the other half. This part gives the practices and the maths that let teams promise a level of reliability and know when they are breaking it.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~4 hours</span></div>
+    </div>
+
+    <section id="slo" data-track>
+      <h2>Reliability as a feature, with numbers</h2>
+<p>100% reliability is the wrong target: it is impossible, and each extra nine costs far more than the one before. Instead, agree what users need, measure it, and spend the remaining slack on shipping faster.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Term</th><th>Meaning</th><th>Example</th></tr></thead>
+<tbody>
+<tr><td><strong>SLI</strong> (indicator)</td><td>A measured ratio of good events to valid events</td><td>Fraction of requests that return non-5xx within 300 ms</td></tr><tr><td><strong>SLO</strong> (objective)</td><td>The internal target for an SLI over a window</td><td>99.9% over 30 days</td></tr><tr><td><strong>SLA</strong> (agreement)</td><td>A contract with penalties, usually looser than the SLO</td><td>99.5% or you refund credits</td></tr><tr><td><strong>Error budget</strong></td><td><code>1 - SLO</code>: how much failure is allowed</td><td>0.1% of requests, about 43 minutes per 30 days</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd30-01.py">def budget_minutes(slo, days=30): return (1 - slo) * days * 24 * 60
+for slo in (0.99, 0.995, 0.999, 0.9999, 0.99999):
+    print(f"SLO {slo * 100:g}%: error budget {budget_minutes(slo):&gt;8.1f} minutes per 30 days")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>SLO 99%: error budget    432.0 minutes per 30 days
+SLO 99.5%: error budget    216.0 minutes per 30 days
+SLO 99.9%: error budget     43.2 minutes per 30 days
+SLO 99.99%: error budget      4.3 minutes per 30 days
+SLO 99.999%: error budget      0.4 minutes per 30 days</code></pre>
+<p>Good SLIs describe <strong>what users experience</strong>: availability (success rate), latency (percentile under a threshold), freshness (data age), correctness, throughput. Measure at the edge or from the client side where possible, not just inside a service. Pick <strong>few</strong> SLOs per user journey.</p>
+<h3>The error budget policy</h3>
+<ul><li>Budget remaining: ship features, take risks, run experiments.</li><li>Budget exhausted: freeze risky releases, prioritise reliability work until the window recovers.</li></ul>
+<p>This turns the argument between "move fast" and "stay stable" into a shared number.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd30-q01" data-topic="SRE and operations" data-type="numeric" data-answer="43" data-tol="1">
+        <div class="q-stem"><p>How many minutes of error budget does a 99.9% SLO leave over 30 days (to the nearest minute)?</p></div>
+        <div class="q-explain"><p>0.001 x 30 x 24 x 60 = 43.2 minutes.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd30-q02" data-topic="SRE and operations" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the relation between an SLO and an SLA?</p></div>
+        <ul class="q-options">
+          <li data-key="A">They are identical <span class="q-why">No.</span></li>
+          <li data-key="B">The SLO is the internal target, usually stricter than the contractual SLA <span class="q-why">Correct.</span></li>
+          <li data-key="C">The SLA is internal <span class="q-why">No.</span></li>
+          <li data-key="D">SLOs have penalties <span class="q-why">SLAs do.</span></li>
+        </ul>
+        <div class="q-explain"><p>The gap gives you time to react before a breach.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Give three good SLIs for a web API.</summary><div class="answer"><p>Success rate, fraction of requests under a latency threshold, and data freshness (for pipelines).</p></div></details>
+      </div>
+    </section>
+
+    <section id="burn" data-track>
+      <h2>Burn-rate alerting</h2>
+<p>A naive alert such as "error rate above 0.1%" is noisy and slow. Alert on how fast the <strong>budget is being consumed</strong>.</p>
+<p><strong>Burn rate</strong> = (observed error rate) / (allowed error rate). A burn rate of 1 uses exactly the whole budget by the end of the window; 14.4 exhausts a 30-day budget in about 2 days.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd30-02.py">def burn_rate(error_rate, slo): return error_rate / (1 - slo)
+def hours_to_exhaust(rate, days=30): return days * 24 / rate
+slo = 0.999
+for err in (0.0005, 0.001, 0.0144, 0.05):
+    r = burn_rate(err, slo)
+    print(f"error rate {err:.2%}: burn rate {r:&gt;6.1f} -&gt; budget exhausted in {hours_to_exhaust(r) / 24:&gt;7.2f} days")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>error rate 0.05%: burn rate    0.5 -&gt; budget exhausted in   60.00 days
+error rate 0.10%: burn rate    1.0 -&gt; budget exhausted in   30.00 days
+error rate 1.44%: burn rate   14.4 -&gt; budget exhausted in    2.08 days
+error rate 5.00%: burn rate   50.0 -&gt; budget exhausted in    0.60 days</code></pre>
+<p>The multi-window pattern pages a human only when both a <strong>long</strong> and a <strong>short</strong> window show a high burn, which avoids flapping and detects fast fires quickly.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Severity</th><th>Burn rate</th><th>Long window</th><th>Short window</th><th>Budget used if it continues</th></tr></thead>
+<tbody>
+<tr><td>Page now</td><td>14.4</td><td>1 hour</td><td>5 minutes</td><td>2% in an hour</td></tr><tr><td>Page</td><td>6</td><td>6 hours</td><td>30 minutes</td><td>5% in 6 hours</td></tr><tr><td>Ticket</td><td>1</td><td>3 days</td><td>6 hours</td><td>10% in 3 days</td></tr>
+</tbody>
+</table>
+</div>
+<p>Alert on <strong>symptoms</strong> (users hurt), keep <strong>cause</strong> metrics (CPU, queue depth) on dashboards. Every page should be urgent, actionable and need a human.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd30-q03" data-topic="SRE and operations" data-type="numeric" data-answer="14.4" data-tol="0.1">
+        <div class="q-stem"><p>A service has a 99.9% SLO and currently 1.44% of requests fail. What is the burn rate?</p></div>
+        <div class="q-explain"><p>0.0144 / 0.001 = 14.4.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd30-q04" data-topic="SRE and operations" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why combine a long and a short window in burn-rate alerts?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To save money <span class="q-why">No.</span></li>
+          <li data-key="B">The long window shows the issue is significant, the short window shows it is still happening, reducing false pages and speeding detection <span class="q-why">Correct.</span></li>
+          <li data-key="C">To avoid dashboards <span class="q-why">No.</span></li>
+          <li data-key="D">To sample less <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It balances precision and recall of alerts.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is burn rate?</summary><div class="answer"><p>Observed error rate divided by the error rate the SLO allows; 1 means the budget lasts exactly the window.</p></div></details>
+      </div>
+    </section>
+
+    <section id="capacity" data-track>
+      <h2>Capacity planning and queueing</h2>
+<p>Systems slow dramatically as utilisation approaches 100%, because queues build. For a single-server queue with random arrivals (M/M/1), average time in system is <code>1 / (service_rate - arrival_rate)</code>, so with utilisation <code>u = arrival / service</code>, response time grows like <code>1 / (1 - u)</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd30-03.py">service_ms = 10                                    # time to process one request
+for util in (0.3, 0.5, 0.7, 0.8, 0.9, 0.95, 0.99):
+    response = service_ms / (1 - util)
+    print(f"utilisation {util:&gt;4.0%}: average response {response:&gt;7.1f} ms ({response / service_ms:&gt;5.1f}x the service time)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>utilisation  30%: average response    14.3 ms (  1.4x the service time)
+utilisation  50%: average response    20.0 ms (  2.0x the service time)
+utilisation  70%: average response    33.3 ms (  3.3x the service time)
+utilisation  80%: average response    50.0 ms (  5.0x the service time)
+utilisation  90%: average response   100.0 ms ( 10.0x the service time)
+utilisation  95%: average response   200.0 ms ( 20.0x the service time)
+utilisation  99%: average response  1000.0 ms (100.0x the service time)</code></pre>
+<p>Lessons: run steady-state utilisation around <strong>50 to 70%</strong> to leave headroom for spikes and failures; the last 20% of capacity is not usable capacity. <strong>Little's Law</strong>: <code>L = lambda x W</code> (average number in system = arrival rate x average time in system). If 2,000 requests/s each spend 50 ms in the system, about 100 requests are in flight, so you need at least that many concurrent workers or connections.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd30-04.py">import math
+def servers_needed(peak_qps, qps_per_server, headroom=0.6, failure_domains=3, tolerate_lost=1):
+    usable = qps_per_server * headroom
+    base = math.ceil(peak_qps / usable)
+    survive = math.ceil(peak_qps / (usable)) + math.ceil(base / failure_domains) * tolerate_lost   # N + one zone's worth
+    return base, survive
+base, safe = servers_needed(peak_qps=30_000, qps_per_server=1_500)
+print(f"30k QPS peak, 1.5k QPS per server at 60% target utilisation: {base} servers; {safe} to survive losing one of 3 zones")
+print("Little's law: in-flight requests =", 2000 * 0.050)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>30k QPS peak, 1.5k QPS per server at 60% target utilisation: 34 servers; 46 to survive losing one of 3 zones
+Little's law: in-flight requests = 100.0</code></pre>
+<p>Capacity planning steps: forecast demand (growth, launches, seasonality), measure per-unit capacity with load tests, add headroom for failures and deployments (<strong>N+1</strong> or <strong>N+2</strong>), and track the cost.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd30-q05" data-topic="SRE and operations" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why avoid running servers at 95% utilisation?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It wastes power <span class="q-why">Not the main reason.</span></li>
+          <li data-key="B">Queueing delay grows sharply near saturation, so latency explodes and there is no headroom for failures <span class="q-why">Correct.</span></li>
+          <li data-key="C">Hardware breaks <span class="q-why">No.</span></li>
+          <li data-key="D">It violates licences <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Response time grows like 1/(1 - utilisation).</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd30-q06" data-topic="SRE and operations" data-type="numeric" data-answer="100" data-tol="0">
+        <div class="q-stem"><p>By Little's Law, 2,000 requests/s with 50 ms average time in system means about how many requests in flight?</p></div>
+        <div class="q-explain"><p>L = 2000 x 0.05 = 100.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does N+1 mean?</summary><div class="answer"><p>Enough capacity to serve peak load even after losing one unit (server, zone), plus headroom.</p></div></details>
+      </div>
+    </section>
+
+    <section id="testing" data-track>
+      <h2>Testing reliability</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Test</th><th>Question it answers</th></tr></thead>
+<tbody>
+<tr><td><strong>Load test</strong></td><td>Does it meet SLOs at expected peak? What is the breaking point?</td></tr><tr><td><strong>Stress test</strong></td><td>How does it fail beyond capacity? Does it recover?</td></tr><tr><td><strong>Soak test</strong></td><td>Do leaks and slow degradation appear over hours?</td></tr><tr><td><strong>Spike test</strong></td><td>Can it absorb a sudden 10x burst (autoscaling lag, cold caches)?</td></tr><tr><td><strong>Failure injection / chaos</strong></td><td>What happens when a dependency, node or zone disappears?</td></tr><tr><td><strong>Game day</strong></td><td>Can the team detect and fix a staged failure with real runbooks?</td></tr><tr><td><strong>Canary and shadow traffic</strong></td><td>Does the new version behave on real traffic?</td></tr>
+</tbody>
+</table>
+</div>
+<p>Load-test with a <strong>realistic mix and data</strong>, measure latency <strong>percentiles</strong> (watch for <strong>coordinated omission</strong>: closed-loop test clients slow down when the server does, hiding the true tail), and test the <strong>dependencies' limits</strong> too. Start chaos experiments small, in staging, with a clear abort condition, then graduate to production with a limited blast radius.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd30-05.py"># The load generator intends to send one request every 10 ms. The server is normally instant,
+# except for one 10-second stall that begins at t = 5 s.
+interval, total_ms, stall_start, stall_end = 10, 20_000, 5_000, 15_000
+def server_latency_at(t):
+    return (stall_end - t) + 1 if stall_start &lt;= t &lt; stall_end else 1          # a request during the stall waits for it to end
+# Closed loop: the client sends the next request only after the previous reply arrives
+closed, t = [], 0
+while t &lt; total_ms:
+    lat = server_latency_at(t); closed.append(lat); t += max(lat, interval)
+# Open loop: requests are issued on schedule whatever the server is doing, like real arriving users
+open_loop = [server_latency_at(t) for t in range(0, total_ms, interval)]
+def pct(xs, p): return sorted(xs)[int(len(xs) * p / 100)]
+print(f"closed loop: {len(closed):&gt;5} samples, p50 {pct(closed, 50)} ms, p99 {pct(closed, 99)} ms")
+print(f"open loop  : {len(open_loop):&gt;5} samples, p50 {pct(open_loop, 50)} ms, p99 {pct(open_loop, 99)} ms")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>closed loop:  1001 samples, p50 1 ms, p99 1 ms
+open loop  :  2000 samples, p50 11 ms, p99 9811 ms</code></pre>
+<p>The closed-loop client recorded the stall as a single slow sample and reported a p99 of about a millisecond, while the open-loop view shows that about half of the planned requests were delayed, with p99 near ten seconds. Real users keep arriving during an outage, so the open-loop number is the honest one.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd30-q07" data-topic="SRE and operations" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is coordinated omission?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A caching bug <span class="q-why">No.</span></li>
+          <li data-key="B">A load tester that waits for slow responses and so under-reports tail latency <span class="q-why">Correct.</span></li>
+          <li data-key="C">A TLS error <span class="q-why">No.</span></li>
+          <li data-key="D">A database lock <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use open-loop load generators to model real arrival rates.</p></div>
+      </div>
+    </section>
+
+    <section id="incident" data-track>
+      <h2>Incident response</h2>
+<p>An <strong>incident</strong> is any event that threatens an SLO. The process:</p>
+<ol><li><strong>Detect</strong> (alert, customer report). <strong>Declare</strong> early; declaring costs little.</li><li><strong>Roles</strong>: <strong>incident commander</strong> (coordinates, decides, does not debug), <strong>operations/tech lead</strong> (investigates and mitigates), <strong>communications lead</strong> (updates stakeholders and status page), <strong>scribe</strong> (timeline).</li><li><strong>Mitigate first, diagnose later</strong>: roll back, fail over, disable a feature flag, shed load, scale out. Restoring service beats finding the root cause.</li><li><strong>Communicate</strong> at a steady cadence with what you know, what you do not, and the next update time.</li><li><strong>Resolve</strong> and verify with the SLI.</li><li><strong>Learn</strong>: blameless postmortem.</li></ol>
+<p>Severity levels (SEV1 to SEV4) set response expectations: SEV1 is customer-visible, broad impact, all hands, exec notification.</p>
+<h3>Debugging method for the on-call</h3>
+<p>Start from <strong>symptoms</strong> to <strong>scope</strong> to <strong>recent change</strong>: What changed? (deploy, flag, config, traffic, dependency, certificate, quota). Compare healthy and unhealthy hosts or regions. Follow a failing request with a <strong>trace id</strong> across services. Use the <strong>RED</strong> method for services (Rate, Errors, Duration) and <strong>USE</strong> for resources (Utilisation, Saturation, Errors). Check dependencies and shared infrastructure (DNS, database, cache, queue) before blaming your own code.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd30-q08" data-topic="SRE and operations" data-type="single" data-answer="B">
+        <div class="q-stem"><p>During an outage, what comes first?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Finding the root cause <span class="q-why">Later.</span></li>
+          <li data-key="B">Mitigating impact (rollback, failover, flag off), then diagnosing <span class="q-why">Correct.</span></li>
+          <li data-key="C">Writing the postmortem <span class="q-why">After resolution.</span></li>
+          <li data-key="D">Assigning blame <span class="q-why">Never.</span></li>
+        </ul>
+        <div class="q-explain"><p>Restore service, then learn why.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name the incident roles.</summary><div class="answer"><p>Incident commander, operations lead, communications lead and scribe.</p></div></details>
+      </div>
+    </section>
+
+    <section id="postmortem" data-track>
+      <h2>Blameless postmortems</h2>
+<p>The aim is learning, not blame: people act reasonably given what they knew, so look for <strong>systemic causes</strong> (missing guardrails, unclear ownership, poor alerts). A good postmortem has: summary and impact (users, duration, SLO burn), timeline with timestamps, <strong>contributing factors</strong> (not a single root cause), what went well, what went badly, where we got lucky, and <strong>action items</strong> with owners and dates, prioritised and tracked.</p>
+<p>Use "five whys" carefully: ask until you reach a fixable process or design gap, not a person. Follow up: unfinished action items are the most common reason incidents repeat.</p>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What makes a postmortem blameless?</summary><div class="answer"><p>It examines systemic causes and contributing factors rather than individuals, so people report honestly and fixes address the system.</p></div></details>
+      </div>
+    </section>
+
+    <section id="toil" data-track>
+      <h2>Toil, automation and runbooks</h2>
+<p><strong>Toil</strong> is manual, repetitive, automatable work that scales with the service and has no lasting value (restarting a process, hand-running a migration). SRE teams cap toil (often 50% of time) and automate the rest. Write <strong>runbooks</strong>: for each alert, what it means, how to confirm, the first mitigation steps, who to escalate to. Link the runbook from the alert. Prefer <strong>self-healing</strong> (automatic restarts, autoscaling, traffic shifting) but keep humans in the loop for risky actions.</p>
+    </section>
+
+    <section id="readiness" data-track>
+      <h2>Operational readiness checklist</h2>
+<ul><li>SLIs and SLOs defined; dashboards and alerts follow them; burn-rate alerts configured.</li><li>Health checks, timeouts, retries with backoff, circuit breakers, load shedding, graceful degradation.</li><li>Capacity headroom for N+1; autoscaling tested; quotas and limits known (also in dependencies).</li><li>Backups verified by <strong>restoring</strong>; disaster recovery rehearsed.</li><li>Deployments gradual with automatic rollback; feature flags for kill switches.</li><li>On-call rotation, escalation paths, runbooks, status page and communication templates.</li><li>Logs, metrics and traces with correlation ids; retention and cost controlled.</li><li>Security: patch process, secret rotation, access reviews, audit logs.</li></ul>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Define reliability with SLOs and an error budget, alert on burn rate, keep utilisation well below saturation, test failures on purpose, mitigate before diagnosing, and learn from incidents with blameless postmortems whose action items actually get done.</p></div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: SRE and operations</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="SRE and operations">
+<details class="recall iq" data-level="basic" data-topic="SRE and operations"><summary><span class="tag ok">Basic</span> SLI, SLO and SLA?</summary><div class="answer"><p>SLI is the measured indicator, SLO the internal target for it, SLA the contractual promise with penalties.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="SRE and operations"><summary><span class="tag ok">Basic</span> What is an error budget?</summary><div class="answer"><p>The allowed unreliability, 1 minus the SLO. If budget remains you can ship risky changes; when exhausted you prioritise reliability work.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SRE and operations"><summary><span class="tag warn">Medium</span> How many minutes of downtime does 99.9% allow per 30 days?</summary><div class="answer"><p>About 43 minutes (0.1% of 43,200 minutes).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SRE and operations"><summary><span class="tag warn">Medium</span> What is burn rate and how do you alert on it?</summary><div class="answer"><p>Error rate divided by the allowed error rate. Page when a high burn rate is seen over both a long and a short window; ticket for slow burns.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SRE and operations"><summary><span class="tag warn">Medium</span> Why not alert on CPU usage?</summary><div class="answer"><p>It is a cause, not a user-visible symptom; alert on symptoms such as errors and latency, and keep cause metrics for diagnosis.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SRE and operations"><summary><span class="tag warn">Medium</span> Why keep utilisation around 60 to 70%?</summary><div class="answer"><p>Queueing delay rises sharply near saturation and you need headroom for spikes and failures.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SRE and operations"><summary><span class="tag warn">Medium</span> State Little&#x27;s Law with an example.</summary><div class="answer"><p>Average items in system = arrival rate x average time in system; 2,000 requests/s at 50 ms means about 100 in flight.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SRE and operations"><summary><span class="tag warn">Medium</span> What roles exist during an incident?</summary><div class="answer"><p>Incident commander, operations lead, communications lead and scribe; the commander coordinates rather than debugging.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SRE and operations"><summary><span class="tag warn">Medium</span> What belongs in a blameless postmortem?</summary><div class="answer"><p>Impact, timeline, contributing factors, what went well and badly, and owned, dated action items, without blaming individuals.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SRE and operations"><summary><span class="tag bad">Advanced</span> What is coordinated omission in load testing?</summary><div class="answer"><p>A closed-loop client that waits for slow responses sends fewer requests during stalls, hiding the latency real arriving users would see. Use open-loop arrival schedules.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SRE and operations"><summary><span class="tag bad">Advanced</span> How do you test resilience?</summary><div class="answer"><p>Load, stress, soak and spike tests, failure injection and chaos experiments with a limited blast radius, game days, and canary or shadow traffic for releases.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SRE and operations"><summary><span class="tag bad">Advanced</span> RED versus USE methods?</summary><div class="answer"><p>RED for services: Rate, Errors, Duration. USE for resources: Utilisation, Saturation, Errors.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SRE and operations"><summary><span class="tag bad">Advanced</span> What is toil and how do you handle it?</summary><div class="answer"><p>Manual, repetitive, automatable work that scales with the service. Cap it, automate it and use runbooks and self-healing.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SRE and operations"><summary><span class="tag bad">Advanced</span> How do you plan capacity for a launch?</summary><div class="answer"><p>Forecast demand, load test per-unit capacity, add N+1 or N+2 headroom for failures and deployments, check dependency quotas and plan autoscaling lead time and cost.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd29-web-delivery.html"><span class="dir">Previous</span><span>SD29 Web delivery: HTTP caching, TLS, CDNs, real-time connections and client performance</span></a>
+      <a class="next" href="sd31-case-7.html"><span class="dir">Next</span><span>SD31 Case studies 7: trending topics, food delivery dispatch, online auction, team chat and email</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

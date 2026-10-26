@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD34">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>System design explained simply: analogies, misconceptions and how to say it in an interview | System Design</title>
+<meta name="description" content="Plain-language explanations of the core ideas (scaling, caching, sharding, replication, consistency, queues, load balancing, rate limiting, CAP, consensus and more) using everyday analogies, the common misconceptions, and a short model answer for each.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD34</p>
+      <h1>System design explained simply: analogies, misconceptions and how to say it in an interview</h1>
+      <p class="lede">If you cannot explain an idea simply, you probably do not own it yet. This part restates the guide's big ideas with analogies a non-engineer would follow, points out the mistakes beginners make, and gives you a 30-second spoken answer to practise.</p>
+      <div class="meta"><span class="tag ok">Basic</span><span class="tag warn">Medium</span><span class="tag">~3 hours</span></div>
+    </div>
+
+    <section id="howto" data-track>
+      <h2>How to use this page</h2>
+<p>For each idea read the analogy, check the misconception, then cover the page and say the <strong>30-second answer</strong> aloud. A good interview answer has three beats: <strong>what it is</strong>, <strong>why it exists (the problem)</strong>, <strong>the trade-off</strong>.</p>
+    </section>
+
+    <section id="scaling" data-track>
+      <h2>Scaling and load</h2>
+<h3>Vertical versus horizontal scaling</h3>
+<p><strong>Analogy</strong>: a restaurant that is too busy. <em>Vertical</em>: replace the cook with a faster, stronger cook (limited, and expensive). <em>Horizontal</em>: hire more cooks and add more stoves (cheaper per unit, but now you need someone to hand out orders and keep the menu consistent). <strong>Misconception</strong>: "horizontal is always better". It adds coordination problems (load balancing, shared state, distributed failures). A single big machine is simpler and often enough. <strong>30-second answer</strong>: "Vertical scaling makes one machine bigger; it is simple but capped and a single point of failure. Horizontal scaling adds machines behind a load balancer, which gives near-unlimited capacity and redundancy, but requires stateless services or partitioned state."</p>
+<h3>Load balancer</h3>
+<p><strong>Analogy</strong>: the host at a restaurant who seats each new party at a table with free space, and stops seating people at a table where the waiter has vanished (health check). <strong>Misconception</strong>: "the load balancer is a single point of failure only if it breaks"; it is, so run at least two (active/standby or anycast). <strong>Answer</strong>: "It spreads requests over healthy servers using a policy such as round robin or least connections, removes failed servers using health checks, and can terminate TLS."</p>
+<h3>Stateless services</h3>
+<p><strong>Analogy</strong>: a bank teller who does not remember you; you bring your account number and the bank's computers know the rest. Any teller can serve you. <strong>Why it matters</strong>: if servers keep user state in memory, you must always send the same user to the same server (sticky sessions), and a crash loses the state. Keep state in a database or cache so any server can handle any request.</p>
+<h3>Throughput versus latency</h3>
+<p><strong>Analogy</strong>: a motorway. Latency is how long one car takes from A to B; throughput is how many cars pass per hour. Adding lanes raises throughput but does not make any car faster. <strong>Misconception</strong>: optimising average latency. Users feel the <strong>slowest</strong> requests, so watch p99.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd34-q01" data-topic="Explained simply" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the key requirement to scale a service horizontally behind a load balancer?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Bigger servers <span class="q-why">That is vertical.</span></li>
+          <li data-key="B">Keeping per-user state out of server memory (stateless or externalised state) <span class="q-why">Correct.</span></li>
+          <li data-key="C">A faster network only <span class="q-why">No.</span></li>
+          <li data-key="D">Using UDP <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Any server must be able to handle any request.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Give the three-beat structure of an interview answer.</summary><div class="answer"><p>What it is, the problem it solves, and the trade-off.</p></div></details>
+      </div>
+    </section>
+
+    <section id="data" data-track>
+      <h2>Data and storage</h2>
+<h3>Index</h3>
+<p><strong>Analogy</strong>: the index at the back of a textbook: instead of reading every page to find "photosynthesis", look it up and jump to the page. It costs space and must be updated whenever the book changes. <strong>Misconception</strong>: "add an index to every column". Each index slows writes and uses memory; add them for real queries.</p>
+<h3>Replication</h3>
+<p><strong>Analogy</strong>: keeping photocopies of an important document in different buildings. If one burns, you still have a copy; but when you edit the original you must update the copies, and for a moment they differ (replication lag). <strong>Answer</strong>: "Copies of data on several nodes for availability and read scaling. The leader takes writes and followers copy them; the price is lag and the question of what to do when the leader fails."</p>
+<h3>Sharding (partitioning)</h3>
+<p><strong>Analogy</strong>: a library that splits books across rooms by the first letter of the author's name. Each room is smaller and quicker to search, but finding books across several rooms (joins, ranges) is harder, and the "S" room might be much busier than the "X" room (hot shard). <strong>Misconception</strong>: sharding and replication are the same. <strong>Replication copies the same data; sharding splits different data.</strong> Real systems do both.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd34-01.py">import hashlib
+def shard_for(key, n): return int(hashlib.md5(key.encode()).hexdigest(), 16) % n
+keys = [f"user{i}" for i in range(10_000)]
+before = {k: shard_for(k, 4) for k in keys}
+after = {k: shard_for(k, 5) for k in keys}
+moved = sum(before[k] != after[k] for k in keys)
+print(f"mod-N hashing: adding a 5th shard moves {moved / len(keys):.0%} of all keys (that is why consistent hashing exists)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>mod-N hashing: adding a 5th shard moves 80% of all keys (that is why consistent hashing exists)</code></pre>
+<h3>Consistent hashing</h3>
+<p><strong>Analogy</strong>: guests sit around a circular table; each person serves the dishes in front of them up to the next person. When a new person sits down, they take over only the dishes between them and their neighbour; nobody else's food moves. <strong>Answer</strong>: "Place nodes and keys on a hash ring; each key belongs to the next node clockwise. Adding or removing a node moves only about 1/N of the keys, unlike modulo hashing which reshuffles almost everything. Virtual nodes even out the load."</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd34-02.py">import bisect, hashlib
+h = lambda s: int(hashlib.md5(s.encode()).hexdigest(), 16)
+def build_ring(nodes, vnodes=100): return sorted((h(f"{n}#{v}"), n) for n in nodes for v in range(vnodes))
+def owner(ring, key):
+    hashes = [x[0] for x in ring]
+    return ring[bisect.bisect(hashes, h(key)) % len(ring)][1]
+keys = [f"user{i}" for i in range(10_000)]
+r4, r5 = build_ring(["A", "B", "C", "D"]), build_ring(["A", "B", "C", "D", "E"])
+moved = sum(owner(r4, k) != owner(r5, k) for k in keys)
+print(f"consistent hashing: adding a 5th node moves {moved / len(keys):.0%} of keys (ideal is 20%)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>consistent hashing: adding a 5th node moves 19% of keys (ideal is 20%)</code></pre>
+<h3>Caching</h3>
+<p><strong>Analogy</strong>: keeping the books you read most on your desk instead of walking to the library each time. Fast, small, and sometimes out of date. <strong>Two hard things</strong>: deciding <strong>what to evict</strong> when the desk is full, and deciding <strong>when a copy is stale</strong>. <strong>Misconception</strong>: "caching always helps". It helps when the same data is read often and can be slightly stale; it adds bugs when data changes frequently or must be exactly right.</p>
+<h3>SQL versus NoSQL</h3>
+<p><strong>Analogy</strong>: SQL is a well-organised filing cabinet with strict forms, cross-references and a clerk who guarantees consistency. NoSQL stores are specialised: a coat-check ticket system (key-value), a folder per customer (document), a conveyor belt for huge volumes (wide-column). <strong>Misconception</strong>: "NoSQL scales, SQL does not". Both can scale; they trade features differently. Start with a relational database and move parts out when a measured need appears.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd34-q02" data-topic="Explained simply" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the difference between sharding and replication?</p></div>
+        <ul class="q-options">
+          <li data-key="A">None <span class="q-why">No.</span></li>
+          <li data-key="B">Sharding splits different data across nodes; replication copies the same data to several nodes <span class="q-why">Correct.</span></li>
+          <li data-key="C">Sharding is for reads only <span class="q-why">No.</span></li>
+          <li data-key="D">Replication splits data <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Real systems combine both.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd34-q03" data-topic="Explained simply" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why does modulo hashing cause trouble when a node is added?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is slow <span class="q-why">No.</span></li>
+          <li data-key="B">Nearly all keys map to a different node, causing a mass cache miss or data move <span class="q-why">Correct.</span></li>
+          <li data-key="C">It uses too much memory <span class="q-why">No.</span></li>
+          <li data-key="D">It cannot hash strings <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Consistent hashing moves only about 1/N of the keys.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why use virtual nodes in consistent hashing?</summary><div class="answer"><p>They spread each physical node across many ring positions, evening out the load and the data moved on changes.</p></div></details>
+      </div>
+    </section>
+
+    <section id="consistency" data-track>
+      <h2>Consistency and reliability</h2>
+<h3>CAP theorem</h3>
+<p><strong>Analogy</strong>: two bank branches whose phone line breaks. A customer wants to withdraw. The branch can (a) refuse until it can talk to the other branch (consistent, but unavailable), or (b) allow it and reconcile later (available, but possibly overdrawn). <strong>Misconception</strong>: "pick any two of three". Partitions will happen; the real choice is between consistency and availability <strong>during</strong> one.</p>
+<h3>Eventual consistency</h3>
+<p><strong>Analogy</strong>: gossip in an office. Tell one person a secret and soon everyone knows, but for a short while some people have not heard it yet. <strong>Good for</strong>: likes, view counts, feeds. <strong>Bad for</strong>: money, stock counts, unique usernames.</p>
+<h3>Idempotency</h3>
+<p><strong>Analogy</strong>: pressing the lift button repeatedly. The lift still comes once. Pressing "pay" twice should not charge twice; that is why payments carry an idempotency key. <strong>Answer</strong>: "An operation is idempotent when repeating it has the same effect as doing it once. It lets clients retry safely after timeouts, which are unavoidable in distributed systems."</p>
+<h3>Retries, backoff and jitter</h3>
+<p><strong>Analogy</strong>: a crowd all calling a restaurant that is full, redialling every second, keeps the line jammed. If everyone waits longer after each failed call, and waits a random amount, the line clears.</p>
+<h3>Circuit breaker</h3>
+<p><strong>Analogy</strong>: the fuse in your house. When a dependency keeps failing, stop calling it for a while (open the circuit) so you fail fast and give it time to recover, then test with a few calls (half-open).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd34-03.py">import random
+random.seed(2)
+def storm(clients, backoff, jitter):
+    load = {}
+    for _ in range(clients):
+        t = backoff * (random.random() if jitter else 1)
+        load[round(t, 1)] = load.get(round(t, 1), 0) + 1
+    return max(load.values())
+print("1000 clients all retry after 2 s:", storm(1000, 2, False), "requests land in the same instant")
+print("with random jitter over 2 s:      ", storm(1000, 2, True), "requests in the busiest 0.1 s slot")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>1000 clients all retry after 2 s: 1000 requests land in the same instant
+with random jitter over 2 s:       63 requests in the busiest 0.1 s slot</code></pre>
+<h3>Replication lag and read-your-writes</h3>
+<p><strong>Analogy</strong>: you post a comment, refresh, and it is gone, because your refresh hit a follower that has not received it yet. Fix: for a short time after a write, read from the leader (or from where you wrote).</p>
+<h3>Consensus (Raft, Paxos)</h3>
+<p><strong>Analogy</strong>: a committee that needs a majority vote before any decision is final, so two rival committees can never both decide. If the chair disappears, members elect a new one. <strong>Answer</strong>: "Nodes agree on a sequence of decisions using majority votes, so that any two majorities overlap and conflicting decisions are impossible. It is used for leader election, locks and replicated configuration, not for bulk data."</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd34-q04" data-topic="Explained simply" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which fits 'eventual consistency' best?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A bank balance <span class="q-why">Needs strong consistency.</span></li>
+          <li data-key="B">A like counter on a social post <span class="q-why">Correct.</span></li>
+          <li data-key="C">Seat reservations <span class="q-why">Needs strong consistency.</span></li>
+          <li data-key="D">Passwords <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Brief staleness is harmless there.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd34-q05" data-topic="Explained simply" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why add jitter to retries?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To make clients slower <span class="q-why">No.</span></li>
+          <li data-key="B">So many clients do not retry in the same instant and overload the recovering service <span class="q-why">Correct.</span></li>
+          <li data-key="C">To avoid TLS <span class="q-why">No.</span></li>
+          <li data-key="D">To change the HTTP verb <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Random delays spread the retry load.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Explain CAP with an analogy.</summary><div class="answer"><p>Two bank branches with a broken phone line must either refuse transactions (consistent) or allow them and reconcile later (available).</p></div></details>
+      </div>
+    </section>
+
+    <section id="communication" data-track>
+      <h2>Communication</h2>
+<h3>Queue</h3>
+<p><strong>Analogy</strong>: a ticket rail in a kitchen. Waiters (producers) clip tickets; cooks (consumers) take them at their own pace. If lunch rush hits, tickets pile up instead of crashing the kitchen. <strong>Why use it</strong>: absorb bursts, decouple teams, retry failures. <strong>Cost</strong>: delay, duplicate delivery, harder debugging.</p>
+<h3>Pub/sub versus queue versus log</h3>
+<ul><li><strong>Queue</strong>: each message goes to <strong>one</strong> worker; once handled it is gone (a to-do list).</li><li><strong>Pub/sub</strong>: each message goes to <strong>every</strong> subscriber (a newsletter).</li><li><strong>Log (Kafka)</strong>: an ordered notebook many readers can replay from any page (a ledger).</li></ul>
+<h3>Rate limiting</h3>
+<p><strong>Analogy</strong>: a nightclub bouncer admitting a fixed number per minute so the dance floor does not get dangerously crowded. A <strong>token bucket</strong> lets a burst through if people saved up tokens, then enforces the long-run rate.</p>
+<h3>API gateway</h3>
+<p><strong>Analogy</strong>: a hotel reception desk: guests deal with one desk, which checks identity, forwards requests to the right department and refuses suspicious people.</p>
+<h3>Microservices</h3>
+<p><strong>Analogy</strong>: instead of one chef who makes everything, a team of specialists (grill, pastry, salads) who each own a station. Faster teams and independent scaling, but now you need good communication, and a missing pastry chef can ruin a dinner. <strong>Misconception</strong>: "microservices are modern, so use them". Start with a well-structured monolith; split when team size, scaling or release cadence demand it.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd34-q06" data-topic="Explained simply" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which messaging model delivers each message to every subscriber?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Queue <span class="q-why">One consumer.</span></li>
+          <li data-key="B">Pub/sub <span class="q-why">Correct.</span></li>
+          <li data-key="C">Cache <span class="q-why">No.</span></li>
+          <li data-key="D">Load balancer <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Queues compete for messages; subscribers each get a copy.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>When should you not use microservices?</summary><div class="answer"><p>For small teams or early products, where a modular monolith is simpler and faster to build and operate.</p></div></details>
+      </div>
+    </section>
+
+    <section id="operations" data-track>
+      <h2>Operating systems in production</h2>
+<h3>Observability</h3>
+<p><strong>Analogy</strong>: the dashboard, warning lights and black box of an aircraft. <strong>Metrics</strong> tell you something is wrong, <strong>logs</strong> tell you what happened, <strong>traces</strong> show where the time went across the whole journey.</p>
+<h3>SLO and error budget</h3>
+<p><strong>Analogy</strong>: a delivery company promises 99% on-time. The 1% late deliveries is a <em>budget</em>: if you are well within it you can try new routes; if you have spent it, stop experimenting and fix reliability.</p>
+<h3>Blue-green and canary deploys</h3>
+<p><strong>Analogy</strong>: <em>blue-green</em> builds a second, identical restaurant next door and moves all customers across at once (instant swap back if the food is bad). <em>Canary</em> sends a few customers first to taste the new menu before everyone else.</p>
+<h3>Backups versus replication</h3>
+<p>Replication copies <strong>mistakes</strong> instantly: if someone deletes a table, the replicas delete it too. <strong>Backups</strong> are point-in-time copies you can restore from. You need both, and you must test restores.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd34-q07" data-topic="Explained simply" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why are backups still needed when you have replication?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Replication is slower <span class="q-why">No.</span></li>
+          <li data-key="B">Replication copies deletions and corruption immediately, backups let you restore an earlier state <span class="q-why">Correct.</span></li>
+          <li data-key="C">Backups are faster <span class="q-why">No.</span></li>
+          <li data-key="D">Replication is optional <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Test restores regularly.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Metrics, logs and traces: what does each answer?</summary><div class="answer"><p>Metrics say that something is wrong, logs say what happened, traces say where the time or failure occurred across services.</p></div></details>
+      </div>
+    </section>
+
+    <section id="numbers" data-track>
+      <h2>Putting numbers on it</h2>
+<p>Back-of-the-envelope maths is simply organised common sense:</p>
+<ol><li>Turn users into a <strong>rate</strong>: <code>daily users x actions per user / 86,400</code> = average per second; multiply by 2 to 5 for the peak.</li><li>Turn the rate into <strong>machines</strong>: peak per second divided by what one server handles.</li><li>Turn a rate and an item size into <strong>storage</strong>: <code>writes per day x bytes x retention days</code>.</li><li>Turn a rate and a size into <strong>bandwidth</strong>: <code>requests per second x bytes x 8</code> bits.</li></ol>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd34-04.py">users, actions_per_user, bytes_each = 100_000_000, 5, 2_000
+per_second = users * actions_per_user / 86_400
+print(f"average {per_second:,.0f} requests/s, peak (x3) about {per_second * 3:,.0f}/s")
+print(f"storage per year: {users * actions_per_user * bytes_each * 365 / 1e12:,.0f} TB | bandwidth at peak: {per_second * 3 * bytes_each * 8 / 1e9:.1f} Gbit/s")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>average 5,787 requests/s, peak (x3) about 17,361/s
+storage per year: 365 TB | bandwidth at peak: 0.3 Gbit/s</code></pre>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Each design idea exists to solve one specific pain: capacity (scale out), speed (cache, index), safety (replicate, back up), coordination (consensus, idempotency), and bursts (queues, rate limits). When explaining, name the pain first, then the tool, then what it costs.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd34-q08" data-topic="Explained simply" data-type="numeric" data-answer="6" data-tol="0">
+        <div class="q-stem"><p>100M users x 5 actions per day gives about how many average requests per second (in thousands, rounded)?</p></div>
+        <div class="q-explain"><p>500M / 86,400 is about 5,787, i.e. about 6 thousand.</p></div>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Explained simply</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Explained simply">
+<details class="recall iq" data-level="basic" data-topic="Explained simply"><summary><span class="tag ok">Basic</span> Explain sharding to a non-engineer.</summary><div class="answer"><p>Like splitting a library&#x27;s books across rooms by author name: each room is smaller and faster to search, but finding things across rooms is harder and some rooms get busier.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Explained simply"><summary><span class="tag ok">Basic</span> Explain caching in one analogy.</summary><div class="answer"><p>Keeping the books you use most on your desk instead of walking to the library; fast, small and sometimes out of date.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Explained simply"><summary><span class="tag ok">Basic</span> What is the difference between replication and sharding?</summary><div class="answer"><p>Replication copies the same data to several nodes for safety and read capacity; sharding splits different data across nodes for capacity.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Explained simply"><summary><span class="tag ok">Basic</span> Explain a load balancer.</summary><div class="answer"><p>A host who seats each party at a table with space and stops seating at tables without a waiter.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Explained simply"><summary><span class="tag warn">Medium</span> Explain CAP with an analogy.</summary><div class="answer"><p>Two bank branches with a broken phone line must either refuse withdrawals until they can talk (consistent) or allow them and reconcile later (available).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Explained simply"><summary><span class="tag warn">Medium</span> Explain consistent hashing in plain words.</summary><div class="answer"><p>Servers and keys are placed on a circle; each key belongs to the next server clockwise, so adding a server moves only the keys between it and its neighbour.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Explained simply"><summary><span class="tag warn">Medium</span> Why do we need idempotency?</summary><div class="answer"><p>Retries after timeouts are unavoidable, and repeating a non-idempotent action such as payment would duplicate its effect.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Explained simply"><summary><span class="tag warn">Medium</span> Explain a queue versus pub/sub versus a log.</summary><div class="answer"><p>A queue gives each message to one worker, pub/sub gives it to every subscriber, a log keeps an ordered history many readers can replay.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Explained simply"><summary><span class="tag warn">Medium</span> Why are backups needed in addition to replication?</summary><div class="answer"><p>Replication faithfully copies mistakes such as deletes and corruption; backups give a point-in-time state to restore.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Explained simply"><summary><span class="tag warn">Medium</span> Why is p99 more useful than the average?</summary><div class="answer"><p>Users and fan-out requests experience the slow tail; averages hide it.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Explained simply"><summary><span class="tag bad">Advanced</span> How do you explain a trade-off to an interviewer?</summary><div class="answer"><p>Name the pain, the tool that addresses it, what it costs, and the condition under which you would choose differently.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Explained simply"><summary><span class="tag bad">Advanced</span> When is a monolith the better choice?</summary><div class="answer"><p>For small teams and early products where a modular monolith is simpler to build, test, deploy and debug; split into services when scale, team or release independence demand it.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Explained simply"><summary><span class="tag bad">Advanced</span> Explain eventual consistency and where it is not acceptable.</summary><div class="answer"><p>Replicas converge if updates stop, fine for likes and feeds; unacceptable for money, inventory counts and uniqueness constraints without extra coordination.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Explained simply"><summary><span class="tag bad">Advanced</span> Give the back-of-the-envelope recipe.</summary><div class="answer"><p>Convert users into per-second rates, rates into servers, rates times size into storage and bandwidth, and state assumptions and peak factors explicitly.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd33-search-data-modelling.html"><span class="dir">Previous</span><span>SD33 Search internals and data modelling patterns: inverted indexes, BM25, multi-tenancy and time series</span></a>
+      <a class="next" href="interview-questions.html"><span class="dir">Next</span><span>IQ Interview question bank</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

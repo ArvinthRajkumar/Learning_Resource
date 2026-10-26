@@ -13,7 +13,7 @@ window.LR_RESOURCE = {
     { id: "D3", file: "d3-how-diffusion-works.html", title: "Phase 2: How diffusion works", sections: 20 },
     { id: "D4", file: "d4-writing-the-code.html", title: "Phase 3: Writing the code", sections: 14 },
     { id: "D5", file: "d5-making-it-good.html", title: "Phase 4: Making it good", sections: 11 },
-    { id: "D7", file: "d7-interview-questions.html", title: "Interview question bank", sections: 13 },
+    { id: "D7", file: "d7-interview-questions.html", title: "Interview question bank", sections: 17 },
     { id: "D8", file: "d8-practice-quiz.html", title: "Practice quiz (34 questions)", sections: 1 },
     { id: "D9", file: "d9-cheat-sheet.html", title: "Cheat sheet (printable)", sections: 1 },
     { id: "D6", file: "d6-glossary.html", title: "Full glossary, A to Z", sections: 1 },
@@ -23,7 +23,11 @@ window.LR_RESOURCE = {
     { id: "DX4", file: "dx4-control.html", title: "Fine-tuning and control: LoRA, DreamBooth, ControlNet, inpainting and editing", sections: 7 },
     { id: "DX5", file: "dx5-evaluation.html", title: "Evaluation, data, safety and ethics of image generators", sections: 6 },
     { id: "DX6", file: "dx6-beyond-images.html", title: "Beyond images: video, audio, 3D, science, robotics and discrete diffusion", sections: 9 },
-    { id: "DX7", file: "dx7-training-lab.html", title: "Training lab: a tiny diffusion model, then training at scale", sections: 5 }
+    { id: "DX7", file: "dx7-training-lab.html", title: "Training lab: a tiny diffusion model, then training at scale", sections: 5 },
+    { id: "DX8", file: "dx8-using-diffusers.html", title: "Using pretrained diffusion models in practice: pipelines, schedulers, memory, parameters and workflows", sections: 9 },
+    { id: "DX9", file: "dx9-flows-transformers.html", title: "Flow matching, diffusion transformers and modern architectures: the exact math in one dimension", sections: 7 },
+    { id: "DX10", file: "dx10-data-troubleshooting.html", title: "Data curation and troubleshooting: building image datasets and fixing common diffusion failures", sections: 10 },
+    { id: "DX11", file: "dx11-intuition.html", title: "Diffusion models explained simply: analogies, pictures and plain-language answers", sections: 6 }
   ],
   topics: {
     "Setup": "d1-setup.html",
@@ -40,6 +44,10 @@ window.LR_RESOURCE = {
     "Diffusion control": "dx4-control.html",
     "Diffusion evaluation": "dx5-evaluation.html",
     "Beyond images": "dx6-beyond-images.html",
-    "Training diffusion": "dx7-training-lab.html"
+    "Training diffusion": "dx7-training-lab.html",
+    "Diffusion in practice": "dx8-using-diffusers.html",
+    "Flows and transformers": "dx9-flows-transformers.html",
+    "Data and troubleshooting": "dx10-data-troubleshooting.html",
+    "Intuition guide": "dx11-intuition.html"
   }
 };

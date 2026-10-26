@@ -1866,6 +1866,594 @@
    "level": "advanced",
    "q": "What is a service mesh?",
    "a": "A layer of sidecar proxies that provide mTLS, retries, routing and telemetry for service-to-service calls without changing application code."
+  },
+  {
+   "topic": "Consensus and time",
+   "level": "basic",
+   "q": "Why can't distributed machines rely on wall-clock time to order events?",
+   "a": "Clocks drift and can jump when corrected, so two machines disagree. Ordering by timestamps can drop newer writes; use logical or hybrid clocks, or version vectors."
+  },
+  {
+   "topic": "Consensus and time",
+   "level": "basic",
+   "q": "What is a quorum?",
+   "a": "A majority (or configured number) of replicas that must participate. Any two majorities overlap, so conflicting decisions cannot both succeed."
+  },
+  {
+   "topic": "Consensus and time",
+   "level": "medium",
+   "q": "Explain Lamport clocks.",
+   "a": "Each node keeps a counter, increments it per event, stamps messages, and on receive sets it to max(local, received) + 1. If A happened before B then its stamp is smaller; the reverse does not hold."
+  },
+  {
+   "topic": "Consensus and time",
+   "level": "medium",
+   "q": "What do vector clocks add?",
+   "a": "One counter per node lets you decide whether two versions are ordered or concurrent, which detects true conflicts (as in Dynamo-style stores)."
+  },
+  {
+   "topic": "Consensus and time",
+   "level": "medium",
+   "q": "Describe Raft in three parts.",
+   "a": "Leader election with terms and randomised timeouts, log replication where an entry commits once a majority stores it, and safety rules ensuring only up-to-date candidates win and committed entries are never lost."
+  },
+  {
+   "topic": "Consensus and time",
+   "level": "medium",
+   "q": "Why use odd cluster sizes for consensus?",
+   "a": "Majorities of 2n+1 nodes tolerate n failures; adding one more node (2n+2) needs a larger majority and tolerates no more failures."
+  },
+  {
+   "topic": "Consensus and time",
+   "level": "medium",
+   "q": "What happens in Raft when the leader is partitioned from the majority?",
+   "a": "It cannot commit new entries. The majority side elects a new leader with a higher term; when the partition heals the old leader steps down and its uncommitted entries are discarded."
+  },
+  {
+   "topic": "Consensus and time",
+   "level": "medium",
+   "q": "Why must stale leaders not serve reads blindly?",
+   "a": "A deposed leader may not know it was replaced and return old data. Reads go through the log, use a leader lease with bounded clock drift, or confirm leadership with a quorum."
+  },
+  {
+   "topic": "Consensus and time",
+   "level": "advanced",
+   "q": "State the FLP result and how real systems cope.",
+   "a": "In a fully asynchronous system consensus cannot be guaranteed if even one node may crash. Real protocols assume partial synchrony and use timeouts and randomisation, giving up liveness (not safety) during bad periods."
+  },
+  {
+   "topic": "Consensus and time",
+   "level": "advanced",
+   "q": "Paxos versus Raft?",
+   "a": "Both give consensus with majorities. Paxos separates proposers, acceptors and learners with two phases and is notoriously subtle; Raft decomposes the problem around a strong leader and a replicated log and is easier to implement and teach."
+  },
+  {
+   "topic": "Consensus and time",
+   "level": "advanced",
+   "q": "What is a CRDT and where is it used?",
+   "a": "A data type whose merge is commutative, associative and idempotent so replicas converge without coordination: counters, sets, registers, collaborative text. Used in active-active databases and editors, with limits on enforceable invariants."
+  },
+  {
+   "topic": "Consensus and time",
+   "level": "advanced",
+   "q": "Hybrid logical clocks: what and why?",
+   "a": "They combine physical time with a logical counter so timestamps stay near real time but still respect causality; used by distributed databases to order transactions without special hardware."
+  },
+  {
+   "topic": "Consensus and time",
+   "level": "advanced",
+   "q": "How does gossip detect failures and spread membership?",
+   "a": "Nodes periodically exchange state with random peers so information reaches all nodes in O(log N) rounds; failure detectors such as phi accrual or SWIM turn missed heartbeats into suspicion levels."
+  },
+  {
+   "topic": "Consensus and time",
+   "level": "advanced",
+   "q": "Why does Spanner use atomic clocks?",
+   "a": "TrueTime exposes a bounded uncertainty interval; Spanner waits out the uncertainty before committing so timestamps give external consistency across the globe."
+  },
+  {
+   "topic": "Web delivery",
+   "level": "basic",
+   "q": "What happens when you type a URL and press enter?",
+   "a": "DNS resolves the name, a TCP connection and TLS handshake are made (or reused), the HTTP request is sent through load balancers to a server, which responds; the browser parses and renders, fetching more resources."
+  },
+  {
+   "topic": "Web delivery",
+   "level": "basic",
+   "q": "What does Cache-Control: max-age=3600 mean?",
+   "a": "The response is fresh for an hour and may be reused without contacting the server."
+  },
+  {
+   "topic": "Web delivery",
+   "level": "basic",
+   "q": "What is a CDN?",
+   "a": "A geographically distributed network of caching proxies that serves content from locations near users, reducing latency and origin load."
+  },
+  {
+   "topic": "Web delivery",
+   "level": "medium",
+   "q": "How do ETag and 304 work?",
+   "a": "The server sends an ETag identifying the version; later the client asks conditionally with If-None-Match, and an unchanged resource returns 304 with no body."
+  },
+  {
+   "topic": "Web delivery",
+   "level": "medium",
+   "q": "What is the best caching strategy for static assets?",
+   "a": "Content-hashed file names with long immutable max-age, so changes get new URLs and never need purging, while HTML stays short-lived."
+  },
+  {
+   "topic": "Web delivery",
+   "level": "medium",
+   "q": "Why can caching authenticated pages in a shared cache be dangerous?",
+   "a": "One user may receive another's personalised response. Use private or no-store and correct Vary headers."
+  },
+  {
+   "topic": "Web delivery",
+   "level": "medium",
+   "q": "HTTP/1.1 versus HTTP/2 versus HTTP/3?",
+   "a": "1.1 handles one request per connection at a time; 2 multiplexes streams over one TCP connection with header compression; 3 runs over QUIC (UDP) removing TCP head-of-line blocking and speeding up handshakes."
+  },
+  {
+   "topic": "Web delivery",
+   "level": "medium",
+   "q": "Polling, long polling, SSE and WebSocket: when each?",
+   "a": "Polling for simple low-frequency needs, long polling as a fallback, SSE for one-way server push, WebSocket for bidirectional low-latency messaging."
+  },
+  {
+   "topic": "Web delivery",
+   "level": "medium",
+   "q": "How do you scale WebSocket servers?",
+   "a": "Keep a registry of which gateway holds each user, route messages via pub/sub, load-balance at L4 or WebSocket-aware L7, drain connections on deploy and use jittered reconnects."
+  },
+  {
+   "topic": "Web delivery",
+   "level": "advanced",
+   "q": "What does TLS give you and what is forward secrecy?",
+   "a": "Encryption, integrity and server authentication. Forward secrecy uses ephemeral key exchange so recorded traffic stays secret even if long-term keys leak later."
+  },
+  {
+   "topic": "Web delivery",
+   "level": "advanced",
+   "q": "What is an origin shield and request coalescing?",
+   "a": "A mid-tier cache that collapses many edge misses into one origin request, and coalescing sends a single origin fetch when many users ask for the same uncached object."
+  },
+  {
+   "topic": "Web delivery",
+   "level": "advanced",
+   "q": "How do you improve Largest Contentful Paint?",
+   "a": "Serve HTML fast from the edge, optimise and preload the hero image, inline critical CSS, defer blocking scripts and reduce server response time."
+  },
+  {
+   "topic": "Web delivery",
+   "level": "advanced",
+   "q": "How can DNS be used for traffic management, and what are its limits?",
+   "a": "Geo or latency routing, weighted records and health-checked failover, limited by TTL caching and resolvers that ignore low TTLs, so failover is slow compared with anycast or load balancers."
+  },
+  {
+   "topic": "Web delivery",
+   "level": "advanced",
+   "q": "Why do HTTP caches need Vary?",
+   "a": "Vary lists request headers that change the response (such as Accept-Encoding or language) so the cache key includes them and serves the right variant."
+  },
+  {
+   "topic": "SRE and operations",
+   "level": "basic",
+   "q": "SLI, SLO and SLA?",
+   "a": "SLI is the measured indicator, SLO the internal target for it, SLA the contractual promise with penalties."
+  },
+  {
+   "topic": "SRE and operations",
+   "level": "basic",
+   "q": "What is an error budget?",
+   "a": "The allowed unreliability, 1 minus the SLO. If budget remains you can ship risky changes; when exhausted you prioritise reliability work."
+  },
+  {
+   "topic": "SRE and operations",
+   "level": "medium",
+   "q": "How many minutes of downtime does 99.9% allow per 30 days?",
+   "a": "About 43 minutes (0.1% of 43,200 minutes)."
+  },
+  {
+   "topic": "SRE and operations",
+   "level": "medium",
+   "q": "What is burn rate and how do you alert on it?",
+   "a": "Error rate divided by the allowed error rate. Page when a high burn rate is seen over both a long and a short window; ticket for slow burns."
+  },
+  {
+   "topic": "SRE and operations",
+   "level": "medium",
+   "q": "Why not alert on CPU usage?",
+   "a": "It is a cause, not a user-visible symptom; alert on symptoms such as errors and latency, and keep cause metrics for diagnosis."
+  },
+  {
+   "topic": "SRE and operations",
+   "level": "medium",
+   "q": "Why keep utilisation around 60 to 70%?",
+   "a": "Queueing delay rises sharply near saturation and you need headroom for spikes and failures."
+  },
+  {
+   "topic": "SRE and operations",
+   "level": "medium",
+   "q": "State Little's Law with an example.",
+   "a": "Average items in system = arrival rate x average time in system; 2,000 requests/s at 50 ms means about 100 in flight."
+  },
+  {
+   "topic": "SRE and operations",
+   "level": "medium",
+   "q": "What roles exist during an incident?",
+   "a": "Incident commander, operations lead, communications lead and scribe; the commander coordinates rather than debugging."
+  },
+  {
+   "topic": "SRE and operations",
+   "level": "medium",
+   "q": "What belongs in a blameless postmortem?",
+   "a": "Impact, timeline, contributing factors, what went well and badly, and owned, dated action items, without blaming individuals."
+  },
+  {
+   "topic": "SRE and operations",
+   "level": "advanced",
+   "q": "What is coordinated omission in load testing?",
+   "a": "A closed-loop client that waits for slow responses sends fewer requests during stalls, hiding the latency real arriving users would see. Use open-loop arrival schedules."
+  },
+  {
+   "topic": "SRE and operations",
+   "level": "advanced",
+   "q": "How do you test resilience?",
+   "a": "Load, stress, soak and spike tests, failure injection and chaos experiments with a limited blast radius, game days, and canary or shadow traffic for releases."
+  },
+  {
+   "topic": "SRE and operations",
+   "level": "advanced",
+   "q": "RED versus USE methods?",
+   "a": "RED for services: Rate, Errors, Duration. USE for resources: Utilisation, Saturation, Errors."
+  },
+  {
+   "topic": "SRE and operations",
+   "level": "advanced",
+   "q": "What is toil and how do you handle it?",
+   "a": "Manual, repetitive, automatable work that scales with the service. Cap it, automate it and use runbooks and self-healing."
+  },
+  {
+   "topic": "SRE and operations",
+   "level": "advanced",
+   "q": "How do you plan capacity for a launch?",
+   "a": "Forecast demand, load test per-unit capacity, add N+1 or N+2 headroom for failures and deployments, check dependency quotas and plan autoscaling lead time and cost."
+  },
+  {
+   "topic": "Case studies 7",
+   "level": "basic",
+   "q": "How do you compute trending topics over the last hour?",
+   "a": "Count per minute buckets, maintain the sliding window by adding the new bucket and removing the oldest, keep top-K per partition and merge, and score growth relative to a baseline."
+  },
+  {
+   "topic": "Case studies 7",
+   "level": "medium",
+   "q": "Why use a Count-Min Sketch for trending?",
+   "a": "It tracks approximate frequencies of billions of distinct items in fixed memory with overestimate-only error, paired with a heap for the top items."
+  },
+  {
+   "topic": "Case studies 7",
+   "level": "medium",
+   "q": "Why is greedy nearest-courier matching suboptimal?",
+   "a": "It can use up the only good courier for another order; batched assignment minimises total cost over the group."
+  },
+  {
+   "topic": "Case studies 7",
+   "level": "medium",
+   "q": "What services make up a food-delivery platform?",
+   "a": "Location, order, dispatch, ETA, tracking, payments and notifications, with an event stream connecting them."
+  },
+  {
+   "topic": "Case studies 7",
+   "level": "medium",
+   "q": "How do you prevent two simultaneous auction bids both winning?",
+   "a": "Serialise bids per auction through a single ordered writer or atomic conditional update that checks the current highest bid and increment."
+  },
+  {
+   "topic": "Case studies 7",
+   "level": "medium",
+   "q": "What is anti-sniping?",
+   "a": "Extending the end time when a bid arrives near the end, so others can respond."
+  },
+  {
+   "topic": "Case studies 7",
+   "level": "advanced",
+   "q": "How does Slack-style chat avoid per-member fan-out?",
+   "a": "Gateways subscribe to channels for their connected users, so one publish reaches each gateway with an interested user; offline users read from the log and unread counts are last-read pointers."
+  },
+  {
+   "topic": "Case studies 7",
+   "level": "advanced",
+   "q": "Why store the last read message id instead of read flags?",
+   "a": "One small pointer per user per channel replaces millions of per-message rows, and unread is latest id minus pointer."
+  },
+  {
+   "topic": "Case studies 7",
+   "level": "advanced",
+   "q": "How does presence scale for large channels?",
+   "a": "Heartbeats with TTL in a fast store, broadcasting changes only to interested peers in batches, and not showing presence for huge channels."
+  },
+  {
+   "topic": "Case studies 7",
+   "level": "medium",
+   "q": "How does email delivery handle failures?",
+   "a": "Store-and-forward queues with retries and backoff on temporary (4xx) errors for days and bounces on permanent (5xx) errors."
+  },
+  {
+   "topic": "Case studies 7",
+   "level": "medium",
+   "q": "What are SPF, DKIM and DMARC?",
+   "a": "SPF lists servers allowed to send for a domain, DKIM signs messages with the domain's key, and DMARC sets policy and reporting based on both."
+  },
+  {
+   "topic": "Case studies 7",
+   "level": "advanced",
+   "q": "How would you design the ETA service?",
+   "a": "Prep time plus courier-to-restaurant plus restaurant-to-customer travel from a road graph with live traffic, corrected by a model trained on historical delivery outcomes."
+  },
+  {
+   "topic": "Case studies 7",
+   "level": "advanced",
+   "q": "How do you handle a courier who stops sending location?",
+   "a": "Mark the courier stale after missed pings, alert the customer if needed, and re-dispatch the order."
+  },
+  {
+   "topic": "Case studies 7",
+   "level": "advanced",
+   "q": "How would you detect bidding fraud?",
+   "a": "Pattern analysis of bidder-seller relationships, new account behaviour, bid timing and retractions, plus payment verification for high-value items."
+  },
+  {
+   "topic": "Client and mobile design",
+   "level": "basic",
+   "q": "What does offline-first mean?",
+   "a": "The UI reads from a local database and writes locally first, and a sync engine reconciles with the server in the background."
+  },
+  {
+   "topic": "Client and mobile design",
+   "level": "basic",
+   "q": "Why queue actions with client-generated ids?",
+   "a": "So retries after timeouts are idempotent and duplicates are ignored by the server."
+  },
+  {
+   "topic": "Client and mobile design",
+   "level": "medium",
+   "q": "How do you sync after being offline for days?",
+   "a": "Use a cursor or sequence token to fetch changes in pages, apply tombstones for deletes, and fall back to a full resync if the token is too old."
+  },
+  {
+   "topic": "Client and mobile design",
+   "level": "medium",
+   "q": "Why are tombstones needed?",
+   "a": "Without them an offline device cannot learn about a deletion and may push the old item back."
+  },
+  {
+   "topic": "Client and mobile design",
+   "level": "medium",
+   "q": "How do you resolve conflicting offline edits?",
+   "a": "Choose by data meaning: last write wins for trivial fields, field-level three-way merge, operation-based merge for counters and lists, CRDTs for collaboration, or ask the user."
+  },
+  {
+   "topic": "Client and mobile design",
+   "level": "medium",
+   "q": "Why can't you rely on push notifications for correctness?",
+   "a": "Delivery is best effort and can be delayed, dropped or throttled; the app must be able to fetch the data itself."
+  },
+  {
+   "topic": "Client and mobile design",
+   "level": "medium",
+   "q": "How would you upload a large video from a phone?",
+   "a": "Resumable chunked upload directly to object storage with a pre-signed URL, verify checksums, then process asynchronously."
+  },
+  {
+   "topic": "Client and mobile design",
+   "level": "medium",
+   "q": "What is adaptive bitrate streaming?",
+   "a": "Video is transcoded into several renditions and cut into short segments; the player picks a rendition each segment based on measured throughput."
+  },
+  {
+   "topic": "Client and mobile design",
+   "level": "advanced",
+   "q": "How do you design the API to support old app versions?",
+   "a": "Version the API, add only optional fields, ignore unknown fields, keep behaviour for minimum supported versions, use feature flags and force upgrades only as a last resort."
+  },
+  {
+   "topic": "Client and mobile design",
+   "level": "advanced",
+   "q": "How do you reduce battery drain from networking?",
+   "a": "Batch requests, avoid polling, use push and OS-scheduled background work, compress, and respect low-power and data-saver modes."
+  },
+  {
+   "topic": "Client and mobile design",
+   "level": "advanced",
+   "q": "How do you handle token storage and refresh on mobile?",
+   "a": "Store tokens in the keychain or keystore, use short-lived access tokens with rotating refresh tokens, and handle revocation gracefully."
+  },
+  {
+   "topic": "Client and mobile design",
+   "level": "advanced",
+   "q": "How do you prevent out-of-memory crashes from images?",
+   "a": "Request right-sized images from a resizing CDN, downsample bitmaps to view size, use bounded memory and disk caches, and avoid holding full-size decoded images."
+  },
+  {
+   "topic": "Client and mobile design",
+   "level": "advanced",
+   "q": "What metrics matter for mobile client observability?",
+   "a": "Startup time, frame drops, crash-free sessions, network failures by connection type, API latency from the client and battery impact."
+  },
+  {
+   "topic": "Client and mobile design",
+   "level": "advanced",
+   "q": "How do silent pushes and background sync interact?",
+   "a": "A data push can wake the app to sync, but the OS throttles frequency and execution time, so the app must tolerate missed or delayed wake-ups."
+  },
+  {
+   "topic": "Search and data modelling",
+   "level": "basic",
+   "q": "What is an inverted index?",
+   "a": "A mapping from each term to the documents (and positions) that contain it, so queries intersect postings lists instead of scanning text."
+  },
+  {
+   "topic": "Search and data modelling",
+   "level": "basic",
+   "q": "What is text analysis in search?",
+   "a": "Tokenising and normalising text (lowercase, stop words, stemming, synonyms) the same way at index and query time."
+  },
+  {
+   "topic": "Search and data modelling",
+   "level": "medium",
+   "q": "Explain TF-IDF and BM25.",
+   "a": "TF rewards terms frequent in a document, IDF rewards terms rare across the corpus. BM25 adds saturating term frequency and document length normalisation with parameters k1 and b."
+  },
+  {
+   "topic": "Search and data modelling",
+   "level": "medium",
+   "q": "How does a distributed search query execute?",
+   "a": "Scatter to all shards, each returns local top-k with scores, and the coordinator merges them; replicas add availability and throughput."
+  },
+  {
+   "topic": "Search and data modelling",
+   "level": "medium",
+   "q": "Why is search eventually consistent with the primary database?",
+   "a": "Updates flow asynchronously through CDC or a queue and become visible after the next refresh; the database remains the source of truth."
+  },
+  {
+   "topic": "Search and data modelling",
+   "level": "medium",
+   "q": "How would you implement autocomplete?",
+   "a": "A trie or edge n-gram index keyed by prefix, with candidates ranked by popularity and recency, cached and updated from query logs."
+  },
+  {
+   "topic": "Search and data modelling",
+   "level": "medium",
+   "q": "How do you add typo tolerance?",
+   "a": "Fuzzy matching with edit distance via automata or n-gram candidates, phonetic algorithms for names, and query suggestions from term statistics."
+  },
+  {
+   "topic": "Search and data modelling",
+   "level": "medium",
+   "q": "Compare multi-tenancy models.",
+   "a": "Shared tables with tenant_id are cheapest but need strict filtering; schema per tenant and database per tenant increase isolation and cost; cells or hybrids group tenants by size."
+  },
+  {
+   "topic": "Search and data modelling",
+   "level": "medium",
+   "q": "Hierarchy storage patterns?",
+   "a": "Adjacency list (parent_id), materialised path, nested sets and closure table, trading read simplicity, subtree queries and move cost."
+  },
+  {
+   "topic": "Search and data modelling",
+   "level": "advanced",
+   "q": "How do you reindex without downtime?",
+   "a": "Build a new index with the new analyser in parallel, replay or backfill data, keep it updated, then switch an alias atomically."
+  },
+  {
+   "topic": "Search and data modelling",
+   "level": "advanced",
+   "q": "Why is deep pagination expensive in search?",
+   "a": "Each shard must compute and return all results up to the offset; use search_after cursors or cap the depth."
+  },
+  {
+   "topic": "Search and data modelling",
+   "level": "advanced",
+   "q": "How do you model time-series data?",
+   "a": "Partition by time, key by series and time, downsample with rollups and retention tiers, and control label cardinality."
+  },
+  {
+   "topic": "Search and data modelling",
+   "level": "advanced",
+   "q": "How do you make schema changes with no downtime?",
+   "a": "Expand and contract: add compatible structure, dual write, backfill in batches, switch reads, then remove the old structure."
+  },
+  {
+   "topic": "Search and data modelling",
+   "level": "advanced",
+   "q": "Soft delete trade-offs?",
+   "a": "Recoverability and auditing versus polluted queries, broken unique constraints (use partial indexes) and legal deletion duties; purge on a schedule or use crypto-shredding."
+  },
+  {
+   "topic": "Explained simply",
+   "level": "basic",
+   "q": "Explain sharding to a non-engineer.",
+   "a": "Like splitting a library's books across rooms by author name: each room is smaller and faster to search, but finding things across rooms is harder and some rooms get busier."
+  },
+  {
+   "topic": "Explained simply",
+   "level": "basic",
+   "q": "Explain caching in one analogy.",
+   "a": "Keeping the books you use most on your desk instead of walking to the library; fast, small and sometimes out of date."
+  },
+  {
+   "topic": "Explained simply",
+   "level": "basic",
+   "q": "What is the difference between replication and sharding?",
+   "a": "Replication copies the same data to several nodes for safety and read capacity; sharding splits different data across nodes for capacity."
+  },
+  {
+   "topic": "Explained simply",
+   "level": "basic",
+   "q": "Explain a load balancer.",
+   "a": "A host who seats each party at a table with space and stops seating at tables without a waiter."
+  },
+  {
+   "topic": "Explained simply",
+   "level": "medium",
+   "q": "Explain CAP with an analogy.",
+   "a": "Two bank branches with a broken phone line must either refuse withdrawals until they can talk (consistent) or allow them and reconcile later (available)."
+  },
+  {
+   "topic": "Explained simply",
+   "level": "medium",
+   "q": "Explain consistent hashing in plain words.",
+   "a": "Servers and keys are placed on a circle; each key belongs to the next server clockwise, so adding a server moves only the keys between it and its neighbour."
+  },
+  {
+   "topic": "Explained simply",
+   "level": "medium",
+   "q": "Why do we need idempotency?",
+   "a": "Retries after timeouts are unavoidable, and repeating a non-idempotent action such as payment would duplicate its effect."
+  },
+  {
+   "topic": "Explained simply",
+   "level": "medium",
+   "q": "Explain a queue versus pub/sub versus a log.",
+   "a": "A queue gives each message to one worker, pub/sub gives it to every subscriber, a log keeps an ordered history many readers can replay."
+  },
+  {
+   "topic": "Explained simply",
+   "level": "medium",
+   "q": "Why are backups needed in addition to replication?",
+   "a": "Replication faithfully copies mistakes such as deletes and corruption; backups give a point-in-time state to restore."
+  },
+  {
+   "topic": "Explained simply",
+   "level": "medium",
+   "q": "Why is p99 more useful than the average?",
+   "a": "Users and fan-out requests experience the slow tail; averages hide it."
+  },
+  {
+   "topic": "Explained simply",
+   "level": "advanced",
+   "q": "How do you explain a trade-off to an interviewer?",
+   "a": "Name the pain, the tool that addresses it, what it costs, and the condition under which you would choose differently."
+  },
+  {
+   "topic": "Explained simply",
+   "level": "advanced",
+   "q": "When is a monolith the better choice?",
+   "a": "For small teams and early products where a modular monolith is simpler to build, test, deploy and debug; split into services when scale, team or release independence demand it."
+  },
+  {
+   "topic": "Explained simply",
+   "level": "advanced",
+   "q": "Explain eventual consistency and where it is not acceptable.",
+   "a": "Replicas converge if updates stop, fine for likes and feeds; unacceptable for money, inventory counts and uniqueness constraints without extra coordination."
+  },
+  {
+   "topic": "Explained simply",
+   "level": "advanced",
+   "q": "Give the back-of-the-envelope recipe.",
+   "a": "Convert users into per-second rates, rates into servers, rates times size into storage and bandwidth, and state assumptions and peak factors explicitly."
   }
  ]
 }

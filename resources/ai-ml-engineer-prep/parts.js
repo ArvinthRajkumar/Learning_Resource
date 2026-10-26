@@ -21,7 +21,7 @@ window.LR_RESOURCE = {
     { id: "07", file: "07-coding-problems.html", title: "Coding problems (the big four)", sections: 5 },
     { id: "08", file: "08-extra-coding-patterns.html", title: "Extra coding patterns", sections: 22 },
     { id: "09", file: "09-questions-i-saw.html", title: "Questions I saw", sections: 17 },
-    { id: "13", file: "13-interview-questions.html", title: "Interview question bank", sections: 25 },
+    { id: "13", file: "13-interview-questions.html", title: "Interview question bank", sections: 31 },
     { id: "10", file: "10-practice-quiz.html", title: "Practice quiz (60 questions)", sections: 1 },
     { id: "11", file: "11-cheat-sheet.html", title: "Cheat sheet (printable)", sections: 1 },
     { id: "A1", file: "a1-classical-ml.html", title: "Classical machine learning algorithms from scratch", sections: 8 },
@@ -35,7 +35,13 @@ window.LR_RESOURCE = {
     { id: "A9", file: "a9-recsys.html", title: "Recommender systems, ranking and bandits", sections: 8 },
     { id: "A10", file: "a10-reinforcement-learning.html", title: "Reinforcement learning from scratch", sections: 7 },
     { id: "A11", file: "a11-stats-experiments.html", title: "Statistics and experimentation for ML", sections: 9 },
-    { id: "A12", file: "a12-llm-apps.html", title: "Advanced LLM application engineering: RAG, agents, evaluation and cost", sections: 7 }
+    { id: "A12", file: "a12-llm-apps.html", title: "Advanced LLM application engineering: RAG, agents, evaluation and cost", sections: 7 },
+    { id: "A13", file: "a13-time-series.html", title: "Time series: forecasting, seasonality, stationarity and anomaly detection", sections: 10 },
+    { id: "A14", file: "a14-probabilistic-ml.html", title: "Probabilistic machine learning: Bayesian inference, MCMC, Gaussian processes and uncertainty", sections: 9 },
+    { id: "A15", file: "a15-graph-ml.html", title: "Graph machine learning: PageRank, embeddings, message passing and knowledge graphs", sections: 9 },
+    { id: "A16", file: "a16-responsible-ai.html", title: "Interpretability, fairness, privacy and robustness: responsible machine learning", sections: 7 },
+    { id: "A17", file: "a17-training-at-scale.html", title: "Training at scale: GPU performance, parallelism, mixed precision and scaling laws", sections: 11 },
+    { id: "A18", file: "a18-intuition.html", title: "Machine learning and LLMs explained simply: analogies, pictures and the questions beginners ask", sections: 8 }
   ],
   topics: {
     "Foundations": "f1-ml-foundations.html",
@@ -58,6 +64,12 @@ window.LR_RESOURCE = {
     "Recommender systems": "a9-recsys.html",
     "Reinforcement learning": "a10-reinforcement-learning.html",
     "Statistics and experiments": "a11-stats-experiments.html",
-    "LLM applications": "a12-llm-apps.html"
+    "LLM applications": "a12-llm-apps.html",
+    "Time series": "a13-time-series.html",
+    "Probabilistic ML": "a14-probabilistic-ml.html",
+    "Graph ML": "a15-graph-ml.html",
+    "Responsible AI": "a16-responsible-ai.html",
+    "Training at scale": "a17-training-at-scale.html",
+    "Intuition guide": "a18-intuition.html"
   }
 };

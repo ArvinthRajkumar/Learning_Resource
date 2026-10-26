@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD29">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Web delivery: HTTP caching, TLS, CDNs, real-time connections and client performance | System Design</title>
+<meta name="description" content="What happens between a user and your servers: DNS, TCP and TLS costs, HTTP caching headers and validators with a working simulation, CDNs and cache keys, compression, HTTP/2 and HTTP/3, WebSockets, long polling and server-sent events, and front-end performance.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD29</p>
+      <h1>Web delivery: HTTP caching, TLS, CDNs, real-time connections and client performance</h1>
+      <p class="lede">A fast backend can still feel slow if the path to the user is slow. This part follows a request from the address bar to your servers and back, explains what each hop costs, and shows how caching and connection reuse remove most of that cost.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~4 hours</span></div>
+    </div>
+
+    <section id="life" data-track>
+      <h2>The life of a request</h2>
+<p>When someone opens <code>https://shop.example.com/</code>:</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="Every arrow costs at least one network round trip. Reusing connections and caching responses removes most of them." style="min-width:760px"><defs><marker id="ah53" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah53a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah53b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah53d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah53)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah53)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah53)"/><line x1="747.0" y1="78.0" x2="747.0" y2="118.0" class="d-line" marker-end="url(#ah53)"/><line x1="662.0" y1="147.0" x2="618.0" y2="147.0" class="d-line" marker-end="url(#ah53)"/><line x1="448.0" y1="147.0" x2="404.0" y2="147.0" class="d-line" marker-end="url(#ah53)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">DNS lookup</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle">TCP handshake</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle">TLS handshake</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle">HTTP request</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="151.5" text-anchor="middle">Server work</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="151.5" text-anchor="middle">Response bytes</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="151.5" text-anchor="middle" class="d-sm">Browser parse and render</text></svg>
+</div>
+<figcaption>Every arrow costs at least one network round trip. Reusing connections and caching responses removes most of them.</figcaption></figure>
+<p>Round trips dominate for far-away users. With a 100 ms round trip, a fresh HTTPS connection costs roughly: DNS 1 RTT, TCP 1 RTT, TLS 1.3 1 RTT, then the request 1 RTT: about 400 ms before the first byte arrives, even if the server answers instantly.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd29-01.py">def first_byte_ms(rtt, dns=1, tcp=1, tls=1, request=1, server=20, reuse=False):
+    rtts = request if reuse else dns + tcp + tls + request
+    return rtts * rtt + server
+for rtt in (10, 50, 100, 250):
+    print(f"RTT {rtt:&gt;3} ms: cold connection {first_byte_ms(rtt):&gt;5} ms | reused connection {first_byte_ms(rtt, reuse=True):&gt;4} ms | TLS 1.2 (2 RTTs) cold {first_byte_ms(rtt, tls=2):&gt;5} ms")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>RTT  10 ms: cold connection    60 ms | reused connection   30 ms | TLS 1.2 (2 RTTs) cold    70 ms
+RTT  50 ms: cold connection   220 ms | reused connection   70 ms | TLS 1.2 (2 RTTs) cold   270 ms
+RTT 100 ms: cold connection   420 ms | reused connection  120 ms | TLS 1.2 (2 RTTs) cold   520 ms
+RTT 250 ms: cold connection  1020 ms | reused connection  270 ms | TLS 1.2 (2 RTTs) cold  1270 ms</code></pre>
+<p>Ways to shave the path: put content near users (CDN), keep connections alive and multiplexed (HTTP/2, HTTP/3), use TLS 1.3 and session resumption, <code>preconnect</code> hints, and fewer, smaller responses.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd29-q01" data-topic="Web delivery" data-type="numeric" data-answer="4" data-tol="0">
+        <div class="q-stem"><p>With a 100 ms RTT, a cold HTTPS connection with TLS 1.3 and instant server takes about how many round trips before the first response byte arrives (DNS, TCP, TLS, request)?</p></div>
+        <div class="q-explain"><p>One round trip each: DNS, TCP, TLS 1.3 and the request.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name the round trips on a cold HTTPS request.</summary><div class="answer"><p>DNS lookup, TCP handshake, TLS handshake, then the HTTP request itself.</p></div></details>
+      </div>
+    </section>
+
+    <section id="dns" data-track>
+      <h2>DNS</h2>
+<p>DNS maps names to IP addresses through a hierarchy: resolver, root, TLD (<code>.com</code>), then your authoritative servers. Answers are cached for the record's <strong>TTL</strong>. Record types: <code>A</code>/<code>AAAA</code> (IPv4/IPv6), <code>CNAME</code> (alias), <code>MX</code> (mail), <code>TXT</code> (verification), <code>NS</code> (delegation).</p>
+<p>Design uses of DNS: geographic or latency-based routing, weighted records for gradual migrations, failover with health checks. The catch: TTLs make changes slow, and some resolvers ignore low TTLs, so DNS is a coarse tool for failover. <strong>Anycast</strong> (the same IP announced from many places) sends users to the nearest site and is how CDNs and public resolvers (1.1.1.1, 8.8.8.8) work.</p>
+    </section>
+
+    <section id="tls" data-track>
+      <h2>TLS in two minutes</h2>
+<p>TLS gives <strong>encryption</strong>, <strong>integrity</strong> and <strong>server authentication</strong>. In the handshake the server presents a certificate signed by a trusted authority; the client verifies it, both sides agree on a shared key using ephemeral Diffie-Hellman (giving <strong>forward secrecy</strong>: stealing the server key later does not decrypt recorded traffic), and then the rest of the conversation uses fast symmetric encryption (AES-GCM or ChaCha20).</p>
+<ul><li><strong>TLS 1.3</strong> needs one round trip (and zero for resumed sessions with 0-RTT, which has replay risks).</li><li><strong>Terminate TLS</strong> at the load balancer or CDN edge and use TLS (or mTLS) inside the network too.</li><li><strong>HSTS</strong> tells browsers to use HTTPS only; <strong>certificate transparency</strong> and short-lived certificates (Let's Encrypt, automatic renewal) limit mis-issuance and expiry outages. An expired certificate is a classic outage, so automate and monitor renewal.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd29-q02" data-topic="Web delivery" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does forward secrecy provide?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Faster handshakes <span class="q-why">No.</span></li>
+          <li data-key="B">Stolen long-term keys cannot decrypt previously recorded sessions <span class="q-why">Correct, because session keys are ephemeral.</span></li>
+          <li data-key="C">No certificates are needed <span class="q-why">No.</span></li>
+          <li data-key="D">Free bandwidth <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Ephemeral Diffie-Hellman keys are discarded after the session.</p></div>
+      </div>
+    </section>
+
+    <section id="caching" data-track>
+      <h2>HTTP caching: the cheapest speed-up</h2>
+<p>The fastest request is the one that never leaves the browser. HTTP caching is controlled by response headers.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Header</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>Cache-Control: max-age=3600</code></td><td>Fresh for one hour; use without asking the server</td></tr><tr><td><code>Cache-Control: no-cache</code></td><td>May store, but must <strong>revalidate</strong> before each use</td></tr><tr><td><code>Cache-Control: no-store</code></td><td>Never store (sensitive data)</td></tr><tr><td><code>Cache-Control: public</code> / <code>private</code></td><td>Shared caches (CDN) may store / only the user's browser may</td></tr><tr><td><code>Cache-Control: s-maxage=...</code></td><td>Lifetime for shared caches only</td></tr><tr><td><code>stale-while-revalidate=60</code></td><td>Serve stale content while refreshing in the background</td></tr><tr><td><code>ETag: "abc123"</code></td><td>Opaque version tag of the content</td></tr><tr><td><code>Last-Modified</code></td><td>Timestamp of last change</td></tr><tr><td><code>Vary: Accept-Encoding</code></td><td>The cache key also depends on this request header</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Validation</strong>: when content is stale the client sends <code>If-None-Match: "abc123"</code> (or <code>If-Modified-Since</code>). If unchanged, the server replies <code>304 Not Modified</code> with no body, saving bandwidth but still costing one round trip.</p>
+<p><strong>Immutable assets</strong> (the best pattern): put a content hash in the file name (<code>app.3f9a1c.js</code>) and send <code>Cache-Control: public, max-age=31536000, immutable</code>. A change produces a new URL, so there is never a stale copy and never a purge. HTML pages stay short-lived or revalidated because they reference the hashed files.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd29-02.py">import hashlib
+class Server:
+    def __init__(self): self.body, self.hits, self.bytes_sent = b"console.log('v1')" * 100, 0, 0
+    def etag(self): return hashlib.md5(self.body).hexdigest()[:8]
+    def get(self, if_none_match=None):
+        self.hits += 1
+        if if_none_match == self.etag(): return 304, b""
+        self.bytes_sent += len(self.body); return 200, self.body
+class BrowserCache:
+    def __init__(self, server): self.server, self.etag, self.body, self.fetched_at = server, None, None, None
+    def fetch(self, now, max_age=60):
+        if self.body is not None and now - self.fetched_at &lt; max_age: return "fresh cache hit (no network)"
+        status, body = self.server.get(self.etag)
+        if status == 304: self.fetched_at = now; return "304 revalidated (no body)"
+        self.body, self.etag, self.fetched_at = body, self.server.etag(), now; return f"200 downloaded {len(body)} bytes"
+srv = Server(); b = BrowserCache(srv)
+for t in (0, 10, 70, 80, 140):
+    print(f"t={t:&gt;3}s:", b.fetch(t))
+srv.body = b"console.log('v2')" * 100
+print("t=200s after the file changed:", b.fetch(200))
+print("server saw", srv.hits, "requests and sent", srv.bytes_sent, "bytes for 6 browser loads")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>t=  0s: 200 downloaded 1700 bytes
+t= 10s: fresh cache hit (no network)
+t= 70s: 304 revalidated (no body)
+t= 80s: fresh cache hit (no network)
+t=140s: 304 revalidated (no body)
+t=200s after the file changed: 200 downloaded 1700 bytes
+server saw 4 requests and sent 3400 bytes for 6 browser loads</code></pre>
+<h3>Cache invalidation, honestly</h3>
+<p>Two ways to be correct: <strong>version the URL</strong> (best for static files) or keep <strong>short lifetimes with validators</strong> (for HTML and APIs). Purging a CDN is possible but slow and error prone. Cache keys must include everything that changes the response (language, device class, auth state), otherwise one user sees another's page: never cache personalised or authenticated responses in a shared cache without <code>Vary</code> or <code>private</code>.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd29-q03" data-topic="Web delivery" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does a 304 Not Modified response mean?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The page is missing <span class="q-why">That is 404.</span></li>
+          <li data-key="B">The cached copy is still valid; no body is sent <span class="q-why">Correct.</span></li>
+          <li data-key="C">A redirect <span class="q-why">No.</span></li>
+          <li data-key="D">A server error <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It saves bandwidth but still costs a round trip.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd29-q04" data-topic="Web delivery" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the best caching pattern for JavaScript and CSS files?</p></div>
+        <ul class="q-options">
+          <li data-key="A">no-store <span class="q-why">Wastes bandwidth.</span></li>
+          <li data-key="B">Content-hashed file names with a one-year immutable max-age <span class="q-why">Correct.</span></li>
+          <li data-key="C">max-age=1 <span class="q-why">Little benefit.</span></li>
+          <li data-key="D">No headers <span class="q-why">Heuristic caching only.</span></li>
+        </ul>
+        <div class="q-explain"><p>A change produces a new URL, so no purge is needed.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd29-q05" data-topic="Web delivery" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the danger of caching authenticated pages in a shared cache?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Slower pages <span class="q-why">No.</span></li>
+          <li data-key="B">One user may be served another user's personalised content <span class="q-why">Correct.</span></li>
+          <li data-key="C">Larger files <span class="q-why">No.</span></li>
+          <li data-key="D">None <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use private or no-store, and Vary correctly.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Fresh versus stale versus revalidate?</summary><div class="answer"><p>Fresh content is used directly; stale content must be revalidated with a conditional request; a 304 means the copy is still valid.</p></div></details>
+      </div>
+    </section>
+
+    <section id="cdn" data-track>
+      <h2>CDNs</h2>
+<p>A <strong>content delivery network</strong> is a global fleet of caching proxies. A request goes to the nearest <strong>edge</strong>; on a miss the edge asks an <strong>origin shield</strong> (a mid-tier cache) or your origin, stores the response, and serves later requests locally.</p>
+<p>Benefits: lower latency, lower origin load, absorbing traffic spikes and DDoS attacks, TLS termination close to users, and edge compute (Workers, Lambda@Edge) for redirects, A/B tests and personalisation.</p>
+<p>Key concepts:</p>
+<ul><li><strong>Cache hit ratio</strong> is the metric to watch. Normalise query strings, strip tracking parameters, avoid unnecessary <code>Vary</code> and cookies on static paths.</li><li><strong>Push</strong> versus <strong>pull</strong> CDN: pull (lazy fetch from origin on first request) is the default.</li><li><strong>Origin shield / tiered cache</strong> collapses many edge misses into one origin request.</li><li><strong>Request coalescing</strong>: if 1,000 users ask for the same uncached object, send one origin request.</li><li><strong>Dynamic acceleration</strong>: even uncacheable requests benefit from a warm backbone connection between edge and origin.</li><li><strong>Signed URLs/cookies</strong> protect private media; <strong>range requests</strong> enable seeking in video.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd29-03.py">def origin_load(requests, hit_ratio): return requests * (1 - hit_ratio)
+reqs = 10_000_000
+for hr in (0.50, 0.90, 0.99):
+    print(f"hit ratio {hr:.0%}: origin sees {origin_load(reqs, hr):&gt;9,.0f} of {reqs:,} requests ({(1 - hr):.0%} of traffic)")
+print("Raising the hit ratio from 90% to 99% cuts origin traffic by", f"{(1 - 0.99) / (1 - 0.90):.0%} of what it was", "(10x fewer requests).")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>hit ratio 50%: origin sees 5,000,000 of 10,000,000 requests (50% of traffic)
+hit ratio 90%: origin sees 1,000,000 of 10,000,000 requests (10% of traffic)
+hit ratio 99%: origin sees   100,000 of 10,000,000 requests (1% of traffic)
+Raising the hit ratio from 90% to 99% cuts origin traffic by 10% of what it was (10x fewer requests).</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd29-q06" data-topic="Web delivery" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does an origin shield do?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Encrypts traffic <span class="q-why">No.</span></li>
+          <li data-key="B">Collapses many edge cache misses into a single request to the origin <span class="q-why">Correct.</span></li>
+          <li data-key="C">Blocks all users <span class="q-why">No.</span></li>
+          <li data-key="D">Compresses images <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>A mid-tier cache protects the origin.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you raise the CDN hit ratio?</summary><div class="answer"><p>Normalise cache keys, strip irrelevant query strings and cookies, set long TTLs for static assets and use tiered caching.</p></div></details>
+      </div>
+    </section>
+
+    <section id="compression" data-track>
+      <h2>Compression and payloads</h2>
+<p>Compress text with <strong>gzip</strong> or <strong>Brotli</strong> (<code>Content-Encoding</code>); do not recompress images and video. Minify scripts, split bundles, lazy-load. Use modern image formats (WebP, AVIF), responsive sizes (<code>srcset</code>), and a CDN image service. JSON APIs gain from field selection, pagination and binary formats (Protocol Buffers) on hot internal paths.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd29-04.py">import gzip, json, zlib
+rows = [{"id": i, "name": f"product {i % 50}", "category": ["tools", "toys", "books"][i % 3], "price": 10 + i % 7} for i in range(2000)]
+raw = json.dumps(rows).encode()
+print(f"JSON {len(raw):,} bytes -&gt; gzip {len(gzip.compress(raw)):,} bytes ({len(gzip.compress(raw)) / len(raw):.1%}) -&gt; zlib level 9 {len(zlib.compress(raw, 9)):,}")
+slim = json.dumps([[r["id"], r["name"], r["category"], r["price"]] for r in rows], separators=(",", ":")).encode()
+print(f"array-of-arrays {len(slim):,} bytes -&gt; gzip {len(gzip.compress(slim)):,} bytes (compression already removes most key repetition)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>JSON 137,823 bytes -&gt; gzip 8,788 bytes (6.4%) -&gt; zlib level 9 8,560
+array-of-arrays 59,824 bytes -&gt; gzip 8,299 bytes (compression already removes most key repetition)</code></pre>
+    </section>
+
+    <section id="http" data-track>
+      <h2>HTTP versions</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Version</th><th>Transport</th><th>Key idea</th></tr></thead>
+<tbody>
+<tr><td>HTTP/1.1</td><td>TCP</td><td>One request at a time per connection; browsers open about 6 connections per host; head-of-line blocking</td></tr><tr><td>HTTP/2</td><td>TCP + TLS</td><td><strong>Multiplexing</strong> many streams on one connection, header compression (HPACK), server push (rarely used)</td></tr><tr><td>HTTP/3</td><td>QUIC over UDP</td><td>Streams are independent (no TCP head-of-line blocking on loss), faster handshakes, connection migration between networks</td></tr>
+</tbody>
+</table>
+</div>
+<p>With HTTP/2 you no longer need old tricks such as domain sharding and sprite sheets. TCP-level head-of-line blocking remains for HTTP/2 on lossy mobile networks, which HTTP/3 fixes.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd29-q07" data-topic="Web delivery" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What problem does HTTP/3 over QUIC address?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Weak encryption <span class="q-why">No.</span></li>
+          <li data-key="B">TCP head-of-line blocking and slow connection setup, especially on lossy mobile networks <span class="q-why">Correct.</span></li>
+          <li data-key="C">Large headers only <span class="q-why">No.</span></li>
+          <li data-key="D">DNS <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Streams are independent and loss on one does not stall the others.</p></div>
+      </div>
+    </section>
+
+    <section id="realtime" data-track>
+      <h2>Real-time connections</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Technique</th><th>How</th><th>Use when</th></tr></thead>
+<tbody>
+<tr><td><strong>Polling</strong></td><td>Client asks every N seconds</td><td>Simple, low frequency, cacheable</td></tr><tr><td><strong>Long polling</strong></td><td>Server holds the request until data exists</td><td>Fallback when WebSockets are blocked</td></tr><tr><td><strong>Server-Sent Events (SSE)</strong></td><td>One-way stream from server over plain HTTP</td><td>Notifications, live feeds, progress; auto-reconnect</td></tr><tr><td><strong>WebSocket</strong></td><td>Persistent bidirectional connection</td><td>Chat, games, collaboration, trading</td></tr><tr><td><strong>WebRTC</strong></td><td>Peer-to-peer media and data</td><td>Video calls</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Scaling persistent connections</h3>
+<p>Each connection is a file descriptor and some memory, so one tuned server holds hundreds of thousands to a million idle connections. Challenges:</p>
+<ul><li><strong>Stateful</strong>: a user is attached to one gateway; keep a <strong>presence/session registry</strong> (Redis) mapping user to gateway, and route messages through pub/sub so any server can reach any user.</li><li><strong>Load balancing</strong>: use L4 balancing or WebSocket-aware L7, with connection draining on deploys and <strong>jittered reconnect backoff</strong> so a restart does not cause a reconnect stampede.</li><li><strong>Heartbeats</strong> detect dead peers; mobile networks drop idle connections silently.</li><li><strong>Fallback</strong> to SSE or long polling where proxies block upgrades; resume with the last seen event id.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd29-05.py">import random
+random.seed(11)
+def reconnect_peak(clients, jitter_window):
+    buckets = {}
+    for _ in range(clients):
+        t = int(random.uniform(0, jitter_window))          # each client picks a random delay
+        buckets[t] = buckets.get(t, 0) + 1
+    return max(buckets.values())
+for window in (1, 10, 60):
+    print(f"1,000,000 clients reconnecting spread over {window:&gt;2} s: busiest second sees {reconnect_peak(1_000_000, window):&gt;9,} connections")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>1,000,000 clients reconnecting spread over  1 s: busiest second sees 1,000,000 connections
+1,000,000 clients reconnecting spread over 10 s: busiest second sees   100,351 connections
+1,000,000 clients reconnecting spread over 60 s: busiest second sees    16,972 connections</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd29-q08" data-topic="Web delivery" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why add jitter to client reconnect backoff?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To use more bandwidth <span class="q-why">No.</span></li>
+          <li data-key="B">To avoid a thundering herd when many clients reconnect at once <span class="q-why">Correct.</span></li>
+          <li data-key="C">To slow users down <span class="q-why">No.</span></li>
+          <li data-key="D">For encryption <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Random delays spread the load over time.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>WebSocket versus SSE?</summary><div class="answer"><p>WebSocket is bidirectional over a custom protocol; SSE is one-way server push over HTTP with built-in reconnect.</p></div></details>
+      </div>
+    </section>
+
+    <section id="frontend" data-track>
+      <h2>Front-end performance in one page</h2>
+<p>Users judge speed by when they <strong>see</strong> and <strong>can use</strong> the page. The standard measurements (Core Web Vitals): <strong>LCP</strong> (largest contentful paint, aim for under 2.5 s), <strong>INP</strong> (interaction responsiveness, under 200 ms) and <strong>CLS</strong> (layout shift, under 0.1).</p>
+<p>What to do about them:</p>
+<ol><li>Send HTML quickly (server-side rendering or static generation for the first view, CDN cached).</li><li>Keep the <strong>critical rendering path</strong> short: inline critical CSS, defer non-critical JavaScript, avoid render-blocking resources.</li><li>Optimise images and fonts (right size and format, <code>font-display: swap</code>, preload the hero image).</li><li>Cache with hashed file names and service workers where appropriate.</li><li>Measure real users (RUM) as well as lab tests, and set performance budgets in CI.</li></ol>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Latency is mostly round trips. Cache aggressively with versioned URLs, terminate TLS at the edge, reuse multiplexed connections, serve from a CDN, compress text, and treat persistent connections as stateful infrastructure that needs a registry, draining and jittered reconnects.</p></div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What are the three Core Web Vitals?</summary><div class="answer"><p>Largest contentful paint, interaction to next paint, and cumulative layout shift.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Web delivery</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Web delivery">
+<details class="recall iq" data-level="basic" data-topic="Web delivery"><summary><span class="tag ok">Basic</span> What happens when you type a URL and press enter?</summary><div class="answer"><p>DNS resolves the name, a TCP connection and TLS handshake are made (or reused), the HTTP request is sent through load balancers to a server, which responds; the browser parses and renders, fetching more resources.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Web delivery"><summary><span class="tag ok">Basic</span> What does Cache-Control: max-age=3600 mean?</summary><div class="answer"><p>The response is fresh for an hour and may be reused without contacting the server.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Web delivery"><summary><span class="tag ok">Basic</span> What is a CDN?</summary><div class="answer"><p>A geographically distributed network of caching proxies that serves content from locations near users, reducing latency and origin load.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Web delivery"><summary><span class="tag warn">Medium</span> How do ETag and 304 work?</summary><div class="answer"><p>The server sends an ETag identifying the version; later the client asks conditionally with If-None-Match, and an unchanged resource returns 304 with no body.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Web delivery"><summary><span class="tag warn">Medium</span> What is the best caching strategy for static assets?</summary><div class="answer"><p>Content-hashed file names with long immutable max-age, so changes get new URLs and never need purging, while HTML stays short-lived.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Web delivery"><summary><span class="tag warn">Medium</span> Why can caching authenticated pages in a shared cache be dangerous?</summary><div class="answer"><p>One user may receive another&#x27;s personalised response. Use private or no-store and correct Vary headers.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Web delivery"><summary><span class="tag warn">Medium</span> HTTP/1.1 versus HTTP/2 versus HTTP/3?</summary><div class="answer"><p>1.1 handles one request per connection at a time; 2 multiplexes streams over one TCP connection with header compression; 3 runs over QUIC (UDP) removing TCP head-of-line blocking and speeding up handshakes.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Web delivery"><summary><span class="tag warn">Medium</span> Polling, long polling, SSE and WebSocket: when each?</summary><div class="answer"><p>Polling for simple low-frequency needs, long polling as a fallback, SSE for one-way server push, WebSocket for bidirectional low-latency messaging.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Web delivery"><summary><span class="tag warn">Medium</span> How do you scale WebSocket servers?</summary><div class="answer"><p>Keep a registry of which gateway holds each user, route messages via pub/sub, load-balance at L4 or WebSocket-aware L7, drain connections on deploy and use jittered reconnects.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Web delivery"><summary><span class="tag bad">Advanced</span> What does TLS give you and what is forward secrecy?</summary><div class="answer"><p>Encryption, integrity and server authentication. Forward secrecy uses ephemeral key exchange so recorded traffic stays secret even if long-term keys leak later.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Web delivery"><summary><span class="tag bad">Advanced</span> What is an origin shield and request coalescing?</summary><div class="answer"><p>A mid-tier cache that collapses many edge misses into one origin request, and coalescing sends a single origin fetch when many users ask for the same uncached object.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Web delivery"><summary><span class="tag bad">Advanced</span> How do you improve Largest Contentful Paint?</summary><div class="answer"><p>Serve HTML fast from the edge, optimise and preload the hero image, inline critical CSS, defer blocking scripts and reduce server response time.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Web delivery"><summary><span class="tag bad">Advanced</span> How can DNS be used for traffic management, and what are its limits?</summary><div class="answer"><p>Geo or latency routing, weighted records and health-checked failover, limited by TTL caching and resolvers that ignore low TTLs, so failover is slow compared with anycast or load balancers.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Web delivery"><summary><span class="tag bad">Advanced</span> Why do HTTP caches need Vary?</summary><div class="answer"><p>Vary lists request headers that change the response (such as Accept-Encoding or language) so the cache key includes them and serves the right variant.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd28-consensus-time.html"><span class="dir">Previous</span><span>SD28 Consensus, clocks and coordination: Raft, leader election, logical time and CRDTs</span></a>
+      <a class="next" href="sd30-sre-operations.html"><span class="dir">Next</span><span>SD30 Site reliability engineering: SLOs, burn rates, capacity planning, load testing and incident response</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

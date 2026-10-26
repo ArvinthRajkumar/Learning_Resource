@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="A14">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Probabilistic machine learning: Bayesian inference, MCMC, Gaussian processes and uncertainty | AI/ML Prep</title>
+<meta name="description" content="Thinking in distributions: maximum likelihood versus Bayesian inference, conjugate priors, posterior sampling with Metropolis MCMC, Thompson sampling, Gaussian processes from scratch, mixture models with EM, calibration and uncertainty estimates, all in runnable code.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part A14</p>
+      <h1>Probabilistic machine learning: Bayesian inference, MCMC, Gaussian processes and uncertainty</h1>
+      <p class="lede">A model that says 'the answer is 0.7' is less useful than one that says 'about 0.7, give or take 0.1, and I have seen little data like this'. This part builds the tools that quantify uncertainty: priors and posteriors, sampling, Gaussian processes, mixtures and calibration.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~6 hours</span></div>
+    </div>
+
+    <section id="views" data-track>
+      <h2>Frequentist, likelihood and Bayesian views</h2>
+<p>All three start from a <strong>model</strong> <code>p(data | theta)</code> with parameters <code>theta</code>.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>View</th><th>Treats parameters as</th><th>Answer</th></tr></thead>
+<tbody>
+<tr><td><strong>Maximum likelihood (MLE)</strong></td><td>Fixed unknown numbers</td><td>The <code>theta</code> that makes the data most probable</td></tr><tr><td><strong>Maximum a posteriori (MAP)</strong></td><td>Random with a prior</td><td>The mode of the posterior (MLE plus a prior, i.e. regularisation)</td></tr><tr><td><strong>Bayesian</strong></td><td>Random variables</td><td>The whole <strong>posterior distribution</strong> <code>p(theta | data)</code></td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Bayes' rule</strong>: <code>posterior = likelihood x prior / evidence</code>, that is <code>p(theta | D) = p(D | theta) p(theta) / p(D)</code>. The prior encodes what you believed before seeing the data; the posterior is that belief updated by the evidence. With a lot of data the posterior concentrates and the prior matters less; with little data the prior matters a lot.</p>
+<p>L2 regularisation equals a <strong>Gaussian prior</strong> on the weights and L1 a <strong>Laplace prior</strong>, so regularised models are MAP estimates in disguise.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a14-q01" data-topic="Probabilistic ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>L2 regularisation corresponds to which prior on the weights?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Uniform <span class="q-why">No.</span></li>
+          <li data-key="B">Gaussian <span class="q-why">Correct.</span></li>
+          <li data-key="C">Laplace <span class="q-why">That is L1.</span></li>
+          <li data-key="D">None <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Ridge regression is MAP estimation with a Gaussian prior.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>MLE versus MAP versus full Bayes?</summary><div class="answer"><p>MLE maximises the likelihood, MAP maximises likelihood times prior, full Bayes keeps the whole posterior distribution.</p></div></details>
+      </div>
+    </section>
+
+    <section id="conjugate" data-track>
+      <h2>Conjugate priors: exact Bayesian updating</h2>
+<p>For some prior-likelihood pairs the posterior has the <strong>same form</strong> as the prior (a <strong>conjugate</strong> prior), so updating is just arithmetic. The classic case: coin flips (Bernoulli) with a <strong>Beta</strong> prior. <code>Beta(a, b)</code> after observing <code>h</code> heads and <code>t</code> tails becomes <code>Beta(a + h, b + t)</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a14-01.py">def beta_summary(a, b):
+    mean = a / (a + b); var = a * b / ((a + b) ** 2 * (a + b + 1))
+    return mean, var ** 0.5
+prior = (1, 1)                                              # uniform: we know nothing
+print("prior Beta(1,1): mean %.2f, std %.2f" % beta_summary(*prior))
+heads, tails = 7, 3
+post = (prior[0] + heads, prior[1] + tails)
+print(f"after {heads} heads and {tails} tails -&gt; Beta{post}: mean %.3f, std %.3f (MLE would say %.1f)" % (*beta_summary(*post), heads / (heads + tails)))
+informative = (20, 20)                                      # a strong belief that the coin is fair
+post2 = (informative[0] + heads, informative[1] + tails)
+print(f"with a strong 'fair coin' prior Beta(20,20) -&gt; Beta{post2}: mean %.3f" % beta_summary(*post2)[0])
+big = (prior[0] + 700, prior[1] + 300)
+print("with 1000 flips (700 heads) the prior hardly matters: mean %.3f, std %.3f" % beta_summary(*big))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>prior Beta(1,1): mean 0.50, std 0.29
+after 7 heads and 3 tails -&gt; Beta(8, 4): mean 0.667, std 0.131 (MLE would say 0.7)
+with a strong 'fair coin' prior Beta(20,20) -&gt; Beta(27, 23): mean 0.540
+with 1000 flips (700 heads) the prior hardly matters: mean 0.700, std 0.014</code></pre>
+<p>Other conjugate pairs: Gaussian likelihood with Gaussian prior (for the mean), Poisson with Gamma, multinomial with Dirichlet. They power <strong>A/B testing</strong> posteriors (<a href="a11-stats-experiments.html">A11</a>), <strong>Naive Bayes</strong> smoothing (a Dirichlet prior is Laplace smoothing) and <strong>bandits</strong>.</p>
+<h3>Credible versus confidence intervals</h3>
+<p>A 95% <strong>credible interval</strong> is a range that contains the parameter with 95% <strong>posterior probability</strong> (given the model and prior). A 95% <strong>confidence interval</strong> is a procedure that captures the true value in 95% of repeated experiments. The Bayesian statement is usually the one people want; the price is choosing a prior and being honest about it.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a14-02.py">import math
+def beta_pdf_grid(a, b, n=2001):
+    xs = [i / (n - 1) for i in range(n)]
+    ys = [(x ** (a - 1) * (1 - x) ** (b - 1)) if 0 &lt; x &lt; 1 else 0.0 for x in xs]
+    total = sum(ys); return xs, [y / total for y in ys]
+def credible_interval(a, b, mass=0.95):
+    xs, ps = beta_pdf_grid(a, b)
+    cum, lo, hi = 0.0, None, None
+    for x, p in zip(xs, ps):
+        cum += p
+        if lo is None and cum &gt;= (1 - mass) / 2: lo = x
+        if hi is None and cum &gt;= 1 - (1 - mass) / 2: hi = x
+    return lo, hi
+lo, hi = credible_interval(8, 4)
+print(f"posterior Beta(8,4): 95% credible interval ({lo:.2f}, {hi:.2f}) | P(theta &gt; 0.5) = {sum(p for x, p in zip(*beta_pdf_grid(8, 4)) if x &gt; 0.5):.2f}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>posterior Beta(8,4): 95% credible interval (0.39, 0.89) | P(theta &gt; 0.5) = 0.89</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a14-q02" data-topic="Probabilistic ML" data-type="numeric" data-answer="8" data-tol="0">
+        <div class="q-stem"><p>A Beta(1,1) prior and 7 heads, 3 tails gives a Beta posterior with a = ?</p></div>
+        <div class="q-explain"><p>a = 1 + 7 = 8 (and b = 1 + 3 = 4).</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a14-q03" data-topic="Probabilistic ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does a 95% credible interval say?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The procedure covers the truth 95% of the time <span class="q-why">That is a confidence interval.</span></li>
+          <li data-key="B">The parameter lies in the interval with 95% posterior probability <span class="q-why">Correct.</span></li>
+          <li data-key="C">The data lies in the interval <span class="q-why">No.</span></li>
+          <li data-key="D">The model is 95% right <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It is conditional on the model and prior.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is a conjugate prior?</summary><div class="answer"><p>A prior that keeps the posterior in the same family, so updating is simple arithmetic (Beta with Bernoulli).</p></div></details>
+      </div>
+    </section>
+
+    <section id="mcmc" data-track>
+      <h2>Sampling when there is no formula: MCMC</h2>
+<p>Most real posteriors are not conjugate. <strong>Markov chain Monte Carlo (MCMC)</strong> draws samples from a distribution known only up to a constant. <strong>Metropolis-Hastings</strong>: from the current point propose a nearby one; accept it with probability <code>min(1, p(new) / p(old))</code>; otherwise stay. After a <strong>burn-in</strong>, the chain's visited points are samples from the target. Histograms of samples give means, intervals and any other summary.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a14-03.py">import math, random
+random.seed(1)
+data = [random.gauss(5.0, 2.0) for _ in range(30)]                 # unknown mean and std
+def log_post(mu, sigma):
+    if sigma &lt;= 0: return -math.inf
+    ll = sum(-math.log(sigma) - (x - mu) ** 2 / (2 * sigma ** 2) for x in data)
+    log_prior = -mu ** 2 / (2 * 100 ** 2) - sigma / 10               # vague priors
+    return ll + log_prior
+mu, sigma, lp = 0.0, 1.0, log_post(0.0, 1.0)
+samples, accepted = [], 0
+for step in range(30000):
+    mu2, sigma2 = mu + random.gauss(0, 0.4), sigma + random.gauss(0, 0.3)
+    lp2 = log_post(mu2, sigma2)
+    if math.log(random.random()) &lt; lp2 - lp: mu, sigma, lp = mu2, sigma2, lp2; accepted += 1
+    if step &gt;= 5000: samples.append((mu, sigma))                    # discard burn-in
+mus = sorted(s[0] for s in samples); sigmas = sorted(s[1] for s in samples)
+q = lambda xs, p: xs[int(p * len(xs))]
+print(f"acceptance rate {accepted / 30000:.2f} (about 0.2 to 0.5 is healthy)")
+print(f"mean mu: posterior median {q(mus, 0.5):.2f}, 95% interval ({q(mus, 0.025):.2f}, {q(mus, 0.975):.2f}) | sample mean of data {sum(data) / len(data):.2f}")
+print(f"std sigma: posterior median {q(sigmas, 0.5):.2f}, 95% interval ({q(sigmas, 0.025):.2f}, {q(sigmas, 0.975):.2f}) | true value 2.0")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>acceptance rate 0.49 (about 0.2 to 0.5 is healthy)
+mean mu: posterior median 5.25, 95% interval (4.59, 5.91) | sample mean of data 5.24
+std sigma: posterior median 1.85, 95% interval (1.45, 2.46) | true value 2.0</code></pre>
+<p><strong>Diagnosing chains</strong>: run several chains from different starts and check they agree (the <strong>R-hat</strong> statistic near 1), inspect trace plots, compute the <strong>effective sample size</strong> (correlated samples carry less information) and tune the proposal width. Modern tools (<strong>Hamiltonian Monte Carlo</strong>, the <strong>NUTS</strong> sampler in Stan, PyMC, NumPyro) use gradients to explore high-dimensional posteriors efficiently. <strong>Variational inference</strong> instead fits a simple distribution to the posterior by optimisation: faster, approximate, and the basis of VAEs.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a14-q04" data-topic="Probabilistic ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the purpose of burn-in in MCMC?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Speeding up the chain <span class="q-why">No.</span></li>
+          <li data-key="B">Discarding early samples that are influenced by the starting point before the chain reaches the target distribution <span class="q-why">Correct.</span></li>
+          <li data-key="C">Heating the data <span class="q-why">No.</span></li>
+          <li data-key="D">Encrypting samples <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Check convergence with several chains and R-hat.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Describe the Metropolis step.</summary><div class="answer"><p>Propose a nearby point and accept it with probability min(1, p(new)/p(old)); otherwise keep the current point.</p></div></details>
+      </div>
+    </section>
+
+    <section id="thompson" data-track>
+      <h2>Bayesian decisions: Thompson sampling</h2>
+<p>To pick among options with unknown success rates, <strong>sample</strong> a plausible rate from each option's posterior and choose the best sample. Options with uncertain but promising rates get tried; clearly bad ones fade. It balances <strong>exploration and exploitation</strong> automatically (<a href="a9-recsys.html">A9</a>).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a14-04.py">import random
+random.seed(2)
+true_rates = [0.04, 0.05, 0.065]
+def run(strategy, rounds=6000):
+    wins, losses, reward = [1, 1, 1], [1, 1, 1], 0
+    pulls = [0, 0, 0]
+    for t in range(rounds):
+        if strategy == "thompson": arm = max(range(3), key=lambda i: random.betavariate(wins[i], losses[i]))
+        elif strategy == "uniform": arm = t % 3
+        else: arm = max(range(3), key=lambda i: wins[i] / (wins[i] + losses[i])) if t &gt; 30 else t % 3         # greedy after a short trial
+        win = random.random() &lt; true_rates[arm]
+        wins[arm] += win; losses[arm] += 1 - win; reward += win; pulls[arm] += 1
+    return reward, pulls
+for s in ("uniform", "greedy", "thompson"):
+    r, p = run(s); print(f"{s:&gt;8}: conversions {r:4d} | pulls per arm {p}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code> uniform: conversions  322 | pulls per arm [2000, 2000, 2000]
+  greedy: conversions  287 | pulls per arm [20, 5938, 42]
+thompson: conversions  369 | pulls per arm [105, 1320, 4575]</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a14-q05" data-topic="Probabilistic ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How does Thompson sampling choose an arm?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The arm with the highest mean <span class="q-why">That is greedy.</span></li>
+          <li data-key="B">It samples a rate from each arm's posterior and picks the arm with the highest sample <span class="q-why">Correct.</span></li>
+          <li data-key="C">Uniformly at random <span class="q-why">No.</span></li>
+          <li data-key="D">The least tried arm <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Uncertain arms get explored in proportion to their chance of being best.</p></div>
+      </div>
+    </section>
+
+    <section id="gp" data-track>
+      <h2>Gaussian processes: distributions over functions</h2>
+<p>A <strong>Gaussian process (GP)</strong> is a prior over functions: any finite set of function values is jointly Gaussian with covariance given by a <strong>kernel</strong> <code>k(x, x')</code> measuring similarity (the RBF kernel says nearby inputs have similar outputs). Conditioning on observations gives a <strong>posterior over functions</strong>: a mean prediction <strong>and</strong> a variance that is small near data and grows away from it.</p>
+<p>Posterior at test points <code>x*</code> given data <code>(X, y)</code> with noise <code>s^2</code>:</p>
+<ul><li>mean: <code>K(x*, X) [K(X, X) + s^2 I]^-1 y</code></li><li>covariance: <code>K(x*, x*) - K(x*, X) [K(X, X) + s^2 I]^-1 K(X, x*)</code></li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/a14-05.py">import math, random
+random.seed(3)
+def rbf(a, b, length=1.0, var=1.0): return var * math.exp(-0.5 * ((a - b) / length) ** 2)
+def solve(A, B):                                              # solve A X = B by Gauss-Jordan (A is small and positive definite)
+    n = len(A); M = [A[i][:] + B[i][:] for i in range(n)]; m = len(B[0])
+    for i in range(n):
+        p = max(range(i, n), key=lambda r: abs(M[r][i])); M[i], M[p] = M[p], M[i]
+        piv = M[i][i]; M[i] = [v / piv for v in M[i]]
+        for r in range(n):
+            if r != i:
+                f = M[r][i]; M[r] = [a - f * b for a, b in zip(M[r], M[i])]
+    return [row[n:] for row in M]
+X = [-4.0, -3.0, -1.0, 0.0, 2.0]
+y = [math.sin(x) + random.gauss(0, 0.05) for x in X]
+noise = 0.05 ** 2
+K = [[rbf(a, b) + (noise if i == j else 0) for j, b in enumerate(X)] for i, a in enumerate(X)]
+tests = [-4.0, -2.0, 0.0, 1.0, 3.0, 6.0]
+Ks = [[rbf(t, x) for x in X] for t in tests]
+alpha = solve(K, [[v] for v in y])
+for t, ks in zip(tests, Ks):
+    mean = sum(k * a[0] for k, a in zip(ks, alpha))
+    v = solve(K, [[k] for k in ks]); var = rbf(t, t) - sum(k * vv[0] for k, vv in zip(ks, v))
+    print(f"x = {t:&gt;4}: prediction {mean:+.2f} +/- {2 * math.sqrt(max(var, 0)):.2f} (true sin(x) = {math.sin(t):+.2f})")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>x = -4.0: prediction +0.76 +/- 0.10 (true sin(x) = +0.76)
+x = -2.0: prediction -0.88 +/- 0.98 (true sin(x) = -0.91)
+x =  0.0: prediction +0.05 +/- 0.10 (true sin(x) = +0.00)
+x =  1.0: prediction +0.75 +/- 1.08 (true sin(x) = +0.84)
+x =  3.0: prediction +0.50 +/- 1.58 (true sin(x) = +0.14)
+x =  6.0: prediction +0.00 +/- 2.00 (true sin(x) = -0.28)</code></pre>
+<p>Notice the <strong>error bars are tiny at observed points (x = -4, 0), larger between them (x = -2, 1), and large far outside the data (x = 6)</strong>, where the prediction reverts to the prior mean of 0. That honest uncertainty is why GPs drive <strong>Bayesian optimisation</strong> (tuning hyperparameters or experiments with few evaluations: pick the next point by an acquisition function such as expected improvement). Costs: <code>O(n^3)</code> time for <code>n</code> points, so use sparse or approximate GPs beyond a few thousand points.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a14-q06" data-topic="Probabilistic ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How does a Gaussian process's predictive uncertainty behave away from the data?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It shrinks <span class="q-why">No.</span></li>
+          <li data-key="B">It grows and the mean reverts to the prior <span class="q-why">Correct.</span></li>
+          <li data-key="C">It stays zero <span class="q-why">No.</span></li>
+          <li data-key="D">It is undefined <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>That is the GP's honest 'I do not know'.</p></div>
+      </div>
+    </section>
+
+    <section id="em" data-track>
+      <h2>Mixture models and the EM algorithm</h2>
+<p>Data from several hidden groups can be modelled as a <strong>mixture</strong>: <code>p(x) = sum_k pi_k N(x | mu_k, sigma_k)</code>. The group label is a <strong>latent variable</strong>. <strong>Expectation-Maximisation (EM)</strong> alternates: <strong>E-step</strong>, compute each point's responsibility (probability of belonging to each component) given current parameters; <strong>M-step</strong>, re-estimate the parameters as responsibility-weighted statistics. Each iteration never decreases the likelihood; the result depends on initialisation (run several). k-means is the hard-assignment, equal-spherical special case.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a14-06.py">import math, random
+random.seed(4)
+data = [random.gauss(0, 1) for _ in range(300)] + [random.gauss(5, 1.2) for _ in range(200)]
+def normal_pdf(x, mu, s): return math.exp(-0.5 * ((x - mu) / s) ** 2) / (s * math.sqrt(2 * math.pi))
+pi, mu, sd = [0.5, 0.5], [-1.0, 1.0], [1.0, 1.0]                 # rough initial guesses
+for it in range(60):
+    resp = []
+    for x in data:                                               # E-step: responsibilities
+        p = [pi[k] * normal_pdf(x, mu[k], sd[k]) for k in range(2)]; s = sum(p); resp.append([v / s for v in p])
+    for k in range(2):                                           # M-step: weighted re-estimation
+        nk = sum(r[k] for r in resp)
+        pi[k] = nk / len(data); mu[k] = sum(r[k] * x for r, x in zip(resp, data)) / nk
+        sd[k] = math.sqrt(sum(r[k] * (x - mu[k]) ** 2 for r, x in zip(resp, data)) / nk)
+ll = sum(math.log(sum(pi[k] * normal_pdf(x, mu[k], sd[k]) for k in range(2))) for x in data)
+print("estimated weights:", [round(v, 2) for v in pi], "(true 0.60, 0.40) | means:", [round(v, 2) for v in mu], "(true 0, 5) | stds:", [round(v, 2) for v in sd], "(true 1, 1.2)")
+print("log-likelihood:", round(ll, 1))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>estimated weights: [0.59, 0.41] (true 0.60, 0.40) | means: [-0.01, 4.99] (true 0, 5) | stds: [0.93, 1.44] (true 1, 1.2)
+log-likelihood: -1078.9</code></pre>
+<p>Choose the number of components by <strong>BIC/AIC</strong> or held-out likelihood. Uses: soft clustering, density estimation, anomaly detection (low likelihood), speaker models, and as the conceptual ancestor of <strong>variational autoencoders</strong> and <strong>diffusion models</strong> (latent-variable models trained by maximising a bound on likelihood).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a14-q07" data-topic="Probabilistic ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does the E-step of EM compute?</p></div>
+        <ul class="q-options">
+          <li data-key="A">New parameters <span class="q-why">That is the M-step.</span></li>
+          <li data-key="B">The responsibility (probability of belonging to each component) of every point under the current parameters <span class="q-why">Correct.</span></li>
+          <li data-key="C">The kernel <span class="q-why">No.</span></li>
+          <li data-key="D">The gradient <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The M-step then re-estimates parameters using those weights.</p></div>
+      </div>
+    </section>
+
+    <section id="uncertainty" data-track>
+      <h2>Uncertainty in deep learning</h2>
+<p>Two kinds of uncertainty:</p>
+<ul><li><strong>Aleatoric</strong>: noise inherent in the data (a blurry photo). More data does not remove it.</li><li><strong>Epistemic</strong>: ignorance about the model (few similar examples). More data reduces it, and it is large <strong>out of distribution</strong>.</li></ul>
+<p>Practical estimators:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Method</th><th>Idea</th><th>Cost</th></tr></thead>
+<tbody>
+<tr><td><strong>Deep ensembles</strong></td><td>Train several networks from different seeds; disagreement signals epistemic uncertainty</td><td>Several trainings and inferences</td></tr><tr><td><strong>MC dropout</strong></td><td>Keep dropout on at test time, average many passes</td><td>Many forward passes</td></tr><tr><td><strong>Bayesian last layer / Laplace</strong></td><td>Bayesian treatment of only some parameters</td><td>Cheap, approximate</td></tr><tr><td><strong>Heteroscedastic output</strong></td><td>The network predicts a mean and a variance</td><td>Handles aleatoric noise</td></tr><tr><td><strong>Conformal prediction</strong></td><td>Wrap any model to give intervals with guaranteed coverage</td><td>Needs a calibration set</td></tr><tr><td><strong>Evidential / distance-aware</strong></td><td>Single-pass uncertainty heads</td><td>Active research</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/a14-07.py">import random, math
+random.seed(5)
+def make_model(seed):                                          # a tiny "model": a random-sample polynomial fit (a stand-in for a network)
+    rng = random.Random(seed); xs = [rng.uniform(-3, 3) for _ in range(25)]; ys = [math.sin(x) + rng.gauss(0, 0.2) for x in xs]
+    def predict(x):                                            # kernel-weighted average of this model's own training sample
+        w = [math.exp(-0.5 * ((x - xi) / 0.6) ** 2) + 1e-12 for xi in xs]; return sum(wi * yi for wi, yi in zip(w, ys)) / sum(w)
+    return predict
+ensemble = [make_model(s) for s in range(12)]
+for x in (0.0, 2.0, 6.0, 10.0):
+    preds = [m(x) for m in ensemble]; mean = sum(preds) / len(preds); sd = (sum((p - mean) ** 2 for p in preds) / len(preds)) ** 0.5
+    print(f"x = {x:&gt;4}: ensemble mean {mean:+.2f}, disagreement (std) {sd:.3f}" + ("   &lt;- far outside the training range" if x &gt; 4 else ""))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>x =  0.0: ensemble mean +0.01, disagreement (std) 0.139
+x =  2.0: ensemble mean +0.84, disagreement (std) 0.089
+x =  6.0: ensemble mean +0.40, disagreement (std) 0.237   &lt;- far outside the training range
+x = 10.0: ensemble mean +0.03, disagreement (std) 0.175   &lt;- far outside the training range</code></pre>
+<h3>Conformal prediction in a few lines</h3>
+<p>Hold out a <strong>calibration set</strong>, compute the absolute residuals of your model on it, take the <code>(1 - alpha)</code> quantile <code>q</code> (with a finite-sample correction), and predict <code>[y_hat - q, y_hat + q]</code>. Under exchangeability the interval covers the truth with probability at least <code>1 - alpha</code>, whatever the model.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a14-08.py">import random, math
+random.seed(6)
+def truth(x): return 2 * x + 1
+xs = [random.uniform(0, 10) for _ in range(3000)]
+data = [(x, truth(x) + random.gauss(0, 1 + 0.2 * x)) for x in xs]
+train, calib, test = data[:1000], data[1000:2000], data[2000:]
+n = len(train); mx = sum(x for x, _ in train) / n; my = sum(y for _, y in train) / n
+slope = sum((x - mx) * (y - my) for x, y in train) / sum((x - mx) ** 2 for x, _ in train); icpt = my - slope * mx
+predict = lambda x: slope * x + icpt
+scores = sorted(abs(y - predict(x)) for x, y in calib)
+alpha = 0.1
+q = scores[min(len(scores) - 1, math.ceil((len(scores) + 1) * (1 - alpha)) - 1)]
+covered = sum(abs(y - predict(x)) &lt;= q for x, y in test) / len(test)
+print(f"fitted line: y = {slope:.2f} x + {icpt:.2f} | conformal half-width {q:.2f} | coverage on fresh data {covered:.1%} (target 90%)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>fitted line: y = 1.97 x + 1.03 | conformal half-width 3.44 | coverage on fresh data 89.6% (target 90%)</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a14-q08" data-topic="Probabilistic ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which uncertainty can be reduced with more data?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Aleatoric <span class="q-why">Inherent noise.</span></li>
+          <li data-key="B">Epistemic <span class="q-why">Correct.</span></li>
+          <li data-key="C">Both equally <span class="q-why">No.</span></li>
+          <li data-key="D">Neither <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Epistemic uncertainty reflects ignorance about the model.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name three ways to estimate model uncertainty.</summary><div class="answer"><p>Deep ensembles, MC dropout and conformal prediction (also Bayesian last layers and heteroscedastic heads).</p></div></details>
+      </div>
+    </section>
+
+    <section id="calibration" data-track>
+      <h2>Calibration</h2>
+<p>A classifier is <strong>calibrated</strong> if among predictions of "70% confident", about 70% are right. Modern neural networks are usually <strong>over-confident</strong>. Diagnose with a <strong>reliability diagram</strong> and the <strong>expected calibration error (ECE)</strong>: bin predictions by confidence and compare average confidence with accuracy per bin. Fix with <strong>temperature scaling</strong> (divide logits by a learned <code>T &gt; 1</code>), Platt scaling or isotonic regression fitted on a validation set. Calibration matters whenever probabilities drive decisions (medical triage, ad bidding, risk).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a14-09.py">import math, random
+random.seed(7)
+def softmax(z):
+    m = max(z); e = [math.exp(v - m) for v in z]; s = sum(e); return [v / s for v in e]
+def sample(n, overconfidence):
+    out = []
+    for _ in range(n):
+        label = random.randrange(3); logits = [random.gauss(0, 1) for _ in range(3)]; logits[label] += 1.0     # weak true signal
+        out.append(([overconfidence * l for l in logits], label))
+    return out
+def ece(items, T=1.0, bins=10):
+    buckets = [[] for _ in range(bins)]
+    for logits, label in items:
+        p = softmax([l / T for l in logits]); conf = max(p); buckets[min(bins - 1, int(conf * bins))].append((conf, p.index(conf) == label))
+    return sum(len(b) / len(items) * abs(sum(c for c, _ in b) / len(b) - sum(ok for _, ok in b) / len(b)) for b in buckets if b)
+items = sample(6000, overconfidence=3.0)                          # scaled-up logits mimic an over-confident network
+best_T = min((t / 10 for t in range(5, 80)), key=lambda T: ece(items[:3000], T))
+print(f"ECE before temperature scaling {ece(items[3000:]):.3f} | learned T = {best_T:.1f} | ECE after {ece(items[3000:], best_T):.3f}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>ECE before temperature scaling 0.215 | learned T = 3.2 | ECE after 0.012</code></pre>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Report distributions, not points. Update beliefs with Bayes' rule (exactly with conjugate priors, by MCMC or variational inference otherwise), act on uncertainty with Thompson sampling and Bayesian optimisation, use Gaussian processes when data is scarce and honest error bars matter, model hidden groups with mixtures and EM, and make deep models trustworthy with ensembles, conformal intervals and calibration.</p></div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does temperature scaling do?</summary><div class="answer"><p>Divides logits by a learned temperature to make predicted probabilities match observed accuracy without changing the predicted class.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Probabilistic ML</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Probabilistic ML">
+<details class="recall iq" data-level="basic" data-topic="Probabilistic ML"><summary><span class="tag ok">Basic</span> MLE versus MAP versus Bayesian inference?</summary><div class="answer"><p>MLE maximises the likelihood, MAP adds a prior and takes the posterior mode, and Bayesian inference keeps the entire posterior distribution.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Probabilistic ML"><summary><span class="tag ok">Basic</span> State Bayes&#x27; rule in words.</summary><div class="answer"><p>The posterior is proportional to the likelihood times the prior, normalised by the evidence.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Probabilistic ML"><summary><span class="tag warn">Medium</span> What is a conjugate prior? Give an example.</summary><div class="answer"><p>A prior for which the posterior has the same functional form, such as a Beta prior with a Bernoulli likelihood giving Beta(a + heads, b + tails).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Probabilistic ML"><summary><span class="tag warn">Medium</span> Credible versus confidence interval?</summary><div class="answer"><p>A credible interval contains the parameter with a stated posterior probability given the model and prior; a confidence interval is a procedure that covers the truth in a stated fraction of repeated experiments.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Probabilistic ML"><summary><span class="tag warn">Medium</span> What does L2 regularisation correspond to in Bayesian terms?</summary><div class="answer"><p>A zero-mean Gaussian prior on the weights; L1 corresponds to a Laplace prior.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Probabilistic ML"><summary><span class="tag warn">Medium</span> Explain Thompson sampling.</summary><div class="answer"><p>Sample a success rate from each option&#x27;s posterior and play the option with the largest sample, balancing exploration and exploitation.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Probabilistic ML"><summary><span class="tag warn">Medium</span> How does Metropolis-Hastings work?</summary><div class="answer"><p>Propose a nearby point and accept it with probability min(1, p(new)/p(old)); after burn-in the visited points are samples from the target distribution.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Probabilistic ML"><summary><span class="tag warn">Medium</span> How do you diagnose MCMC convergence?</summary><div class="answer"><p>Run several chains from different starts, compare them with R-hat near 1, inspect trace plots and check the effective sample size.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Probabilistic ML"><summary><span class="tag bad">Advanced</span> What is a Gaussian process and what does it give you?</summary><div class="answer"><p>A prior over functions defined by a kernel; conditioning on data yields predictions with calibrated uncertainty that grows away from observations. Cost is O(n^3).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Probabilistic ML"><summary><span class="tag bad">Advanced</span> Explain the EM algorithm.</summary><div class="answer"><p>For latent-variable models: the E-step computes posterior responsibilities of the latent variables given current parameters; the M-step maximises the expected complete-data likelihood. Likelihood never decreases.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Probabilistic ML"><summary><span class="tag bad">Advanced</span> Aleatoric versus epistemic uncertainty?</summary><div class="answer"><p>Aleatoric is irreducible noise in the data; epistemic is lack of knowledge about the model and can shrink with more data.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Probabilistic ML"><summary><span class="tag bad">Advanced</span> How do deep ensembles and MC dropout estimate uncertainty?</summary><div class="answer"><p>Disagreement between independently trained networks, or between stochastic forward passes with dropout enabled, approximates epistemic uncertainty.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Probabilistic ML"><summary><span class="tag bad">Advanced</span> Explain conformal prediction.</summary><div class="answer"><p>Use a calibration set&#x27;s residual quantile to build intervals around any model&#x27;s predictions, guaranteeing coverage under exchangeability.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Probabilistic ML"><summary><span class="tag bad">Advanced</span> What is calibration and how do you fix miscalibration?</summary><div class="answer"><p>Predicted probabilities matching observed frequencies. Measure with reliability diagrams and ECE; fix with temperature scaling, Platt scaling or isotonic regression on validation data.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="a13-time-series.html"><span class="dir">Previous</span><span>A13 Time series: forecasting, seasonality, stationarity and anomaly detection</span></a>
+      <a class="next" href="a15-graph-ml.html"><span class="dir">Next</span><span>A15 Graph machine learning: PageRank, embeddings, message passing and knowledge graphs</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

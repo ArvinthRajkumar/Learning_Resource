@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="PY12">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Python for coding interviews: built-in complexity, idioms, recursion and typing | Python + SQL</title>
+<meta name="description" content="The costs of Python&#x27;s built-in operations, the idioms that make interview code short and correct, recursion limits and memoisation, iterators and itertools recipes, sorting keys, string and number tricks, type hints and a pre-submission checklist.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part PY12</p>
+      <h1>Python for coding interviews: built-in complexity, idioms, recursion and typing</h1>
+      <p class="lede">In a coding interview, Python lets you write less, but only if you know what each operation costs and which idiom to reach for. This part is a compact toolkit: the complexity table, the idioms, the traps and a routine for checking your own code.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~4 hours</span></div>
+    </div>
+
+    <section id="complexity" data-track>
+      <h2>Complexity of built-in operations</h2>
+<p>Know these cold; they decide whether your solution is <code>O(n)</code> or <code>O(n^2)</code> without you noticing.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Operation</th><th>list</th><th>dict / set</th><th>deque</th><th>str</th></tr></thead>
+<tbody>
+<tr><td>Index <code>x[i]</code></td><td>O(1)</td><td>O(1) by key</td><td>O(n) in the middle, O(1) at ends</td><td>O(1)</td></tr><tr><td>Append / <code>add</code></td><td>O(1) amortised</td><td>O(1) average</td><td>O(1)</td><td>n/a (immutable)</td></tr><tr><td>Insert / pop at front</td><td><strong>O(n)</strong></td><td>n/a</td><td><strong>O(1)</strong></td><td>n/a</td></tr><tr><td>Pop at end</td><td>O(1)</td><td><code>popitem</code> O(1)</td><td>O(1)</td><td>n/a</td></tr><tr><td>Membership <code>x in c</code></td><td><strong>O(n)</strong></td><td><strong>O(1) average</strong></td><td>O(n)</td><td>O(n) substring search</td></tr><tr><td>Delete by value</td><td>O(n)</td><td>O(1)</td><td>O(n)</td><td>n/a</td></tr><tr><td>Slice <code>x[a:b]</code></td><td>O(b - a) copy</td><td>n/a</td><td>n/a</td><td>O(b - a) copy</td></tr><tr><td>Concatenate <code>a + b</code></td><td>O(len a + len b)</td><td>n/a</td><td>n/a</td><td>O(len a + len b)</td></tr><tr><td><code>len(x)</code></td><td>O(1)</td><td>O(1)</td><td>O(1)</td><td>O(1)</td></tr><tr><td>Sort</td><td>O(n log n)</td><td>n/a</td><td>n/a</td><td>n/a</td></tr><tr><td><code>min</code> / <code>max</code> / <code>sum</code></td><td>O(n)</td><td>O(n)</td><td>O(n)</td><td>O(n)</td></tr><tr><td>Copy</td><td>O(n)</td><td>O(n)</td><td>O(n)</td><td>O(1) share</td></tr>
+</tbody>
+</table>
+</div>
+<p>Other facts: <code>heapq.heappush/heappop</code> are O(log n) and <code>heapify</code> is O(n); <code>bisect</code> is O(log n) to find but <code>insort</code> is O(n) to insert into a list; <code>sorted()</code> is <strong>stable</strong> (Timsort); <code>list.sort()</code> sorts in place and returns <code>None</code>; <code>s += t</code> in a loop on strings is O(n^2) in the worst case (use <code>"".join</code>); <code>x in some_list</code> inside a loop is the classic accidental O(n^2).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py12-01.py">import timeit
+n = 20_000
+lst, st = list(range(n)), set(range(n))
+t_list = timeit.timeit("n - 1 in lst", globals={"n": n, "lst": lst}, number=300)
+t_set = timeit.timeit("n - 1 in st", globals={"n": n, "st": st}, number=300)
+front_list = timeit.timeit("l.insert(0, 1); l.pop(0)", setup="l = list(range(50000))", number=2000)
+front_deque = timeit.timeit("d.appendleft(1); d.popleft()", setup="from collections import deque; d = deque(range(50000))", number=2000)
+print("membership: set is faster than list by more than 20x:", t_list / t_set &gt; 20)
+print("front operations: deque is faster than list by more than 20x:", front_list / front_deque &gt; 20)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>membership: set is faster than list by more than 20x: True
+front operations: deque is faster than list by more than 20x: True</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py12-q01" data-topic="Python interview toolkit" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the cost of <code>x in some_list</code> versus <code>x in some_set</code>?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Both O(1) <span class="q-why">No.</span></li>
+          <li data-key="B">O(n) for the list, O(1) average for the set <span class="q-why">Correct.</span></li>
+          <li data-key="C">O(1) for the list <span class="q-why">No.</span></li>
+          <li data-key="D">O(log n) for both <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Convert to a set when you test membership repeatedly.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-py12-q02" data-topic="Python interview toolkit" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which structure gives O(1) removal from the front?</p></div>
+        <ul class="q-options">
+          <li data-key="A">list <span class="q-why">pop(0) is O(n).</span></li>
+          <li data-key="B">collections.deque <span class="q-why">Correct.</span></li>
+          <li data-key="C">tuple <span class="q-why">Immutable.</span></li>
+          <li data-key="D">str <span class="q-why">Immutable.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use deque for queues and BFS.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Which list operations are O(n) traps?</summary><div class="answer"><p>Insert or pop at the front, membership tests, deletion by value, and slicing or concatenation inside loops.</p></div></details>
+      </div>
+    </section>
+
+    <section id="idioms" data-track>
+      <h2>Idioms that save time and bugs</h2>
+<pre><code class="lang-py" data-embed="solutions/snippets/py12-02.py">from collections import Counter, defaultdict, deque
+import heapq, bisect, itertools, functools
+nums = [4, 1, 3, 1, 5, 9, 2, 6]
+print("enumerate:", [(i, x) for i, x in enumerate(nums, start=1)][:3])
+print("zip + unpack:", [a * b for a, b in zip(nums, nums[1:])][:4])
+print("sorted with key and reverse:", sorted(["bb", "a", "ccc", "dd"], key=lambda s: (-len(s), s)))
+print("min/max with key:", max(["pear", "fig", "banana"], key=len), min(nums, default=None))
+print("any/all:", any(x &gt; 8 for x in nums), all(x &gt; 0 for x in nums))
+print("Counter:", Counter("mississippi").most_common(2))
+d = defaultdict(list)
+for w in ["eat", "tea", "tan", "ate", "nat", "bat"]: d["".join(sorted(w))].append(w)
+print("group anagrams:", sorted(d.values()))
+print("swap and chained comparison:", (lambda a, b: (b, a))(1, 2), 1 &lt; 3 &lt; 5)
+print("slicing:", nums[::-1][:3], nums[-3:], nums[1:6:2])
+print("ternary and walrus:", "even" if len(nums) % 2 == 0 else "odd", (n := len(nums)) &gt; 5, n)
+print("unpacking with *:", (lambda first, *rest: (first, rest))(*nums[:4]))
+print("itertools:", list(itertools.combinations([1, 2, 3], 2)), list(itertools.accumulate([1, 2, 3, 4])), list(itertools.islice(itertools.count(10, 5), 3)))
+print("string tricks:", "a,b,,c".split(","), " x ".strip(), "abc".startswith(("a", "z")), "x".join("123"), "Hello"[::-1], "ab" * 3)
+print("ord/chr:", ord("a"), chr(ord("a") + 2), [chr(i) for i in range(97, 100)])
+print("integer tricks:", divmod(17, 5), 17 // 5, -17 // 5, -17 % 5, pow(3, 4, 5), 10 ** 20, int("101", 2), bin(10), 7 &amp; 3, 7 | 8, 7 ^ 2, 1 &lt;&lt; 5)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>enumerate: [(1, 4), (2, 1), (3, 3)]
+zip + unpack: [4, 3, 3, 5]
+sorted with key and reverse: ['ccc', 'bb', 'dd', 'a']
+min/max with key: banana 1
+any/all: True True
+Counter: [('i', 4), ('s', 4)]
+group anagrams: [['bat'], ['eat', 'tea', 'ate'], ['tan', 'nat']]
+swap and chained comparison: (2, 1) True
+slicing: [6, 2, 9] [9, 2, 6] [1, 1, 9]
+ternary and walrus: even True 8
+unpacking with *: (4, (1, 3, 1))
+itertools: [(1, 2), (1, 3), (2, 3)] [1, 3, 6, 10] [10, 15, 20]
+string tricks: ['a', 'b', '', 'c'] x True 1x2x3 olleH ababab
+ord/chr: 97 c ['a', 'b', 'c']
+integer tricks: (3, 2) 3 -4 3 1 100000000000000000000 5 0b1010 3 15 5 32</code></pre>
+<h3>The 2D grid idiom</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/py12-03.py">grid = ["#..", ".#.", "..#"]
+R, C = len(grid), len(grid[0])
+DIRS = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+def neighbours(r, c):
+    for dr, dc in DIRS:
+        nr, nc = r + dr, c + dc
+        if 0 &lt;= nr &lt; R and 0 &lt;= nc &lt; C: yield nr, nc
+print(list(neighbours(0, 0)), "| transpose:", ["".join(col) for col in zip(*grid)], "| matrix without shared rows:", [[0] * 3 for _ in range(2)])
+bad = [[0] * 3] * 2; bad[0][0] = 1
+print("the aliasing trap [[0]*3]*2:", bad)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[(1, 0), (0, 1)] | transpose: ['#..', '.#.', '..#'] | matrix without shared rows: [[0, 0, 0], [0, 0, 0]]
+the aliasing trap [[0]*3]*2: [[1, 0, 0], [1, 0, 0]]</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py12-q03" data-topic="Python interview toolkit" data-type="numeric" data-answer="-4" data-tol="0">
+        <div class="q-stem"><p>What does -17 // 5 evaluate to in Python?</p></div>
+        <div class="q-explain"><p>Floor division rounds toward negative infinity: -3.4 becomes -4.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-py12-q04" data-topic="Python interview toolkit" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is wrong with <code>grid = [[0] * 3] * 2</code>?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is invalid <span class="q-why">It runs.</span></li>
+          <li data-key="B">Both rows are the same list object, so changing one changes both <span class="q-why">Correct.</span></li>
+          <li data-key="C">It is too slow <span class="q-why">No.</span></li>
+          <li data-key="D">Nothing <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use [[0] * 3 for _ in range(2)].</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name five idioms.</summary><div class="answer"><p>enumerate, zip, Counter, defaultdict and sorted with a key, plus any/all, slicing and unpacking.</p></div></details>
+      </div>
+    </section>
+
+    <section id="recursion" data-track>
+      <h2>Recursion, limits and memoisation</h2>
+<p>CPython's default recursion limit is about 1000 frames, and each frame costs memory, so deep recursion (a path graph with 100,000 nodes) raises <code>RecursionError</code>. Options: convert to an <strong>explicit stack</strong> or iteration, or raise the limit carefully with <code>sys.setrecursionlimit</code> (risky: can crash the interpreter). Memoise overlapping subproblems with <code>functools.lru_cache</code> (or <code>cache</code>).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py12-04.py">import sys
+from functools import lru_cache
+@lru_cache(maxsize=None)
+def fib(n): return n if n &lt; 2 else fib(n - 1) + fib(n - 2)
+print("fib(80) with memoisation:", fib(80), "| cache info:", fib.cache_info().misses, "misses")
+def depth(n): return 0 if n == 0 else 1 + depth(n - 1)
+print("recursion limit is about", sys.getrecursionlimit() // 100 * 100)
+try: depth(1_000_000)
+except RecursionError: print("RecursionError for depth one million, so iterate or use an explicit stack")
+def depth_iter(n):
+    stack, d = [n], 0
+    while stack:
+        x = stack.pop()
+        if x: stack.append(x - 1); d += 1
+    return d
+print("iterative version handles it:", depth_iter(1_000_000))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>fib(80) with memoisation: 23416728348467685 | cache info: 81 misses
+recursion limit is about 1000
+RecursionError for depth one million, so iterate or use an explicit stack
+iterative version handles it: 1000000</code></pre>
+<p>For <code>lru_cache</code>, arguments must be hashable (convert lists to tuples). Clear the cache between independent test cases if you cache a function that reads global state.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py12-q05" data-topic="Python interview toolkit" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What do you do when recursion depth could reach 100,000?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Hope <span class="q-why">RecursionError.</span></li>
+          <li data-key="B">Convert to an explicit stack or iteration <span class="q-why">Correct.</span></li>
+          <li data-key="C">Use more RAM <span class="q-why">Not the limit.</span></li>
+          <li data-key="D">Use globals <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The limit is about 1000 frames by default.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How does lru_cache help recursion?</summary><div class="answer"><p>It memoises results by arguments, turning exponential overlapping subproblems into linear work.</p></div></details>
+      </div>
+    </section>
+
+    <section id="iterators" data-track>
+      <h2>Iterators, generators and laziness</h2>
+<p>Use generators to stream large data without building lists; know that <strong>generators are single-use</strong>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py12-05.py">def numbers():
+    n = 0
+    while True: yield n; n += 1
+def take(it, k): return [next(it) for _ in range(k)]
+squares = (x * x for x in numbers())
+print(take(squares, 5), "| continues:", take(squares, 3))
+gen = (x for x in range(3))
+print(list(gen), list(gen), "(the second pass is empty: a generator is exhausted once consumed)")
+print("sum of squares below one million, streamed:", sum(x * x for x in range(1_000_000)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[0, 1, 4, 9, 16] | continues: [25, 36, 49]
+[0, 1, 2] [] (the second pass is empty: a generator is exhausted once consumed)
+sum of squares below one million, streamed: 333332833333500000</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py12-q06" data-topic="Python interview toolkit" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What happens if you iterate a generator twice?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It restarts <span class="q-why">No.</span></li>
+          <li data-key="B">The second pass is empty because the generator is exhausted <span class="q-why">Correct.</span></li>
+          <li data-key="C">An error <span class="q-why">No.</span></li>
+          <li data-key="D">It doubles the values <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Create a new generator or materialise a list.</p></div>
+      </div>
+    </section>
+
+    <section id="sorting" data-track>
+      <h2>Sorting tricks</h2>
+<pre><code class="lang-py" data-embed="solutions/snippets/py12-06.py">people = [("ana", 30), ("bo", 25), ("cy", 30), ("di", 25)]
+print("by age desc then name:", sorted(people, key=lambda p: (-p[1], p[0])))
+words = ["10", "9", "100"]
+print("numeric versus lexicographic:", sorted(words), sorted(words, key=int))
+import functools
+def cmp(a, b): return -1 if a + b &gt; b + a else 1                          # largest number from digits
+print("largest number:", "".join(sorted(["3", "30", "34", "5", "9"], key=functools.cmp_to_key(cmp))))
+print("stable sort keeps the original order of equal keys:", sorted([("b", 1), ("a", 1), ("c", 0)], key=lambda t: t[1]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>by age desc then name: [('ana', 30), ('cy', 30), ('bo', 25), ('di', 25)]
+numeric versus lexicographic: ['10', '100', '9'] ['9', '10', '100']
+largest number: 9534330
+stable sort keeps the original order of equal keys: [('c', 0), ('b', 1), ('a', 1)]</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py12-q07" data-topic="Python interview toolkit" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you sort by age descending then name ascending?</p></div>
+        <ul class="q-options">
+          <li data-key="A">sorted(people) <span class="q-why">No.</span></li>
+          <li data-key="B">sorted(people, key=lambda p: (-p[1], p[0])) <span class="q-why">Correct.</span></li>
+          <li data-key="C">people.sort().reverse() <span class="q-why">None error.</span></li>
+          <li data-key="D">sorted(people, reverse=True) <span class="q-why">Reverses both.</span></li>
+        </ul>
+        <div class="q-explain"><p>Negate numeric keys to reverse only one of them.</p></div>
+      </div>
+    </section>
+
+    <section id="numbers" data-track>
+      <h2>Numbers and precision</h2>
+<p>Python integers are <strong>arbitrary precision</strong> (no overflow), floats are 64-bit doubles. <code>//</code> floors toward negative infinity (<code>-7 // 2 == -4</code>), <code>%</code> takes the sign of the divisor, <code>round</code> is banker's rounding, and <code>float("inf")</code> is a convenient sentinel. When simulating 32-bit overflow (LeetCode style), mask explicitly.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py12-07.py">print(-7 // 2, -7 % 2, int(-7 / 2), round(0.5), round(1.5), round(2.5))
+print("exact big integers:", 2 ** 100, "| float limit:", 1e308 * 10, "| inf comparisons:", float("inf") &gt; 10 ** 100)
+to_int32 = lambda x: (x + 2**31) % 2**32 - 2**31
+print("simulated int32 overflow:", to_int32(2**31), to_int32(2**31 - 1 + 5))
+print("float equality pitfalls:", 0.1 + 0.2 == 0.3, abs(0.1 + 0.2 - 0.3) &lt; 1e-9)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>-4 1 -3 0 2 2
+exact big integers: 1267650600228229401496703205376 | float limit: inf | inf comparisons: True
+simulated int32 overflow: -2147483648 -2147483644
+float equality pitfalls: False True</code></pre>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does % do with negative operands?</summary><div class="answer"><p>The result takes the sign of the divisor, so -7 % 2 is 1.</p></div></details>
+      </div>
+    </section>
+
+    <section id="typing" data-track>
+      <h2>Type hints in interviews</h2>
+<p>Hints document intent and help tools; they are not enforced at runtime. Interviewers like simple, accurate hints.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py12-08.py">from typing import Optional, Iterable, Callable, TypeVar, Protocol
+T = TypeVar("T")
+def first(items: Iterable[T], default: Optional[T] = None) -&gt; Optional[T]:
+    return next(iter(items), default)
+def apply_all(fns: list[Callable[[int], int]], x: int) -&gt; list[int]:
+    return [f(x) for f in fns]
+class Shape(Protocol):
+    def area(self) -&gt; float: ...
+class Sq:
+    def __init__(self, s: float): self.s = s
+    def area(self) -&gt; float: return self.s ** 2
+def total_area(shapes: list[Shape]) -&gt; float: return sum(s.area() for s in shapes)
+print(first([]), first("xyz"), apply_all([lambda v: v + 1, lambda v: v * 2], 5), total_area([Sq(2), Sq(3)]))
+print("hints are metadata only:", first.__annotations__["default"])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>None x [6, 10] 13
+hints are metadata only: ~T | None</code></pre>
+<p>Modern syntax: <code>list[int]</code>, <code>dict[str, int]</code>, <code>int | None</code> (3.10+), <code>tuple[int, ...]</code>, <code>TypedDict</code>, <code>dataclass</code>, <code>Literal</code>, <code>Final</code>, and <code>mypy</code>/<code>pyright</code> for static checking.</p>
+    </section>
+
+    <section id="routine" data-track>
+      <h2>A routine for coding questions</h2>
+<ol><li><strong>Clarify</strong>: input types and ranges, duplicates, empty input, negative numbers, ordering, memory limits. Repeat the examples back.</li><li><strong>Brute force first</strong>: state it and its complexity.</li><li><strong>Optimise</strong>: name the pattern (hash map, two pointers, sort + scan, stack, heap, BFS, DP) and the target complexity.</li><li><strong>Code cleanly</strong>: small helper functions, meaningful names, no dead code. Python's expressiveness is an advantage; do not be so clever that it is unreadable.</li><li><strong>Test by hand</strong>: a normal case, the smallest case (empty, one element), duplicates, the largest or tricky boundary. Trace your code line by line.</li><li><strong>State complexity</strong> for time and space and mention trade-offs and follow-ups.</li></ol>
+<h3>Pre-submission checklist</h3>
+<ul><li>Off-by-one in ranges and slices (<code>range(n)</code> stops at <code>n - 1</code>).</li><li>Mutating a list while iterating it.</li><li><code>[[0]*c]*r</code> aliasing; shallow versus deep copy.</li><li>Mutable default arguments.</li><li><code>is</code> versus <code>==</code>; <code>None</code> checks with <code>is None</code>.</li><li>Returning <code>None</code> by accident (<code>list.sort()</code>, <code>append</code> return <code>None</code>).</li><li>Integer division and negative modulo.</li><li>Recursion depth and cycles in graphs (use a visited set).</li><li>Empty input and single-element input.</li></ul>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Choose structures by operation cost (set for membership, deque for both ends, heap for priorities), reach for the idioms (Counter, defaultdict, zip, enumerate, sorted with key), beware aliasing and recursion limits, and always test boundaries by hand before you say you are done.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py12-q08" data-topic="Python interview toolkit" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the best first answer in an interview?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The optimal code immediately <span class="q-why">Skips discussion.</span></li>
+          <li data-key="B">Clarify requirements, then outline a brute force and its complexity <span class="q-why">Correct.</span></li>
+          <li data-key="C">Silence <span class="q-why">No.</span></li>
+          <li data-key="D">A library call <span class="q-why">May be disallowed.</span></li>
+        </ul>
+        <div class="q-explain"><p>It shows your reasoning and sets the baseline to improve.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>List the six steps of a coding answer.</summary><div class="answer"><p>Clarify, brute force, optimise, code, test by hand, state complexity.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Python interview toolkit</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Python interview toolkit">
+<details class="recall iq" data-level="basic" data-topic="Python interview toolkit"><summary><span class="tag ok">Basic</span> Which list operations are O(n) traps?</summary><div class="answer"><p>Insert or pop at the front, membership tests, deletion by value, and slicing or concatenation in loops.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Python interview toolkit"><summary><span class="tag ok">Basic</span> What is the cost of membership in a set versus a list?</summary><div class="answer"><p>O(1) average for a set, O(n) for a list.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Python interview toolkit"><summary><span class="tag ok">Basic</span> What does -7 // 2 return and why?</summary><div class="answer"><p>-4, because floor division rounds toward negative infinity.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python interview toolkit"><summary><span class="tag warn">Medium</span> Why does [[0]*3]*2 cause bugs?</summary><div class="answer"><p>Both rows reference the same inner list, so mutating one row changes both. Use a comprehension.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python interview toolkit"><summary><span class="tag warn">Medium</span> How do you sort by one key descending and another ascending?</summary><div class="answer"><p>Use a tuple key with the numeric field negated, or sort twice relying on stability.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python interview toolkit"><summary><span class="tag warn">Medium</span> What is the default recursion limit and how do you avoid hitting it?</summary><div class="answer"><p>About 1000 frames. Convert to iteration or an explicit stack, or memoise to reduce depth; raise the limit cautiously.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python interview toolkit"><summary><span class="tag warn">Medium</span> Why use collections.deque for BFS?</summary><div class="answer"><p>popleft is O(1), whereas list.pop(0) is O(n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python interview toolkit"><summary><span class="tag warn">Medium</span> What does functools.lru_cache require of arguments?</summary><div class="answer"><p>They must be hashable; convert lists to tuples.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python interview toolkit"><summary><span class="tag warn">Medium</span> What can go wrong with a generator?</summary><div class="answer"><p>It is exhausted after one pass, so a second iteration yields nothing; recreate or materialise it.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python interview toolkit"><summary><span class="tag bad">Advanced</span> How would you simulate 32-bit integer overflow in Python?</summary><div class="answer"><p>Python ints are unbounded, so mask explicitly, for example (x + 2**31) % 2**32 - 2**31.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python interview toolkit"><summary><span class="tag bad">Advanced</span> Heap in Python: how do you get a max-heap?</summary><div class="answer"><p>heapq is a min-heap; push negated values or use tuples with negated priority.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python interview toolkit"><summary><span class="tag bad">Advanced</span> What does sorted() guarantee that helps in multi-key sorts?</summary><div class="answer"><p>Stability: equal keys keep their original relative order, so you can sort by secondary keys first.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python interview toolkit"><summary><span class="tag bad">Advanced</span> How do you structure your answer in a coding interview?</summary><div class="answer"><p>Clarify, state a brute force and its complexity, optimise by naming the pattern, code cleanly, test by hand with edge cases, and state time and space.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python interview toolkit"><summary><span class="tag bad">Advanced</span> What are common sources of off-by-one errors in Python?</summary><div class="answer"><p>Half-open ranges and slices, range(n) stopping at n - 1, inclusive versus exclusive bounds in binary search and sliding windows.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="py11-testing-debugging.html"><span class="dir">Previous</span><span>PY11 Testing, debugging and profiling in depth: fixtures, mocks, property tests, tracing and performance</span></a>
+      <a class="next" href="sql0-basics.html"><span class="dir">Next</span><span>SQL0 SQL from scratch: tables, queries, filtering and aggregation</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

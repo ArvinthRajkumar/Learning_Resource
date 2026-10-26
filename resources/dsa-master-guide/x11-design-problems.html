@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="X11">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Design-style coding problems: caches, limiters, iterators, games and thread-safe structures | DSA Master Guide</title>
+<meta name="description" content="Twelve implementation-heavy interview problems that test data structure design: hit counters, sliding-window rate limiters, time-based key-value stores, iterators, snake and tic-tac-toe, file systems, autocomplete, a min-stack, a thread-safe bounded queue and an event emitter, each with tests.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part X11</p>
+      <h1>Design-style coding problems: caches, limiters, iterators, games and thread-safe structures</h1>
+      <p class="lede">These problems ask you to design a class and choose the right internal data structures so every operation meets a time bound. The skill is naming the operations, choosing the structure that makes each cheap, and testing the edge cases. Every solution below ships with assertions that exercise it.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~6 hours</span></div>
+    </div>
+
+    <section id="how" data-track>
+      <h2>How to approach a design problem</h2>
+<ol><li><strong>List the operations and their required complexity</strong> (for example <code>get</code> and <code>put</code> in O(1)).</li><li><strong>Pick the structure</strong> that gives each operation that complexity: hash map for lookup, heap or sorted structure for min/max, deque for both ends, linked list for O(1) removal, trie for prefixes.</li><li><strong>State the invariants</strong> the structure must keep (map size equals list size, sorted order, no expired items).</li><li><strong>Handle edge cases</strong>: empty state, capacity zero, duplicate keys, time moving backwards, concurrent callers.</li><li><strong>Test</strong> the happy path and the boundaries with small sequences of calls.</li></ol>
+    </section>
+
+    <section id="hits" data-track>
+      <h2>1. Hit counter: hits in the last 5 minutes</h2>
+<p><code>hit(t)</code> records a hit at timestamp <code>t</code> (seconds, non-decreasing); <code>count(t)</code> returns the number of hits in the last 300 seconds. A <strong>queue</strong> of timestamps drops expired entries from the front, amortised O(1). When there are millions of hits per second, use fixed <strong>buckets</strong> (one counter per second in a circular array of 300 slots) for O(1) memory.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x11-01.py">from collections import deque
+class HitCounter:
+    def __init__(self, window=300): self.window, self.q = window, deque()
+    def hit(self, t): self.q.append(t)
+    def count(self, t):
+        while self.q and self.q[0] &lt;= t - self.window: self.q.popleft()          # expired
+        return len(self.q)
+class BucketHitCounter:                                                          # O(window) memory regardless of traffic
+    def __init__(self, window=300): self.w, self.times, self.hits = window, [0] * window, [0] * window
+    def hit(self, t):
+        i = t % self.w
+        if self.times[i] != t: self.times[i], self.hits[i] = t, 0                # slot reused by a newer second
+        self.hits[i] += 1
+    def count(self, t): return sum(h for tt, h in zip(self.times, self.hits) if t - self.w &lt; tt &lt;= t)
+a, b = HitCounter(), BucketHitCounter()
+seen = []
+for t in [1, 1, 2, 3, 100, 300, 301, 302, 700]:                      # operations arrive in time order
+    a.hit(t); b.hit(t); seen.append(t)
+    expected = sum(1 for x in seen if t - 300 &lt; x &lt;= t)
+    assert a.count(t) == b.count(t) == expected, t
+print("both counters agree with a direct count after every hit; at t=302 the last 300 seconds hold", sum(1 for x in seen if 302 - 300 &lt; x &lt;= 302 and x &lt;= 302), "hits")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>both counters agree with a direct count after every hit; at t=302 the last 300 seconds hold 5 hits</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x11-q01" data-topic="Design problems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why does a queue of timestamps give amortised O(1) hit counting?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Hits are sorted randomly <span class="q-why">No.</span></li>
+          <li data-key="B">Each timestamp is appended once and removed once as it expires <span class="q-why">Correct.</span></li>
+          <li data-key="C">It uses a heap <span class="q-why">No.</span></li>
+          <li data-key="D">It ignores old hits <span class="q-why">It removes them.</span></li>
+        </ul>
+        <div class="q-explain"><p>Total work is proportional to the number of hits.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Queue versus bucketed hit counters?</summary><div class="answer"><p>A queue stores every hit (memory grows with traffic); buckets store one counter per second in a fixed-size circular array.</p></div></details>
+      </div>
+    </section>
+
+    <section id="limiter" data-track>
+      <h2>2. Rate limiters: fixed window, sliding window log, token bucket</h2>
+<p>Allow at most <code>N</code> requests per user per window. Each variant trades memory, accuracy and burst behaviour.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x11-02.py">from collections import deque
+class FixedWindow:                                          # cheap, but allows 2N at a window boundary
+    def __init__(self, n, w): self.n, self.w, self.win, self.c = n, w, None, 0
+    def allow(self, t):
+        win = t // self.w
+        if win != self.win: self.win, self.c = win, 0
+        if self.c &lt; self.n: self.c += 1; return True
+        return False
+class SlidingLog:                                           # exact, O(N) memory per user
+    def __init__(self, n, w): self.n, self.w, self.log = n, w, deque()
+    def allow(self, t):
+        while self.log and self.log[0] &lt;= t - self.w: self.log.popleft()
+        if len(self.log) &lt; self.n: self.log.append(t); return True
+        return False
+class TokenBucket:                                          # O(1) memory, permits bursts up to capacity
+    def __init__(self, capacity, rate): self.cap, self.rate, self.tokens, self.last = capacity, rate, capacity, 0
+    def allow(self, t):
+        self.tokens = min(self.cap, self.tokens + (t - self.last) * self.rate); self.last = t
+        if self.tokens &gt;= 1: self.tokens -= 1; return True
+        return False
+ts = [0, 1, 2, 9, 10, 11, 12, 13]
+fw, sl = FixedWindow(3, 10), SlidingLog(3, 10)
+print("fixed window :", [fw.allow(t) for t in ts])
+print("sliding log  :", [sl.allow(t) for t in ts])
+tb = TokenBucket(capacity=3, rate=0.1)
+print("token bucket :", [tb.allow(t) for t in [0, 0, 0, 0, 5, 10, 10, 20]])
+fw2, sl2 = FixedWindow(3, 10), SlidingLog(3, 10)
+burst = [8, 8, 8, 10, 10, 10]                               # 3 requests just before the boundary, 3 just after
+print("burst at the boundary, fixed window lets", sum(fw2.allow(t) for t in burst), "through; sliding log lets", sum(sl2.allow(t) for t in burst))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>fixed window : [True, True, True, False, True, True, True, False]
+sliding log  : [True, True, True, False, True, True, True, False]
+token bucket : [True, True, True, False, False, True, False, True]
+burst at the boundary, fixed window lets 6 through; sliding log lets 3</code></pre>
+<p>Fixed window leaks double the limit across a boundary; the sliding log is exact but costs memory; the token bucket is the usual production choice (<a href="../system-design-guide/sd25-case-6.html">SD25</a> and <a href="../system-design-guide/sd13-case-1.html">SD13</a> for the distributed version).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x11-q02" data-topic="Design problems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the weakness of a fixed-window rate limiter?</p></div>
+        <ul class="q-options">
+          <li data-key="A">High memory use <span class="q-why">It is cheap.</span></li>
+          <li data-key="B">Up to twice the limit can pass across a window boundary <span class="q-why">Correct.</span></li>
+          <li data-key="C">It cannot count <span class="q-why">No.</span></li>
+          <li data-key="D">It needs a heap <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Sliding log and token bucket avoid it.</p></div>
+      </div>
+      <div class="quiz" data-qid="xd-x11-q03" data-topic="Design problems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does a token bucket permit that a strict sliding window does not?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Exceeding the long-run rate <span class="q-why">No.</span></li>
+          <li data-key="B">Short bursts up to the bucket capacity while keeping the average rate <span class="q-why">Correct.</span></li>
+          <li data-key="C">Storing no state <span class="q-why">It stores tokens and a timestamp.</span></li>
+          <li data-key="D">Unlimited requests <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Tokens accumulate while the client is idle.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name three rate limiting algorithms.</summary><div class="answer"><p>Fixed window, sliding window log (or counter), and token bucket or leaky bucket.</p></div></details>
+      </div>
+    </section>
+
+    <section id="timekv" data-track>
+      <h2>3. Time-based key-value store</h2>
+<p><code>set(key, value, timestamp)</code> and <code>get(key, timestamp)</code> returning the value with the <strong>largest timestamp &lt;= given</strong>. Timestamps for a key increase, so store a sorted list per key and <strong>binary search</strong>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x11-03.py">import bisect, random
+random.seed(1)
+class TimeMap:
+    def __init__(self): self.data = {}                                  # key -&gt; (timestamps, values)
+    def set(self, key, value, ts):
+        times, vals = self.data.setdefault(key, ([], []))
+        times.append(ts); vals.append(value)                            # timestamps arrive in increasing order
+    def get(self, key, ts):
+        if key not in self.data: return ""
+        times, vals = self.data[key]
+        i = bisect.bisect_right(times, ts)
+        return vals[i - 1] if i else ""
+tm = TimeMap()
+tm.set("k", "a", 1); tm.set("k", "b", 4); tm.set("k", "c", 9)
+assert [tm.get("k", t) for t in (0, 1, 3, 4, 8, 100)] == ["", "a", "a", "b", "b", "c"] and tm.get("zzz", 5) == ""
+history = []
+for ts in range(1, 200, 3):
+    v = random.randint(0, 9); tm.set("r", v, ts); history.append((ts, v))
+for q in range(0, 210, 7):
+    expected = next((v for ts, v in reversed(history) if ts &lt;= q), "")
+    assert tm.get("r", q) == expected
+print("TimeMap verified against a linear scan of the history")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>TimeMap verified against a linear scan of the history</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x11-q04" data-topic="Design problems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you answer 'latest value at or before time t' efficiently?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Linear scan <span class="q-why">Slow.</span></li>
+          <li data-key="B">Binary search (bisect_right) over the key's sorted timestamps <span class="q-why">Correct.</span></li>
+          <li data-key="C">Hash by time <span class="q-why">Exact match only.</span></li>
+          <li data-key="D">A stack <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Store timestamps in a list as they increase.</p></div>
+      </div>
+    </section>
+
+    <section id="minstack" data-track>
+      <h2>4. Min stack and max stack in O(1)</h2>
+<p>Each stack entry also stores the <strong>minimum so far</strong>, so <code>get_min</code> is O(1) and <code>pop</code> restores the previous minimum automatically.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x11-04.py">import random
+random.seed(2)
+class MinStack:
+    def __init__(self): self.s = []                                      # (value, min of stack up to here)
+    def push(self, x): self.s.append((x, min(x, self.s[-1][1]) if self.s else x))
+    def pop(self): return self.s.pop()[0]
+    def top(self): return self.s[-1][0]
+    def get_min(self): return self.s[-1][1]
+ms, ref = MinStack(), []
+for _ in range(2000):
+    if ref and random.random() &lt; 0.45: assert ms.pop() == ref.pop()
+    else: x = random.randint(-50, 50); ms.push(x); ref.append(x)
+    if ref: assert ms.get_min() == min(ref) and ms.top() == ref[-1]
+print("min stack verified against recomputing min over a plain list")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>min stack verified against recomputing min over a plain list</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x11-q05" data-topic="Design problems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How does a min stack return the minimum in O(1)?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Scans the stack <span class="q-why">O(n).</span></li>
+          <li data-key="B">Stores the minimum so far alongside each element <span class="q-why">Correct.</span></li>
+          <li data-key="C">Sorts the stack <span class="q-why">No.</span></li>
+          <li data-key="D">Uses randomness <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Popping restores the previous minimum automatically.</p></div>
+      </div>
+    </section>
+
+    <section id="iterator" data-track>
+      <h2>5. Flatten nested lists with an iterator</h2>
+<p><code>NestedIterator</code> exposes <code>has_next()</code> and <code>next()</code> over arbitrarily nested lists without flattening everything up front. Keep a <strong>stack of iterators</strong>; <code>has_next</code> advances until the top is a plain integer.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x11-05.py">class NestedIterator:
+    def __init__(self, nested): self.stack, self.peeked = [iter(nested)], None
+    def has_next(self):
+        while self.peeked is None and self.stack:
+            try: item = next(self.stack[-1])
+            except StopIteration: self.stack.pop(); continue
+            if isinstance(item, list): self.stack.append(iter(item))
+            else: self.peeked = item
+        return self.peeked is not None
+    def next(self):
+        if not self.has_next(): raise StopIteration
+        v, self.peeked = self.peeked, None
+        return v
+it = NestedIterator([[1, [2, 3]], [], 4, [[5], [[6]]]])
+out = []
+while it.has_next(): out.append(it.next())
+assert out == [1, 2, 3, 4, 5, 6]
+print("flattened lazily, skipping the empty list:", out)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>flattened lazily, skipping the empty list: [1, 2, 3, 4, 5, 6]</code></pre>
+<p>A related classic is the <strong>peeking iterator</strong> (<code>peek</code> without consuming) built the same way.</p>
+    </section>
+
+    <section id="snake" data-track>
+      <h2>6. Snake game on a grid</h2>
+<p>The snake is a <strong>deque</strong> of cells (head at one end) plus a <strong>set</strong> of occupied cells for O(1) collision checks. Each move adds a new head; if no food is eaten, the tail is removed first (so moving into the tail's old cell is legal).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x11-06.py">from collections import deque
+class Snake:
+    DIRS = {"U": (-1, 0), "D": (1, 0), "L": (0, -1), "R": (0, 1)}
+    def __init__(self, h, w, food):
+        self.h, self.w, self.food, self.body, self.cells, self.score = h, w, deque(food), deque([(0, 0)]), {(0, 0)}, 0
+    def move(self, d):
+        r, c = self.body[-1]; dr, dc = self.DIRS[d]; nr, nc = r + dr, c + dc
+        if not (0 &lt;= nr &lt; self.h and 0 &lt;= nc &lt; self.w): return -1                        # hit the wall
+        eating = bool(self.food) and tuple(self.food[0]) == (nr, nc)
+        if not eating:
+            self.cells.discard(self.body.popleft())                                       # tail moves away first
+        elif self.food: self.food.popleft(); self.score += 1
+        if (nr, nc) in self.cells: return -1                                              # hit itself
+        self.body.append((nr, nc)); self.cells.add((nr, nc))
+        return self.score
+g = Snake(4, 4, [(0, 1), (0, 2), (0, 3), (1, 3)])
+print("scores after each move (the snake grows by eating the 4 food items, then turns back on itself):", [g.move(d) for d in "RRRDLU"], "| -1 means game over")
+g2 = Snake(2, 2, []); print("wall collision:", [g2.move(d) for d in "RRR"])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>scores after each move (the snake grows by eating the 4 food items, then turns back on itself): [1, 2, 3, 4, 4, -1] | -1 means game over
+wall collision: [0, -1, -1]</code></pre>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why remove the tail before checking self-collision?</summary><div class="answer"><p>The tail cell is vacated on a non-eating move, so moving into it is legal.</p></div></details>
+      </div>
+    </section>
+
+    <section id="tictactoe" data-track>
+      <h2>7. Tic-tac-toe with O(1) moves</h2>
+<p>Instead of scanning the board after every move, keep counters per row, column and both diagonals; a player wins when any counter reaches <code>n</code> in absolute value (+1 for one player, -1 for the other).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x11-07.py">class TicTacToe:
+    def __init__(self, n): self.n, self.rows, self.cols, self.diag, self.anti = n, [0] * n, [0] * n, 0, 0
+    def move(self, r, c, player):
+        v = 1 if player == 1 else -1
+        self.rows[r] += v; self.cols[c] += v
+        if r == c: self.diag += v
+        if r + c == self.n - 1: self.anti += v
+        n = self.n
+        return player if n in (abs(self.rows[r]), abs(self.cols[c]), abs(self.diag), abs(self.anti)) else 0
+g = TicTacToe(3)
+results = [g.move(0, 0, 1), g.move(0, 2, 2), g.move(2, 2, 1), g.move(1, 1, 2), g.move(2, 0, 1), g.move(1, 0, 2), g.move(2, 1, 1)]
+print(results, "| player 1 wins on the last move by completing the bottom row" if results[-1] == 1 else "")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[0, 0, 0, 0, 0, 0, 1] | player 1 wins on the last move by completing the bottom row</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x11-q06" data-topic="Design problems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How does the counter-based tic-tac-toe check each move in O(1)?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Scans the board <span class="q-why">O(n).</span></li>
+          <li data-key="B">Maintains row, column and diagonal totals of +1 or -1 and checks if one reaches n <span class="q-why">Correct.</span></li>
+          <li data-key="C">Hashes the board <span class="q-why">No.</span></li>
+          <li data-key="D">Uses recursion <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Only the affected lines are updated.</p></div>
+      </div>
+    </section>
+
+    <section id="fs" data-track>
+      <h2>8. In-memory file system</h2>
+<p>Operations: <code>mkdir(path)</code>, <code>add_file(path, content)</code>, <code>ls(path)</code> (a file lists itself; a directory lists children sorted), <code>read(path)</code>. Model it as a <strong>trie of path components</strong>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x11-08.py">class Node:
+    def __init__(self): self.children, self.content = {}, None
+class FileSystem:
+    def __init__(self): self.root = Node()
+    def _walk(self, path, create=False):
+        node = self.root
+        for part in [p for p in path.split("/") if p]:
+            if part not in node.children:
+                if not create: raise FileNotFoundError(path)
+                node.children[part] = Node()
+            node = node.children[part]
+        return node
+    def mkdir(self, path): self._walk(path, create=True)
+    def add_file(self, path, content):
+        node = self._walk(path, create=True); node.content = (node.content or "") + content
+    def ls(self, path):
+        node = self._walk(path)
+        if node.content is not None: return [path.rstrip("/").split("/")[-1]]
+        return sorted(node.children)
+    def read(self, path):
+        node = self._walk(path)
+        if node.content is None: raise IsADirectoryError(path)
+        return node.content
+fs = FileSystem()
+fs.mkdir("/a/b/c"); fs.add_file("/a/b/c/d.txt", "hello"); fs.add_file("/a/b/c/d.txt", " world"); fs.add_file("/a/z.txt", "z")
+assert fs.ls("/") == ["a"] and fs.ls("/a") == ["b", "z.txt"] and fs.ls("/a/b/c/d.txt") == ["d.txt"] and fs.read("/a/b/c/d.txt") == "hello world"
+try: fs.read("/a/b")
+except IsADirectoryError: pass
+try: fs.ls("/nope")
+except FileNotFoundError: pass
+print("file system tests passed; listing /a:", fs.ls("/a"))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>file system tests passed; listing /a: ['b', 'z.txt']</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x11-q07" data-topic="Design problems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which structure naturally models a file system's paths?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A heap <span class="q-why">No.</span></li>
+          <li data-key="B">A trie keyed by path components <span class="q-why">Correct.</span></li>
+          <li data-key="C">A queue <span class="q-why">No.</span></li>
+          <li data-key="D">A stack <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Each directory maps names to children.</p></div>
+      </div>
+    </section>
+
+    <section id="autocomplete" data-track>
+      <h2>9. Autocomplete with ranked suggestions</h2>
+<p>Typing a character returns the top 3 sentences starting with the typed prefix, ranked by <strong>frequency then alphabetically</strong>. Use a <strong>trie</strong> where each node keeps its children and, for each prefix, the matching sentences (or keep counts and sort on demand for small data).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x11-09.py">import heapq
+class Autocomplete:
+    def __init__(self, sentences, times):
+        self.root, self.cur, self.node = {}, "", None
+        for s, t in zip(sentences, times): self._add(s, t)
+        self.node = self.root
+    def _add(self, s, t):
+        node = self.root
+        for ch in s:
+            node = node.setdefault(ch, {})
+            node.setdefault("#", {}); node["#"][s] = node["#"].get(s, 0) + t     # each prefix node stores sentence counts
+    def input(self, ch):
+        if ch == "#":
+            self._add(self.cur, 1); self.cur, self.node = "", self.root; return []
+        self.cur += ch
+        if self.node is not None and ch in self.node: self.node = self.node[ch]
+        else: self.node = None; return []
+        return [s for s, _ in heapq.nsmallest(3, self.node["#"].items(), key=lambda kv: (-kv[1], kv[0]))]
+ac = Autocomplete(["i love you", "island", "ironman", "i love leetcode"], [5, 3, 2, 2])
+print([ac.input(c) for c in "i a"], ac.input("#"))
+print("after typing 'i a#' once, the new sentence is remembered:", [ac.input(c) for c in "i a"][-1])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[['i love you', 'island', 'i love leetcode'], ['i love you', 'i love leetcode'], []] []
+after typing 'i a#' once, the new sentence is remembered: ['i a']</code></pre>
+    </section>
+
+    <section id="queue" data-track>
+      <h2>10. Bounded blocking queue (thread-safe)</h2>
+<p>A <strong>producer-consumer</strong> buffer with capacity <code>n</code>: <code>put</code> blocks when full, <code>get</code> blocks when empty. Use one lock and two condition variables (<code>not_full</code>, <code>not_empty</code>); always <strong>re-check the condition in a loop</strong> (spurious wake-ups, other threads).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x11-10.py">import threading, collections
+class BoundedQueue:
+    def __init__(self, capacity):
+        self.cap, self.q = capacity, collections.deque()
+        self.lock = threading.Lock()
+        self.not_full, self.not_empty = threading.Condition(self.lock), threading.Condition(self.lock)
+    def put(self, item):
+        with self.not_full:
+            while len(self.q) &gt;= self.cap: self.not_full.wait()
+            self.q.append(item); self.not_empty.notify()
+    def get(self):
+        with self.not_empty:
+            while not self.q: self.not_empty.wait()
+            item = self.q.popleft(); self.not_full.notify(); return item
+q, produced, consumed = BoundedQueue(3), list(range(200)), []
+def producer():
+    for x in produced: q.put(x)
+def consumer():
+    for _ in range(len(produced)): consumed.append(q.get())
+threads = [threading.Thread(target=producer), threading.Thread(target=consumer)]
+for t in threads: t.start()
+for t in threads: t.join()
+print("all items arrived in order through a queue of capacity 3:", consumed == produced, "| never exceeded capacity:", len(q.q) &lt;= 3)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>all items arrived in order through a queue of capacity 3: True | never exceeded capacity: True</code></pre>
+<p>In real code use <code>queue.Queue(maxsize=n)</code>, which implements exactly this.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x11-q08" data-topic="Design problems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why must a blocking queue re-check its condition in a while loop after wait()?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Style <span class="q-why">No.</span></li>
+          <li data-key="B">Wake-ups can be spurious or another thread may have consumed the item first <span class="q-why">Correct.</span></li>
+          <li data-key="C">To avoid deadlock only <span class="q-why">Partly.</span></li>
+          <li data-key="D">wait never returns <span class="q-why">It does.</span></li>
+        </ul>
+        <div class="q-explain"><p>Always loop on the predicate.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does a bounded blocking queue need?</summary><div class="answer"><p>A lock, a not-full condition and a not-empty condition, with waits in while loops.</p></div></details>
+      </div>
+    </section>
+
+    <section id="emitter" data-track>
+      <h2>11. Event emitter and an LRU-memoised function</h2>
+<pre><code class="lang-py" data-embed="solutions/snippets/x11-11.py">from collections import OrderedDict, defaultdict
+class EventEmitter:
+    def __init__(self): self.handlers = defaultdict(list)
+    def on(self, event, fn): self.handlers[event].append(fn); return lambda: self.handlers[event].remove(fn)    # returns an unsubscribe function
+    def once(self, event, fn):
+        def wrapper(*a):
+            off(); return fn(*a)
+        off = self.on(event, wrapper)
+    def emit(self, event, *args): return [fn(*args) for fn in list(self.handlers[event])]                       # copy: handlers may unsubscribe
+em, log = EventEmitter(), []
+off = em.on("data", lambda x: log.append(("always", x)))
+em.once("data", lambda x: log.append(("once", x)))
+em.emit("data", 1); em.emit("data", 2); off(); em.emit("data", 3)
+print(log)
+def lru_memo(capacity):
+    def deco(fn):
+        cache = OrderedDict()
+        def wrapper(*args):
+            if args in cache: cache.move_to_end(args); return cache[args]
+            val = fn(*args); cache[args] = val
+            if len(cache) &gt; capacity: cache.popitem(last=False)
+            return val
+        wrapper.cache = cache
+        return wrapper
+    return deco
+calls = []
+@lru_memo(2)
+def square(x): calls.append(x); return x * x
+square(2); square(3); square(2); square(4); square(3)
+print("underlying calls (3 was evicted when 4 arrived):", calls)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[('always', 1), ('once', 1), ('always', 2)]
+underlying calls (3 was evicted when 4 arrived): [2, 3, 4, 3]</code></pre>
+    </section>
+
+    <section id="checklist" data-track>
+      <h2>12. Design checklist</h2>
+<ul><li>Did you write the <strong>API</strong> (method names, inputs, outputs, errors) before coding?</li><li>Does every operation meet the stated complexity? State amortised bounds explicitly.</li><li>What are the <strong>invariants</strong> and where could they break (partial failure halfway through an update)?</li><li>Edge cases: empty, one element, capacity 0 or 1, duplicates, same timestamp, time going backwards, very large inputs.</li><li>Concurrency: which state is shared? Use a lock and condition variables, or immutable data, and avoid check-then-act races.</li><li>Memory: do expired or removed entries get cleaned up (no unbounded growth)?</li><li>Testability: inject the clock; keep side effects out of the core structure.</li></ul>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Design problems are data structure selection under time constraints: queues for sliding windows, maps plus sorted lists for time lookups, per-item metadata for O(1) aggregates, tries for paths and prefixes, counters instead of rescans, and locks with condition variables for blocking structures. State complexity, invariants and edge cases, then prove the class with small assertions.</p></div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name four things to state when presenting a design class.</summary><div class="answer"><p>The API, operation complexities, invariants and edge cases (plus concurrency assumptions).</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Design problems</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Design problems">
+<details class="recall iq" data-level="basic" data-topic="Design problems"><summary><span class="tag ok">Basic</span> How do you implement a hit counter for the last 5 minutes?</summary><div class="answer"><p>A queue of timestamps removing expired entries on each call (amortised O(1)), or a circular array of per-second buckets for constant memory.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Design problems"><summary><span class="tag ok">Basic</span> How does a min stack return the minimum in O(1)?</summary><div class="answer"><p>Store the minimum so far with each element, or keep a parallel stack of minima.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Design problems"><summary><span class="tag warn">Medium</span> Compare fixed window, sliding log and token bucket limiters.</summary><div class="answer"><p>Fixed window is cheap but allows double the limit at boundaries; sliding log is exact but uses memory per request; token bucket uses O(1) state and allows bursts up to its capacity.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Design problems"><summary><span class="tag warn">Medium</span> Design a time-based key-value store.</summary><div class="answer"><p>Per key, keep timestamps and values in lists as they arrive and answer get(key, t) with bisect_right on timestamps.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Design problems"><summary><span class="tag warn">Medium</span> How do you make tic-tac-toe moves O(1)?</summary><div class="answer"><p>Keep counters for each row, column and both diagonals, adding +1 or -1 per player, and detect a win when a counter reaches n in absolute value.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Design problems"><summary><span class="tag warn">Medium</span> Which structures implement the snake game?</summary><div class="answer"><p>A deque for the body and a set of occupied cells for O(1) collision checks; remove the tail before checking collisions on non-eating moves.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Design problems"><summary><span class="tag warn">Medium</span> How would you design an in-memory file system?</summary><div class="answer"><p>A trie of path components where each node has children and optional file content, supporting mkdir, ls, add and read in O(path length).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Design problems"><summary><span class="tag warn">Medium</span> How do you design an iterator over nested lists?</summary><div class="answer"><p>Keep a stack of iterators and advance lazily in has_next until the next integer is found, handling empty lists.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Design problems"><summary><span class="tag bad">Advanced</span> Design an autocomplete system.</summary><div class="answer"><p>A trie where each prefix node keeps sentence counts; top-3 by frequency then lexicographic order via a heap, with the completed sentence added on the terminator.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Design problems"><summary><span class="tag bad">Advanced</span> How do you build a thread-safe bounded blocking queue?</summary><div class="answer"><p>A lock with not-full and not-empty condition variables; put and get wait in while loops and notify the other condition.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Design problems"><summary><span class="tag bad">Advanced</span> Design an event emitter with once and unsubscribe.</summary><div class="answer"><p>A map from event to handler list; on returns an unsubscribe function; once wraps the handler to remove itself; emit iterates over a copy of the list.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Design problems"><summary><span class="tag bad">Advanced</span> How do you implement an LRU cache with O(1) operations?</summary><div class="answer"><p>A hash map plus a doubly linked list (or OrderedDict) moving accessed items to the front and evicting from the tail.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Design problems"><summary><span class="tag bad">Advanced</span> How would you design a rate limiter that works across many servers?</summary><div class="answer"><p>A shared store (Redis) with atomic token bucket or sliding window counters via Lua scripts, with local approximations to reduce round trips and a fail-open or fail-closed policy.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Design problems"><summary><span class="tag bad">Advanced</span> What do you state when presenting a design class?</summary><div class="answer"><p>The API, complexity of each operation, invariants, edge cases, concurrency assumptions and memory growth.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="x10-geometry-games.html"><span class="dir">Previous</span><span>X10 Computational geometry and game theory: convex hull, intersections, sweep lines, Nim and minimax</span></a>
+      <a class="next" href="x12-intuition.html"><span class="dir">Next</span><span>X12 Data structures and algorithms explained simply: intuition, analogies and pattern recognition</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

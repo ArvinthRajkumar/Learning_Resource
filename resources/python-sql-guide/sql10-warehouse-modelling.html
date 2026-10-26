@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="SQL10">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Data warehousing and dimensional modelling: star schemas, slowly changing dimensions and ELT | Python + SQL</title>
+<meta name="description" content="How analytical databases are modelled: OLTP versus OLAP, fact and dimension tables, star and snowflake schemas, grain, surrogate keys, slowly changing dimensions with runnable examples, date dimensions, aggregates, ELT and data quality in the warehouse.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SQL10</p>
+      <h1>Data warehousing and dimensional modelling: star schemas, slowly changing dimensions and ELT</h1>
+      <p class="lede">Transactional databases are designed to record business events safely; warehouses are designed to answer questions about them quickly. This part explains the shapes that make analytical queries simple and fast, and builds a small star schema you can query.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="oltp" data-track>
+      <h2>OLTP versus OLAP</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>OLTP (operational)</th><th>OLAP (analytical)</th></tr></thead>
+<tbody>
+<tr><td>Purpose</td><td>Run the business: place an order, update a profile</td><td>Understand the business: sales by region and month</td></tr><tr><td>Queries</td><td>Many small reads and writes touching few rows</td><td>Fewer, large scans aggregating millions of rows</td></tr><tr><td>Schema</td><td>Normalised (3NF) to avoid update anomalies</td><td>Denormalised (dimensional) for simple, fast reads</td></tr><tr><td>Storage</td><td>Row store, B-tree indexes</td><td>Column store, compression, partitioning</td></tr><tr><td>Users</td><td>Applications, thousands of concurrent</td><td>Analysts and dashboards, tens to hundreds</td></tr><tr><td>History</td><td>Current state</td><td>Full history, time-variant</td></tr><tr><td>Examples</td><td>PostgreSQL, MySQL</td><td>BigQuery, Snowflake, Redshift, ClickHouse</td></tr>
+</tbody>
+</table>
+</div>
+<p>Running analytics directly on the OLTP database slows the application and produces awkward 12-table joins. The usual pipeline copies data to a <strong>warehouse</strong> (see <a href="../system-design-guide/sd20-data-processing.html">SD20</a>) and reshapes it.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql10-q01" data-topic="Warehouse modelling" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why avoid running heavy analytics directly on the OLTP database?</p></div>
+        <ul class="q-options">
+          <li data-key="A">SQL forbids it <span class="q-why">No.</span></li>
+          <li data-key="B">Large scans compete with transactions and the normalised schema needs many joins <span class="q-why">Correct.</span></li>
+          <li data-key="C">OLTP cannot store numbers <span class="q-why">No.</span></li>
+          <li data-key="D">It is more expensive to query <span class="q-why">Not the point.</span></li>
+        </ul>
+        <div class="q-explain"><p>Copy data to a warehouse shaped for analysis.</p></div>
+      </div>
+    </section>
+
+    <section id="facts" data-track>
+      <h2>Facts and dimensions</h2>
+<p>Dimensional modelling (Kimball) splits data into two kinds of tables:</p>
+<ul><li><strong>Fact table</strong>: the <strong>measurements</strong> of a business process, one row per event at a stated <strong>grain</strong> (granularity). Columns are foreign keys to dimensions plus numeric <strong>measures</strong> (quantity, amount). Facts are narrow, very long and append-heavy.</li><li><strong>Dimension table</strong>: the <strong>descriptive context</strong> (who, what, where, when): customer, product, store, date. Dimensions are wide, short and rich in text attributes used to <strong>filter, group and label</strong>.</li></ul>
+<p>The <strong>grain</strong> decision comes first: "one row per order line" or "one row per day per product" or "one row per page view". Every column must be true at that grain. Mixing grains in one fact table causes double counting.</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 638 294" role="img" aria-label="A star schema: one central fact table surrounded by dimension tables." style="min-width:638px"><defs><marker id="ah4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah4a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah4b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah4d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="255.7" y1="118.0" x2="168.3" y2="78.0" class="d-line" marker-end="url(#ah4)"/><text x="212.0" y="93.0" text-anchor="middle" class="d-sm d-muted">date_key</text><line x1="382.3" y1="118.0" x2="469.7" y2="78.0" class="d-line" marker-end="url(#ah4)"/><text x="426.0" y="93.0" text-anchor="middle" class="d-sm d-muted">customer_key</text><line x1="255.7" y1="176.0" x2="168.3" y2="216.0" class="d-line" marker-end="url(#ah4)"/><text x="212.0" y="191.0" text-anchor="middle" class="d-sm d-muted">product_key</text><line x1="382.3" y1="176.0" x2="469.7" y2="216.0" class="d-line" marker-end="url(#ah4)"/><text x="426.0" y="191.0" text-anchor="middle" class="d-sm d-muted">store_key</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-a"/><text x="319.0" y="151.5" text-anchor="middle" class="d-sm">fact_sales (grain: one order line)</text><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-b"/><text x="105.0" y="53.5" text-anchor="middle">dim_date</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-c"/><text x="533.0" y="53.5" text-anchor="middle">dim_customer</text><rect x="20.0" y="216.0" width="170" height="58" rx="8" class="d-d"/><text x="105.0" y="249.5" text-anchor="middle">dim_product</text><rect x="448.0" y="216.0" width="170" height="58" rx="8" class="d-e"/><text x="533.0" y="249.5" text-anchor="middle">dim_store</text></svg>
+</div>
+<figcaption>A star schema: one central fact table surrounded by dimension tables.</figcaption></figure>
+<h3>Types of facts and measures</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Kind</th><th>Meaning</th><th>Example</th></tr></thead>
+<tbody>
+<tr><td><strong>Transaction fact</strong></td><td>One row per event</td><td>Each order line</td></tr><tr><td><strong>Periodic snapshot</strong></td><td>State at regular intervals</td><td>Account balance at end of each day</td></tr><tr><td><strong>Accumulating snapshot</strong></td><td>One row per process instance, updated as it moves</td><td>Order with placed, shipped, delivered dates</td></tr><tr><td><strong>Factless fact</strong></td><td>Records that an event occurred, no measure</td><td>Student attended class</td></tr>
+</tbody>
+</table>
+</div>
+<p>Measures are <strong>additive</strong> (sum across all dimensions: revenue), <strong>semi-additive</strong> (sum across some: account balance can be summed across accounts but not across time), or <strong>non-additive</strong> (ratios, unit prices: store the numerator and denominator and compute the ratio at query time).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql10-q02" data-topic="Warehouse modelling" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the grain of a fact table?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Its size <span class="q-why">No.</span></li>
+          <li data-key="B">What exactly one row represents <span class="q-why">Correct.</span></li>
+          <li data-key="C">The number of dimensions <span class="q-why">No.</span></li>
+          <li data-key="D">The primary key type <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Decide it first; mixing grains double counts.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-sql10-q03" data-topic="Warehouse modelling" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which measure is non-additive?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Quantity sold <span class="q-why">Additive.</span></li>
+          <li data-key="B">A ratio such as margin percentage or unit price <span class="q-why">Correct.</span></li>
+          <li data-key="C">Revenue <span class="q-why">Additive.</span></li>
+          <li data-key="D">Order count <span class="q-why">Additive.</span></li>
+        </ul>
+        <div class="q-explain"><p>Store the numerator and denominator and divide at query time.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Fact versus dimension in one line each?</summary><div class="answer"><p>A fact table records measurable events at a stated grain; a dimension table holds descriptive context used to filter and group.</p></div></details>
+      </div>
+    </section>
+
+    <section id="star" data-track>
+      <h2>A star schema you can query</h2>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql10-01.sql">CREATE TABLE dim_date (date_key INTEGER PRIMARY KEY, full_date TEXT, year INT, quarter INT, month INT, month_name TEXT, is_weekend INT);
+CREATE TABLE dim_customer (customer_key INTEGER PRIMARY KEY, customer_id TEXT, name TEXT, segment TEXT, country TEXT);
+CREATE TABLE dim_product (product_key INTEGER PRIMARY KEY, sku TEXT, name TEXT, category TEXT, brand TEXT);
+CREATE TABLE fact_sales (
+  date_key INT REFERENCES dim_date, customer_key INT REFERENCES dim_customer, product_key INT REFERENCES dim_product,
+  quantity INT, revenue REAL, cost REAL);
+INSERT INTO dim_date VALUES (20240101,'2024-01-01',2024,1,1,'January',0),(20240102,'2024-01-02',2024,1,1,'January',0),(20240203,'2024-02-03',2024,1,2,'February',1),(20240310,'2024-03-10',2024,1,3,'March',1);
+INSERT INTO dim_customer VALUES (1,'C-100','Ana','retail','IN'),(2,'C-200','Bo','wholesale','US'),(3,'C-300','Cy','retail','US');
+INSERT INTO dim_product VALUES (1,'P-1','Pen','stationery','Acme'),(2,'P-2','Desk','furniture','Woodly'),(3,'P-3','Notebook','stationery','Acme');
+INSERT INTO fact_sales VALUES
+ (20240101,1,1,10,15,6),(20240101,2,2,1,300,180),(20240102,3,3,5,25,10),(20240203,1,3,4,20,8),(20240203,2,1,100,140,60),(20240310,3,2,2,600,360),(20240310,1,1,20,30,12);
+SELECT d.month_name, p.category, SUM(f.revenue) AS revenue, SUM(f.revenue - f.cost) AS profit
+FROM fact_sales f
+JOIN dim_date d ON d.date_key = f.date_key
+JOIN dim_product p ON p.product_key = f.product_key
+GROUP BY d.month, d.month_name, p.category
+ORDER BY d.month, p.category;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>month_name</th><th>category</th><th>revenue</th><th>profit</th></tr></thead>
+<tbody><tr><td>January</td><td>furniture</td><td>300.0</td><td>120.0</td></tr><tr><td>January</td><td>stationery</td><td>40.0</td><td>24.0</td></tr><tr><td>February</td><td>stationery</td><td>160.0</td><td>92.0</td></tr><tr><td>March</td><td>furniture</td><td>600.0</td><td>240.0</td></tr><tr><td>March</td><td>stationery</td><td>30.0</td><td>18.0</td></tr></tbody>
+</table>
+</div>
+<p>Every analytical question has the same shape: <strong>join the fact to the dimensions you need, filter and group by dimension attributes, aggregate measures</strong>. That regularity is what lets BI tools generate queries automatically.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql10-02.sql">CREATE TABLE dim_customer (customer_key INTEGER PRIMARY KEY, name TEXT, segment TEXT, country TEXT);
+CREATE TABLE dim_product (product_key INTEGER PRIMARY KEY, category TEXT);
+CREATE TABLE fact_sales (customer_key INT, product_key INT, revenue REAL, cost REAL);
+INSERT INTO dim_customer VALUES (1,'Ana','retail','IN'),(2,'Bo','wholesale','US'),(3,'Cy','retail','US');
+INSERT INTO dim_product VALUES (1,'stationery'),(2,'furniture');
+INSERT INTO fact_sales VALUES (1,1,15,6),(2,2,300,180),(3,1,25,10),(1,1,20,8),(2,1,140,60),(3,2,600,360);
+-- margin is a ratio: compute it from additive parts, never average stored ratios
+SELECT c.country, c.segment, SUM(f.revenue) AS revenue,
+       ROUND(100.0 * SUM(f.revenue - f.cost) / SUM(f.revenue), 1) AS margin_pct
+FROM fact_sales f JOIN dim_customer c ON c.customer_key = f.customer_key
+GROUP BY c.country, c.segment ORDER BY revenue DESC;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>country</th><th>segment</th><th>revenue</th><th>margin_pct</th></tr></thead>
+<tbody><tr><td>US</td><td>retail</td><td>625.0</td><td>40.8</td></tr><tr><td>US</td><td>wholesale</td><td>440.0</td><td>45.5</td></tr><tr><td>IN</td><td>retail</td><td>35.0</td><td>60.0</td></tr></tbody>
+</table>
+</div>
+    </section>
+
+    <section id="dimensions" data-track>
+      <h2>Dimension design</h2>
+<ul><li><strong>Surrogate keys</strong>: integer keys generated by the warehouse (<code>customer_key</code>), independent of source system ids (<code>customer_id</code>, the <strong>natural/business key</strong>). They isolate you from source changes, support history and make joins fast and small.</li><li><strong>Conformed dimensions</strong>: the same <code>dim_customer</code> and <code>dim_date</code> are shared by all fact tables, so results from different processes can be compared ("drill across").</li><li><strong>Degenerate dimensions</strong>: an identifier with no attributes, such as the order number, kept in the fact table.</li><li><strong>Junk dimensions</strong>: combine low-cardinality flags (is_gift, payment_type) into one small dimension instead of many columns.</li><li><strong>Role-playing dimensions</strong>: one dimension used several times (<code>order_date</code>, <code>ship_date</code> both join to <code>dim_date</code>).</li><li><strong>Unknown member</strong>: row <code>-1 / "Unknown"</code> so facts with missing references still join (avoid null foreign keys).</li><li><strong>Hierarchies</strong> are flattened into columns (<code>product -&gt; category -&gt; department</code>), which is what <strong>denormalisation</strong> in a star means. A <strong>snowflake</strong> schema normalises these into extra tables, saving a little space at the cost of more joins; stars are usually preferred.</li></ul>
+<h3>The date dimension</h3>
+<p>Always build a calendar table instead of calling date functions in every query: it holds year, quarter, month, week, day of week, holiday, fiscal period and so on, making filters like "weekends" or "fiscal Q3" trivial and consistent.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql10-03.sql">WITH RECURSIVE d(day) AS (SELECT '2024-02-26' UNION ALL SELECT date(day, '+1 day') FROM d WHERE day &lt; '2024-03-04')
+SELECT day,
+       CAST(strftime('%Y%m%d', day) AS INT) AS date_key,
+       strftime('%w', day) AS weekday_num,
+       CASE strftime('%w', day) WHEN '0' THEN 'Sun' WHEN '6' THEN 'Sat' ELSE 'weekday' END AS day_type,
+       strftime('%W', day) AS week_of_year,
+       strftime('%Y-%m', day) AS year_month
+FROM d;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>day</th><th>date_key</th><th>weekday_num</th><th>day_type</th><th>week_of_year</th><th>year_month</th></tr></thead>
+<tbody><tr><td>2024-02-26</td><td>20240226</td><td>1</td><td>weekday</td><td>09</td><td>2024-02</td></tr><tr><td>2024-02-27</td><td>20240227</td><td>2</td><td>weekday</td><td>09</td><td>2024-02</td></tr><tr><td>2024-02-28</td><td>20240228</td><td>3</td><td>weekday</td><td>09</td><td>2024-02</td></tr><tr><td>2024-02-29</td><td>20240229</td><td>4</td><td>weekday</td><td>09</td><td>2024-02</td></tr><tr><td>2024-03-01</td><td>20240301</td><td>5</td><td>weekday</td><td>09</td><td>2024-03</td></tr><tr><td>2024-03-02</td><td>20240302</td><td>6</td><td>Sat</td><td>09</td><td>2024-03</td></tr><tr><td>2024-03-03</td><td>20240303</td><td>0</td><td>Sun</td><td>09</td><td>2024-03</td></tr><tr><td>2024-03-04</td><td>20240304</td><td>1</td><td>weekday</td><td>10</td><td>2024-03</td></tr></tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql10-q04" data-topic="Warehouse modelling" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why use surrogate keys in dimensions?</p></div>
+        <ul class="q-options">
+          <li data-key="A">They are required by SQL <span class="q-why">No.</span></li>
+          <li data-key="B">They decouple the warehouse from source system keys and allow multiple versions of the same business key <span class="q-why">Correct.</span></li>
+          <li data-key="C">They are faster to type <span class="q-why">No.</span></li>
+          <li data-key="D">They replace facts <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Integers are also small and fast to join.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is a conformed dimension?</summary><div class="answer"><p>A dimension shared across fact tables with identical meaning so results can be combined.</p></div></details>
+      </div>
+    </section>
+
+    <section id="scd" data-track>
+      <h2>Slowly changing dimensions</h2>
+<p>Dimension attributes change: a customer moves country, a product moves category. How you record that decides whether last year's revenue is attributed to the country the customer lived in <strong>then</strong> or <strong>now</strong>.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Type</th><th>Behaviour</th><th>History kept?</th><th>Use when</th></tr></thead>
+<tbody>
+<tr><td><strong>Type 0</strong></td><td>Never changes</td><td>n/a</td><td>Birth date, original sign-up channel</td></tr><tr><td><strong>Type 1</strong></td><td>Overwrite the old value</td><td>No</td><td>Corrections, attributes where history does not matter</td></tr><tr><td><strong>Type 2</strong></td><td>Add a <strong>new row</strong> with validity dates</td><td>Yes, full</td><td>Attributes that must be analysed as of the time of the event</td></tr><tr><td><strong>Type 3</strong></td><td>Add a column for the previous value</td><td>Limited (one change)</td><td>Simple "before and after" comparisons</td></tr><tr><td><strong>Type 4/6</strong></td><td>Mini-dimension or hybrid</td><td>Varies</td><td>Rapidly changing or combined needs</td></tr>
+</tbody>
+</table>
+</div>
+<p>Type 2 is the workhorse: each version of the customer has its own surrogate key, <code>valid_from</code>, <code>valid_to</code> and an <code>is_current</code> flag. Facts loaded <strong>at the time</strong> point to the surrogate key that was current then.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql10-04.sql">CREATE TABLE dim_customer (customer_key INTEGER PRIMARY KEY AUTOINCREMENT, customer_id TEXT, name TEXT, country TEXT, valid_from TEXT, valid_to TEXT, is_current INT);
+INSERT INTO dim_customer (customer_id, name, country, valid_from, valid_to, is_current) VALUES ('C-1', 'Ana', 'IN', '2023-01-01', '9999-12-31', 1);
+CREATE TABLE fact_sales (sale_date TEXT, customer_key INT, revenue REAL);
+INSERT INTO fact_sales VALUES ('2023-06-01', 1, 100);
+-- Ana moves to the US on 2024-01-01: close the current row and insert a new version
+UPDATE dim_customer SET valid_to = '2023-12-31', is_current = 0 WHERE customer_id = 'C-1' AND is_current = 1;
+INSERT INTO dim_customer (customer_id, name, country, valid_from, valid_to, is_current) VALUES ('C-1', 'Ana', 'US', '2024-01-01', '9999-12-31', 1);
+INSERT INTO fact_sales VALUES ('2024-03-01', 2, 250);
+SELECT customer_key, customer_id, country, valid_from, valid_to, is_current FROM dim_customer ORDER BY customer_key;
+SELECT d.country AS country_at_time_of_sale, SUM(f.revenue) AS revenue
+FROM fact_sales f JOIN dim_customer d ON d.customer_key = f.customer_key GROUP BY d.country ORDER BY d.country;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>customer_key</th><th>customer_id</th><th>country</th><th>valid_from</th><th>valid_to</th><th>is_current</th></tr></thead>
+<tbody><tr><td>1</td><td>C-1</td><td>IN</td><td>2023-01-01</td><td>2023-12-31</td><td>0</td></tr><tr><td>2</td><td>C-1</td><td>US</td><td>2024-01-01</td><td>9999-12-31</td><td>1</td></tr></tbody>
+</table>
+</div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>country_at_time_of_sale</th><th>revenue</th></tr></thead>
+<tbody><tr><td>IN</td><td>100.0</td></tr><tr><td>US</td><td>250.0</td></tr></tbody>
+</table>
+</div>
+<p>The old sale stays attributed to India and the new one to the US. With Type 1 both would show the US (history rewritten). The ETL logic for Type 2: compare incoming source rows with the current dimension row by business key and a hash of tracked attributes; if changed, close the old row and insert a new one; if new, insert; if unchanged, do nothing.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sql10-05.py">import hashlib
+current = {"C-1": {"key": 2, "hash": hashlib.md5(b"Ana|US").hexdigest()}, "C-2": {"key": 3, "hash": hashlib.md5(b"Bo|DE").hexdigest()}}
+incoming = [("C-1", "Ana", "US"), ("C-2", "Bo", "FR"), ("C-3", "Cy", "IN")]          # C-1 unchanged, C-2 moved, C-3 is new
+for cid, name, country in incoming:
+    h = hashlib.md5(f"{name}|{country}".encode()).hexdigest()
+    if cid not in current: print(cid, "-&gt; INSERT new member")
+    elif current[cid]["hash"] != h: print(cid, "-&gt; CLOSE old version and INSERT new version (type 2)")
+    else: print(cid, "-&gt; no change")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>C-1 -&gt; no change
+C-2 -&gt; CLOSE old version and INSERT new version (type 2)
+C-3 -&gt; INSERT new member</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql10-q05" data-topic="Warehouse modelling" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which SCD type keeps full history by adding a new row?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Type 1 <span class="q-why">Overwrites.</span></li>
+          <li data-key="B">Type 2 <span class="q-why">Correct.</span></li>
+          <li data-key="C">Type 3 <span class="q-why">Adds a column.</span></li>
+          <li data-key="D">Type 0 <span class="q-why">Never changes.</span></li>
+        </ul>
+        <div class="q-explain"><p>With valid_from, valid_to and is_current columns.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-sql10-q06" data-topic="Warehouse modelling" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A customer moves country. With SCD Type 1, last year's sales are attributed to:</p></div>
+        <ul class="q-options">
+          <li data-key="A">The old country <span class="q-why">That is Type 2.</span></li>
+          <li data-key="B">The new country, because history is overwritten <span class="q-why">Correct.</span></li>
+          <li data-key="C">Both countries <span class="q-why">No.</span></li>
+          <li data-key="D">Unknown <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Choose the type according to the analysis you need.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Describe the Type 2 update steps.</summary><div class="answer"><p>Detect a change, close the current row by setting valid_to and is_current = 0, and insert a new row with a new surrogate key.</p></div></details>
+      </div>
+    </section>
+
+    <section id="elt" data-track>
+      <h2>Loading: ETL, ELT and incremental loads</h2>
+<ul><li><strong>ETL</strong> transforms data before loading; <strong>ELT</strong> loads raw data first and transforms inside the warehouse with SQL (dbt), exploiting its scale. ELT is now the common pattern.</li><li>Layers: <strong>raw/bronze</strong> (as received, immutable) -&gt; <strong>cleaned/silver</strong> (typed, deduplicated, conformed) -&gt; <strong>marts/gold</strong> (star schemas and aggregates for BI).</li><li><strong>Incremental loading</strong>: process only new or changed rows using a <strong>high-water mark</strong> (<code>updated_at &gt; last_loaded</code>) or change data capture; keep loads <strong>idempotent</strong> (merge/upsert by key, or replace a date partition) so reruns are safe.</li><li><strong>Late-arriving facts</strong> (the dimension row does not exist yet) go to the unknown member and are repaired later; <strong>late-arriving dimension changes</strong> may require re-pointing historical facts.</li><li><strong>Orchestrate</strong> with a scheduler (Airflow, Dagster) and test: not-null, unique, relationships (every fact key exists in its dimension), accepted values, freshness, and row-count reconciliation against the source.</li></ul>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql10-06.sql">CREATE TABLE stg_orders (order_id INT, amount REAL, updated_at TEXT);
+CREATE TABLE fact_orders (order_id INTEGER PRIMARY KEY, amount REAL, updated_at TEXT);
+INSERT INTO stg_orders VALUES (1, 10, '2024-03-01'), (2, 20, '2024-03-01');
+INSERT INTO fact_orders SELECT * FROM stg_orders WHERE true ON CONFLICT(order_id) DO UPDATE SET amount = excluded.amount, updated_at = excluded.updated_at;
+-- next day: order 2 corrected, order 3 new, order 1 unchanged and re-sent
+DELETE FROM stg_orders;
+INSERT INTO stg_orders VALUES (1, 10, '2024-03-01'), (2, 25, '2024-03-02'), (3, 30, '2024-03-02');
+INSERT INTO fact_orders SELECT * FROM stg_orders WHERE true ON CONFLICT(order_id) DO UPDATE SET amount = excluded.amount, updated_at = excluded.updated_at;
+INSERT INTO fact_orders SELECT * FROM stg_orders WHERE true ON CONFLICT(order_id) DO UPDATE SET amount = excluded.amount, updated_at = excluded.updated_at;   -- rerun: idempotent
+SELECT * FROM fact_orders ORDER BY order_id;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>order_id</th><th>amount</th><th>updated_at</th></tr></thead>
+<tbody><tr><td>1</td><td>10.0</td><td>2024-03-01</td></tr><tr><td>2</td><td>25.0</td><td>2024-03-02</td></tr><tr><td>3</td><td>30.0</td><td>2024-03-02</td></tr></tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql10-q07" data-topic="Warehouse modelling" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What makes an incremental load safe to rerun?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Random ordering <span class="q-why">No.</span></li>
+          <li data-key="B">Idempotence: upserting by key or replacing a date partition <span class="q-why">Correct.</span></li>
+          <li data-key="C">Larger batches <span class="q-why">No.</span></li>
+          <li data-key="D">Disabling checks <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Duplicates must not appear on a retry.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>ETL versus ELT?</summary><div class="answer"><p>ETL transforms before loading; ELT loads raw data first and transforms inside the warehouse, typically with SQL tools such as dbt.</p></div></details>
+      </div>
+    </section>
+
+    <section id="aggregates" data-track>
+      <h2>Aggregates, materialised views and performance</h2>
+<p>For dashboards that scan billions of rows, precompute <strong>aggregate tables</strong> (daily sales by product, hourly counts) or <strong>materialised views</strong> refreshed on a schedule or incrementally. Partition large facts by date, cluster by commonly filtered columns, use columnar formats, and select only needed columns. Know the trade-off: faster reads against storage and freshness.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Technique</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td>Partition by date</td><td>Queries prune whole partitions; cheap retention</td></tr><tr><td>Cluster / sort keys</td><td>Skip blocks that cannot match the filter</td></tr><tr><td>Column pruning</td><td>Read only the columns used (columnar stores)</td></tr><tr><td>Pre-aggregation</td><td>Dashboards read thousands of rows instead of billions</td></tr><tr><td>Approximate distinct</td><td>HyperLogLog for counts of unique users</td></tr><tr><td>Result caching</td><td>Identical queries return instantly</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name three ways to speed up warehouse queries.</summary><div class="answer"><p>Partitioning and clustering, columnar column pruning, and pre-aggregated tables or materialised views.</p></div></details>
+      </div>
+    </section>
+
+    <section id="alternatives" data-track>
+      <h2>Modelling alternatives</h2>
+<ul><li><strong>Inmon (corporate information factory)</strong>: first build a normalised enterprise warehouse, then data marts from it.</li><li><strong>Kimball (dimensional)</strong>: build conformed star-schema marts directly; faster to deliver; this page.</li><li><strong>Data Vault</strong>: hubs (business keys), links (relationships), satellites (history) for auditable, flexible integration from many sources.</li><li><strong>One Big Table (OBT)</strong>: a fully denormalised wide table: simple and fast in columnar engines but redundant and harder to govern.</li><li><strong>Semantic layer / metrics layer</strong>: define metrics once (revenue, active users) so every dashboard agrees.</li></ul>
+<div class="callout key"><span class="callout-title">Key idea</span><p>State the grain, put measurements in a fact table and context in conformed dimensions with surrogate keys, choose the slowly-changing-dimension type by whether history must be preserved, load incrementally and idempotently, and precompute what dashboards hit most.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql10-q08" data-topic="Warehouse modelling" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the purpose of a semantic or metrics layer?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Faster disks <span class="q-why">No.</span></li>
+          <li data-key="B">Defining each business metric once so all reports agree <span class="q-why">Correct.</span></li>
+          <li data-key="C">Encrypting data <span class="q-why">No.</span></li>
+          <li data-key="D">Replacing the warehouse <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It prevents several conflicting revenue definitions.</p></div>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Warehouse modelling</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Warehouse modelling">
+<details class="recall iq" data-level="basic" data-topic="Warehouse modelling"><summary><span class="tag ok">Basic</span> OLTP versus OLAP?</summary><div class="answer"><p>OLTP runs many small transactional reads and writes on normalised data; OLAP runs large analytical scans over denormalised, historical data.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Warehouse modelling"><summary><span class="tag ok">Basic</span> What is a fact table and a dimension table?</summary><div class="answer"><p>A fact table records measurable events at a chosen grain; a dimension table stores descriptive context used to filter and group.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Warehouse modelling"><summary><span class="tag warn">Medium</span> What is the grain and why decide it first?</summary><div class="answer"><p>What one fact row represents. Every column must be true at that grain, and mixing grains causes double counting.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Warehouse modelling"><summary><span class="tag warn">Medium</span> Star versus snowflake schema?</summary><div class="answer"><p>A star has denormalised dimensions joined directly to the fact; a snowflake normalises dimensions into extra tables, saving space at the cost of more joins.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Warehouse modelling"><summary><span class="tag warn">Medium</span> Why surrogate keys in dimensions?</summary><div class="answer"><p>They decouple the warehouse from source ids, allow several versions of one business key and make joins small and fast.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Warehouse modelling"><summary><span class="tag warn">Medium</span> Explain SCD Type 1, 2 and 3.</summary><div class="answer"><p>Type 1 overwrites, losing history; Type 2 adds a new row with validity dates, keeping full history; Type 3 adds a column for the previous value, keeping limited history.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Warehouse modelling"><summary><span class="tag warn">Medium</span> Additive, semi-additive and non-additive measures?</summary><div class="answer"><p>Additive sums across all dimensions (revenue), semi-additive across some (balances not across time), non-additive cannot be summed (ratios).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Warehouse modelling"><summary><span class="tag warn">Medium</span> What is a conformed dimension?</summary><div class="answer"><p>A dimension shared by multiple fact tables with the same keys and meaning, enabling drill-across.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Warehouse modelling"><summary><span class="tag bad">Advanced</span> ETL versus ELT?</summary><div class="answer"><p>ETL transforms before loading; ELT loads raw data into the warehouse and transforms there with SQL tools such as dbt, using the warehouse&#x27;s scale.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Warehouse modelling"><summary><span class="tag bad">Advanced</span> How do you do an incremental, idempotent load?</summary><div class="answer"><p>Use a watermark or CDC to select changes and upsert by key or replace a date partition so reruns do not duplicate.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Warehouse modelling"><summary><span class="tag bad">Advanced</span> How do you handle late-arriving facts and dimensions?</summary><div class="answer"><p>Map missing dimension references to an unknown member and repair later; re-point historical facts when a late dimension version appears.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Warehouse modelling"><summary><span class="tag bad">Advanced</span> Data vault versus Kimball?</summary><div class="answer"><p>Kimball builds business-friendly star schemas; Data Vault uses hubs, links and satellites to integrate many sources with full auditability and then builds marts on top.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Warehouse modelling"><summary><span class="tag bad">Advanced</span> Why a date dimension?</summary><div class="answer"><p>A calendar table provides year, quarter, week, holiday and fiscal attributes consistently, making filters and grouping simple and fast.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Warehouse modelling"><summary><span class="tag bad">Advanced</span> How do you speed up a dashboard that scans billions of rows?</summary><div class="answer"><p>Partition and cluster the fact, prune columns, pre-aggregate or use materialised views, cache results and use approximate distinct counts.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sql9-more-problems.html"><span class="dir">Previous</span><span>SQL9 More SQL interview problems: set two</span></a>
+      <a class="next" href="sql11-optimiser-internals.html"><span class="dir">Next</span><span>SQL11 Inside the query optimiser: join algorithms, cost estimates, statistics and index structures</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD32">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Client-side and mobile system design: offline-first, sync, push and media pipelines | System Design</title>
+<meta name="description" content="Designing for unreliable devices and networks: offline-first architecture, local storage, sync protocols with deltas and conflict resolution, push notifications, pagination and caching on the client, image and video pipelines, battery and data limits.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD32</p>
+      <h1>Client-side and mobile system design: offline-first, sync, push and media pipelines</h1>
+      <p class="lede">Servers are reliable and always on; phones are neither. Interviews for mobile and full-stack roles probe whether you can design for slow, flaky, battery-limited clients that go offline, return later and expect their changes to survive. This part shows the patterns.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~4 hours</span></div>
+    </div>
+
+    <section id="client" data-track>
+      <h2>The client is a distributed system</h2>
+<p>A mobile app is a <strong>replica</strong> of server data that lives on a device you do not control. The network is slow, expensive, intermittent and sometimes absent; the operating system kills your app at any moment; the battery is finite; old app versions stay in the wild for years. Design principles:</p>
+<ul><li><strong>Local first</strong>: render from local storage immediately, then sync in the background.</li><li><strong>Assume failure</strong>: every request can time out; every write can happen twice.</li><li><strong>Minimise bytes and wake-ups</strong>: compress, batch, delta-sync, cache.</li><li><strong>Be backward compatible</strong>: servers must support old clients (version APIs, ignore unknown fields, feature flags).</li><li><strong>Protect the user</strong>: secure storage for tokens, certificate pinning where justified, privacy defaults.</li></ul>
+    </section>
+
+    <section id="offline" data-track>
+      <h2>Offline-first architecture</h2>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 1066 98" role="img" aria-label="Layers of an offline-first app. The UI only talks to the local database; a sync engine moves changes in the background." style="min-width:760px"><defs><marker id="ah56" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah56a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah56b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah56d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah56)"/><text x="212.0" y="44.0" text-anchor="middle" class="d-sm d-muted">observe</text><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah56)"/><text x="426.0" y="44.0" text-anchor="middle" class="d-sm d-muted">read and write</text><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah56)"/><text x="640.0" y="44.0" text-anchor="middle" class="d-sm d-muted">pending changes</text><line x1="832.0" y1="49.0" x2="876.0" y2="49.0" class="d-line" marker-end="url(#ah56)"/><text x="854.0" y="44.0" text-anchor="middle" class="d-sm d-muted">push and pull</text><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-e"/><text x="105.0" y="53.5" text-anchor="middle" class="d-sm">UI (reads local state)</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-b"/><text x="319.0" y="53.5" text-anchor="middle" class="d-sm">Repository / view models</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-c"/><text x="533.0" y="53.5" text-anchor="middle" class="d-sm">Local database (SQLite)</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-d"/><text x="747.0" y="53.5" text-anchor="middle" class="d-sm">Sync engine and outbox queue</text><rect x="876.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="961.0" y="53.5" text-anchor="middle">Server API</text></svg>
+</div>
+<figcaption>Layers of an offline-first app. The UI only talks to the local database; a sync engine moves changes in the background.</figcaption></figure>
+<p>Key pieces:</p>
+<ul><li><strong>Local database</strong> (SQLite, Room, Core Data, Realm) as the single source of truth for the UI; the UI observes it and updates when sync writes arrive.</li><li><strong>Outbox</strong>: user actions are written locally with a <strong>client-generated id</strong> and <code>pending</code> status, shown immediately (<strong>optimistic UI</strong>), and sent when connectivity allows, with retry and backoff.</li><li><strong>Idempotency</strong>: each queued action carries a unique id (idempotency key) so a retry after an ambiguous failure does not create duplicates (<a href="sd9-apis.html">SD9</a>).</li><li><strong>Background sync</strong> scheduled by the OS (WorkManager, BackgroundTasks) respecting battery and network constraints.</li><li><strong>Connectivity</strong> is a hint, not a fact: "online" does not mean reachable, so rely on request results.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd32-01.py">import uuid
+class Server:
+    def __init__(self): self.items, self.seen = {}, set()
+    def apply(self, op):
+        if op["id"] in self.seen: return "duplicate ignored"               # idempotent by operation id
+        self.seen.add(op["id"]); self.items[op["item"]] = op["value"]; return "applied"
+class Client:
+    def __init__(self, server): self.server, self.local, self.outbox, self.online = server, {}, [], False
+    def set(self, item, value):
+        self.local[item] = value                                          # optimistic: UI updates at once
+        self.outbox.append({"id": str(uuid.uuid4())[:8], "item": item, "value": value})
+    def sync(self):
+        if not self.online: return "offline: nothing sent, %d queued" % len(self.outbox)
+        results = []
+        for op in list(self.outbox):
+            results.append(self.server.apply(op))
+            if len(results) == 1: results.append(self.server.apply(op))      # simulate an ack lost -&gt; the client retries the same op
+            self.outbox.remove(op)
+        return results
+srv = Server(); cl = Client(srv)
+cl.set("note", "draft 1"); cl.set("note", "draft 2"); cl.set("title", "Trip")
+print(cl.sync(), "| local view:", cl.local)
+cl.online = True
+print(cl.sync(), "| server state:", srv.items)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>offline: nothing sent, 3 queued | local view: {'note': 'draft 2', 'title': 'Trip'}
+['applied', 'duplicate ignored', 'applied', 'applied'] | server state: {'note': 'draft 2', 'title': 'Trip'}</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd32-q01" data-topic="Client and mobile design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why give each queued client action a unique id?</p></div>
+        <ul class="q-options">
+          <li data-key="A">For sorting <span class="q-why">No.</span></li>
+          <li data-key="B">So retries after lost acknowledgements are recognised as duplicates by the server <span class="q-why">Correct.</span></li>
+          <li data-key="C">To save space <span class="q-why">No.</span></li>
+          <li data-key="D">For encryption <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Idempotency keys make retries safe.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd32-q02" data-topic="Client and mobile design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does optimistic UI mean?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Hiding errors <span class="q-why">No.</span></li>
+          <li data-key="B">Showing the user's change immediately and reconciling with the server later <span class="q-why">Correct.</span></li>
+          <li data-key="C">Preloading ads <span class="q-why">No.</span></li>
+          <li data-key="D">Skipping validation <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The local database is the source of truth for the UI.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name the pieces of an offline-first app.</summary><div class="answer"><p>Local database as source of truth, repository layer, outbox of pending actions, and a background sync engine with retries.</p></div></details>
+      </div>
+    </section>
+
+    <section id="sync" data-track>
+      <h2>Sync protocols</h2>
+<p>How does a client catch up after being offline for a week?</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Approach</th><th>How</th><th>Pros</th><th>Cons</th></tr></thead>
+<tbody>
+<tr><td><strong>Full refresh</strong></td><td>Download everything</td><td>Simple</td><td>Slow, costly; fine for tiny data</td></tr><tr><td><strong>Timestamp since</strong></td><td><code>GET /changes?since=&lt;last_sync_time&gt;</code></td><td>Easy</td><td>Clock skew and ties lose changes; deletes need tombstones</td></tr><tr><td><strong>Sync token / cursor</strong></td><td>Server returns an opaque <code>next_token</code> (a log position)</td><td>Robust, resumable, no clock reliance</td><td>Server keeps a change log</td></tr><tr><td><strong>Event log with sequence numbers</strong></td><td>Client says "I have up to seq 8731"</td><td>Exact, ordered, supports multiple devices</td><td>Log retention and compaction</td></tr><tr><td><strong>Push (WebSocket / silent push)</strong></td><td>Server nudges the client to sync</td><td>Fresh data</td><td>Needs connection or push infrastructure</td></tr>
+</tbody>
+</table>
+</div>
+<p>Rules for good sync: use <strong>monotonic sequence numbers or tokens</strong>, represent deletes as <strong>tombstones</strong> for a retention period (otherwise offline devices resurrect deleted items), page the changes, make each page <strong>idempotent</strong>, and have a <strong>full resync</strong> fallback when the token is too old.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd32-02.py">class ChangeLog:
+    def __init__(self): self.seq, self.entries = 0, []
+    def record(self, op, key, value=None):
+        self.seq += 1; self.entries.append((self.seq, op, key, value))
+    def since(self, token, limit=3):
+        page = [e for e in self.entries if e[0] &gt; token][:limit]
+        return page, (page[-1][0] if page else token), len(page) == limit            # entries, next token, more pages?
+log = ChangeLog()
+for k, v in [("a", 1), ("b", 2), ("c", 3)]: log.record("put", k, v)
+log.record("delete", "b"); log.record("put", "d", 4); log.record("put", "a", 10)
+state, token, more = {}, 0, True
+while more:
+    page, token, more = log.since(token)
+    for seq, op, key, value in page:
+        if op == "put": state[key] = value
+        else: state.pop(key, None)
+    print("fetched", [(s, o, k) for s, o, k, _ in page], "-&gt; token", token)
+print("final client state:", state, "| matches replaying the full log:", state == {"a": 10, "c": 3, "d": 4})</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>fetched [(1, 'put', 'a'), (2, 'put', 'b'), (3, 'put', 'c')] -&gt; token 3
+fetched [(4, 'delete', 'b'), (5, 'put', 'd'), (6, 'put', 'a')] -&gt; token 6
+fetched [] -&gt; token 6
+final client state: {'a': 10, 'c': 3, 'd': 4} | matches replaying the full log: True</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd32-q03" data-topic="Client and mobile design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why prefer sync tokens or sequence numbers over 'changes since timestamp'?</p></div>
+        <ul class="q-options">
+          <li data-key="A">They are shorter <span class="q-why">No.</span></li>
+          <li data-key="B">They avoid clock skew and ties that lose changes, and are resumable <span class="q-why">Correct.</span></li>
+          <li data-key="C">They need no server storage <span class="q-why">They need a log.</span></li>
+          <li data-key="D">They encrypt data <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Logical positions are exact.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd32-q04" data-topic="Client and mobile design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why keep tombstones for deleted items for a while?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To save disk <span class="q-why">No.</span></li>
+          <li data-key="B">So devices that were offline learn about the delete instead of resurrecting the item <span class="q-why">Correct.</span></li>
+          <li data-key="C">For analytics only <span class="q-why">No.</span></li>
+          <li data-key="D">For caching <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Without them a delete cannot be synchronised.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is a cursor-based sync?</summary><div class="answer"><p>The client stores an opaque position in the server's change log and asks for entries after it, page by page.</p></div></details>
+      </div>
+    </section>
+
+    <section id="conflicts" data-track>
+      <h2>Conflict resolution</h2>
+<p>Two devices edit the same item offline. Choose a strategy consistent with the data's meaning:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Strategy</th><th>Behaviour</th><th>Fits</th></tr></thead>
+<tbody>
+<tr><td><strong>Last write wins</strong> (server time)</td><td>Newest save replaces older</td><td>Settings, simple profile fields</td></tr><tr><td><strong>Field-level merge</strong></td><td>Merge independent fields; conflict only on the same field</td><td>Records with many fields</td></tr><tr><td><strong>Operation-based merge</strong></td><td>Send operations (increment, add to list), not final values</td><td>Counters, lists, carts</td></tr><tr><td><strong>CRDTs</strong> (<a href="sd28-consensus-time.html">SD28</a>)</td><td>Automatic convergence</td><td>Collaborative text, sets</td></tr><tr><td><strong>Version check and ask the user</strong></td><td>Server rejects stale version, client shows a merge UI</td><td>Documents, important data</td></tr><tr><td><strong>Server authoritative</strong></td><td>Server decides by rules, client reconciles</td><td>Inventory, payments</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd32-03.py">def merge_fields(base, mine, theirs):
+    merged, conflicts = {}, []
+    for k in sorted(base.keys() | mine.keys() | theirs.keys()):
+        b, m, t = base.get(k), mine.get(k), theirs.get(k)
+        if m == t: merged[k] = m
+        elif m == b: merged[k] = t                    # only the other side changed it
+        elif t == b: merged[k] = m                    # only I changed it
+        else: conflicts.append(k); merged[k] = t       # both changed differently: needs a rule or the user
+    return merged, sorted(conflicts)
+base = {"title": "Trip", "date": "May 1", "notes": "pack"}
+mine = {"title": "Trip to Goa", "date": "May 1", "notes": "pack sunscreen"}
+theirs = {"title": "Trip", "date": "May 3", "notes": "pack"}
+print(merge_fields(base, mine, theirs))
+print("both edited the notes differently:", merge_fields(base, mine, {"title": "Trip", "date": "May 1", "notes": "pack hat"}))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>({'date': 'May 3', 'notes': 'pack sunscreen', 'title': 'Trip to Goa'}, [])
+both edited the notes differently: ({'date': 'May 1', 'notes': 'pack hat', 'title': 'Trip to Goa'}, ['notes'])</code></pre>
+<p>This three-way merge uses the <strong>common ancestor</strong> (base) to tell who changed what, the same idea as <code>git merge</code>.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd32-q05" data-topic="Client and mobile design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How does a three-way merge decide who changed a field?</p></div>
+        <ul class="q-options">
+          <li data-key="A">By random choice <span class="q-why">No.</span></li>
+          <li data-key="B">By comparing both versions against their common ancestor <span class="q-why">Correct.</span></li>
+          <li data-key="C">By file size <span class="q-why">No.</span></li>
+          <li data-key="D">By latency <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>If only one side differs from the base, take that side.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>When is last-write-wins acceptable?</summary><div class="answer"><p>For simple, low-value fields where losing a concurrent edit is tolerable, such as a preference.</p></div></details>
+      </div>
+    </section>
+
+    <section id="push" data-track>
+      <h2>Push notifications</h2>
+<p>Mobile operating systems provide the channel (APNs for Apple, FCM for Android); your server sends a message addressed to a <strong>device token</strong>, and the OS delivers it even when the app is closed.</p>
+<ul><li><strong>Pipeline</strong>: event -&gt; notification service -&gt; user preferences, quiet hours and rate limits -&gt; template and localise -&gt; provider (APNs/FCM) -&gt; device. Track delivery and opens.</li><li><strong>Tokens</strong> change and expire: refresh on app start, delete tokens when the provider reports them invalid, support several devices per user.</li><li><strong>Delivery is best effort</strong>: do not depend on it for correctness; keep the data fetchable in the app. Use <strong>collapse keys</strong> so a burst becomes one notification and <strong>TTL</strong> so stale ones are dropped.</li><li><strong>Silent/data pushes</strong> can trigger a background sync but are throttled by the OS.</li><li><strong>Respect the user</strong>: opt-in, categories, frequency caps, deduplicate across channels (push, email, in-app).</li><li><strong>Fan-out</strong>: queue per provider with rate limiting and retries; batch sends; partition by user.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd32-q06" data-topic="Client and mobile design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why must push notifications not be required for correctness?</p></div>
+        <ul class="q-options">
+          <li data-key="A">They cost money <span class="q-why">No.</span></li>
+          <li data-key="B">Delivery is best effort and can be delayed, dropped or throttled by the OS <span class="q-why">Correct.</span></li>
+          <li data-key="C">They are encrypted <span class="q-why">No.</span></li>
+          <li data-key="D">They are slow to write <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The app must be able to fetch the data itself.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What are collapse keys for?</summary><div class="answer"><p>Replacing earlier pending notifications of the same kind so a burst shows as one.</p></div></details>
+      </div>
+    </section>
+
+    <section id="loading" data-track>
+      <h2>Client-side data loading</h2>
+<ul><li><strong>Pagination</strong>: cursor/keyset pages (<a href="sd9-apis.html">SD9</a>); infinite scroll with prefetch of the next page; keep a stable ordering and handle inserts at the top.</li><li><strong>Caching layers</strong>: in-memory cache, disk cache, HTTP cache; stale-while-revalidate (show cached, refresh behind). Define a freshness policy per data type.</li><li><strong>Reduce chattiness</strong>: batch calls (GraphQL or aggregated endpoints), request only needed fields, compress responses, prefer binary formats on hot paths.</li><li><strong>Resilience</strong>: timeouts, retry with backoff and jitter, cancel requests when the user navigates away, and show cached data with a stale indicator rather than an error.</li><li><strong>Image loading</strong>: request the <strong>right size</strong> from a resizing CDN, progressive or blurred placeholders, memory and disk caches keyed by URL and size, and downsample large bitmaps to the view size (out-of-memory crashes are a leading mobile crash cause).</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd32-04.py">class LRU:
+    def __init__(self, capacity_bytes): self.cap, self.used, self.items = capacity_bytes, 0, {}
+    def get(self, k):
+        if k in self.items: v = self.items.pop(k); self.items[k] = v; return v
+    def put(self, k, size):
+        if k in self.items: self.used -= self.items.pop(k)
+        self.items[k] = size; self.used += size
+        while self.used &gt; self.cap:
+            oldest = next(iter(self.items)); self.used -= self.items.pop(oldest)
+cache = LRU(capacity_bytes=10_000_000)                     # 10 MB image cache
+for name, size in [("a", 4_000_000), ("b", 4_000_000), ("c", 4_000_000)]: cache.put(name, size)
+print("keys after adding three 4 MB images to a 10 MB cache:", list(cache.items), "| used:", cache.used)
+cache.get("b"); cache.put("d", 3_000_000)
+print("after touching b and adding d:", list(cache.items))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>keys after adding three 4 MB images to a 10 MB cache: ['b', 'c'] | used: 8000000
+after touching b and adding d: ['b', 'd']</code></pre>
+    </section>
+
+    <section id="media" data-track>
+      <h2>Media upload and video</h2>
+<p><strong>Large uploads</strong>: use <strong>resumable, chunked uploads</strong> (upload parts with an upload id; on failure ask the server which parts it has and continue), upload directly to <strong>object storage</strong> with a <strong>pre-signed URL</strong> so bytes bypass your servers, verify with checksums, and process asynchronously.</p>
+<p><strong>Image pipeline</strong>: original stored once; background jobs create thumbnails and formats (WebP/AVIF); the CDN serves sizes on demand.</p>
+<p><strong>Video pipeline</strong>: upload original, <strong>transcode</strong> into several resolutions and bitrates, cut into short segments (HLS or DASH), generate a manifest listing renditions. The player picks a rendition using <strong>adaptive bitrate</strong> streaming based on measured throughput, switching quality seamlessly. Preview thumbnails, subtitles and DRM are extra tracks.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd32-05.py">def pick_rendition(throughput_kbps, ladder=((240, 400), (480, 1000), (720, 2500), (1080, 5000)), safety=0.8):
+    usable = throughput_kbps * safety
+    best = ladder[0]
+    for res, bitrate in ladder:
+        if bitrate &lt;= usable: best = (res, bitrate)
+    return best
+for kbps in (300, 1200, 3000, 20000):
+    res, br = pick_rendition(kbps)
+    print(f"measured {kbps:&gt;6} kbps -&gt; play {res}p at {br} kbps")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>measured    300 kbps -&gt; play 240p at 400 kbps
+measured   1200 kbps -&gt; play 240p at 400 kbps
+measured   3000 kbps -&gt; play 480p at 1000 kbps
+measured  20000 kbps -&gt; play 1080p at 5000 kbps</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd32-q07" data-topic="Client and mobile design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How should a large photo upload from a phone be designed?</p></div>
+        <ul class="q-options">
+          <li data-key="A">One big POST through your app server <span class="q-why">Fragile and expensive.</span></li>
+          <li data-key="B">Resumable chunked upload directly to object storage with a pre-signed URL <span class="q-why">Correct.</span></li>
+          <li data-key="C">Email it <span class="q-why">No.</span></li>
+          <li data-key="D">Base64 in JSON <span class="q-why">Wasteful.</span></li>
+        </ul>
+        <div class="q-explain"><p>Resume after failures and keep bytes off your API servers.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd32-q08" data-topic="Client and mobile design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does adaptive bitrate streaming do?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Compresses audio <span class="q-why">No.</span></li>
+          <li data-key="B">Switches between pre-encoded renditions according to measured throughput <span class="q-why">Correct.</span></li>
+          <li data-key="C">Downloads the whole video first <span class="q-why">No.</span></li>
+          <li data-key="D">Uses UDP only <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Video is split into short segments in several qualities.</p></div>
+      </div>
+    </section>
+
+    <section id="device" data-track>
+      <h2>Battery, data and security</h2>
+<ul><li><strong>Battery</strong>: batch network calls (radios use most energy waking up), avoid polling, use push and OS scheduling, respect low-power mode.</li><li><strong>Data</strong>: allow Wi-Fi-only for big downloads, compress, delta updates for app content.</li><li><strong>Security</strong>: tokens in the platform keystore/keychain, never in plain preferences; short-lived access tokens with refresh rotation; TLS only, optional certificate pinning (with a rotation plan); do not trust client-side checks, enforce rules on the server; obfuscation is not protection.</li><li><strong>Releases</strong>: staged rollouts, <strong>feature flags</strong> and remote config, a minimum supported version and a kill switch, crash reporting and analytics with privacy controls.</li><li><strong>Observability</strong>: client metrics (startup time, frame drops, request failures by network type) are your only view of real user experience.</li></ul>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Treat the device as an unreliable replica: render from local data, queue changes with idempotent ids, sync with tokens and tombstones, resolve conflicts by data meaning, deliver pushes as hints, load data in cached pages, upload resumably to object storage, and respect battery and bandwidth.</p></div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why store tokens in the keychain or keystore?</summary><div class="answer"><p>They are protected by the OS and hardware, unlike plain preferences, which any compromise or backup can expose.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Client and mobile design</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Client and mobile design">
+<details class="recall iq" data-level="basic" data-topic="Client and mobile design"><summary><span class="tag ok">Basic</span> What does offline-first mean?</summary><div class="answer"><p>The UI reads from a local database and writes locally first, and a sync engine reconciles with the server in the background.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Client and mobile design"><summary><span class="tag ok">Basic</span> Why queue actions with client-generated ids?</summary><div class="answer"><p>So retries after timeouts are idempotent and duplicates are ignored by the server.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Client and mobile design"><summary><span class="tag warn">Medium</span> How do you sync after being offline for days?</summary><div class="answer"><p>Use a cursor or sequence token to fetch changes in pages, apply tombstones for deletes, and fall back to a full resync if the token is too old.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Client and mobile design"><summary><span class="tag warn">Medium</span> Why are tombstones needed?</summary><div class="answer"><p>Without them an offline device cannot learn about a deletion and may push the old item back.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Client and mobile design"><summary><span class="tag warn">Medium</span> How do you resolve conflicting offline edits?</summary><div class="answer"><p>Choose by data meaning: last write wins for trivial fields, field-level three-way merge, operation-based merge for counters and lists, CRDTs for collaboration, or ask the user.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Client and mobile design"><summary><span class="tag warn">Medium</span> Why can&#x27;t you rely on push notifications for correctness?</summary><div class="answer"><p>Delivery is best effort and can be delayed, dropped or throttled; the app must be able to fetch the data itself.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Client and mobile design"><summary><span class="tag warn">Medium</span> How would you upload a large video from a phone?</summary><div class="answer"><p>Resumable chunked upload directly to object storage with a pre-signed URL, verify checksums, then process asynchronously.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Client and mobile design"><summary><span class="tag warn">Medium</span> What is adaptive bitrate streaming?</summary><div class="answer"><p>Video is transcoded into several renditions and cut into short segments; the player picks a rendition each segment based on measured throughput.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Client and mobile design"><summary><span class="tag bad">Advanced</span> How do you design the API to support old app versions?</summary><div class="answer"><p>Version the API, add only optional fields, ignore unknown fields, keep behaviour for minimum supported versions, use feature flags and force upgrades only as a last resort.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Client and mobile design"><summary><span class="tag bad">Advanced</span> How do you reduce battery drain from networking?</summary><div class="answer"><p>Batch requests, avoid polling, use push and OS-scheduled background work, compress, and respect low-power and data-saver modes.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Client and mobile design"><summary><span class="tag bad">Advanced</span> How do you handle token storage and refresh on mobile?</summary><div class="answer"><p>Store tokens in the keychain or keystore, use short-lived access tokens with rotating refresh tokens, and handle revocation gracefully.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Client and mobile design"><summary><span class="tag bad">Advanced</span> How do you prevent out-of-memory crashes from images?</summary><div class="answer"><p>Request right-sized images from a resizing CDN, downsample bitmaps to view size, use bounded memory and disk caches, and avoid holding full-size decoded images.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Client and mobile design"><summary><span class="tag bad">Advanced</span> What metrics matter for mobile client observability?</summary><div class="answer"><p>Startup time, frame drops, crash-free sessions, network failures by connection type, API latency from the client and battery impact.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Client and mobile design"><summary><span class="tag bad">Advanced</span> How do silent pushes and background sync interact?</summary><div class="answer"><p>A data push can wake the app to sync, but the OS throttles frequency and execution time, so the app must tolerate missed or delayed wake-ups.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd31-case-7.html"><span class="dir">Previous</span><span>SD31 Case studies 7: trending topics, food delivery dispatch, online auction, team chat and email</span></a>
+      <a class="next" href="sd33-search-data-modelling.html"><span class="dir">Next</span><span>SD33 Search internals and data modelling patterns: inverted indexes, BM25, multi-tenancy and time series</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="PY11">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Testing, debugging and profiling in depth: fixtures, mocks, property tests, tracing and performance | Python + SQL</title>
+<meta name="description" content="A deeper treatment of testing (the pyramid, fixtures, parametrisation, mocks and fakes, property-based testing written by hand), debugging methods (reading tracebacks, pdb, logging, bisecting), profiling time and memory, and handling flaky and slow tests.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part PY11</p>
+      <h1>Testing, debugging and profiling in depth: fixtures, mocks, property tests, tracing and performance</h1>
+      <p class="lede">Testing and debugging are skills, not just tools. This part explains what to test and why, how to isolate dependencies without fooling yourself, how to hunt a bug methodically, and how to measure before optimising, with runnable examples throughout.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="why" data-track>
+      <h2>Why tests, and what kind</h2>
+<p>Tests are <strong>executable specifications</strong> and a <strong>safety net</strong> for change. They do not prove correctness; they raise confidence cheaply and repeatedly.</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 638 98" role="img" aria-label="The test pyramid: the higher the level, the slower, flakier and costlier the test, so keep most checks at the bottom and a few at the top." style="min-width:638px"><defs><marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah2a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah2b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah2d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah2)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah2)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">Many fast unit tests</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle" class="d-sm">Fewer integration tests</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle" class="d-sm">A handful of end-to-end tests</text></svg>
+</div>
+<figcaption>The test pyramid: the higher the level, the slower, flakier and costlier the test, so keep most checks at the bottom and a few at the top.</figcaption></figure>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Level</th><th>Tests</th><th>Speed</th><th>Failure tells you</th></tr></thead>
+<tbody>
+<tr><td><strong>Unit</strong></td><td>One function or class, dependencies replaced</td><td>Milliseconds</td><td>Exactly where the bug is</td></tr><tr><td><strong>Integration</strong></td><td>Several components with real database, queue or HTTP</td><td>Seconds</td><td>The pieces do not fit</td></tr><tr><td><strong>End to end</strong></td><td>The whole system through its UI or API</td><td>Minutes</td><td>A user journey is broken</td></tr><tr><td><strong>Property-based</strong></td><td>Properties that must hold for many generated inputs</td><td>Seconds</td><td>An edge case you did not think of</td></tr><tr><td><strong>Contract</strong></td><td>Producer and consumer agree on an API</td><td>Seconds</td><td>A breaking change before release</td></tr>
+</tbody>
+</table>
+</div>
+<p>Good tests are <strong>fast, isolated, repeatable, self-checking and meaningful</strong>. Test <strong>behaviour</strong> (inputs to outputs), not implementation details, so refactoring does not break them. A test that mocks the thing it claims to test proves nothing.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py11-q01" data-topic="Testing and debugging" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In the test pyramid, which tests should be the most numerous?</p></div>
+        <ul class="q-options">
+          <li data-key="A">End-to-end <span class="q-why">Slow and flaky.</span></li>
+          <li data-key="B">Unit tests <span class="q-why">Correct.</span></li>
+          <li data-key="C">Manual tests <span class="q-why">No.</span></li>
+          <li data-key="D">Load tests <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Fast tests give quick, precise feedback.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name four test levels.</summary><div class="answer"><p>Unit, integration, end to end, and property or contract tests.</p></div></details>
+      </div>
+    </section>
+
+    <section id="anatomy" data-track>
+      <h2>Anatomy of a good test</h2>
+<p><strong>Arrange, act, assert</strong>: set up inputs, call the code, check one behaviour. Name tests by the behaviour: <code>test_withdraw_more_than_balance_raises</code>, not <code>test_1</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py11-01.py">import unittest
+class Account:
+    def __init__(self, balance=0): self.balance = balance
+    def withdraw(self, amount):
+        if amount &lt;= 0: raise ValueError("amount must be positive")
+        if amount &gt; self.balance: raise ValueError("insufficient funds")
+        self.balance -= amount
+        return self.balance
+class AccountTests(unittest.TestCase):
+    def setUp(self): self.acct = Account(100)                      # fresh fixture for every test
+    def test_withdraw_reduces_balance(self):
+        self.assertEqual(self.acct.withdraw(30), 70)
+    def test_cannot_overdraw(self):
+        with self.assertRaisesRegex(ValueError, "insufficient"): self.acct.withdraw(101)
+    def test_rejects_non_positive_amounts(self):
+        for bad in (0, -5):
+            with self.subTest(amount=bad):                          # parametrised cases with separate reporting
+                with self.assertRaises(ValueError): self.acct.withdraw(bad)
+    def test_exact_balance_can_be_withdrawn(self):
+        self.assertEqual(self.acct.withdraw(100), 0)                # boundary value
+import io
+result = unittest.TextTestRunner(stream=io.StringIO(), verbosity=0).run(unittest.defaultTestLoader.loadTestsFromTestCase(AccountTests))
+print("ran", result.testsRun, "tests | failures:", len(result.failures), "| errors:", len(result.errors))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>ran 4 tests | failures: 0 | errors: 0</code></pre>
+<p><strong>What to test</strong>: normal cases, <strong>boundaries</strong> (0, 1, max, empty), <strong>invalid input</strong>, error handling, and each branch. <strong>Equivalence partitioning</strong>: pick one representative per class of input (negative, zero, small, huge) instead of every number.</p>
+<h3>pytest in brief (display only)</h3>
+<pre><code class="lang-py">import pytest
+@pytest.fixture
+def acct(): return Account(100)
+
+@pytest.mark.parametrize("amount, expected", [(30, 70), (100, 0)])
+def test_withdraw(acct, amount, expected):
+    assert acct.withdraw(amount) == expected
+
+def test_overdraw(acct):
+    with pytest.raises(ValueError, match="insufficient"):
+        acct.withdraw(101)</code></pre>
+<p>Plain <code>assert</code> statements with rich failure output, fixtures with scopes (<code>function</code>, <code>module</code>, <code>session</code>), <code>parametrize</code>, markers, <code>tmp_path</code>, <code>monkeypatch</code> and a large plugin ecosystem (<code>pytest-cov</code>, <code>pytest-xdist</code> for parallel runs).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py11-q02" data-topic="Testing and debugging" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does 'arrange, act, assert' describe?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A deployment method <span class="q-why">No.</span></li>
+          <li data-key="B">The structure of a test: set up inputs, call the code, check the result <span class="q-why">Correct.</span></li>
+          <li data-key="C">A debugging step <span class="q-why">No.</span></li>
+          <li data-key="D">A review process <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Keep one behaviour per test.</p></div>
+      </div>
+    </section>
+
+    <section id="doubles" data-track>
+      <h2>Test doubles: stubs, fakes, mocks</h2>
+<p>When the code talks to a clock, network, database or payment provider, replace that dependency.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Double</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td><strong>Dummy</strong></td><td>Fills a parameter, never used</td></tr><tr><td><strong>Stub</strong></td><td>Returns canned answers</td></tr><tr><td><strong>Fake</strong></td><td>A working but simplified implementation (in-memory repository)</td></tr><tr><td><strong>Mock</strong></td><td>Records calls so you can assert on interactions</td></tr><tr><td><strong>Spy</strong></td><td>A real object that also records calls</td></tr>
+</tbody>
+</table>
+</div>
+<p>Prefer <strong>fakes</strong> and <strong>stubs</strong> for state-based tests; use <strong>mocks</strong> sparingly, for outgoing side effects (email sent, event published). Over-mocking couples tests to implementation.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py11-02.py">from unittest import mock
+import datetime
+class PaymentGateway:
+    def charge(self, amount): raise RuntimeError("real network call")
+def checkout(cart_total, gateway, notify, now=datetime.datetime.now):
+    if cart_total &lt;= 0: return "empty cart"
+    receipt = gateway.charge(cart_total)
+    notify(f"paid {cart_total} at {now().year}")
+    return receipt
+gateway = mock.Mock()
+gateway.charge.return_value = "receipt-42"                            # stub the answer
+notify = mock.Mock()                                                    # mock the side effect
+result = checkout(250, gateway, notify, now=lambda: datetime.datetime(2030, 1, 1))     # inject the clock
+print(result)
+gateway.charge.assert_called_once_with(250)                              # verify the interaction
+notify.assert_called_once_with("paid 250 at 2030")
+print("interactions verified; the empty-cart branch does not touch the gateway:", checkout(0, gateway, notify), gateway.charge.call_count)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>receipt-42
+interactions verified; the empty-cart branch does not touch the gateway: empty cart 1</code></pre>
+<p>Injecting the <strong>clock</strong>, random generators and IDs makes time-dependent code deterministic. <code>mock.patch("module.name")</code> replaces a name <strong>where it is used</strong>, not where it is defined (a very common mistake). Use <code>autospec=True</code> so a mock fails when called with a wrong signature, and <code>freezegun</code>-style helpers for time.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py11-03.py">from unittest import mock
+import os
+def read_mode(): return os.environ.get("APP_MODE", "dev")
+with mock.patch.dict(os.environ, {"APP_MODE": "prod"}):
+    print("inside the patch:", read_mode())
+print("after the patch is undone:", read_mode())
+with mock.patch("os.path.exists", return_value=True) as fake_exists:
+    print("patched exists says:", os.path.exists("/definitely/not/here"), "| call count:", fake_exists.call_count)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>inside the patch: prod
+after the patch is undone: dev
+patched exists says: True | call count: 1</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py11-q03" data-topic="Testing and debugging" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Where should mock.patch target a name?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Where it is defined <span class="q-why">Common mistake.</span></li>
+          <li data-key="B">Where it is looked up and used <span class="q-why">Correct.</span></li>
+          <li data-key="C">In the standard library only <span class="q-why">No.</span></li>
+          <li data-key="D">Anywhere <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Patch the name in the module that imports and uses it.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-py11-q04" data-topic="Testing and debugging" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is over-mocking harmful?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is slow <span class="q-why">No.</span></li>
+          <li data-key="B">Tests become coupled to implementation and may pass while the real integration is broken <span class="q-why">Correct.</span></li>
+          <li data-key="C">Mocks are expensive <span class="q-why">No.</span></li>
+          <li data-key="D">It breaks pytest <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Prefer fakes and state-based assertions.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Stub versus mock?</summary><div class="answer"><p>A stub returns canned data for the code under test; a mock records calls so you can assert on interactions.</p></div></details>
+      </div>
+    </section>
+
+    <section id="property" data-track>
+      <h2>Property-based testing</h2>
+<p>Instead of hand-picking examples, state a <strong>property</strong> that must hold for <em>all</em> inputs and let a library generate hundreds of random (and nasty) cases, shrinking a failure to a minimal one. In Python the library is <code>hypothesis</code>; the idea is simple enough to build:</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py11-04.py">import random
+def my_sort(xs):                                       # code under test (a deliberately buggy variant is below)
+    return sorted(xs)
+def buggy_sort(xs):
+    out = sorted(set(xs))                              # bug: drops duplicates
+    return out
+def check_sort_properties(sort, trials=500, seed=0):
+    rng = random.Random(seed)
+    for _ in range(trials):
+        xs = [rng.randint(-5, 5) for _ in range(rng.randint(0, 8))]
+        out = sort(xs[:])
+        if out != sorted(out): return f"FAILS 'output is ordered' for {xs}"
+        if sorted(xs) != sorted(out): return f"FAILS 'same elements as input' for {xs} -&gt; {out}"
+        if sort(out) != out: return f"FAILS 'idempotent' for {xs}"
+    return "all properties held for 500 random inputs"
+print("my_sort   :", check_sort_properties(my_sort))
+print("buggy_sort:", check_sort_properties(buggy_sort))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>my_sort   : all properties held for 500 random inputs
+buggy_sort: FAILS 'same elements as input' for [1, -5, -1, 3, 2, 1] -&gt; [-5, -1, 1, 2, 3]</code></pre>
+<p>Useful properties: <strong>round trip</strong> (<code>decode(encode(x)) == x</code>), <strong>invariants</strong> (length, sum, ordering preserved), <strong>idempotence</strong>, <strong>commutativity</strong>, <strong>an oracle</strong> (compare a fast implementation with a slow obviously-correct one, as this guide does throughout), and <strong>no crash</strong> (never raises on valid input).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py11-q05" data-topic="Testing and debugging" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which is a good property for an encoder and decoder?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is fast <span class="q-why">Not a property of correctness.</span></li>
+          <li data-key="B">decode(encode(x)) == x for generated x (round trip) <span class="q-why">Correct.</span></li>
+          <li data-key="C">Output is short <span class="q-why">No.</span></li>
+          <li data-key="D">It prints nothing <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The library generates many inputs and shrinks failures.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name four useful properties.</summary><div class="answer"><p>Round trip, invariants, idempotence and comparison with a trusted oracle.</p></div></details>
+      </div>
+    </section>
+
+    <section id="debugging" data-track>
+      <h2>Debugging method</h2>
+<p>Debugging is the scientific method:</p>
+<ol><li><strong>Reproduce</strong> the failure reliably. Write a failing test if you can.</li><li><strong>Read the error and traceback</strong>. The last lines name the exception; the frames show how execution got there; your code is usually at the deepest frame of <em>your</em> files.</li><li><strong>Form a hypothesis</strong>, predict what you would see if it were true, and <strong>test it</strong> with a print, a log line or a debugger.</li><li><strong>Narrow down</strong>: bisect the input, the code path or the history (<code>git bisect</code>) to halve the search space each step.</li><li><strong>Fix the cause</strong>, not the symptom, add a regression test, and ask whether the same bug lurks elsewhere.</li></ol>
+<pre><code class="lang-py" data-embed="solutions/snippets/py11-05.py">import traceback
+def parse_age(record): return int(record["age"])
+def average_age(records): return sum(parse_age(r) for r in records) / len(records)
+try:
+    average_age([{"age": "30"}, {"age": "x"}, {"age": "40"}])
+except Exception as e:
+    frames = [f.name for f in traceback.extract_tb(e.__traceback__)]
+    print("call chain:", " -&gt; ".join(frames))
+    print(f"{type(e).__name__}: {e}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>call chain: &lt;module&gt; -&gt; average_age -&gt; &lt;genexpr&gt; -&gt; parse_age
+ValueError: invalid literal for int() with base 10: 'x'</code></pre>
+<p>Read the call chain from left (outermost) to right (where it failed): <code>&lt;module&gt;</code> called <code>average_age</code>, which iterated a generator that called <code>parse_age</code>, where <code>int('x')</code> raised the <code>ValueError</code>: that is <em>what</em>; <code>parse_age</code> is <em>where</em>; <code>average_age</code> is <em>who called it</em>. In a real traceback the last lines show the exception and each frame shows the file, line number and code. The bad data came from the caller, so validate at the boundary.</p>
+<h3>Tools</h3>
+<ul><li>**<code>print</code>/<code>logging</code>**: quick; prefer logging with levels so you can leave useful lines in.</li><li>**<code>pdb</code> / <code>breakpoint()</code>**: step through code. Commands: <code>n</code> (next line), <code>s</code> (step into), <code>c</code> (continue), <code>l</code> (list code), <code>p expr</code> (print), <code>w</code> (where, stack), <code>u</code>/<code>d</code> (up/down frames), <code>b line</code> (breakpoint), <code>q</code>. Post-mortem: <code>python -m pdb script.py</code> or <code>pdb.pm()</code> after an exception.</li><li><strong>IDE debuggers</strong> show variables, watch expressions and conditional breakpoints.</li><li>**<code>assert</code>** documents and enforces assumptions during development.</li><li><strong>Rubber-duck debugging</strong>: explain the code line by line aloud.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/py11-06.py">def find_bug_by_bisection(items, is_bad):
+    """Binary search for the first bad item, assuming everything after the first bad one is bad (like git bisect)."""
+    lo, hi, steps = 0, len(items) - 1, 0
+    while lo &lt; hi:
+        mid = (lo + hi) // 2; steps += 1
+        if is_bad(items[mid]): hi = mid
+        else: lo = mid + 1
+    return items[lo], steps
+commits = list(range(1, 1001))
+first_bad, steps = find_bug_by_bisection(commits, lambda c: c &gt;= 637)
+print(f"first bad commit: {first_bad}, found in {steps} checks instead of up to 1000")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>first bad commit: 637, found in 10 checks instead of up to 1000</code></pre>
+<h3>Common Python bugs checklist</h3>
+<p>Mutable default arguments, late-binding closures in loops, modifying a list while iterating it, confusing <code>is</code> and <code>==</code>, integer vs float division, shadowing built-ins (<code>list</code>, <code>id</code>), swallowed exceptions (<code>except: pass</code>), timezone-naive datetimes, off-by-one in slices and ranges, forgetting <code>await</code>, and shared state between threads.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py11-07.py">funcs = [lambda: i for i in range(3)]
+print("late binding closure bug:", [f() for f in funcs])
+funcs = [lambda i=i: i for i in range(3)]
+print("fixed with a default argument:", [f() for f in funcs])
+xs = [2, 4, 6, 8, 9]
+for x in xs:
+    if x % 2 == 0: xs.remove(x)
+print("removing every even number while iterating leaves some behind:", xs)
+print("correct:", [x for x in [2, 4, 6, 8, 9] if x % 2 != 0])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>late binding closure bug: [2, 2, 2]
+fixed with a default argument: [0, 1, 2]
+removing every even number while iterating leaves some behind: [4, 8, 9]
+correct: [9]</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py11-q06" data-topic="Testing and debugging" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the first step when debugging a failure?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Rewrite the module <span class="q-why">No.</span></li>
+          <li data-key="B">Reproduce it reliably, ideally as a failing test <span class="q-why">Correct.</span></li>
+          <li data-key="C">Add random sleeps <span class="q-why">No.</span></li>
+          <li data-key="D">Blame the library <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>You cannot fix what you cannot reproduce.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does git bisect do?</summary><div class="answer"><p>Binary-searches the commit history to find the first commit that introduced a bug.</p></div></details>
+      </div>
+    </section>
+
+    <section id="profiling" data-track>
+      <h2>Profiling: measure, then optimise</h2>
+<p>"Premature optimisation is the root of all evil", but unmeasured optimisation is just guessing. Process: define the target (latency, memory), <strong>measure</strong> where time or memory goes, change <strong>one</strong> thing, measure again.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Tool</th><th>Answers</th></tr></thead>
+<tbody>
+<tr><td><code>time.perf_counter()</code> / <code>timeit</code></td><td>How long does this snippet take?</td></tr><tr><td><code>cProfile</code> + <code>pstats</code></td><td>Which functions use the most time, and how often are they called?</td></tr><tr><td><code>line_profiler</code></td><td>Which lines of this function are slow?</td></tr><tr><td><code>tracemalloc</code></td><td>Where is memory allocated?</td></tr><tr><td><code>sys.getsizeof</code>, <code>pympler</code></td><td>How big is this object?</td></tr><tr><td><code>py-spy</code></td><td>Sample a running process without changing it</td></tr><tr><td>Flame graphs</td><td>Visualise where time is spent</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/py11-08.py">import cProfile, pstats, io
+def slow_unique(items):
+    out = []
+    for x in items:
+        if x not in out: out.append(x)               # O(n) membership in a list -&gt; O(n^2) overall
+    return out
+def fast_unique(items):
+    seen, out = set(), []
+    for x in items:
+        if x not in seen: seen.add(x); out.append(x)
+    return out
+data = [i % 2000 for i in range(20000)]
+pr = cProfile.Profile(); pr.enable(); slow_unique(data); pr.disable()
+stats = pstats.Stats(pr, stream=io.StringIO()).sort_stats("tottime")
+slow_calls = {fn[2]: v[1] for fn, v in stats.stats.items()}
+print("cProfile recorded one call to slow_unique:", slow_calls.get("slow_unique"))
+import timeit
+t_slow = timeit.timeit(lambda: slow_unique(data), number=1)
+t_fast = timeit.timeit(lambda: fast_unique(data), number=1)
+print("same result:", slow_unique(data) == fast_unique(data), "| the set-based version is at least 10x faster:", t_slow / t_fast &gt; 10)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>cProfile recorded one call to slow_unique: 1
+same result: True | the set-based version is at least 10x faster: True</code></pre>
+<pre><code class="lang-py" data-embed="solutions/snippets/py11-09.py">import tracemalloc
+tracemalloc.start()
+big_list = [str(i) * 10 for i in range(50000)]
+current, peak = tracemalloc.get_traced_memory()
+tracemalloc.stop()
+gen_total = sum(len(str(i) * 10) for i in range(50000))       # a generator expression holds one item at a time
+print("list of 50k strings used more than 1 MB:", peak &gt; 1_000_000, "| the generator approach needs no list at all:", gen_total &gt; 0)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>list of 50k strings used more than 1 MB: True | the generator approach needs no list at all: True</code></pre>
+<p>Typical fixes, in order of payoff: a better <strong>algorithm or data structure</strong>, <strong>caching</strong> (<code>functools.lru_cache</code>), <strong>avoiding repeated work</strong> and I/O in loops, <strong>batching</strong>, built-in or vectorised operations, <strong>generators</strong> for memory, <strong>processes</strong> for CPU parallelism, and finally native code (Cython, Rust, NumPy).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py11-q07" data-topic="Testing and debugging" data-type="single" data-answer="B">
+        <div class="q-stem"><p>When optimising, what comes first?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Rewriting in C <span class="q-why">Premature.</span></li>
+          <li data-key="B">Measuring to find where time or memory actually goes <span class="q-why">Correct.</span></li>
+          <li data-key="C">Adding threads <span class="q-why">No.</span></li>
+          <li data-key="D">Caching everything <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Intuition about hot spots is often wrong.</p></div>
+      </div>
+    </section>
+
+    <section id="flaky" data-track>
+      <h2>Flaky and slow tests</h2>
+<p>A <strong>flaky</strong> test passes and fails without code changes. Causes: real time and sleeps, randomness, test order dependence and shared state, network and external services, concurrency races, uncontrolled data. Fixes: inject clocks and seeds, isolate state with fixtures and temp directories, wait on <strong>conditions</strong> not sleeps, fake external services, run tests in random order to expose coupling, and quarantine then fix (never ignore) flaky tests.</p>
+<p>Speed up slow suites: run in parallel, share expensive setup with scoped fixtures, use in-memory databases for most tests, mark and separate slow tests, and run the full suite in CI on every push.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py11-q08" data-topic="Testing and debugging" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How should tests wait for an asynchronous result?</p></div>
+        <ul class="q-options">
+          <li data-key="A">sleep(5) <span class="q-why">Slow and still flaky.</span></li>
+          <li data-key="B">Poll or wait on an explicit condition with a timeout <span class="q-why">Correct.</span></li>
+          <li data-key="C">Ignore the failure <span class="q-why">No.</span></li>
+          <li data-key="D">Run twice <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Conditions are deterministic; arbitrary sleeps are not.</p></div>
+      </div>
+    </section>
+
+    <section id="coverage" data-track>
+      <h2>Coverage and what it means</h2>
+<p><strong>Coverage</strong> shows which lines or branches ran, not whether behaviour was verified. 100% coverage with no assertions is worthless; 80% with meaningful tests on critical paths beats it. Use coverage to <strong>find untested code</strong>, set a floor in CI, and favour <strong>branch</strong> coverage and <strong>mutation testing</strong> (flip operators and see whether tests fail) to judge test quality.</p>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Test behaviour at the cheapest level that can catch the bug, replace slow or non-deterministic dependencies with fakes and injected clocks, state properties for generated inputs, debug by reproducing and bisecting, and profile before you optimise.</p></div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why is high coverage not enough?</summary><div class="answer"><p>It shows lines executed, not whether behaviour was asserted; weak assertions give a false sense of safety.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Testing and debugging</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Testing and debugging">
+<details class="recall iq" data-level="basic" data-topic="Testing and debugging"><summary><span class="tag ok">Basic</span> Describe the test pyramid.</summary><div class="answer"><p>Many fast unit tests, fewer integration tests and a few end-to-end tests, because higher-level tests are slower, flakier and less precise.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Testing and debugging"><summary><span class="tag ok">Basic</span> What makes a good unit test?</summary><div class="answer"><p>Fast, isolated, deterministic, self-checking, testing one behaviour with a clear name and meaningful assertions.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Testing and debugging"><summary><span class="tag warn">Medium</span> Stub versus mock versus fake?</summary><div class="answer"><p>A stub returns canned answers, a mock records interactions for assertion, a fake is a simplified working implementation such as an in-memory repository.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Testing and debugging"><summary><span class="tag warn">Medium</span> Where do you patch with mock.patch?</summary><div class="answer"><p>Where the name is looked up and used, not where it is defined.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Testing and debugging"><summary><span class="tag warn">Medium</span> How do you test code that depends on time or randomness?</summary><div class="answer"><p>Inject the clock or random generator (or seed it) so tests are deterministic.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Testing and debugging"><summary><span class="tag warn">Medium</span> What is property-based testing?</summary><div class="answer"><p>Stating properties that should hold for all inputs and letting a library such as Hypothesis generate many cases and shrink failures to minimal examples.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Testing and debugging"><summary><span class="tag warn">Medium</span> What causes flaky tests and how do you fix them?</summary><div class="answer"><p>Real time, sleeps, randomness, shared state, test order, network and races. Inject dependencies, isolate state, wait on conditions and fix or quarantine them.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Testing and debugging"><summary><span class="tag warn">Medium</span> How do you debug a failing function methodically?</summary><div class="answer"><p>Reproduce, read the traceback, form and test a hypothesis, narrow with bisection or logging, fix the cause and add a regression test.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Testing and debugging"><summary><span class="tag warn">Medium</span> What does git bisect do?</summary><div class="answer"><p>It binary-searches the commit history using a good and a bad commit to find the commit that introduced a bug.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Testing and debugging"><summary><span class="tag bad">Advanced</span> Why is 100% code coverage not enough?</summary><div class="answer"><p>It shows lines executed, not whether assertions verify behaviour. Branch coverage and mutation testing give better signals.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Testing and debugging"><summary><span class="tag bad">Advanced</span> How do you profile a slow Python function?</summary><div class="answer"><p>Measure with timeit or cProfile to find hot functions, use line_profiler for lines and tracemalloc for memory, change one thing and measure again.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Testing and debugging"><summary><span class="tag bad">Advanced</span> What is a contract test?</summary><div class="answer"><p>A test that checks a consumer and a provider agree on an API&#x27;s shape, catching breaking changes without a full integration environment.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Testing and debugging"><summary><span class="tag bad">Advanced</span> How do you design tests for database code?</summary><div class="answer"><p>Inject the connection, use an in-memory or disposable database with per-test fixtures for logic, and run key tests against the production engine in CI.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Testing and debugging"><summary><span class="tag bad">Advanced</span> pytest fixtures versus unittest setUp?</summary><div class="answer"><p>Fixtures are composable, scoped (function, module, session), injected by name and can yield for teardown; setUp is per-class and less flexible.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="py10-data-wrangling.html"><span class="dir">Previous</span><span>PY10 Data wrangling in Python: group, join, window and reshape, with pandas and NumPy ideas</span></a>
+      <a class="next" href="py12-interview-toolkit.html"><span class="dir">Next</span><span>PY12 Python for coding interviews: built-in complexity, idioms, recursion and typing</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

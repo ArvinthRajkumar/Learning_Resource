@@ -34,8 +34,15 @@ window.LR_RESOURCE = {
     { id: "SD25", file: "sd25-case-6.html", title: "Case studies 6: ID generator, distributed lock, job scheduler, order book, code judge, distributed file system", sections: 7 },
     { id: "SD26", file: "sd26-tradeoffs-mock.html", title: "Trade-offs, decision tables and mock interview walkthroughs", sections: 8 },
     { id: "SD27", file: "sd27-glossary.html", title: "System design glossary: terms, acronyms and patterns", sections: 8 },
-    { id: "IQ", file: "interview-questions.html", title: "Interview question bank", sections: 28 },
-    { id: "QZ", file: "practice-quiz.html", title: "Practice quiz (202 questions)", sections: 1 },
+    { id: "SD28", file: "sd28-consensus-time.html", title: "Consensus, clocks and coordination: Raft, leader election, logical time and CRDTs", sections: 10 },
+    { id: "SD29", file: "sd29-web-delivery.html", title: "Web delivery: HTTP caching, TLS, CDNs, real-time connections and client performance", sections: 10 },
+    { id: "SD30", file: "sd30-sre-operations.html", title: "Site reliability engineering: SLOs, burn rates, capacity planning, load testing and incident response", sections: 9 },
+    { id: "SD31", file: "sd31-case-7.html", title: "Case studies 7: trending topics, food delivery dispatch, online auction, team chat and email", sections: 6 },
+    { id: "SD32", file: "sd32-client-offline.html", title: "Client-side and mobile system design: offline-first, sync, push and media pipelines", sections: 9 },
+    { id: "SD33", file: "sd33-search-data-modelling.html", title: "Search internals and data modelling patterns: inverted indexes, BM25, multi-tenancy and time series", sections: 6 },
+    { id: "SD34", file: "sd34-explained-simply.html", title: "System design explained simply: analogies, misconceptions and how to say it in an interview", sections: 8 },
+    { id: "IQ", file: "interview-questions.html", title: "Interview question bank", sections: 35 },
+    { id: "QZ", file: "practice-quiz.html", title: "Practice quiz (258 questions)", sections: 1 },
     { id: "CH", file: "cheat-sheet.html", title: "Cheat sheet (printable)", sections: 1 }
   ],
   topics: {
@@ -66,6 +73,13 @@ window.LR_RESOURCE = {
     "Case studies 5": "sd24-case-5.html",
     "Case studies 6": "sd25-case-6.html",
     "Trade-offs and mocks": "sd26-tradeoffs-mock.html",
-    "Glossary": "sd27-glossary.html"
+    "Glossary": "sd27-glossary.html",
+    "Consensus and time": "sd28-consensus-time.html",
+    "Web delivery": "sd29-web-delivery.html",
+    "SRE and operations": "sd30-sre-operations.html",
+    "Case studies 7": "sd31-case-7.html",
+    "Client and mobile design": "sd32-client-offline.html",
+    "Search and data modelling": "sd33-search-data-modelling.html",
+    "Explained simply": "sd34-explained-simply.html"
   }
 };

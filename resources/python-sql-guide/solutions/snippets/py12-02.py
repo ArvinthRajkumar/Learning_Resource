@@ -1,0 +1,20 @@
+from collections import Counter, defaultdict, deque
+import heapq, bisect, itertools, functools
+nums = [4, 1, 3, 1, 5, 9, 2, 6]
+print("enumerate:", [(i, x) for i, x in enumerate(nums, start=1)][:3])
+print("zip + unpack:", [a * b for a, b in zip(nums, nums[1:])][:4])
+print("sorted with key and reverse:", sorted(["bb", "a", "ccc", "dd"], key=lambda s: (-len(s), s)))
+print("min/max with key:", max(["pear", "fig", "banana"], key=len), min(nums, default=None))
+print("any/all:", any(x > 8 for x in nums), all(x > 0 for x in nums))
+print("Counter:", Counter("mississippi").most_common(2))
+d = defaultdict(list)
+for w in ["eat", "tea", "tan", "ate", "nat", "bat"]: d["".join(sorted(w))].append(w)
+print("group anagrams:", sorted(d.values()))
+print("swap and chained comparison:", (lambda a, b: (b, a))(1, 2), 1 < 3 < 5)
+print("slicing:", nums[::-1][:3], nums[-3:], nums[1:6:2])
+print("ternary and walrus:", "even" if len(nums) % 2 == 0 else "odd", (n := len(nums)) > 5, n)
+print("unpacking with *:", (lambda first, *rest: (first, rest))(*nums[:4]))
+print("itertools:", list(itertools.combinations([1, 2, 3], 2)), list(itertools.accumulate([1, 2, 3, 4])), list(itertools.islice(itertools.count(10, 5), 3)))
+print("string tricks:", "a,b,,c".split(","), " x ".strip(), "abc".startswith(("a", "z")), "x".join("123"), "Hello"[::-1], "ab" * 3)
+print("ord/chr:", ord("a"), chr(ord("a") + 2), [chr(i) for i in range(97, 100)])
+print("integer tricks:", divmod(17, 5), 17 // 5, -17 // 5, -17 % 5, pow(3, 4, 5), 10 ** 20, int("101", 2), bin(10), 7 & 3, 7 | 8, 7 ^ 2, 1 << 5)

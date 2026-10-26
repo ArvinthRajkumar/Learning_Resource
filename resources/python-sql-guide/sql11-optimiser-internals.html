@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="SQL11">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Inside the query optimiser: join algorithms, cost estimates, statistics and index structures | Python + SQL</title>
+<meta name="description" content="How databases execute joins (nested loop, hash, merge) implemented and counted in Python, how the optimiser estimates costs from statistics and picks plans, B-tree and other index types, covering and composite indexes, and why plans go wrong.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SQL11</p>
+      <h1>Inside the query optimiser: join algorithms, cost estimates, statistics and index structures</h1>
+      <p class="lede">Part SQL4 showed how to read plans and fix slow queries. This part explains why the plans look the way they do: the algorithms underneath, the arithmetic of cost estimation and the way statistics steer choices. Knowing this makes tuning predictable instead of trial and error.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="pipeline" data-track>
+      <h2>From SQL text to results</h2>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 98" role="img" aria-label="SQL says what you want; the optimiser decides how, using table statistics and a cost model." style="min-width:760px"><defs><marker id="ah5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah5a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah5b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah5d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah5)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah5)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah5)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">Parse (syntax tree)</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle" class="d-sm">Analyse and rewrite (resolve names, simplify, push down filters)</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle" class="d-sm">Optimise (enumerate plans, estimate cost, choose cheapest)</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle" class="d-sm">Execute (iterators pull rows through operators)</text></svg>
+</div>
+<figcaption>SQL says what you want; the optimiser decides how, using table statistics and a cost model.</figcaption></figure>
+<p>A <strong>plan</strong> is a tree of operators: scans at the leaves (read a table or an index), joins, filters, aggregations and sorts above. Rows flow upward. Execution commonly follows the <strong>iterator (Volcano) model</strong>: each operator exposes <code>next()</code> which asks its children for rows.</p>
+    </section>
+
+    <section id="joins" data-track>
+      <h2>Join algorithms</h2>
+<p>Joining tables <code>R</code> (n rows) and <code>S</code> (m rows) on equality can use three classic algorithms. Each is cheap in one situation and expensive in another.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Algorithm</th><th>Idea</th><th>Cost</th><th>Best when</th></tr></thead>
+<tbody>
+<tr><td><strong>Nested loop</strong></td><td>For each row of R, scan S for matches</td><td>O(n x m), or O(n log m) with an index on S</td><td>Small outer side and an index on the inner join column</td></tr><tr><td><strong>Hash join</strong></td><td>Build a hash table on the smaller side, probe it with the other</td><td>O(n + m) memory for the hash table</td><td>Large unsorted inputs, equality joins</td></tr><tr><td><strong>Merge (sort-merge) join</strong></td><td>Sort both on the key, walk them together</td><td>O(n log n + m log m), or O(n + m) if already sorted</td><td>Inputs already ordered (index order), range or very large joins</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/sql11-01.py">import random
+random.seed(1)
+R = [(i, f"r{i}") for i in random.sample(range(10_000), 2_000)]          # (key, payload)
+S = [(i, f"s{i}") for i in random.sample(range(10_000), 3_000)]
+def nested_loop(R, S):
+    out, comparisons = [], 0
+    for rk, rv in R:
+        for sk, sv in S:
+            comparisons += 1
+            if rk == sk: out.append((rk, rv, sv))
+    return out, comparisons
+def hash_join(R, S):
+    table, out, ops = {}, [], 0
+    for sk, sv in S: table.setdefault(sk, []).append(sv); ops += 1                 # build on one side
+    for rk, rv in R:
+        ops += 1
+        for sv in table.get(rk, ()): out.append((rk, rv, sv))                        # probe with the other
+    return out, ops
+def merge_join(R, S):
+    R, S = sorted(R), sorted(S); i = j = ops = 0; out = []
+    while i &lt; len(R) and j &lt; len(S):
+        ops += 1
+        if R[i][0] &lt; S[j][0]: i += 1
+        elif R[i][0] &gt; S[j][0]: j += 1
+        else:
+            out.append((R[i][0], R[i][1], S[j][1])); i += 1; j += 1                     # keys are unique here
+    return out, ops
+nl, c1 = nested_loop(R, S); hj, c2 = hash_join(R, S); mj, c3 = merge_join(R, S)
+print("all three return the same rows:", sorted(nl) == sorted(hj) == sorted(mj), "| result size:", len(hj))
+print(f"basic operations: nested loop {c1:,} | hash join {c2:,} | merge join {c3:,} (after sorting)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>all three return the same rows: True | result size: 602
+basic operations: nested loop 6,000,000 | hash join 5,000 | merge join 4,395 (after sorting)</code></pre>
+<p>Six million comparisons versus five thousand: that is why the choice matters. With an <strong>index on S(key)</strong>, nested loop does one index lookup per outer row (<code>n log m</code>) and wins when the outer side is tiny, such as joining one customer to their orders.</p>
+<h3>Join order</h3>
+<p>For <code>A JOIN B JOIN C</code> there are many orders (<code>n!</code> for <code>n</code> tables), and an early huge intermediate result ruins everything. Optimisers search by dynamic programming (or heuristics for many tables) preferring plans that <strong>filter early</strong> and keep intermediate results small. Statistics decide which side is "small".</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql11-q01" data-topic="Optimiser internals" data-type="single" data-answer="B">
+        <div class="q-stem"><p>When is a nested loop join the right choice?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Always <span class="q-why">No.</span></li>
+          <li data-key="B">When the outer side is tiny and the inner side has an index on the join column <span class="q-why">Correct.</span></li>
+          <li data-key="C">For very large unindexed tables <span class="q-why">Quadratic.</span></li>
+          <li data-key="D">Only for range joins <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Each outer row costs one index lookup.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-sql11-q02" data-topic="Optimiser internals" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A hash join needs:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Sorted inputs <span class="q-why">That is merge join.</span></li>
+          <li data-key="B">Memory for a hash table on the smaller input, and an equality condition <span class="q-why">Correct.</span></li>
+          <li data-key="C">An index <span class="q-why">No.</span></li>
+          <li data-key="D">A cross product <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Build on the small side, probe with the big side.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Compare the three join algorithms in one line each.</summary><div class="answer"><p>Nested loop probes per outer row (good with an index), hash join builds a table on one side, merge join walks two sorted inputs together.</p></div></details>
+      </div>
+    </section>
+
+    <section id="cost" data-track>
+      <h2>Cost estimation and statistics</h2>
+<p>The optimiser estimates the <strong>number of rows</strong> each operator returns (<strong>cardinality</strong>), then multiplies by per-row I/O and CPU cost. It gets cardinalities from <strong>statistics</strong>:</p>
+<ul><li>Table row count and page count.</li><li>For each column: number of distinct values, fraction of NULLs, minimum and maximum, <strong>most common values (MCV)</strong> with frequencies, and a <strong>histogram</strong> of the rest.</li><li><strong>Selectivity</strong> is the fraction of rows a predicate keeps: <code>col = value</code> is about <code>1 / distinct_values</code>; a range uses the histogram; <code>AND</code> multiplies selectivities (assuming independence), <code>OR</code> adds them.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/sql11-02.py">import random, bisect
+random.seed(3)
+n = 100_000
+country = random.choices(["IN", "US", "DE", "BR", "XX"], weights=[50, 30, 12, 7, 1], k=n)       # skewed distribution
+age = [min(90, max(18, int(random.gauss(40, 12)))) for _ in range(n)]
+distinct = len(set(country))
+est_naive = n / distinct                                                                         # assumes a uniform distribution
+actual_in = country.count("IN"); actual_xx = country.count("XX")
+mcv = {c: country.count(c) / n for c in set(country)}                                             # what MCV statistics store
+print(f"country = 'IN': naive estimate {est_naive:,.0f} | MCV estimate {mcv['IN'] * n:,.0f} | actual {actual_in:,}")
+print(f"country = 'XX': naive estimate {est_naive:,.0f} | MCV estimate {mcv['XX'] * n:,.0f} | actual {actual_xx:,}")
+sel_age = sum(1 for a in age if a &gt;= 60) / n
+sel_both_indep = mcv["IN"] * sel_age
+actual_both = sum(1 for c, a in zip(country, age) if c == "IN" and a &gt;= 60) / n
+print(f"IN and age &gt;= 60: independence estimate {sel_both_indep * n:,.0f} vs actual {actual_both * n:,.0f} (columns are independent here, so they agree)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>country = 'IN': naive estimate 20,000 | MCV estimate 50,186 | actual 50,186
+country = 'XX': naive estimate 20,000 | MCV estimate 970 | actual 970
+IN and age &gt;= 60: independence estimate 2,415 vs actual 2,381 (columns are independent here, so they agree)</code></pre>
+<p>When columns are <strong>correlated</strong> (city and country, make and model) the independence assumption underestimates, producing a bad plan. Remedies: <strong>extended statistics</strong> on column groups, rewriting the query, or hints as a last resort.</p>
+<h3>Seek versus scan</h3>
+<p>Reading <strong>many</strong> rows through an index is slower than a sequential scan: each index entry may mean a random page read. Rule of thumb: an index helps when the predicate keeps only a small fraction of the rows, from about 1 or 2% on spinning disks up to roughly 10% on fast SSDs. The toy cost model below breaks even between 1% and 5%. The optimiser compares the cost of both and may legitimately ignore your index.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sql11-03.py">def cost_seq_scan(pages, cpu_per_row=0.01, rows=0): return pages * 1.0 + rows * cpu_per_row
+def cost_index(selected_rows, tree_height=3): return tree_height + selected_rows * 1.0 + selected_rows * 0.01   # about one random page per row
+table_pages, table_rows = 10_000, 1_000_000
+for pct in (0.001, 0.01, 0.1, 1, 5, 20):
+    sel = int(table_rows * pct / 100)
+    seq, idx = cost_seq_scan(table_pages, rows=table_rows), cost_index(sel)
+    print(f"keeps {pct:&gt;6}% of rows ({sel:&gt;7,}): scan cost {seq:&gt;9,.0f} vs index cost {idx:&gt;9,.0f} -&gt; {'index' if idx &lt; seq else 'scan'}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>keeps  0.001% of rows (     10): scan cost    20,000 vs index cost        13 -&gt; index
+keeps   0.01% of rows (    100): scan cost    20,000 vs index cost       104 -&gt; index
+keeps    0.1% of rows (  1,000): scan cost    20,000 vs index cost     1,013 -&gt; index
+keeps      1% of rows ( 10,000): scan cost    20,000 vs index cost    10,103 -&gt; index
+keeps      5% of rows ( 50,000): scan cost    20,000 vs index cost    50,503 -&gt; scan
+keeps     20% of rows (200,000): scan cost    20,000 vs index cost   202,003 -&gt; scan</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql11-q03" data-topic="Optimiser internals" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is selectivity?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The speed of a query <span class="q-why">No.</span></li>
+          <li data-key="B">The fraction of rows a predicate keeps <span class="q-why">Correct.</span></li>
+          <li data-key="C">Index size <span class="q-why">No.</span></li>
+          <li data-key="D">The number of tables <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Lower selectivity fraction means fewer rows and favours an index.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-sql11-q04" data-topic="Optimiser internals" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why might the optimiser ignore an index?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is broken <span class="q-why">Rarely.</span></li>
+          <li data-key="B">The predicate keeps a large fraction of rows, so a sequential scan is cheaper than many random lookups <span class="q-why">Correct.</span></li>
+          <li data-key="C">Indexes are optional <span class="q-why">No.</span></li>
+          <li data-key="D">Statistics are always right <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Compare estimated costs, not just availability.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What statistics does the optimiser keep?</summary><div class="answer"><p>Row counts, distinct counts, null fractions, min and max, most common values and histograms.</p></div></details>
+      </div>
+    </section>
+
+    <section id="plans" data-track>
+      <h2>Seeing the plan with real statistics</h2>
+<p>SQLite shows the same decision. Before gathering statistics it guesses; after <code>ANALYZE</code> it uses data distributions.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql11-04.sql">CREATE TABLE t (id INTEGER PRIMARY KEY, status TEXT, user_id INT, created TEXT);
+WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i &lt; 20000)
+INSERT INTO t SELECT i, CASE WHEN i % 1000 = 0 THEN 'rare' ELSE 'common' END, i % 500, date('2024-01-01', '+' || (i % 365) || ' days') FROM n;
+CREATE INDEX idx_status ON t(status);
+ANALYZE;
+EXPLAIN QUERY PLAN SELECT * FROM t WHERE status = 'rare';</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>plan</th></tr></thead>
+<tbody><tr><td>SEARCH t USING INDEX idx_status (status=?)</td></tr></tbody>
+</table>
+</div>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql11-05.sql">CREATE TABLE t (id INTEGER PRIMARY KEY, status TEXT, user_id INT, created TEXT);
+WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i &lt; 20000)
+INSERT INTO t SELECT i, CASE WHEN i % 1000 = 0 THEN 'rare' ELSE 'common' END, i % 500, date('2024-01-01', '+' || (i % 365) || ' days') FROM n;
+CREATE INDEX idx_status ON t(status);
+ANALYZE;
+EXPLAIN QUERY PLAN SELECT * FROM t WHERE status = 'common';</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>plan</th></tr></thead>
+<tbody><tr><td>SEARCH t USING INDEX idx_status (status=?)</td></tr></tbody>
+</table>
+</div>
+<p>Here SQLite chooses the index for both values: it has only coarse statistics, and the index is still a reasonable plan. An engine that keeps most-common-value lists and histograms (PostgreSQL) knows that <code>'common'</code> matches about 99.9% of the rows and picks a sequential scan for it, while using the index for the rare value. If estimates drift from reality because statistics are stale after a big load, the plan degrades: run <code>ANALYZE</code> (or <code>VACUUM ANALYZE</code>) after bulk changes and compare <code>EXPLAIN ANALYZE</code> actual rows with estimated rows; a large mismatch is the first thing to investigate.</p>
+    </section>
+
+    <section id="indexes" data-track>
+      <h2>Index structures</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Index</th><th>How it works</th><th>Good for</th><th>Not good for</th></tr></thead>
+<tbody>
+<tr><td><strong>B-tree</strong> (default)</td><td>Sorted balanced tree (<a href="../system-design-guide/sd18-storage-engines.html">SD18</a>)</td><td>Equality, ranges, <code>ORDER BY</code>, prefix <code>LIKE 'abc%'</code>, <code>MIN/MAX</code></td><td><code>LIKE '%abc'</code>, low-selectivity columns</td></tr><tr><td><strong>Hash</strong></td><td>Hash table of keys</td><td>Pure equality</td><td>Ranges, ordering</td></tr><tr><td><strong>GIN / inverted</strong></td><td>Term to row list</td><td>Arrays, JSONB, full text</td><td>Frequent updates (use fast-update or batching)</td></tr><tr><td><strong>GiST / R-tree</strong></td><td>Bounding regions</td><td>Geospatial, ranges, nearest neighbour</td><td>Simple equality</td></tr><tr><td><strong>BRIN</strong></td><td>Min/max per block range</td><td>Huge append-only, naturally ordered tables (time series)</td><td>Randomly ordered data</td></tr><tr><td><strong>Bitmap</strong></td><td>Bit vector per value</td><td>Low-cardinality columns in warehouses</td><td>Heavy concurrent writes</td></tr><tr><td><strong>Columnstore</strong></td><td>Per-column compressed segments</td><td>Analytical scans</td><td>Single-row lookups</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Composite index order</h3>
+<p>A B-tree on <code>(a, b, c)</code> is sorted by <code>a</code>, then <code>b</code> within <code>a</code>, then <code>c</code>. It can serve: <code>a = ?</code>, <code>a = ? AND b = ?</code>, <code>a = ? AND b &gt; ?</code>, and <code>ORDER BY a, b</code>. It <strong>cannot</strong> efficiently serve a filter on <code>b</code> alone (no leading column). Put <strong>equality columns first</strong>, then the <strong>range</strong> or sort column; among equality columns put the more selective first unless sorting dictates otherwise.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql11-06.sql">CREATE TABLE ev (id INTEGER PRIMARY KEY, user_id INT, kind TEXT, ts TEXT, payload TEXT);
+WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i &lt; 5000)
+INSERT INTO ev SELECT i, i % 100, CASE i % 3 WHEN 0 THEN 'view' WHEN 1 THEN 'click' ELSE 'buy' END, date('2024-01-01', '+' || (i % 200) || ' days'), 'x' FROM n;
+CREATE INDEX idx_user_kind_ts ON ev(user_id, kind, ts);
+EXPLAIN QUERY PLAN SELECT * FROM ev WHERE user_id = 7 AND kind = 'buy' AND ts &gt;= '2024-03-01';
+EXPLAIN QUERY PLAN SELECT * FROM ev WHERE kind = 'buy';
+EXPLAIN QUERY PLAN SELECT user_id, kind, ts FROM ev WHERE user_id = 7;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>plan</th></tr></thead>
+<tbody><tr><td>SEARCH ev USING INDEX idx_user_kind_ts (user_id=? AND kind=? AND ts&gt;?)</td></tr></tbody>
+</table>
+</div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>plan</th></tr></thead>
+<tbody><tr><td>SCAN ev</td></tr></tbody>
+</table>
+</div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>plan</th></tr></thead>
+<tbody><tr><td>SEARCH ev USING COVERING INDEX idx_user_kind_ts (user_id=?)</td></tr></tbody>
+</table>
+</div>
+<p>The first query uses all three columns, the second cannot use the index to seek (no leading <code>user_id</code>), and the third is <strong>covered</strong>: every column it needs lives in the index, so the table is never touched ("COVERING INDEX").</p>
+<h3>Covering, partial and expression indexes</h3>
+<ul><li><strong>Covering index</strong>: includes all columns a query reads, avoiding table lookups (<code>INCLUDE</code> columns in PostgreSQL and SQL Server).</li><li><strong>Partial index</strong>: <code>CREATE INDEX ... WHERE status = 'open'</code> indexes only the interesting rows: smaller and faster for "open tickets".</li><li><strong>Expression index</strong>: <code>CREATE INDEX ON users (lower(email))</code> serves <code>WHERE lower(email) = ?</code>.</li><li><strong>Unique index</strong> enforces a constraint and helps the optimiser.</li></ul>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql11-07.sql">CREATE TABLE ticket (id INTEGER PRIMARY KEY, status TEXT, email TEXT);
+WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i &lt; 3000)
+INSERT INTO ticket SELECT i, CASE WHEN i % 50 = 0 THEN 'open' ELSE 'closed' END, 'User' || i || '@Example.com' FROM n;
+CREATE INDEX idx_open ON ticket(id) WHERE status = 'open';
+CREATE INDEX idx_email_lower ON ticket(lower(email));
+EXPLAIN QUERY PLAN SELECT id FROM ticket WHERE status = 'open' ORDER BY id;
+EXPLAIN QUERY PLAN SELECT * FROM ticket WHERE lower(email) = 'user42@example.com';</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>plan</th></tr></thead>
+<tbody><tr><td>SCAN ticket USING COVERING INDEX idx_open</td></tr></tbody>
+</table>
+</div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>plan</th></tr></thead>
+<tbody><tr><td>SEARCH ticket USING INDEX idx_email_lower (&lt;expr&gt;=?)</td></tr></tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql11-q05" data-topic="Optimiser internals" data-type="single" data-answer="C">
+        <div class="q-stem"><p>With an index on (a, b, c), which query cannot seek on it?</p></div>
+        <ul class="q-options">
+          <li data-key="A">WHERE a = 1 <span class="q-why">Uses it.</span></li>
+          <li data-key="B">WHERE a = 1 AND b = 2 <span class="q-why">Uses it.</span></li>
+          <li data-key="C">WHERE b = 2 AND c = 3 <span class="q-why">Correct: there is no leading column a.</span></li>
+          <li data-key="D">WHERE a = 1 ORDER BY b <span class="q-why">Uses it.</span></li>
+        </ul>
+        <div class="q-explain"><p>A composite B-tree is sorted by its leading column first.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-sql11-q06" data-topic="Optimiser internals" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is a covering index?</p></div>
+        <ul class="q-options">
+          <li data-key="A">An index on every column <span class="q-why">No.</span></li>
+          <li data-key="B">An index containing every column a query needs, so no table lookup is required <span class="q-why">Correct.</span></li>
+          <li data-key="C">A hash index <span class="q-why">No.</span></li>
+          <li data-key="D">A unique index <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The plan shows COVERING INDEX.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Where do the range column and sort column go in a composite index?</summary><div class="answer"><p>After the equality columns, because equality columns narrow to a contiguous slice that is then ordered by the next column.</p></div></details>
+      </div>
+    </section>
+
+    <section id="sargable" data-track>
+      <h2>Sargable predicates and rewrites</h2>
+<p>A predicate is <strong>sargable</strong> (Search ARGument ABLE) when the engine can use an index to seek. Wrapping the column in a function, adding to it, or comparing with a leading wildcard usually makes it non-sargable; move the work to the other side.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Non-sargable</th><th>Sargable rewrite</th></tr></thead>
+<tbody>
+<tr><td><code>WHERE date(ts) = '2024-03-01'</code></td><td><code>WHERE ts &gt;= '2024-03-01' AND ts &lt; '2024-03-02'</code></td></tr><tr><td><code>WHERE price * 1.2 &gt; 100</code></td><td><code>WHERE price &gt; 100 / 1.2</code></td></tr><tr><td><code>WHERE lower(email) = ?</code></td><td>Expression index, or store normalised email</td></tr><tr><td><code>WHERE name LIKE '%son'</code></td><td>Full-text or trigram index, or reverse-string index</td></tr><tr><td><code>WHERE col + 0 = ?</code></td><td><code>WHERE col = ?</code></td></tr><tr><td><code>WHERE id IN (SELECT ...)</code> slow</td><td>Often equivalent to a <code>JOIN</code> or <code>EXISTS</code>; test both</td></tr><tr><td><code>OR</code> across different columns</td><td><code>UNION ALL</code> of two index-friendly queries</td></tr><tr><td><code>SELECT *</code></td><td>Select needed columns so covering indexes can apply</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql11-08.sql">CREATE TABLE log (id INTEGER PRIMARY KEY, ts TEXT, msg TEXT);
+WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i &lt; 5000)
+INSERT INTO log SELECT i, datetime('2024-03-01', '+' || i || ' minutes'), 'm' FROM n;
+CREATE INDEX idx_log_ts ON log(ts);
+EXPLAIN QUERY PLAN SELECT * FROM log WHERE date(ts) = '2024-03-02';
+EXPLAIN QUERY PLAN SELECT * FROM log WHERE ts &gt;= '2024-03-02' AND ts &lt; '2024-03-03';</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>plan</th></tr></thead>
+<tbody><tr><td>SCAN log</td></tr></tbody>
+</table>
+</div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>plan</th></tr></thead>
+<tbody><tr><td>SEARCH log USING INDEX idx_log_ts (ts&gt;? AND ts&lt;?)</td></tr></tbody>
+</table>
+</div>
+<p>The function-wrapped version scans the whole table; the range version seeks the index.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql11-q07" data-topic="Optimiser internals" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is WHERE date(ts) = '2024-03-02' slow on an indexed ts?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Dates are slow <span class="q-why">No.</span></li>
+          <li data-key="B">The function on the column prevents an index seek; use a range on ts instead <span class="q-why">Correct.</span></li>
+          <li data-key="C">The index is unique <span class="q-why">No.</span></li>
+          <li data-key="D">The table is large <span class="q-why">Not the cause.</span></li>
+        </ul>
+        <div class="q-explain"><p>Keep the column bare on one side.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Give two sargable rewrites.</summary><div class="answer"><p>Replace date(ts) = d with a half-open range on ts, and move arithmetic from the column to the constant.</p></div></details>
+      </div>
+    </section>
+
+    <section id="badplans" data-track>
+      <h2>Why good plans go bad</h2>
+<ol><li><strong>Stale or missing statistics</strong>: after bulk loads, run ANALYZE.</li><li><strong>Skewed data</strong> and <strong>parameter sniffing</strong>: a plan compiled for one parameter value (rare) is reused for another (common). Fixes include re-optimising per execution, using plan guides, or splitting query paths.</li><li><strong>Correlated columns</strong> break independence; create extended statistics.</li><li><strong>Cardinality errors compounding</strong> through many joins; simplify or materialise intermediate results (CTE materialisation, temp tables).</li><li><strong>Implicit casts</strong> (comparing a string column to a number) prevent index use.</li><li><strong>Memory settings</strong> too low make sorts and hashes spill to disk.</li><li><strong>ORM-generated queries</strong> with many joins or <code>SELECT *</code>.</li></ol>
+<p>A tuning loop that works: capture the slow query with real parameters; get <code>EXPLAIN (ANALYZE, BUFFERS)</code>; compare estimated and actual rows at each node; find the first big mismatch or the most expensive node; fix statistics, index or query; re-measure; check the other queries that touch the same table.</p>
+<div class="callout key"><span class="callout-title">Key idea</span><p>The optimiser chooses a join algorithm and order by estimating row counts from statistics. Hash and merge joins scale where nested loops explode; indexes win when the predicate is selective; composite index column order matters; sargable predicates are essential; and most bad plans come from wrong row estimates, so compare estimated with actual rows first.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql11-q08" data-topic="Optimiser internals" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the first thing to compare when a plan looks wrong?</p></div>
+        <ul class="q-options">
+          <li data-key="A">CPU model <span class="q-why">No.</span></li>
+          <li data-key="B">Estimated rows versus actual rows at each plan node <span class="q-why">Correct.</span></li>
+          <li data-key="C">The table name <span class="q-why">No.</span></li>
+          <li data-key="D">Network latency <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The first large mismatch usually locates the problem.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name three reasons for bad plans.</summary><div class="answer"><p>Stale statistics, skew with parameter sniffing, and correlated columns that break the independence assumption.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Optimiser internals</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Optimiser internals">
+<details class="recall iq" data-level="basic" data-topic="Optimiser internals"><summary><span class="tag ok">Basic</span> What does a query optimiser do?</summary><div class="answer"><p>It enumerates equivalent plans, estimates their cost from statistics and picks the cheapest.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Optimiser internals"><summary><span class="tag ok">Basic</span> Name the three join algorithms.</summary><div class="answer"><p>Nested loop, hash join and merge join.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Optimiser internals"><summary><span class="tag warn">Medium</span> When is a hash join better than a nested loop?</summary><div class="answer"><p>For large unsorted inputs with an equality condition and no useful index, since it is O(n + m) versus O(n x m).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Optimiser internals"><summary><span class="tag warn">Medium</span> When does nested loop win?</summary><div class="answer"><p>When the outer input is small and the inner side has an index on the join key.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Optimiser internals"><summary><span class="tag warn">Medium</span> What is selectivity and cardinality estimation?</summary><div class="answer"><p>Selectivity is the fraction of rows a predicate keeps; the optimiser multiplies it by row counts using statistics to estimate each operator&#x27;s output.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Optimiser internals"><summary><span class="tag warn">Medium</span> Why might the optimiser ignore an index?</summary><div class="answer"><p>If the predicate keeps a large fraction of rows, random index lookups cost more than a sequential scan.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Optimiser internals"><summary><span class="tag warn">Medium</span> What is a covering index?</summary><div class="answer"><p>An index containing all columns a query needs, allowing an index-only scan without reading the table.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Optimiser internals"><summary><span class="tag warn">Medium</span> How does composite index column order matter?</summary><div class="answer"><p>The index is sorted by the leading column first, so queries must constrain a leading prefix; put equality columns before range or sort columns.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Optimiser internals"><summary><span class="tag warn">Medium</span> What does sargable mean?</summary><div class="answer"><p>A predicate the engine can answer with an index seek; wrapping the column in a function or arithmetic usually breaks it.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Optimiser internals"><summary><span class="tag bad">Advanced</span> Why do plans go wrong?</summary><div class="answer"><p>Stale statistics, skewed data with parameter sniffing, correlated columns, errors compounding across joins, implicit casts and insufficient memory causing spills.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Optimiser internals"><summary><span class="tag bad">Advanced</span> How do you diagnose a bad plan?</summary><div class="answer"><p>Run EXPLAIN ANALYZE, compare estimated and actual rows per node, find the first large mismatch or the costliest node, then fix statistics, indexes or the query.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Optimiser internals"><summary><span class="tag bad">Advanced</span> B-tree versus hash versus GIN versus BRIN?</summary><div class="answer"><p>B-tree for equality and ranges, hash for equality only, GIN for inverted lookups such as arrays and text, BRIN for huge naturally ordered tables.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Optimiser internals"><summary><span class="tag bad">Advanced</span> What are extended statistics?</summary><div class="answer"><p>Statistics on groups of columns that capture correlation, fixing the independence assumption for predicates on related columns.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Optimiser internals"><summary><span class="tag bad">Advanced</span> Partial and expression indexes?</summary><div class="answer"><p>A partial index covers only rows matching a predicate (smaller and faster); an expression index stores computed values such as lower(email) so those predicates can use it.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sql10-warehouse-modelling.html"><span class="dir">Previous</span><span>SQL10 Data warehousing and dimensional modelling: star schemas, slowly changing dimensions and ELT</span></a>
+      <a class="next" href="sql12-schema-design-workshop.html"><span class="dir">Next</span><span>SQL12 Schema design workshop: four worked designs with constraints and queries</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

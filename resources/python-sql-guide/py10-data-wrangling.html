@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="PY10">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Data wrangling in Python: group, join, window and reshape, with pandas and NumPy ideas | Python + SQL</title>
+<meta name="description" content="The core data-manipulation operations (filter, map, group, aggregate, join, sort, window, pivot) implemented in plain Python so you understand them, then mapped to pandas and NumPy code, plus cleaning, missing data, dates, memory and performance habits.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part PY10</p>
+      <h1>Data wrangling in Python: group, join, window and reshape, with pandas and NumPy ideas</h1>
+      <p class="lede">Data analysis is a small set of operations applied again and again. Here each operation is built from scratch in plain Python so the idea is clear, then shown in pandas and NumPy form (displayed, not run, because those libraries are not installed in this sandbox). Learn the operations once and every library becomes familiar.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="shape" data-track>
+      <h2>Rows, columns and the shape of data</h2>
+<p>Most data is a <strong>table</strong>: rows are records, columns are fields. In Python the basic representations are:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Representation</th><th>Example</th><th>Good for</th></tr></thead>
+<tbody>
+<tr><td>List of dicts</td><td><code>[{"id": 1, "city": "Pune"}, ...]</code></td><td>Small data, JSON, readability</td></tr><tr><td>List of tuples / namedtuples</td><td><code>(1, "Pune")</code></td><td>Compact, immutable rows</td></tr><tr><td>Dict of lists (columns)</td><td><code>{"id": [1, 2], "city": ["Pune", "Goa"]}</code></td><td>Column operations, how pandas stores data</td></tr><tr><td>DataFrame (pandas)</td><td><code>pd.DataFrame(...)</code></td><td>Labelled, vectorised operations on large tables</td></tr><tr><td>Array (NumPy)</td><td><code>np.array([[1, 2], [3, 4]])</code></td><td>Numeric work with fast vector maths</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/py10-01.py">rows = [
+    {"order": 1, "customer": "ana", "country": "IN", "amount": 120.0, "date": "2024-03-01"},
+    {"order": 2, "customer": "bo",  "country": "US", "amount": 80.5,  "date": "2024-03-02"},
+    {"order": 3, "customer": "ana", "country": "IN", "amount": 45.0,  "date": "2024-03-05"},
+    {"order": 4, "customer": "cy",  "country": "DE", "amount": None,  "date": "2024-03-05"},
+    {"order": 5, "customer": "bo",  "country": "US", "amount": 200.0, "date": "2024-03-09"},
+]
+columns = {k: [r[k] for r in rows] for k in rows[0]}              # rows -&gt; columns (a "transpose")
+print(columns["amount"])
+back = [dict(zip(columns, vals)) for vals in zip(*columns.values())]     # columns -&gt; rows
+print(back == rows)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[120.0, 80.5, 45.0, None, 200.0]
+True</code></pre>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Row-oriented versus column-oriented data?</summary><div class="answer"><p>Rows store each record together; columns store each field together, which suits vectorised operations and compression.</p></div></details>
+      </div>
+    </section>
+
+    <section id="filter" data-track>
+      <h2>Filter, map and select</h2>
+<pre><code class="lang-py" data-embed="solutions/snippets/py10-02.py">rows = [{"order": 1, "country": "IN", "amount": 120.0}, {"order": 2, "country": "US", "amount": 80.5}, {"order": 3, "country": "IN", "amount": 45.0}, {"order": 4, "country": "DE", "amount": None}]
+big = [r for r in rows if r["amount"] is not None and r["amount"] &gt; 50]                   # filter (WHERE)
+projected = [{k: r[k] for k in ("order", "amount")} for r in rows]                          # select columns
+with_tax = [{**r, "gross": round(r["amount"] * 1.18, 2) if r["amount"] is not None else None} for r in rows]   # new column
+print([r["order"] for r in big]); print(projected[0]); print([r["gross"] for r in with_tax])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[1, 2]
+{'order': 1, 'amount': 120.0}
+[141.6, 94.99, 53.1, None]</code></pre>
+<p>pandas equivalents (not run here):</p>
+<pre><code class="lang-py">big = df[df["amount"] &gt; 50]                         # boolean mask (NaN compares False)
+projected = df[["order", "amount"]]
+df["gross"] = (df["amount"] * 1.18).round(2)        # vectorised: one operation, no Python loop</code></pre>
+<p><strong>Vectorisation</strong> means applying an operation to a whole column at once in compiled code, usually 10 to 100 times faster than a Python loop. If you write <code>for row in df.iterrows()</code>, ask whether a vectorised expression exists.</p>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is vectorisation?</summary><div class="answer"><p>Applying an operation to a whole array or column in compiled code instead of looping in Python.</p></div></details>
+      </div>
+    </section>
+
+    <section id="group" data-track>
+      <h2>Group and aggregate</h2>
+<p><code>GROUP BY</code> is: split rows by a key, apply an aggregate to each group, combine into a result ("split-apply-combine").</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py10-03.py">from collections import defaultdict
+from statistics import mean
+rows = [("IN", 120.0), ("US", 80.5), ("IN", 45.0), ("DE", None), ("US", 200.0), ("IN", 30.0)]
+groups = defaultdict(list)
+for country, amount in rows:
+    if amount is not None: groups[country].append(amount)                      # skip missing, as SQL aggregates do
+summary = {c: {"n": len(v), "total": sum(v), "mean": round(mean(v), 2), "max": max(v)} for c, v in groups.items()}
+for c in sorted(summary, key=lambda c: -summary[c]["total"]): print(c, summary[c])
+print("groups with no valid amount are absent:", "DE" not in summary)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>US {'n': 2, 'total': 280.5, 'mean': 140.25, 'max': 200.0}
+IN {'n': 3, 'total': 195.0, 'mean': 65.0, 'max': 120.0}
+groups with no valid amount are absent: True</code></pre>
+<pre><code class="lang-py"># pandas
+df.groupby("country")["amount"].agg(n="count", total="sum", mean="mean", max="max").sort_values("total", ascending=False)
+# SQL
+# SELECT country, COUNT(amount), SUM(amount), AVG(amount), MAX(amount) FROM orders GROUP BY country ORDER BY SUM(amount) DESC;</code></pre>
+<p>Notice how <code>count</code> skips missing values; <code>size</code> counts rows. Always decide how missing values should be treated.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py10-q01" data-topic="Data wrangling" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does split-apply-combine describe?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Sorting <span class="q-why">No.</span></li>
+          <li data-key="B">Split rows by a key, aggregate each group, combine the results (GROUP BY) <span class="q-why">Correct.</span></li>
+          <li data-key="C">Joining <span class="q-why">No.</span></li>
+          <li data-key="D">Parsing <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>pandas groupby and SQL GROUP BY follow it.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-py10-q02" data-topic="Data wrangling" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do most aggregates treat missing values?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Count them as zero <span class="q-why">No.</span></li>
+          <li data-key="B">Ignore them (count counts non-missing values) <span class="q-why">Correct.</span></li>
+          <li data-key="C">Raise an error <span class="q-why">No.</span></li>
+          <li data-key="D">Replace them with the mean <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>That is why count(column) can differ from the number of rows.</p></div>
+      </div>
+    </section>
+
+    <section id="join" data-track>
+      <h2>Joins</h2>
+<p>A join matches rows from two tables on a key. The hash join idea: build a dictionary of one side, probe it with the other.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py10-04.py">customers = [{"id": 1, "name": "ana", "tier": "gold"}, {"id": 2, "name": "bo", "tier": "silver"}, {"id": 3, "name": "cy", "tier": "silver"}]
+orders = [{"order": 10, "cust": 1, "amount": 50}, {"order": 11, "cust": 2, "amount": 70}, {"order": 12, "cust": 1, "amount": 20}, {"order": 13, "cust": 9, "amount": 15}]
+by_id = {c["id"]: c for c in customers}                                           # build side
+inner = [{**o, **{"name": by_id[o["cust"]]["name"]}} for o in orders if o["cust"] in by_id]
+left = [{**o, "name": by_id.get(o["cust"], {}).get("name")} for o in orders]       # keep unmatched orders
+anti = [o["order"] for o in orders if o["cust"] not in by_id]                      # orders with no customer
+print("inner:", [(r["order"], r["name"]) for r in inner])
+print("left :", [(r["order"], r["name"]) for r in left])
+print("orders without a customer:", anti, "| customers without orders:", [c["name"] for c in customers if c["id"] not in {o["cust"] for o in orders}])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>inner: [(10, 'ana'), (11, 'bo'), (12, 'ana')]
+left : [(10, 'ana'), (11, 'bo'), (12, 'ana'), (13, None)]
+orders without a customer: [13] | customers without orders: ['cy']</code></pre>
+<pre><code class="lang-py">orders.merge(customers, left_on="cust", right_on="id", how="left")        # pandas: how in {"inner","left","right","outer"}</code></pre>
+<p>Check cardinality after a join: an unexpected increase in rows means a <strong>many-to-many</strong> key (use <code>validate="m:1"</code> in pandas). Joining on a column with duplicates multiplies rows, the same fan-out trap as SQL.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py10-q03" data-topic="Data wrangling" data-type="single" data-answer="B">
+        <div class="q-stem"><p>You join two tables and the row count unexpectedly grows. What is the likely cause?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Sorting <span class="q-why">No.</span></li>
+          <li data-key="B">Duplicate keys on both sides (many-to-many) multiply rows <span class="q-why">Correct.</span></li>
+          <li data-key="C">Wrong dtype only <span class="q-why">No.</span></li>
+          <li data-key="D">Missing indexes <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Check key uniqueness and use validation.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-py10-q04" data-topic="Data wrangling" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which join keeps all left rows even without a match?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Inner <span class="q-why">Drops unmatched.</span></li>
+          <li data-key="B">Left <span class="q-why">Correct.</span></li>
+          <li data-key="C">Anti <span class="q-why">Keeps only unmatched.</span></li>
+          <li data-key="D">Cross <span class="q-why">All combinations.</span></li>
+        </ul>
+        <div class="q-explain"><p>Unmatched right columns become missing.</p></div>
+      </div>
+    </section>
+
+    <section id="window" data-track>
+      <h2>Sort, rank and window</h2>
+<pre><code class="lang-py" data-embed="solutions/snippets/py10-05.py">sales = [("north", "2024-01", 100), ("north", "2024-02", 120), ("north", "2024-03", 90), ("south", "2024-01", 80), ("south", "2024-02", 95), ("south", "2024-03", 130)]
+by_region = {}
+for region, month, amount in sorted(sales):                                     # sorted by region then month
+    by_region.setdefault(region, []).append((month, amount))
+for region, series in by_region.items():
+    running, prev, out = 0, None, []
+    for month, amount in series:
+        running += amount
+        change = None if prev is None else round(100 * (amount - prev) / prev, 1)
+        out.append((month, amount, running, change)); prev = amount
+    print(region, out)
+ranked = sorted(sales, key=lambda r: -r[2])
+print("top 2 overall:", [(r[0], r[1], r[2]) for r in ranked[:2]])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>north [('2024-01', 100, 100, None), ('2024-02', 120, 220, 20.0), ('2024-03', 90, 310, -25.0)]
+south [('2024-01', 80, 80, None), ('2024-02', 95, 175, 18.8), ('2024-03', 130, 305, 36.8)]
+top 2 overall: [('south', '2024-03', 130), ('north', '2024-02', 120)]</code></pre>
+<pre><code class="lang-py">df["running"] = df.groupby("region")["amount"].cumsum()                    # window: running total per group
+df["pct_change"] = df.groupby("region")["amount"].pct_change() * 100
+df["rank"] = df.groupby("region")["amount"].rank(ascending=False)
+df["roll3"] = df.groupby("region")["amount"].transform(lambda s: s.rolling(3).mean())</code></pre>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What do cumsum, rank and rolling do per group?</summary><div class="answer"><p>They are window operations: running totals, ordering within the group and moving aggregates over neighbouring rows.</p></div></details>
+      </div>
+    </section>
+
+    <section id="pivot" data-track>
+      <h2>Reshape: pivot and melt</h2>
+<p><strong>Wide</strong> tables have a column per category; <strong>long</strong> tables have a row per observation. Analysis and plotting libraries prefer long (tidy) data; reports prefer wide.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py10-06.py">long = [("ana", "q1", 10), ("ana", "q2", 15), ("bo", "q1", 7), ("bo", "q2", 9), ("bo", "q3", 12)]
+quarters = sorted({q for _, q, _ in long})
+wide = {}
+for name, q, v in long: wide.setdefault(name, dict.fromkeys(quarters)); wide[name][q] = v
+print("wide:", wide)
+melted = [(name, q, v) for name, cols in wide.items() for q, v in cols.items() if v is not None]
+print("back to long:", melted == sorted(long) or sorted(melted) == sorted(long))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>wide: {'ana': {'q1': 10, 'q2': 15, 'q3': None}, 'bo': {'q1': 7, 'q2': 9, 'q3': 12}}
+back to long: True</code></pre>
+<pre><code class="lang-py">wide = df.pivot_table(index="name", columns="quarter", values="value", aggfunc="sum")
+long = wide.reset_index().melt(id_vars="name", var_name="quarter", value_name="value").dropna()</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py10-q05" data-topic="Data wrangling" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is a 'long' table?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Many columns <span class="q-why">That is wide.</span></li>
+          <li data-key="B">One row per observation, with a column naming the variable <span class="q-why">Correct.</span></li>
+          <li data-key="C">A very large file <span class="q-why">No.</span></li>
+          <li data-key="D">A sorted table <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>melt converts wide to long; pivot does the reverse.</p></div>
+      </div>
+    </section>
+
+    <section id="cleaning" data-track>
+      <h2>Cleaning and missing data</h2>
+<p>Real data is messy. A checklist before analysing:</p>
+<ol><li><strong>Types</strong>: numbers stored as text, dates as strings, mixed types in a column.</li><li><strong>Missing values</strong>: <code>None</code>/<code>NaN</code>/empty string/<code>"N/A"</code>/<code>-1</code> sentinel. Decide: drop, fill with a constant, fill with mean or median, forward-fill, or model it. Understand <strong>why</strong> it is missing.</li><li><strong>Duplicates</strong>: exact duplicates and duplicates by key.</li><li><strong>Outliers and impossible values</strong>: negative ages, dates in the future, a price of 99999.</li><li><strong>Inconsistent categories</strong>: <code>"India"</code>, <code>"india "</code>, <code>"IN"</code>. Trim, lowercase, map.</li><li><strong>Units and time zones</strong>: dollars versus cents, local versus UTC.</li><li><strong>Schema drift</strong>: new columns or renamed fields between files.</li></ol>
+<pre><code class="lang-py" data-embed="solutions/snippets/py10-07.py">import re
+from statistics import median
+raw = [{"id": "1", "price": "$1,200.50", "country": " India", "joined": "03/01/2024"},
+       {"id": "2", "price": "n/a",       "country": "IN",     "joined": "2024-03-02"},
+       {"id": "2", "price": "90",        "country": "india ", "joined": "2024-03-02"},
+       {"id": "3", "price": "-5",        "country": "US",     "joined": "2024-03-04"}]
+COUNTRY = {"india": "IN", "in": "IN", "us": "US"}
+def parse_price(s):
+    cleaned = re.sub(r"[^0-9.\-]", "", s)
+    return float(cleaned) if cleaned not in ("", "-", ".") else None
+def parse_date(s):
+    m = re.fullmatch(r"(\d{2})/(\d{2})/(\d{4})", s)
+    return f"{m[3]}-{m[1]}-{m[2]}" if m else s                                # assume MM/DD/YYYY here, a documented decision
+clean = []
+for r in raw:
+    price = parse_price(r["price"])
+    clean.append({"id": int(r["id"]), "price": price if price is not None and price &gt;= 0 else None,
+                  "country": COUNTRY[r["country"].strip().lower()], "joined": parse_date(r["joined"])})
+seen, deduped = set(), []
+for r in clean:                                                                # keep the first row per id
+    if r["id"] not in seen: seen.add(r["id"]); deduped.append(r)
+fill = median(r["price"] for r in deduped if r["price"] is not None)
+for r in deduped: r["price_filled"] = r["price"] if r["price"] is not None else fill
+for r in deduped: print(r)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>{'id': 1, 'price': 1200.5, 'country': 'IN', 'joined': '2024-03-01', 'price_filled': 1200.5}
+{'id': 2, 'price': None, 'country': 'IN', 'joined': '2024-03-02', 'price_filled': 1200.5}
+{'id': 3, 'price': None, 'country': 'US', 'joined': '2024-03-04', 'price_filled': 1200.5}</code></pre>
+<p>Record each cleaning decision in code (not by hand-editing) so the analysis is <strong>reproducible</strong>, and keep the raw data untouched.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py10-q06" data-topic="Data wrangling" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why do cleaning steps belong in code instead of manual edits?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is faster once <span class="q-why">No.</span></li>
+          <li data-key="B">The analysis becomes reproducible and auditable, and new data can be processed the same way <span class="q-why">Correct.</span></li>
+          <li data-key="C">Editors are unavailable <span class="q-why">No.</span></li>
+          <li data-key="D">To use more memory <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Keep the raw data untouched.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Three ways to handle missing values?</summary><div class="answer"><p>Drop the rows, fill with a constant or statistic, or model or forward-fill, depending on why the data is missing.</p></div></details>
+      </div>
+    </section>
+
+    <section id="dates" data-track>
+      <h2>Dates and time series</h2>
+<p>Parse strings to real dates early; resample by period; align on a calendar.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py10-08.py">from datetime import date, timedelta
+from collections import Counter
+events = ["2024-03-01", "2024-03-01", "2024-03-03", "2024-03-06", "2024-03-06", "2024-03-06"]
+counts = Counter(date.fromisoformat(e) for e in events)
+start, end = min(counts), max(counts)
+series = [(start + timedelta(days=i), counts.get(start + timedelta(days=i), 0)) for i in range((end - start).days + 1)]   # fill gaps with 0
+print([(d.isoformat()[5:], n) for d, n in series])
+window = 3
+print("3-day moving sum:", [sum(n for _, n in series[max(0, i - window + 1): i + 1]) for i in range(len(series))])
+weekly = Counter((d - timedelta(days=d.weekday())).isoformat() for d in (date.fromisoformat(e) for e in events))
+print("per ISO week (week start):", dict(weekly))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[('03-01', 2), ('03-02', 0), ('03-03', 1), ('03-04', 0), ('03-05', 0), ('03-06', 3)]
+3-day moving sum: [2, 2, 3, 1, 1, 3]
+per ISO week (week start): {'2024-02-26': 3, '2024-03-04': 3}</code></pre>
+<pre><code class="lang-py">s = df.set_index("date")["n"].resample("D").sum().fillna(0)      # pandas: fill missing days
+s.rolling(3).sum(); s.resample("W").sum()</code></pre>
+    </section>
+
+    <section id="numpy" data-track>
+      <h2>NumPy: arrays and broadcasting</h2>
+<p>NumPy stores numbers in a typed, contiguous block and loops in C. Key ideas:</p>
+<ul><li><strong>Shape and dtype</strong>: <code>a.shape == (3, 4)</code>; one dtype per array (<code>float64</code>, <code>int32</code>).</li><li><strong>Vectorised operations</strong>: <code>a * 2</code>, <code>a + b</code>, <code>np.sqrt(a)</code> work element by element.</li><li><strong>Broadcasting</strong>: arrays with compatible shapes combine automatically: a <code>(3, 1)</code> array plus a <code>(1, 4)</code> array gives <code>(3, 4)</code>.</li><li><strong>Slicing and views</strong>: <code>a[1:, ::2]</code> is a <strong>view</strong> (no copy); boolean masks and fancy indexing make <strong>copies</strong>.</li><li><strong>Axis</strong>: <code>a.sum(axis=0)</code> collapses rows (column sums); <code>axis=1</code> collapses columns.</li></ul>
+<p>The essential idea of broadcasting, shown with plain lists:</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py10-09.py">col = [[1], [2], [3]]                              # shape (3, 1)
+row = [[10, 20, 30, 40]]                           # shape (1, 4)
+broadcast_sum = [[c[0] + r for r in row[0]] for c in col]       # result shape (3, 4)
+print(broadcast_sum)
+matrix = [[1, 2, 3], [4, 5, 6]]
+col_sums = [sum(r[j] for r in matrix) for j in range(3)]        # like axis=0
+row_sums = [sum(r) for r in matrix]                             # like axis=1
+mean = [s / len(matrix) for s in col_sums]
+centered = [[v - m for v, m in zip(r, mean)] for r in matrix]   # subtract each column's mean from its column
+print(col_sums, row_sums, centered)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[[11, 21, 31, 41], [12, 22, 32, 42], [13, 23, 33, 43]]
+[5, 7, 9] [6, 15] [[-1.5, -1.5, -1.5], [1.5, 1.5, 1.5]]</code></pre>
+<pre><code class="lang-py">import numpy as np
+a = np.array([[1, 2, 3], [4, 5, 6]], dtype=float)
+a.sum(axis=0); a.mean(axis=0)
+a - a.mean(axis=0)                    # broadcasting: (2,3) - (3,) -&gt; (2,3)
+(a &gt; 2) &amp; (a &lt; 6)                     # boolean mask
+a[a &gt; 2]                              # selects elements, returns a 1-D copy
+np.dot(a, a.T)                        # matrix product, (2,3) @ (3,2) -&gt; (2,2)</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py10-q07" data-topic="Data wrangling" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does broadcasting do?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Sends data over a network <span class="q-why">No.</span></li>
+          <li data-key="B">Combines arrays of compatible shapes by virtually stretching the smaller one <span class="q-why">Correct.</span></li>
+          <li data-key="C">Sorts arrays <span class="q-why">No.</span></li>
+          <li data-key="D">Copies memory always <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>A (3,) vector can be subtracted from every row of a (2,3) array.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>View versus copy in NumPy?</summary><div class="answer"><p>Basic slices are views sharing memory; boolean masks and fancy indexing create copies.</p></div></details>
+      </div>
+    </section>
+
+    <section id="performance" data-track>
+      <h2>Performance and memory</h2>
+<ul><li>Prefer <strong>vectorised</strong> operations and built-ins over Python loops.</li><li>Use the right <strong>dtypes</strong> (<code>int32</code> instead of <code>int64</code>, <code>category</code> for repeated strings) to cut memory.</li><li>Read big files in <strong>chunks</strong> (<code>pd.read_csv(..., chunksize=...)</code>) or use columnar formats (Parquet) and read only the columns you need.</li><li>Avoid growing a DataFrame row by row; collect rows in a list and build once.</li><li>For data larger than memory consider DuckDB, Polars or Spark; DuckDB can run SQL directly over Parquet or CSV files on your laptop.</li><li><strong>Measure</strong> with <code>timeit</code> and profile before optimising.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/py10-10.py">import timeit
+n = 200_000
+data = list(range(n))
+loop = timeit.timeit(lambda: [x * 2 + 1 for x in data], number=5)
+builtin = timeit.timeit(lambda: sum(data), number=5)
+print("a Python-level loop over 200k items is more costly than one built-in aggregation:", loop &gt; builtin)
+row_by_row = timeit.timeit("res = []\nfor i in range(20000): res = res + [i]", number=1)
+collect = timeit.timeit("res = []\nfor i in range(20000): res.append(i)", number=1)
+print("building a list by repeated concatenation is slower than append:", row_by_row &gt; collect)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>a Python-level loop over 200k items is more costly than one built-in aggregation: True
+building a list by repeated concatenation is slower than append: True</code></pre>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Every analysis is filter, group, join, window and reshape. Think in columns, not rows; vectorise; treat cleaning as code; check row counts before and after each join; and choose columnar, typed storage when data grows.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py10-q08" data-topic="Data wrangling" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is repeated <code>res = res + [i]</code> slow?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It uses more threads <span class="q-why">No.</span></li>
+          <li data-key="B">Each concatenation copies the whole list, giving quadratic time <span class="q-why">Correct.</span></li>
+          <li data-key="C">It is invalid <span class="q-why">No.</span></li>
+          <li data-key="D">It disables GC <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use append (amortised O(1)).</p></div>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Data wrangling</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Data wrangling">
+<details class="recall iq" data-level="basic" data-topic="Data wrangling"><summary><span class="tag ok">Basic</span> What is vectorisation?</summary><div class="answer"><p>Applying an operation to a whole array or column at once in compiled code instead of looping in Python, usually much faster.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Data wrangling"><summary><span class="tag ok">Basic</span> What is split-apply-combine?</summary><div class="answer"><p>Split data into groups by a key, apply a function to each, and combine the results; GROUP BY in SQL and groupby in pandas.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data wrangling"><summary><span class="tag warn">Medium</span> How do missing values behave in aggregates?</summary><div class="answer"><p>Most aggregates ignore them, so count(column) counts non-missing values; decide explicitly whether to drop, fill or model them.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data wrangling"><summary><span class="tag warn">Medium</span> A join unexpectedly multiplies your row count. Why?</summary><div class="answer"><p>Duplicate keys on both sides (many-to-many) create all pairings. Check key uniqueness and validate the expected cardinality.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data wrangling"><summary><span class="tag warn">Medium</span> What is broadcasting in NumPy?</summary><div class="answer"><p>A rule that lets arrays of compatible shapes combine by virtually stretching the smaller one, such as subtracting a column mean from every row.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data wrangling"><summary><span class="tag warn">Medium</span> View versus copy in NumPy?</summary><div class="answer"><p>Basic slicing returns views that share memory; boolean masks and fancy indexing return copies.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data wrangling"><summary><span class="tag warn">Medium</span> Wide versus long data and how to convert?</summary><div class="answer"><p>Wide has a column per category, long has a row per observation. pivot or pivot_table goes long to wide; melt goes wide to long.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data wrangling"><summary><span class="tag warn">Medium</span> How do you compute a running total per group?</summary><div class="answer"><p>Sort then use a window or groupby cumulative sum, such as df.groupby(key)[col].cumsum() or SUM() OVER (PARTITION BY key ORDER BY time).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Data wrangling"><summary><span class="tag bad">Advanced</span> How do you process a file larger than memory?</summary><div class="answer"><p>Stream in chunks, select only needed columns, use columnar formats like Parquet, or use an engine such as DuckDB, Polars or Spark that works out of core or in parallel.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Data wrangling"><summary><span class="tag bad">Advanced</span> Why avoid iterrows and row-by-row appends in pandas?</summary><div class="answer"><p>They are slow Python loops; use vectorised expressions, and build a list of rows then create the DataFrame once.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Data wrangling"><summary><span class="tag bad">Advanced</span> How do you make a cleaning pipeline reproducible?</summary><div class="answer"><p>Keep raw data immutable, express every cleaning decision in versioned code, log row counts at each step and test with expectations on the output.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Data wrangling"><summary><span class="tag bad">Advanced</span> How do you reduce DataFrame memory use?</summary><div class="answer"><p>Downcast numeric dtypes, convert repeated strings to category, drop unused columns and load only what is needed.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Data wrangling"><summary><span class="tag bad">Advanced</span> How do you handle time zones and resampling in time series?</summary><div class="answer"><p>Store timestamps in UTC, convert to the business zone before bucketing by day, resample to a regular index and decide how to fill gaps.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Data wrangling"><summary><span class="tag bad">Advanced</span> How does a hash join work in data wrangling?</summary><div class="answer"><p>Build a dictionary on the smaller table&#x27;s key, then probe it with each row of the larger table, giving O(n + m) time.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="py9-design-patterns.html"><span class="dir">Previous</span><span>PY9 Clean code, SOLID and design patterns in Python</span></a>
+      <a class="next" href="py11-testing-debugging.html"><span class="dir">Next</span><span>PY11 Testing, debugging and profiling in depth: fixtures, mocks, property tests, tracing and performance</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

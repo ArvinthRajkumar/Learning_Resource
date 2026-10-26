@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="X9">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Problem-solving techniques: sqrt decomposition, Mo's algorithm, divide and conquer, meet in the middle, bit tricks and randomisation | DSA Master Guide</title>
+<meta name="description" content="General methods that crack hard problems: sqrt decomposition, Mo&#x27;s offline queries, divide and conquer on arrays and answers, meet in the middle, bit manipulation and masks, randomised algorithms and hashing, reservoir sampling and amortised two-pointer variants, each verified by brute force.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part X9</p>
+      <h1>Problem-solving techniques: sqrt decomposition, Mo's algorithm, divide and conquer, meet in the middle, bit tricks and randomisation</h1>
+      <p class="lede">Beyond data structures there are techniques: reorganise the work into blocks, answer queries in a smart order, split the problem in half, or let randomness do the balancing. Each technique here is explained by the problem shape it fits, then shown in working, brute-force-checked code.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~6 hours</span></div>
+    </div>
+
+    <section id="shape" data-track>
+      <h2>Recognising the shape of the problem</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Shape</th><th>Technique</th><th>Typical complexity</th></tr></thead>
+<tbody>
+<tr><td>Array with many range queries and point updates, simple operation</td><td>Fenwick / segment tree (<a href="x1-advanced-structures.html">X1</a>)</td><td>O(log n) per operation</td></tr><tr><td>Same, but the combine step is awkward (mode, distinct count)</td><td><strong>Sqrt decomposition</strong></td><td>O(sqrt n) per operation</td></tr><tr><td>Offline range queries with cheap add/remove of an element</td><td><strong>Mo's algorithm</strong></td><td>O((n + q) sqrt n)</td></tr><tr><td>Problem splits into independent halves plus a merge</td><td><strong>Divide and conquer</strong></td><td>O(n log n)</td></tr><tr><td>Monotone yes/no answer ("is X feasible?")</td><td><strong>Binary search on the answer</strong></td><td>O(log range x check)</td></tr><tr><td>n around 40, brute force 2^n too big</td><td><strong>Meet in the middle</strong></td><td>O(2^(n/2))</td></tr><tr><td>Small n up to 20 and subsets matter</td><td><strong>Bitmask</strong> enumeration or DP</td><td>O(2^n n)</td></tr><tr><td>Adversarial inputs or hard balancing</td><td><strong>Randomisation</strong></td><td>expected bounds</td></tr>
+</tbody>
+</table>
+</div>
+    </section>
+
+    <section id="sqrt" data-track>
+      <h2>Sqrt decomposition</h2>
+<p>Split an array of <code>n</code> items into blocks of size <code>B</code> about <code>sqrt(n)</code>. Store a summary per block. A range query combines <strong>whole blocks</strong> from summaries and the <strong>partial ends</strong> item by item: about <code>n/B + 2B = O(sqrt n)</code>. Updates change an item and its block summary. It is slower than a segment tree but handles operations where merging two summaries is hard.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x9-01.py">import math, random
+random.seed(1)
+class SqrtArray:
+    def __init__(self, a):
+        self.a, self.B = a[:], max(1, int(math.sqrt(len(a))))
+        self.sums = [sum(a[i:i + self.B]) for i in range(0, len(a), self.B)]
+    def update(self, i, v):
+        self.sums[i // self.B] += v - self.a[i]; self.a[i] = v
+    def query(self, l, r):                                    # inclusive range sum
+        total, B = 0, self.B
+        while l &lt;= r and l % B != 0: total += self.a[l]; l += 1          # left partial block
+        while l + B - 1 &lt;= r: total += self.sums[l // B]; l += B          # whole blocks
+        while l &lt;= r: total += self.a[l]; l += 1                          # right partial block
+        return total
+a = [random.randint(-9, 9) for _ in range(500)]
+sa = SqrtArray(a)
+for _ in range(2000):
+    if random.random() &lt; 0.3:
+        i, v = random.randrange(500), random.randint(-9, 9); sa.update(i, v); a[i] = v
+    else:
+        l = random.randrange(500); r = random.randrange(l, 500); assert sa.query(l, r) == sum(a[l:r + 1])
+print(f"sqrt decomposition (block size {sa.B}) matches brute force on 2000 mixed operations")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>sqrt decomposition (block size 22) matches brute force on 2000 mixed operations</code></pre>
+<p>A strong use: <strong>mode of a range</strong> or <strong>count of distinct values</strong>, where you keep per-block frequency tables; and "rebuild every sqrt(q) updates" patterns where a batch of recent changes is checked separately from a static preprocessed structure.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x9-q01" data-topic="Problem-solving techniques" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the typical per-query cost of sqrt decomposition?</p></div>
+        <ul class="q-options">
+          <li data-key="A">O(1) <span class="q-why">No.</span></li>
+          <li data-key="B">O(sqrt n) <span class="q-why">Correct.</span></li>
+          <li data-key="C">O(log n) <span class="q-why">That is a segment tree.</span></li>
+          <li data-key="D">O(n) <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Whole blocks plus two partial ends.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>When prefer sqrt decomposition over a segment tree?</summary><div class="answer"><p>When the combine operation is hard to define on summaries, or when simplicity matters more than log versus sqrt speed.</p></div></details>
+      </div>
+    </section>
+
+    <section id="mo" data-track>
+      <h2>Mo's algorithm (offline range queries)</h2>
+<p>Suppose you must answer <code>q</code> queries "how many distinct values are in <code>a[l..r]</code>?" and you can move a window <code>[L, R]</code> by adding or removing one end element in <code>O(1)</code>. <strong>Mo's algorithm</strong> sorts the queries to keep window moves small: group queries by block of <code>l</code> (size about <code>n / sqrt(q)</code>), and within a block sort by <code>r</code> (alternating direction). Total pointer movement is <code>O((n + q) sqrt n)</code> instead of <code>O(n q)</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x9-02.py">import math, random
+random.seed(2)
+def mo_distinct(a, queries):
+    n = len(a); B = max(1, int(n / math.sqrt(max(1, len(queries)))))
+    order = sorted(range(len(queries)), key=lambda i: (queries[i][0] // B, queries[i][1] if (queries[i][0] // B) % 2 == 0 else -queries[i][1]))
+    count, distinct, L, R, ans, moves = {}, 0, 0, -1, [0] * len(queries), 0
+    def add(i):
+        nonlocal distinct
+        count[a[i]] = count.get(a[i], 0) + 1
+        if count[a[i]] == 1: distinct += 1
+    def remove(i):
+        nonlocal distinct
+        count[a[i]] -= 1
+        if count[a[i]] == 0: distinct -= 1
+    for qi in order:
+        l, r = queries[qi]
+        while L &gt; l: L -= 1; add(L); moves += 1
+        while R &lt; r: R += 1; add(R); moves += 1
+        while L &lt; l: remove(L); L += 1; moves += 1
+        while R &gt; r: remove(R); R -= 1; moves += 1
+        ans[qi] = distinct
+    return ans, moves
+n, q = 2000, 2000
+a = [random.randint(0, 50) for _ in range(n)]
+queries = []
+for _ in range(q):
+    l = random.randrange(n); queries.append((l, random.randrange(l, n)))
+ans, moves = mo_distinct(a, queries)
+for i in random.sample(range(q), 200): assert ans[i] == len(set(a[queries[i][0]:queries[i][1] + 1]))
+naive_work = sum(r - l + 1 for l, r in queries)
+print(f"Mo's answers verified | window moves {moves:,} versus {naive_work:,} element visits for the naive approach")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>Mo's answers verified | window moves 75,558 versus 1,008,297 element visits for the naive approach</code></pre>
+<p>Requirements: queries are known in advance (offline), updates are absent (or use the time-dimension variant), and an element can be added and removed cheaply. Typical tasks: distinct count, frequency-based statistics, counting pairs with a property.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x9-q02" data-topic="Problem-solving techniques" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does Mo's algorithm require?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Online queries <span class="q-why">It is offline.</span></li>
+          <li data-key="B">Offline queries and a window where adding or removing one element is cheap <span class="q-why">Correct.</span></li>
+          <li data-key="C">A sorted array <span class="q-why">No.</span></li>
+          <li data-key="D">Updates between queries <span class="q-why">Not the basic form.</span></li>
+        </ul>
+        <div class="q-explain"><p>Sort queries by (block of l, r) to minimise pointer movement.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How are queries ordered in Mo's algorithm?</summary><div class="answer"><p>By the block of the left endpoint, then by the right endpoint (often alternating direction).</p></div></details>
+      </div>
+    </section>
+
+    <section id="dc" data-track>
+      <h2>Divide and conquer</h2>
+<p>Split the input in half, solve each half, <strong>combine</strong> across the split. The combine step is where the work is. Complexity follows the recurrence <code>T(n) = 2T(n/2) + f(n)</code> (<a href="x6-complexity.html">X6</a>): with <code>f(n) = O(n)</code> you get <code>O(n log n)</code>.</p>
+<h3>Counting inversions with merge sort</h3>
+<p>An inversion is a pair <code>i &lt; j</code> with <code>a[i] &gt; a[j]</code>. While merging two sorted halves, every time an element of the right half is placed before remaining elements of the left half, it forms inversions with all of them.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x9-03.py">import random, itertools
+random.seed(3)
+def count_inversions(a):
+    if len(a) &lt;= 1: return a, 0
+    mid = len(a) // 2
+    left, x = count_inversions(a[:mid]); right, y = count_inversions(a[mid:])
+    merged, i, j, cross = [], 0, 0, 0
+    while i &lt; len(left) and j &lt; len(right):
+        if left[i] &lt;= right[j]: merged.append(left[i]); i += 1
+        else: merged.append(right[j]); j += 1; cross += len(left) - i          # right[j] precedes all remaining left elements
+    merged += left[i:] + right[j:]
+    return merged, x + y + cross
+for _ in range(300):
+    a = [random.randint(0, 9) for _ in range(random.randint(0, 12))]
+    assert count_inversions(a)[1] == sum(1 for i, j in itertools.combinations(range(len(a)), 2) if a[i] &gt; a[j])
+print("inversion counting verified | reversed list of 6 has", count_inversions([6, 5, 4, 3, 2, 1])[1], "inversions (15 = 6 choose 2)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>inversion counting verified | reversed list of 6 has 15 inversions (15 = 6 choose 2)</code></pre>
+<h3>Maximum subarray by divide and conquer</h3>
+<p>The best subarray is in the left half, the right half, or <strong>crosses the middle</strong> (best suffix of the left plus best prefix of the right). Kadane's linear scan is simpler, but the divide-and-conquer form generalises to problems where a streaming scan does not (segment-tree style merges).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x9-04.py">import random
+random.seed(4)
+def max_sub(a, lo, hi):
+    if lo == hi: return a[lo]
+    mid = (lo + hi) // 2
+    best_left, best_right = max_sub(a, lo, mid), max_sub(a, mid + 1, hi)
+    s, left_best = 0, float("-inf")
+    for i in range(mid, lo - 1, -1): s += a[i]; left_best = max(left_best, s)
+    s, right_best = 0, float("-inf")
+    for i in range(mid + 1, hi + 1): s += a[i]; right_best = max(right_best, s)
+    return max(best_left, best_right, left_best + right_best)
+for _ in range(300):
+    a = [random.randint(-6, 6) for _ in range(random.randint(1, 12))]
+    brute = max(sum(a[i:j]) for i in range(len(a)) for j in range(i + 1, len(a) + 1))
+    assert max_sub(a, 0, len(a) - 1) == brute
+print("divide-and-conquer maximum subarray verified")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>divide-and-conquer maximum subarray verified</code></pre>
+<h3>Other divide-and-conquer classics</h3>
+<p>Closest pair of points (<code>O(n log n)</code>, <a href="x10-geometry-games.html">X10</a>), quickselect (expected <code>O(n)</code>), fast exponentiation, Karatsuba multiplication, FFT, counting smaller elements after self, and <strong>divide and conquer optimisation</strong> for DP.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x9-q03" data-topic="Problem-solving techniques" data-type="numeric" data-answer="2" data-tol="0">
+        <div class="q-stem"><p>How many inversions does [3, 1, 2] have?</p></div>
+        <div class="q-explain"><p>(3,1) and (3,2).</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Where is the work in divide and conquer?</summary><div class="answer"><p>In the combine step across the split, which determines the recurrence.</p></div></details>
+      </div>
+    </section>
+
+    <section id="bsa" data-track>
+      <h2>Binary search on the answer</h2>
+<p>When "can we achieve value <code>x</code>?" is a <strong>monotone</strong> yes/no question (feasible for all <code>x &gt;= x0</code>), binary search for the smallest feasible <code>x</code> using a greedy or simple check. Works for "minimise the maximum" and "maximise the minimum" problems.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x9-05.py">import random
+random.seed(5)
+def min_largest_sum(nums, k):
+    """Split nums into k contiguous parts to minimise the largest part sum."""
+    def feasible(limit):
+        parts, cur = 1, 0
+        for x in nums:
+            if x &gt; limit: return False
+            if cur + x &gt; limit: parts += 1; cur = x
+            else: cur += x
+        return parts &lt;= k
+    lo, hi = max(nums), sum(nums)
+    while lo &lt; hi:
+        mid = (lo + hi) // 2
+        if feasible(mid): hi = mid
+        else: lo = mid + 1
+    return lo
+def brute(nums, k):
+    from itertools import combinations
+    n, best = len(nums), float("inf")
+    for cuts in combinations(range(1, n), k - 1):
+        bounds = (0,) + cuts + (n,)
+        best = min(best, max(sum(nums[bounds[i]:bounds[i + 1]]) for i in range(k)))
+    return best
+for _ in range(300):
+    nums = [random.randint(1, 9) for _ in range(random.randint(1, 8))]; k = random.randint(1, len(nums))
+    assert min_largest_sum(nums, k) == brute(nums, k)
+print("binary search on the answer verified | [7,2,5,10,8] into 2 parts:", min_largest_sum([7, 2, 5, 10, 8], 2))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>binary search on the answer verified | [7,2,5,10,8] into 2 parts: 18</code></pre>
+<p>The same template solves: shipping packages within <code>D</code> days, minimum eating speed, painter's partition, aggressive cows (maximise the minimum distance), square root and other monotone numeric searches (including on floating-point ranges, with a fixed number of iterations).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x9-q04" data-topic="Problem-solving techniques" data-type="single" data-answer="B">
+        <div class="q-stem"><p>When can you binary search on the answer?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Always <span class="q-why">No.</span></li>
+          <li data-key="B">When feasibility is monotone: if x works then every larger (or smaller) value also works <span class="q-why">Correct.</span></li>
+          <li data-key="C">When the array is sorted <span class="q-why">Not required.</span></li>
+          <li data-key="D">When n is small <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Then a greedy check decides each candidate.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does the feasibility check look like?</summary><div class="answer"><p>A simple greedy or counting pass that decides whether a candidate value works, in O(n).</p></div></details>
+      </div>
+    </section>
+
+    <section id="mitm" data-track>
+      <h2>Meet in the middle</h2>
+<p>If brute force over <code>n</code> items costs <code>2^n</code>, split the items into two halves of <code>n/2</code>, enumerate each half's subsets (<code>2^(n/2)</code> each), and combine with sorting plus two pointers or a hash lookup. For <code>n = 40</code>, <code>2^40</code> (about 10^12) becomes <code>2 x 2^20</code> (about 2 x 10^6).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x9-06.py">import random, itertools, bisect
+random.seed(6)
+def subset_sums(items):
+    sums = [0]
+    for x in items: sums += [s + x for s in sums]
+    return sums
+def closest_subset_sum(items, target):
+    half = len(items) // 2
+    A, B = subset_sums(items[:half]), sorted(subset_sums(items[half:]))
+    best = None
+    for a in A:
+        j = bisect.bisect_left(B, target - a)
+        for k in (j - 1, j):                                          # neighbours of the ideal partner
+            if 0 &lt;= k &lt; len(B):
+                cand = a + B[k]
+                if best is None or abs(cand - target) &lt; abs(best - target): best = cand
+    return best
+for _ in range(200):
+    items = [random.randint(-20, 40) for _ in range(random.randint(1, 12))]; target = random.randint(-30, 100)
+    brute = min((sum(c) for r in range(len(items) + 1) for c in itertools.combinations(items, r)), key=lambda s: (abs(s - target), s))
+    assert abs(closest_subset_sum(items, target) - target) == abs(brute - target)
+big = [random.randint(1, 10**6) for _ in range(30)]
+print("meet in the middle verified | 30 items solved with", 2 ** 15 * 2, "enumerated sums instead of", 2 ** 30, "| closest sum to 7,000,000:", closest_subset_sum(big, 7_000_000))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>meet in the middle verified | 30 items solved with 65536 enumerated sums instead of 1073741824 | closest sum to 7,000,000: 7000000</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x9-q05" data-topic="Problem-solving techniques" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How does meet in the middle reduce 2^40 work?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It prunes with heuristics <span class="q-why">No.</span></li>
+          <li data-key="B">It enumerates two halves of 2^20 each and combines them by sorting or hashing <span class="q-why">Correct.</span></li>
+          <li data-key="C">It uses DP <span class="q-why">No.</span></li>
+          <li data-key="D">It uses randomness <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Cost becomes roughly 2 x 2^20 plus a combine step.</p></div>
+      </div>
+    </section>
+
+    <section id="bits" data-track>
+      <h2>Bit manipulation and masks</h2>
+<p>Integers are arrays of bits; masks represent subsets of up to about 20 to 30 elements.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Idea</th><th>Code</th></tr></thead>
+<tbody>
+<tr><td>Test, set, clear, toggle bit <code>i</code></td><td><code>x &gt;&gt; i &amp; 1</code>, <code>x | 1 &lt;&lt; i</code>, <code>x &amp; ~(1 &lt;&lt; i)</code>, <code>x ^ 1 &lt;&lt; i</code></td></tr><tr><td>Lowest set bit</td><td><code>x &amp; -x</code></td></tr><tr><td>Clear lowest set bit</td><td><code>x &amp; (x - 1)</code> (loop count = popcount)</td></tr><tr><td>Power of two</td><td><code>x &gt; 0 and x &amp; (x - 1) == 0</code></td></tr><tr><td>Iterate all subsets of a mask</td><td><code>sub = (sub - 1) &amp; mask</code></td></tr><tr><td>Count set bits</td><td><code>x.bit_count()</code> (3.10+) or <code>bin(x).count("1")</code></td></tr><tr><td>XOR tricks</td><td><code>a ^ a = 0</code>; find the unique number; swap without a temp; prefix XOR for range XOR</td></tr><tr><td>Gray code</td><td><code>i ^ (i &gt;&gt; 1)</code></td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/x9-07.py">import random
+random.seed(7)
+def all_subsets_of(mask):
+    sub, out = mask, []
+    while True:
+        out.append(sub)
+        if sub == 0: break
+        sub = (sub - 1) &amp; mask
+    return out
+mask = 0b10110
+subs = all_subsets_of(mask)
+print("submasks of", bin(mask), ":", [bin(s) for s in sorted(subs)], "| count 2^popcount:", len(subs) == 2 ** mask.bit_count())
+nums = [4, 1, 2, 1, 2, 7, 4]
+single = 0
+for x in nums: single ^= x
+print("the element appearing once (XOR of everything):", single)
+def single_numbers_two(nums):                                         # two unique numbers among pairs
+    xor = 0
+    for x in nums: xor ^= x
+    low = xor &amp; -xor                                                  # a bit where the two unique numbers differ
+    a = b = 0
+    for x in nums:
+        if x &amp; low: a ^= x
+        else: b ^= x
+    return sorted((a, b))
+print("two unique numbers:", single_numbers_two([1, 2, 1, 3, 2, 5]))
+def xor_range(prefix, l, r): return prefix[r + 1] ^ prefix[l]
+arr = [random.randint(0, 255) for _ in range(50)]
+prefix = [0]
+for x in arr: prefix.append(prefix[-1] ^ x)
+l, r = 7, 31
+direct = 0
+for x in arr[l:r + 1]: direct ^= x
+print("range XOR via prefix XOR equals direct:", xor_range(prefix, l, r) == direct)
+print("Gray code sequence of 3 bits:", [i ^ (i &gt;&gt; 1) for i in range(8)], "(each differs from the previous by one bit)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>submasks of 0b10110 : ['0b0', '0b10', '0b100', '0b110', '0b10000', '0b10010', '0b10100', '0b10110'] | count 2^popcount: True
+the element appearing once (XOR of everything): 7
+two unique numbers: [3, 5]
+range XOR via prefix XOR equals direct: True
+Gray code sequence of 3 bits: [0, 1, 3, 2, 6, 7, 5, 4] (each differs from the previous by one bit)</code></pre>
+<p><strong>Bitmask DP and subset enumeration</strong> appear in <a href="x3-advanced-dp.html">X3</a>: assignment problems, travelling salesman and "visited set" states. Remember that Python's integers are unbounded, so mask arithmetic never overflows, but negative numbers use two's complement conceptually (<code>~x == -x - 1</code>).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x9-q06" data-topic="Problem-solving techniques" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does x &amp; (x - 1) do?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Sets the lowest bit <span class="q-why">No.</span></li>
+          <li data-key="B">Clears the lowest set bit <span class="q-why">Correct.</span></li>
+          <li data-key="C">Doubles x <span class="q-why">No.</span></li>
+          <li data-key="D">Negates x <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Repeating it counts the set bits.</p></div>
+      </div>
+      <div class="quiz" data-qid="xd-x9-q07" data-topic="Problem-solving techniques" data-type="numeric" data-answer="8" data-tol="0">
+        <div class="q-stem"><p>How many submasks does mask 0b1011 have (including 0 and itself)?</p></div>
+        <div class="q-explain"><p>2^3 because the mask has three set bits.</p></div>
+      </div>
+    </section>
+
+    <section id="random" data-track>
+      <h2>Randomised algorithms</h2>
+<p>Randomness gives simple algorithms with good <strong>expected</strong> performance and defeats adversarial inputs.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Technique</th><th>Idea</th></tr></thead>
+<tbody>
+<tr><td><strong>Randomised quickselect / quicksort</strong></td><td>A random pivot makes the expected time <code>O(n)</code> or <code>O(n log n)</code> for every input</td></tr><tr><td><strong>Reservoir sampling</strong></td><td>Pick <code>k</code> items uniformly from a stream of unknown length in one pass</td></tr><tr><td><strong>Fisher-Yates shuffle</strong></td><td>An unbiased random permutation in <code>O(n)</code></td></tr><tr><td><strong>Hashing and fingerprinting</strong></td><td>Compare large objects by short random fingerprints (Rabin-Karp, <a href="x4-strings.html">X4</a>)</td></tr><tr><td><strong>Treaps and skip lists</strong></td><td>Balance via random priorities or levels</td></tr><tr><td><strong>Monte Carlo</strong></td><td>Estimate a quantity by random sampling (error shrinks like 1/sqrt(samples))</td></tr><tr><td><strong>Las Vegas</strong></td><td>Always correct, random running time (randomised quicksort)</td></tr><tr><td><strong>Bloom filters / HyperLogLog / Count-Min</strong></td><td>Probabilistic summaries (<a href="../system-design-guide/sd18-storage-engines.html">SD18</a>, <a href="../system-design-guide/sd20-data-processing.html">SD20</a>)</td></tr><tr><td><strong>Freivalds' algorithm</strong></td><td>Check <code>A x B = C</code> for matrices in <code>O(n^2)</code> with high probability</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/x9-08.py">import random
+random.seed(8)
+def reservoir(stream, k):
+    res = []
+    for i, x in enumerate(stream):
+        if i &lt; k: res.append(x)
+        else:
+            j = random.randint(0, i)                                  # keep x with probability k / (i + 1)
+            if j &lt; k: res[j] = x
+    return res
+counts = {x: 0 for x in range(10)}
+for _ in range(20000):
+    for x in reservoir(range(10), 3): counts[x] += 1
+print("reservoir sampling selects each of 10 items about 6000 times (3/10 of 20000):", sorted(counts.values())[0] &gt; 5700 and sorted(counts.values())[-1] &lt; 6300)
+def freivalds(A, B, C, rounds=10):
+    n = len(A)
+    for _ in range(rounds):
+        r = [random.randint(0, 1) for _ in range(n)]
+        Br = [sum(B[i][j] * r[j] for j in range(n)) for i in range(n)]
+        ABr = [sum(A[i][j] * Br[j] for j in range(n)) for i in range(n)]
+        Cr = [sum(C[i][j] * r[j] for j in range(n)) for i in range(n)]
+        if ABr != Cr: return False
+    return True
+A = [[1, 2], [3, 4]]; B = [[0, 1], [1, 0]]; C_good = [[2, 1], [4, 3]]; C_bad = [[2, 1], [4, 4]]
+print("Freivalds accepts the correct product:", freivalds(A, B, C_good), "| rejects a wrong one:", not freivalds(A, B, C_bad))
+inside = sum(random.random() ** 2 + random.random() ** 2 &lt;= 1 for _ in range(200_000))
+print("Monte Carlo estimate of pi:", round(4 * inside / 200_000, 2))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>reservoir sampling selects each of 10 items about 6000 times (3/10 of 20000): True
+Freivalds accepts the correct product: True | rejects a wrong one: True
+Monte Carlo estimate of pi: 3.15</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x9-q08" data-topic="Problem-solving techniques" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does reservoir sampling guarantee?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The first k items <span class="q-why">No.</span></li>
+          <li data-key="B">Every item of a stream of unknown length ends up in the sample with equal probability k/n <span class="q-why">Correct.</span></li>
+          <li data-key="C">Sorted output <span class="q-why">No.</span></li>
+          <li data-key="D">Exact counts <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Item i replaces a random slot with probability k/(i+1).</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Monte Carlo versus Las Vegas?</summary><div class="answer"><p>Monte Carlo is fast but may be wrong with small probability; Las Vegas is always correct but its running time is random.</p></div></details>
+      </div>
+    </section>
+
+    <section id="pointers" data-track>
+      <h2>Two pointers and sliding windows revisited</h2>
+<p>Two-pointer methods are amortised linear because each pointer only moves forward. Typical forms:</p>
+<ul><li><strong>Opposite ends</strong> on a sorted array (pair sum, container with most water, 3Sum with an outer loop).</li><li><strong>Fast and slow</strong> (cycle detection, middle of a list).</li><li><strong>Sliding window</strong> with a condition maintained incrementally; expand the right edge, shrink the left while the window is invalid.</li><li><strong>At most k trick</strong>: <code>exactly(k) = atMost(k) - atMost(k - 1)</code> for counting subarrays.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/x9-09.py">import random
+random.seed(9)
+def at_most_k_distinct(a, k):
+    count, left, total = {}, 0, 0
+    for right, x in enumerate(a):
+        count[x] = count.get(x, 0) + 1
+        while len(count) &gt; k:
+            count[a[left]] -= 1
+            if count[a[left]] == 0: del count[a[left]]
+            left += 1
+        total += right - left + 1                                     # all subarrays ending at right
+    return total
+def exactly_k_distinct(a, k): return at_most_k_distinct(a, k) - at_most_k_distinct(a, k - 1)
+for _ in range(300):
+    a = [random.randint(1, 4) for _ in range(random.randint(0, 12))]; k = random.randint(1, 3)
+    brute = sum(1 for i in range(len(a)) for j in range(i + 1, len(a) + 1) if len(set(a[i:j])) == k)
+    assert exactly_k_distinct(a, k) == brute
+print("subarrays with exactly k distinct values verified | [1,2,1,2,3] with k=2:", exactly_k_distinct([1, 2, 1, 2, 3], 2))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>subarrays with exactly k distinct values verified | [1,2,1,2,3] with k=2: 7</code></pre>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Look at the constraint sizes and the query pattern to pick the technique: blocks for awkward merges, Mo's order for offline add/remove queries, halves for divide and conquer or meet in the middle, a binary search when feasibility is monotone, masks for small subsets, and randomness for balance. Always keep a brute-force checker next to the clever code.</p></div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Problem-solving techniques</h2>
+      <p class="muted">15 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Problem-solving techniques">
+<details class="recall iq" data-level="basic" data-topic="Problem-solving techniques"><summary><span class="tag ok">Basic</span> When do you binary search on the answer?</summary><div class="answer"><p>When feasibility is monotone: if value x works then every larger (or smaller) value works, and a simple greedy check decides feasibility.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Problem-solving techniques"><summary><span class="tag ok">Basic</span> Give three problems solved by binary search on the answer.</summary><div class="answer"><p>Minimum eating speed, shipping capacity within D days, and split array largest sum (also aggressive cows, painter&#x27;s partition).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Problem-solving techniques"><summary><span class="tag warn">Medium</span> Explain sqrt decomposition.</summary><div class="answer"><p>Split the array into blocks of about sqrt(n) with a summary each; queries combine whole-block summaries and partial ends in O(sqrt n), and updates fix a block summary.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Problem-solving techniques"><summary><span class="tag warn">Medium</span> What is Mo&#x27;s algorithm and its complexity?</summary><div class="answer"><p>An offline method that sorts range queries by block of l then r, moving a window with O(1) add and remove, giving O((n + q) sqrt n) total pointer moves.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Problem-solving techniques"><summary><span class="tag warn">Medium</span> How does divide and conquer count inversions?</summary><div class="answer"><p>Merge sort; when merging, each time an element from the right half is placed before the remaining left elements it forms that many inversions. O(n log n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Problem-solving techniques"><summary><span class="tag warn">Medium</span> What is meet in the middle and when is it used?</summary><div class="answer"><p>Split a 2^n search into two halves of 2^(n/2), enumerate both, and combine by sorting and binary search or hashing. It suits n around 30 to 40, such as subset sum and 4-sum variants.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Problem-solving techniques"><summary><span class="tag warn">Medium</span> How do you iterate all submasks of a mask?</summary><div class="answer"><p>sub = (sub - 1) &amp; mask, starting from mask until sub becomes 0, visiting 2^popcount submasks.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Problem-solving techniques"><summary><span class="tag warn">Medium</span> How does XOR find the single non-duplicated element?</summary><div class="answer"><p>XOR of all elements cancels pairs (a ^ a = 0, a ^ 0 = a), leaving the unique value.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Problem-solving techniques"><summary><span class="tag warn">Medium</span> Exactly k distinct in a subarray count: how?</summary><div class="answer"><p>atMost(k) - atMost(k - 1) with a sliding window and frequency map, O(n).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Problem-solving techniques"><summary><span class="tag bad">Advanced</span> How do you find two unique numbers when all others appear twice?</summary><div class="answer"><p>XOR everything to get a ^ b, isolate a differing bit with x &amp; -x, partition numbers by that bit and XOR each group.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Problem-solving techniques"><summary><span class="tag bad">Advanced</span> What is reservoir sampling?</summary><div class="answer"><p>A one-pass method to sample k items uniformly from a stream of unknown length: keep the first k, then replace a random slot with probability k/(i+1) for item i.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Problem-solving techniques"><summary><span class="tag bad">Advanced</span> Monte Carlo versus Las Vegas algorithms?</summary><div class="answer"><p>Monte Carlo has bounded running time but may be wrong with small probability; Las Vegas is always correct with random running time, such as randomised quicksort.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Problem-solving techniques"><summary><span class="tag bad">Advanced</span> What is Freivalds&#x27; algorithm?</summary><div class="answer"><p>It verifies a matrix product A x B = C in O(n^2) with high probability by testing on random 0/1 vectors.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Problem-solving techniques"><summary><span class="tag bad">Advanced</span> Why randomise the pivot in quicksort or quickselect?</summary><div class="answer"><p>It makes the expected running time O(n log n) or O(n) regardless of input order, defeating adversarial worst cases.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Problem-solving techniques"><summary><span class="tag bad">Advanced</span> How do you choose between a segment tree, sqrt decomposition and Mo&#x27;s algorithm?</summary><div class="answer"><p>Segment tree for associative operations with updates, sqrt decomposition for awkward merges with updates, Mo&#x27;s for offline queries with cheap add and remove and no updates.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="x8-advanced-trees.html"><span class="dir">Previous</span><span>X8 Advanced tree techniques: LCA, binary lifting, Euler tours, diameter, rerooting and treaps</span></a>
+      <a class="next" href="x10-geometry-games.html"><span class="dir">Next</span><span>X10 Computational geometry and game theory: convex hull, intersections, sweep lines, Nim and minimax</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

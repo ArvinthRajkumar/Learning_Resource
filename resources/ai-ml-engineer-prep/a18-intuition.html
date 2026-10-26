@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="A18">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Machine learning and LLMs explained simply: analogies, pictures and the questions beginners ask | AI/ML Prep</title>
+<meta name="description" content="Plain-language explanations with everyday analogies for overfitting, bias and variance, gradient descent, backpropagation, regularisation, evaluation metrics, embeddings, attention, transformers, tokens, training stages, RAG, hallucination, LoRA and quantisation, with tiny experiments.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part A18</p>
+      <h1>Machine learning and LLMs explained simply: analogies, pictures and the questions beginners ask</h1>
+      <p class="lede">Before the equations comes the mental picture. This page gives one analogy per core idea in machine learning and large language models, shows a tiny experiment that makes it concrete, and ends each with a model answer you can say in 30 seconds.</p>
+      <div class="meta"><span class="tag ok">Basic</span><span class="tag warn">Medium</span><span class="tag">~4 hours</span></div>
+    </div>
+
+    <section id="howto" data-track>
+      <h2>How to use this page</h2>
+<p>Read the picture, run the experiment, then <strong>cover the answer and say it aloud</strong>. Good explanations name the idea, the problem it solves and the trade-off. The goal is to be understood by someone smart who has not studied the topic.</p>
+    </section>
+
+    <section id="learning" data-track>
+      <h2>Learning from data</h2>
+<h3>What "learning" means</h3>
+<p><strong>Picture</strong>: a student learning to grade essays by seeing thousands of graded examples, instead of being handed a rulebook. The model adjusts internal knobs (parameters) until its grades match the examples. The goal is to grade <strong>new</strong> essays well, not to remember the old ones. <strong>Answer</strong>: "A model is a function with adjustable parameters. Training changes the parameters to reduce an error measured on examples, hoping the pattern generalises to unseen data."</p>
+<h3>Overfitting and underfitting</h3>
+<p><strong>Picture</strong>: a student who memorises last year's exam answers (overfit: perfect on the old paper, lost on a new one) versus a student who only learned the chapter titles (underfit: bad on both). The aim is to understand the <strong>ideas</strong>. <strong>Experiment</strong>: fit curves of increasing flexibility to noisy data and compare error on training points and on new points.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a18-01.py">import random
+random.seed(1)
+def true_f(x): return 2 * x + 1
+xs = [i / 10 for i in range(0, 11)]
+train = [(x, true_f(x) + random.gauss(0, 0.3)) for x in xs]
+test = [(x + 0.05, true_f(x + 0.05) + random.gauss(0, 0.3)) for x in xs[:-1]]
+def fit_poly(points, degree):                                 # least squares by solving the normal equations
+    n = degree + 1
+    A = [[sum(x ** (i + j) for x, _ in points) for j in range(n)] for i in range(n)]
+    b = [sum(y * x ** i for x, y in points) for i in range(n)]
+    M = [A[i] + [b[i]] for i in range(n)]
+    for i in range(n):
+        p = max(range(i, n), key=lambda r: abs(M[r][i])); M[i], M[p] = M[p], M[i]
+        for r in range(i + 1, n):
+            f = M[r][i] / M[i][i]; M[r] = [a - f * c for a, c in zip(M[r], M[i])]
+    coef = [0.0] * n
+    for i in reversed(range(n)): coef[i] = (M[i][n] - sum(M[i][j] * coef[j] for j in range(i + 1, n))) / M[i][i]
+    return coef
+predict = lambda c, x: sum(ci * x ** i for i, ci in enumerate(c))
+mse = lambda c, pts: sum((predict(c, x) - y) ** 2 for x, y in pts) / len(pts)
+for degree in (0, 1, 3, 8):
+    c = fit_poly(train, degree)
+    print(f"degree {degree}: training error {mse(c, train):.3f} | error on new points {mse(c, test):.3f}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>degree 0: training error 0.366 | error on new points 0.616
+degree 1: training error 0.066 | error on new points 0.130
+degree 3: training error 0.021 | error on new points 0.181
+degree 8: training error 0.004 | error on new points 0.238</code></pre>
+<p>The flexible degree-8 curve chases the noise (tiny training error, but it wobbles between points), a flat line misses the trend, and the straight line, matching the true pattern, does best on new points.</p>
+<h3>Bias and variance</h3>
+<p><strong>Picture</strong>: archery. <strong>Bias</strong> is aiming consistently at the wrong spot (the model is too simple to hit the target). <strong>Variance</strong> is a shaky hand: the arrows scatter, and a different handful of training examples would give a different model. Simpler models have high bias and low variance; flexible models the reverse. More data reduces variance; a better model family reduces bias.</p>
+<h3>Train, validation and test sets</h3>
+<p><strong>Picture</strong>: practice problems (train), a mock exam you use to decide how to revise (validation), and the real exam you see <strong>once</strong> (test). If you keep adjusting after peeking at the real exam, your score no longer measures what you can do on a fresh one.</p>
+<h3>Regularisation</h3>
+<p><strong>Picture</strong>: a budget or a penalty for complexity, like a rule that essays must be short, so the model prefers simple explanations unless the data really demands more. <strong>L2</strong> shrinks all weights a bit; <strong>L1</strong> pushes some to exactly zero (feature selection); <strong>dropout</strong> randomly silences parts of a network so none can be relied on too much; <strong>early stopping</strong> ends training when practice scores stop improving.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a18-q01" data-topic="Intuition guide" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does overfitting mean?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The model is too small <span class="q-why">That is underfitting.</span></li>
+          <li data-key="B">The model fits noise in the training data and performs worse on new data <span class="q-why">Correct.</span></li>
+          <li data-key="C">Training takes too long <span class="q-why">No.</span></li>
+          <li data-key="D">The data is too large <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Detect it by the gap between training and validation error.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a18-q02" data-topic="Intuition guide" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why keep a separate test set that you look at only once?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To save compute <span class="q-why">No.</span></li>
+          <li data-key="B">So its score measures performance on genuinely unseen data <span class="q-why">Correct.</span></li>
+          <li data-key="C">To increase training data <span class="q-why">No.</span></li>
+          <li data-key="D">Because tests are small <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Tuning against the test set leaks information into your choices.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Explain bias and variance with archery.</summary><div class="answer"><p>Bias is aiming consistently at the wrong spot; variance is scattered shots from an unsteady hand; flexible models trade bias for variance.</p></div></details>
+      </div>
+    </section>
+
+    <section id="gradients" data-track>
+      <h2>How models improve: gradients</h2>
+<h3>Gradient descent</h3>
+<p><strong>Picture</strong>: walking down a foggy hill by feeling which way the ground slopes under your feet and stepping downhill. The <strong>gradient</strong> is the slope; the <strong>learning rate</strong> is your step size. Too big and you overshoot or bounce; too small and it takes forever; the <strong>loss</strong> is your height above the valley floor.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a18-02.py">def descend(lr, steps=20):
+    x = 5.0                                                    # minimise f(x) = x^2 whose gradient is 2x
+    for _ in range(steps): x -= lr * 2 * x
+    return x
+for lr in (0.01, 0.1, 0.5, 1.1):
+    print(f"learning rate {lr:&gt;4}: after 20 steps x = {descend(lr):12.4f}", "(diverged)" if abs(descend(lr)) &gt; 5 else "")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>learning rate 0.01: after 20 steps x =       3.3380 
+learning rate  0.1: after 20 steps x =       0.0576 
+learning rate  0.5: after 20 steps x =       0.0000 
+learning rate  1.1: after 20 steps x =     191.6880 (diverged)</code></pre>
+<h3>Backpropagation</h3>
+<p><strong>Picture</strong>: a factory assembly line that produces a faulty product, and a manager tracing blame backward station by station: how much did each station's setting contribute to the final defect? The <strong>chain rule</strong> passes the blame backwards, and each parameter gets the exact amount by which nudging it would change the loss.</p>
+<h3>Stochastic gradient descent and batches</h3>
+<p><strong>Picture</strong>: estimating which way the hill slopes by testing a few random patches rather than surveying the entire mountain every step. It is noisier but much cheaper, and the noise can even help escape poor spots.</p>
+<h3>Why deep networks work</h3>
+<p><strong>Picture</strong>: a pipeline of simple filters. Early layers detect edges, middle layers combine edges into shapes, later layers recognise objects. Each layer re-describes the input in a more useful way: <strong>representation learning</strong>.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a18-q03" data-topic="Intuition guide" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In gradient descent, what does a too-large learning rate cause?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Slow but steady progress <span class="q-why">That is too small.</span></li>
+          <li data-key="B">Overshooting and possible divergence <span class="q-why">Correct.</span></li>
+          <li data-key="C">Perfect convergence <span class="q-why">No.</span></li>
+          <li data-key="D">Overfitting only <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Step size must match the curvature of the loss.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Explain gradient descent in one sentence.</summary><div class="answer"><p>Repeatedly step the parameters in the direction that most reduces the loss, with step size set by the learning rate.</p></div></details>
+      </div>
+    </section>
+
+    <section id="metrics" data-track>
+      <h2>Measuring quality</h2>
+<h3>Accuracy, precision and recall</h3>
+<p><strong>Picture</strong>: a fishing net. <strong>Recall</strong> is how many of the fish in the lake you caught; <strong>precision</strong> is how much of your catch is fish rather than boots. A cancer screening wants high recall (miss no one) and tolerates false alarms; a spam filter wants high precision (never bin a real email).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a18-03.py">actual    = [1] * 10 + [0] * 990                              # 1% of cases are positive
+lazy      = [0] * 1000                                         # a model that always says "negative"
+decent    = [1] * 7 + [0] * 3 + [1] * 20 + [0] * 970           # finds 7 of 10, raises 20 false alarms
+def scores(pred):
+    tp = sum(p and a for p, a in zip(pred, actual)); fp = sum(p and not a for p, a in zip(pred, actual)); fn = sum(a and not p for p, a in zip(pred, actual))
+    acc = sum(p == a for p, a in zip(pred, actual)) / len(actual)
+    return acc, tp / max(1, tp + fp), tp / max(1, tp + fn)
+for name, pred in [("always 'no'", lazy), ("a real model", decent)]:
+    a, p, r = scores(pred); print(f"{name:&gt;12}: accuracy {a:.1%}, precision {p:.1%}, recall {r:.1%}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code> always 'no': accuracy 99.0%, precision 0.0%, recall 0.0%
+a real model: accuracy 97.7%, precision 25.9%, recall 70.0%</code></pre>
+<p>The model that never finds anything is "99% accurate". That is why accuracy alone misleads on imbalanced data.</p>
+<h3>Cross-validation</h3>
+<p><strong>Picture</strong>: rotating who sits the exam. Split the data into folds; each fold takes a turn as the test set while the others train; average the scores. You get a steadier estimate than one lucky or unlucky split.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a18-q04" data-topic="Intuition guide" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why can a model that always predicts 'no' have 99% accuracy?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Accuracy is wrong <span class="q-why">It is correct but uninformative.</span></li>
+          <li data-key="B">The positive class is rare, so most predictions are trivially right; precision and recall expose it <span class="q-why">Correct.</span></li>
+          <li data-key="C">Bug <span class="q-why">No.</span></li>
+          <li data-key="D">It is overfit <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use metrics that fit the class balance and costs.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Precision versus recall in a fishing net analogy?</summary><div class="answer"><p>Recall is the share of all fish you caught; precision is the share of your catch that is fish.</p></div></details>
+      </div>
+    </section>
+
+    <section id="representations" data-track>
+      <h2>Representations: embeddings and attention</h2>
+<h3>Embeddings</h3>
+<p><strong>Picture</strong>: a map where every word, product or image has coordinates, and <strong>things with similar meaning sit near each other</strong>. "King" and "queen" are close; "banana" is far away. The model learns the coordinates, and directions can even carry meaning. Searching by meaning is just finding the nearest points.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a18-04.py">import math
+vec = {"king": (0.9, 0.8), "queen": (0.85, 0.75), "man": (0.8, 0.3), "woman": (0.75, 0.25), "banana": (-0.5, 0.1)}
+cos = lambda a, b: sum(x * y for x, y in zip(a, b)) / (math.hypot(*a) * math.hypot(*b))
+for a, b in [("king", "queen"), ("man", "woman"), ("king", "banana")]: print(f"similarity({a}, {b}) = {cos(vec[a], vec[b]):+.2f}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>similarity(king, queen) = +1.00
+similarity(man, woman) = +1.00
+similarity(king, banana) = -0.60</code></pre>
+<h3>Tokens</h3>
+<p><strong>Picture</strong>: Lego bricks. A language model does not read letters or whole words but <strong>chunks</strong> ("un", "believ", "able"), common pieces that make the vocabulary manageable. Rare or foreign words split into many small bricks, costing more tokens (and money). Roughly 4 characters or three-quarters of a word per token in English.</p>
+<h3>Attention</h3>
+<p><strong>Picture</strong>: reading a sentence and, for each word, glancing back at the other words that matter for understanding it. In "The animal didn't cross the street because <strong>it</strong> was tired", the word "it" attends strongly to "animal". Attention computes <strong>how much each word should listen to each other word</strong>, then mixes their information accordingly. Cost grows with the square of the text length, since everyone considers everyone.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a18-05.py">import math
+words = ["the", "animal", "was", "tired"]
+scores = {"the": [1, 0, 0, 0], "animal": [0.2, 1, 0, 0], "was": [0, 0.8, 1, 0], "tired": [0, 2.0, 0.3, 1]}      # hand-made similarity scores for illustration
+def softmax(z): e = [math.exp(v) for v in z]; s = sum(e); return [v / s for v in e]
+w = softmax(scores["tired"])
+print("when processing 'tired', attention weights over", words, "=", [round(v, 2) for v in w], "-&gt; it listens most to 'animal'")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>when processing 'tired', attention weights over ['the', 'animal', 'was', 'tired'] = [0.08, 0.59, 0.11, 0.22] -&gt; it listens most to 'animal'</code></pre>
+<h3>Transformers</h3>
+<p><strong>Picture</strong>: a team of readers. Every layer, all words look at each other at the same time (attention), then each word thinks privately (a small feed-forward network), and the result goes to the next layer. Because everything is processed in parallel, transformers train quickly on GPUs, unlike the older word-by-word recurrent networks.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a18-q05" data-topic="Intuition guide" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does an embedding place close together?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Words with the same spelling <span class="q-why">No.</span></li>
+          <li data-key="B">Items with similar meaning or use <span class="q-why">Correct.</span></li>
+          <li data-key="C">Items of equal length <span class="q-why">No.</span></li>
+          <li data-key="D">Random items <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Nearest-neighbour search then finds related items.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a18-q06" data-topic="Intuition guide" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why does attention cost grow quickly with text length?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It reads slowly <span class="q-why">No.</span></li>
+          <li data-key="B">Every token attends to every other token, so cost grows with the square of the length <span class="q-why">Correct.</span></li>
+          <li data-key="C">It stores images <span class="q-why">No.</span></li>
+          <li data-key="D">It uses recursion <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>That is why long-context research focuses on efficiency.</p></div>
+      </div>
+    </section>
+
+    <section id="llms" data-track>
+      <h2>Large language models</h2>
+<h3>What a language model does</h3>
+<p><strong>Picture</strong>: autocomplete on a vast scale. Given the text so far, predict a probability for each possible next token; pick one; append it; repeat. Everything an LLM writes is produced one token at a time, which is why <strong>temperature</strong> (how adventurous the pick is) changes style: low is predictable, high is creative and error-prone.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a18-06.py">import math, random
+random.seed(5)
+logits = {"cat": 3.0, "dog": 2.5, "pizza": 0.5, "the": -1.0}
+def sample(temp):
+    scaled = {w: v / temp for w, v in logits.items()}; m = max(scaled.values())
+    exp = {w: math.exp(v - m) for w, v in scaled.items()}; s = sum(exp.values())
+    probs = {w: e / s for w, e in exp.items()}
+    return probs, random.choices(list(probs), weights=list(probs.values()))[0]
+for t in (0.2, 1.0, 2.0):
+    probs, pick = sample(t); print(f"temperature {t}: probabilities {({w: round(p, 2) for w, p in probs.items()})}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>temperature 0.2: probabilities {'cat': 0.92, 'dog': 0.08, 'pizza': 0.0, 'the': 0.0}
+temperature 1.0: probabilities {'cat': 0.59, 'dog': 0.36, 'pizza': 0.05, 'the': 0.01}
+temperature 2.0: probabilities {'cat': 0.45, 'dog': 0.35, 'pizza': 0.13, 'the': 0.06}</code></pre>
+<h3>Pre-training, fine-tuning and alignment</h3>
+<p><strong>Picture</strong>: a person's education. <strong>Pre-training</strong> is reading a huge library to learn language and facts (expensive, done once). <strong>Supervised fine-tuning</strong> is apprenticeship: learning to follow instructions from worked examples. <strong>Preference tuning (RLHF, DPO)</strong> is feedback from a mentor on which of two answers is better, shaping helpfulness and safety.</p>
+<h3>Context window</h3>
+<p><strong>Picture</strong>: the model's desk. Only what is on the desk right now (the prompt plus the conversation so far) can be used; there is no memory outside it. A bigger desk holds more documents but costs more to search and can make the model overlook things in the middle.</p>
+<h3>Hallucination</h3>
+<p><strong>Picture</strong>: a confident improviser. The model's training objective is to produce <strong>plausible</strong> text, not verified truth, so when it does not know, it can still produce a fluent, wrong answer. Mitigations: ground answers in retrieved sources, ask for citations, lower temperature, add checks, and make "I don't know" an acceptable answer.</p>
+<h3>RAG (retrieval-augmented generation)</h3>
+<p><strong>Picture</strong>: an open-book exam. Instead of relying on memory, the system first <strong>looks up</strong> relevant passages in your documents (by meaning, using embeddings) and places them in the prompt, then the model answers from them. It keeps knowledge fresh and private without retraining, and lets you cite sources.</p>
+<h3>Fine-tuning and LoRA</h3>
+<p><strong>Picture</strong>: instead of rewriting a whole textbook to teach a new skill, attach a few <strong>sticky notes</strong> to the pages that need adjusting. <strong>LoRA</strong> freezes the original weights and trains small low-rank add-on matrices (often under 1% of the parameters), so fine-tuning needs far less memory and the add-ons are small files you can swap.</p>
+<h3>Quantisation</h3>
+<p><strong>Picture</strong>: rounding prices to the nearest whole unit to save space on the price list. Storing weights with 8 or 4 bits instead of 16 shrinks the model 2 to 4 times and speeds up loading, at a small cost in accuracy.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a18-07.py">weights = [0.113, -0.482, 0.907, -0.031, 0.356, -0.774]
+def quantize(ws, bits):
+    levels = 2 ** (bits - 1) - 1; scale = max(abs(w) for w in ws) / levels
+    return [round(w / scale) * scale for w in ws]
+for bits in (8, 4, 2):
+    q = quantize(weights, bits); err = max(abs(a - b) for a, b in zip(weights, q))
+    print(f"{bits} bits ({2 ** bits} levels): max rounding error {err:.3f}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>8 bits (256 levels): max rounding error 0.004
+4 bits (16 levels): max rounding error 0.036
+2 bits (4 levels): max rounding error 0.425</code></pre>
+<h3>Agents and tools</h3>
+<p><strong>Picture</strong>: a clever assistant who can also use a phone and a calculator. The model decides which tool to call (search, code, database), reads the result, and continues, looping until done. More capability, more ways to go wrong, so give narrow permissions, validate inputs and keep a human in the loop for risky actions.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a18-q07" data-topic="Intuition guide" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does a higher sampling temperature do?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Makes the output deterministic <span class="q-why">That is low temperature.</span></li>
+          <li data-key="B">Flattens the probabilities so less likely tokens are chosen more often, giving more varied (and riskier) output <span class="q-why">Correct.</span></li>
+          <li data-key="C">Speeds up inference <span class="q-why">No.</span></li>
+          <li data-key="D">Adds more facts <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use low temperature for factual tasks.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a18-q08" data-topic="Intuition guide" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What problem does RAG address?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Slow GPUs <span class="q-why">No.</span></li>
+          <li data-key="B">The model lacks current or private knowledge and may hallucinate; retrieval supplies relevant passages in the prompt <span class="q-why">Correct.</span></li>
+          <li data-key="C">Large file sizes <span class="q-why">No.</span></li>
+          <li data-key="D">Bad tokenisation <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It keeps knowledge outside the weights, so it can be updated and cited.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is the difference between pre-training and fine-tuning?</summary><div class="answer"><p>Pre-training learns general language and knowledge from huge raw text; fine-tuning adapts the model with smaller curated data to follow instructions or a domain.</p></div></details>
+        <details class="recall"><summary>Why does hallucination happen?</summary><div class="answer"><p>The model is trained to produce plausible continuations, not verified facts, so it can fluently fill gaps with wrong content.</p></div></details>
+      </div>
+    </section>
+
+    <section id="faq" data-track>
+      <h2>Questions beginners ask</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Question</th><th>Short answer</th></tr></thead>
+<tbody>
+<tr><td>Does the model "understand"?</td><td>It captures statistical structure well enough to be useful and sometimes to reason; whether that is understanding is philosophical. Test behaviour, not metaphors.</td></tr><tr><td>Why does it make up facts?</td><td>It is trained to continue text plausibly, not to check facts; without grounding it fills gaps fluently.</td></tr><tr><td>Why is more data usually better?</td><td>It reduces variance and exposes rare cases, if the data is relevant and clean. Quality beats quantity at the margin.</td></tr><tr><td>Why do GPUs matter?</td><td>Neural networks are mostly large matrix multiplications, which GPUs perform in parallel thousands of times faster than CPUs.</td></tr><tr><td>Why is training expensive but use cheap?</td><td>Training does a forward and backward pass over trillions of tokens; use does only a forward pass per token. Serving cost is still large at scale.</td></tr><tr><td>What is a parameter?</td><td>A number inside the model that training adjusts; a 7B model has seven billion of them.</td></tr><tr><td>Is a bigger model always better?</td><td>Not always: data, training length, architecture and fine-tuning matter, and smaller models are cheaper and faster.</td></tr><tr><td>Why test on unseen data?</td><td>Performance on training data measures memory; performance on unseen data measures learning.</td></tr><tr><td>Can I trust the output?</td><td>Verify anything important; measure accuracy on your own task with an evaluation set.</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Models are adjustable functions fitted to examples; the danger is memorising rather than generalising (overfitting), controlled with held-out data, regularisation and simpler models. Gradients tell each parameter which way to move; embeddings place meaning on a map; attention lets every token consult the others; LLMs predict one token at a time and are shaped by pre-training, fine-tuning and feedback. Ground them with retrieval, evaluate on your own data, and verify.</p></div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Intuition guide</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Intuition guide">
+<details class="recall iq" data-level="basic" data-topic="Intuition guide"><summary><span class="tag ok">Basic</span> Explain overfitting simply.</summary><div class="answer"><p>The model memorises the training examples, including their noise, so it performs well on them and poorly on new data, like a student who memorised last year&#x27;s answers.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Intuition guide"><summary><span class="tag ok">Basic</span> Explain gradient descent simply.</summary><div class="answer"><p>Walk downhill on the loss by repeatedly stepping the parameters in the direction that reduces the error, with the learning rate setting the step size.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Intuition guide"><summary><span class="tag ok">Basic</span> Explain embeddings simply.</summary><div class="answer"><p>A map where items with similar meaning are close together, so similarity search is finding nearby points.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Intuition guide"><summary><span class="tag ok">Basic</span> Explain precision and recall simply.</summary><div class="answer"><p>Precision is how much of what you flagged is correct; recall is how much of the real positives you found.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Intuition guide"><summary><span class="tag warn">Medium</span> Explain attention simply.</summary><div class="answer"><p>For each token, decide how much to listen to every other token and mix their information accordingly, with cost growing with the square of the length.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Intuition guide"><summary><span class="tag warn">Medium</span> Explain bias and variance simply.</summary><div class="answer"><p>Bias is consistently missing the target because the model is too simple; variance is scattered answers because the model is too sensitive to the particular training data.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Intuition guide"><summary><span class="tag warn">Medium</span> Why do LLMs hallucinate?</summary><div class="answer"><p>They are trained to produce plausible continuations, not to verify facts, so they can fluently fill gaps with wrong information.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Intuition guide"><summary><span class="tag warn">Medium</span> Explain RAG simply.</summary><div class="answer"><p>An open-book exam: retrieve relevant documents by meaning and put them in the prompt so the model answers from them.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Intuition guide"><summary><span class="tag warn">Medium</span> Explain LoRA simply.</summary><div class="answer"><p>Freeze the base weights and train small low-rank add-on matrices, like sticky notes, so fine-tuning needs little memory and the adapters are small files.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Intuition guide"><summary><span class="tag warn">Medium</span> Explain quantisation simply.</summary><div class="answer"><p>Store weights with fewer bits, like rounding prices, shrinking the model and speeding loading at a small accuracy cost.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Intuition guide"><summary><span class="tag warn">Medium</span> What does temperature do?</summary><div class="answer"><p>It rescales the next-token probabilities: low temperature makes the model pick likely tokens, high temperature flattens the distribution for more varied output.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Intuition guide"><summary><span class="tag bad">Advanced</span> Explain pre-training, fine-tuning and RLHF as an education.</summary><div class="answer"><p>Pre-training is reading a vast library, supervised fine-tuning is apprenticeship from worked examples, preference tuning is a mentor&#x27;s feedback on which answers are better.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Intuition guide"><summary><span class="tag bad">Advanced</span> Why can accuracy be misleading?</summary><div class="answer"><p>On imbalanced data a model that always predicts the majority class scores high accuracy while finding nothing; use precision, recall, PR curves or cost-based metrics.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Intuition guide"><summary><span class="tag bad">Advanced</span> How would you explain a transformer to a manager?</summary><div class="answer"><p>A stack of layers where every word looks at every other word to understand context, then thinks about it privately; processing everything in parallel makes it fast to train and powerful.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="a17-training-at-scale.html"><span class="dir">Previous</span><span>A17 Training at scale: GPU performance, parallelism, mixed precision and scaling laws</span></a>
+      <a class="next" href="index.html"><span class="dir">Next</span><span>Hub</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

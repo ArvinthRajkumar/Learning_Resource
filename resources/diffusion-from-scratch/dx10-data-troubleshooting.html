@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en" data-resource="diffusion-from-scratch" data-page="DX10">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Data curation and troubleshooting: building image datasets and fixing common diffusion failures | Diffusion from scratch</title>
+<meta name="description" content="Building a training set (collection, filtering, de-duplication with perceptual hashes, captioning, balancing, licences) and a symptom-to-cause guide for failures such as blurry or grey samples, colour shifts, mode collapse, artefacts, memorisation and unstable loss, with runnable examples.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Diffusion from scratch</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part DX10</p>
+      <h1>Data curation and troubleshooting: building image datasets and fixing common diffusion failures</h1>
+      <p class="lede">Most diffusion projects succeed or fail on the data and on the ability to diagnose what is wrong with samples. This part treats both as engineering: a repeatable data pipeline with measurable filters, and a table that maps each visible symptom to its likely causes and the experiment that tells them apart.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~4 hours</span></div>
+    </div>
+
+    <section id="why" data-track>
+      <h2>Data is the model</h2>
+<p>For a fixed architecture, quality, style, diversity and safety are largely <strong>determined by the dataset</strong>. Recent progress in text-to-image models owes as much to better captions, filtering and curation as to new architectures. Treat the dataset like code: versioned, tested and documented.</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="Every stage should produce counts and examples you can inspect." style="min-width:760px"><defs><marker id="ah5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah5a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah5b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah5d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah5)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah5)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah5)"/><line x1="747.0" y1="78.0" x2="747.0" y2="118.0" class="d-line" marker-end="url(#ah5)"/><line x1="662.0" y1="147.0" x2="618.0" y2="147.0" class="d-line" marker-end="url(#ah5)"/><line x1="448.0" y1="147.0" x2="404.0" y2="147.0" class="d-line" marker-end="url(#ah5)"/><line x1="234.0" y1="147.0" x2="190.0" y2="147.0" class="d-line" marker-end="url(#ah5)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">Collect and license</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle" class="d-sm">Filter (size, quality, safety, language)</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle">De-duplicate</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle">Caption or re-caption</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="151.5" text-anchor="middle">Balance and sample</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="151.5" text-anchor="middle" class="d-sm">Package (shards, resolution buckets)</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="151.5" text-anchor="middle">Train and evaluate</text><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="105.0" y="151.5" text-anchor="middle" class="d-sm">Inspect failures and loop back</text></svg>
+</div>
+<figcaption>Every stage should produce counts and examples you can inspect.</figcaption></figure>
+    </section>
+
+    <section id="collect" data-track>
+      <h2>Collection and licensing</h2>
+<ul><li><strong>Sources</strong>: licensed or public-domain collections, your own photos or renders, commissioned data, web crawls (large, noisy, legally contested), synthetic data.</li><li><strong>Legal and ethical checks</strong>: licence terms and permitted uses, copyright and opt-out signals (robots.txt, <code>noai</code> flags, registries), personal data and biometric rules, consent for people's likenesses, and removal of illegal content. Keep <strong>provenance</strong> records (source, licence, date) per item so that you can <strong>remove</strong> content on request.</li><li><strong>Small custom sets</strong> (style or subject fine-tuning): 10 to 30 clean, varied images are often enough for LoRA or DreamBooth (<a href="dx4-control.html">DX4</a>); quality and variety beat count.</li></ul>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What provenance should each training item carry?</summary><div class="answer"><p>Source, licence, date and any opt-out status, so content can be audited and removed.</p></div></details>
+      </div>
+    </section>
+
+    <section id="filter" data-track>
+      <h2>Filtering</h2>
+<p>Common filters, each a threshold you can measure and tune:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Filter</th><th>Removes</th><th>How</th></tr></thead>
+<tbody>
+<tr><td><strong>Resolution and aspect ratio</strong></td><td>Tiny images, extreme crops</td><td>Metadata checks; set minimum short side</td></tr><tr><td><strong>Quality / aesthetic score</strong></td><td>Blurry, over-compressed, ugly images</td><td>Learned scorers (aesthetic predictors on CLIP embeddings), sharpness measures such as variance of the Laplacian</td></tr><tr><td><strong>Watermark and text overlays</strong></td><td>Stock-photo watermarks, logos</td><td>Classifiers; they otherwise appear in generations</td></tr><tr><td><strong>NSFW and unsafe content</strong></td><td>Content you will not generate</td><td>Classifiers plus human review (<a href="dx5-evaluation.html">DX5</a>)</td></tr><tr><td><strong>Image-text alignment</strong></td><td>Captions unrelated to the image</td><td>CLIP similarity threshold</td></tr><tr><td><strong>Language</strong></td><td>Unwanted languages in captions</td><td>Language identification</td></tr><tr><td><strong>Faces and personal data</strong></td><td>Identifiable people if not permitted</td><td>Detectors, blurring, exclusion</td></tr>
+</tbody>
+</table>
+</div>
+<p>A filter is a trade-off: stricter thresholds raise average quality but shrink the data and may remove <strong>diversity</strong> (certain styles, skin tones or regions are scored lower by biased scorers). Always look at <strong>what was removed</strong>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx10-01.py">import random
+random.seed(1)
+# a synthetic pool of 10,000 images with a quality score and a CLIP-style text alignment score
+pool = [{"quality": random.gauss(5.2, 1.2), "clip": random.gauss(0.27, 0.05), "group": random.choice(["photo", "art", "diagram"])} for _ in range(10000)]
+# the "art" group is systematically scored lower by the quality model (a bias to detect)
+for item in pool:
+    if item["group"] == "art": item["quality"] -= 0.6
+def keep(item, q=5.0, c=0.25): return item["quality"] &gt;= q and item["clip"] &gt;= c
+kept = [i for i in pool if keep(i)]
+print(f"kept {len(kept):,} of {len(pool):,} images ({len(kept) / len(pool):.0%}) with quality &gt;= 5.0 and CLIP &gt;= 0.25")
+for g in ("photo", "art", "diagram"):
+    before = sum(i["group"] == g for i in pool) / len(pool); after = sum(i["group"] == g for i in kept) / len(kept)
+    print(f"  {g:&gt;8}: {before:.0%} of the pool -&gt; {after:.0%} of the filtered set")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>kept 3,275 of 10,000 images (33%) with quality &gt;= 5.0 and CLIP &gt;= 0.25
+     photo: 33% of the pool -&gt; 39% of the filtered set
+       art: 33% of the pool -&gt; 25% of the filtered set
+   diagram: 34% of the pool -&gt; 36% of the filtered set</code></pre>
+<p>The strict filter changed the <strong>mix</strong>: the biased scorer under-rates "art", so its share falls. Checking group proportions before and after is a cheap way to catch such side effects; remedies include per-group thresholds, a better scorer or sampling to restore balance.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx10-q01" data-topic="Data and troubleshooting" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why compare group proportions before and after a quality filter?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To save disk <span class="q-why">No.</span></li>
+          <li data-key="B">A biased scorer can remove whole styles or groups, reducing diversity without being obvious in averages <span class="q-why">Correct.</span></li>
+          <li data-key="C">To speed training <span class="q-why">No.</span></li>
+          <li data-key="D">Because filters are random <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Inspect what was removed, not only what remains.</p></div>
+      </div>
+    </section>
+
+    <section id="dedup" data-track>
+      <h2>De-duplication</h2>
+<p>Duplicates cause <strong>memorisation</strong> (the model reproduces specific training images, a privacy and copyright risk) and skew the distribution toward whatever is repeated. Use <strong>exact hashes</strong> (file or pixel hashes) for identical files and <strong>near-duplicate detection</strong> for resized, cropped or recompressed copies: <strong>perceptual hashes</strong> (aHash, dHash, pHash) or <strong>embedding similarity</strong> (CLIP or specialised copy-detection models with an approximate nearest-neighbour index, <a href="../ai-ml-engineer-prep/a4-nlp-embeddings.html">A4</a>).</p>
+<p>The difference hash (dHash) compares each pixel with its right neighbour on a tiny grayscale thumbnail, giving a bit string that survives resizing, brightness changes and light compression; images are near-duplicates when the <strong>Hamming distance</strong> is small.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx10-02.py">import random
+random.seed(2)
+def make_image(seed, size=16):
+    r = random.Random(seed); return [[r.randint(0, 255) for _ in range(size)] for _ in range(size)]
+def downscale(img, size=9):                                    # nearest-neighbour thumbnail to size x size
+    n = len(img); return [[img[y * n // size][x * n // size] for x in range(size)] for y in range(size)]
+def dhash(img):
+    t = downscale(img, 9)
+    return [1 if t[y][x] &gt; t[y][x + 1] else 0 for y in range(8) for x in range(8)]       # 64 bits: is the pixel brighter than its right neighbour?
+def hamming(a, b): return sum(x != y for x, y in zip(a, b))
+original = make_image(1)
+brighter = [[min(255, p + 20) for p in row] for row in original]                          # brightness change
+noisy = [[max(0, min(255, p + random.randint(-6, 6))) for p in row] for row in original]  # mild recompression-like noise
+different = make_image(2)
+print("Hamming distance (0 to 64) between 64-bit dHashes:")
+print("  original vs brightened:", hamming(dhash(original), dhash(brighter)))
+print("  original vs lightly noisy:", hamming(dhash(original), dhash(noisy)))
+print("  original vs a different image:", hamming(dhash(original), dhash(different)), "(about 32 for unrelated images)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>Hamming distance (0 to 64) between 64-bit dHashes:
+  original vs brightened: 0
+  original vs lightly noisy: 1
+  original vs a different image: 34 (about 32 for unrelated images)</code></pre>
+<p>Practical pipeline: compute hashes or embeddings for the whole set, find neighbours below a threshold (use <strong>locality-sensitive hashing</strong> or an ANN index so it is not O(n^2)), keep the best representative of each cluster (highest resolution or quality), and <strong>also remove training images that are near-duplicates of evaluation or benchmark images</strong> to avoid leakage.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx10-q02" data-topic="Data and troubleshooting" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why de-duplicate training images?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To make files smaller only <span class="q-why">No.</span></li>
+          <li data-key="B">Duplicates cause memorisation of specific images and skew the distribution <span class="q-why">Correct.</span></li>
+          <li data-key="C">To add noise <span class="q-why">No.</span></li>
+          <li data-key="D">To enable guidance <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Also remove near-duplicates of evaluation images.</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx10-q03" data-topic="Data and troubleshooting" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does a small Hamming distance between two perceptual hashes mean?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The images are unrelated <span class="q-why">No.</span></li>
+          <li data-key="B">The images are visually similar (likely near-duplicates) <span class="q-why">Correct.</span></li>
+          <li data-key="C">The files are the same size <span class="q-why">No.</span></li>
+          <li data-key="D">The images have different colours <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>dHash survives resizing and light recompression.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you find near-duplicates at scale?</summary><div class="answer"><p>Perceptual hashes with locality-sensitive hashing or embeddings with an approximate nearest-neighbour index.</p></div></details>
+      </div>
+    </section>
+
+    <section id="captions" data-track>
+      <h2>Captions</h2>
+<p>Text-to-image models are only as good as their captions. Raw alt text is short, noisy and often unrelated ("IMG_2031", "buy now"). Modern practice:</p>
+<ul><li><strong>Re-caption</strong> with a strong vision-language model to produce detailed, accurate descriptions (objects, attributes, relations, style, text in the image, composition).</li><li><strong>Mix</strong> synthetic captions with a fraction of original captions (for example 80 to 95% synthetic) so the model still handles terse, human-style prompts.</li><li>Keep captions <strong>consistent in format</strong>, avoid hallucinated details (verify against the image or use detection tools), and include <strong>negative information</strong> only if you intend to train with it.</li><li>Use <strong>caption dropout</strong> (an empty caption about 10% of the time) so classifier-free guidance works (<a href="dx2-samplers.html">DX2</a>).</li><li>For fine-tuning on a subject, use a <strong>rare token</strong> or identifier plus a class word ("a photo of sks dog") and caption everything else you do <strong>not</strong> want baked in (otherwise the model ties it to the subject).</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx10-03.py">import re
+captions = ["IMG_2031.jpg", "buy now cheap!!!", "A red bicycle leaning against a brick wall in soft morning light, shallow depth of field", "dog", "Photo of a golden retriever puppy playing with a blue ball on green grass"]
+def caption_quality(c):
+    words = re.findall(r"[A-Za-z]+", c); issues = []
+    if len(words) &lt; 4: issues.append("too short")
+    if re.search(r"\.(jpg|png)$|img_\d+", c, re.I): issues.append("filename")
+    if re.search(r"buy|cheap|click|sale", c, re.I): issues.append("spam words")
+    return issues
+for c in captions: print(f"{c[:56]:&lt;58}-&gt; {'OK' if not caption_quality(c) else caption_quality(c)}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>IMG_2031.jpg                                              -&gt; ['too short', 'filename']
+buy now cheap!!!                                          -&gt; ['too short', 'spam words']
+A red bicycle leaning against a brick wall in soft morni  -&gt; OK
+dog                                                       -&gt; ['too short']
+Photo of a golden retriever puppy playing with a blue ba  -&gt; OK</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx10-q04" data-topic="Data and troubleshooting" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why use caption dropout during training?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To save labels <span class="q-why">No.</span></li>
+          <li data-key="B">So the model also learns an unconditional prediction, which classifier-free guidance needs <span class="q-why">Correct.</span></li>
+          <li data-key="C">To shorten captions <span class="q-why">No.</span></li>
+          <li data-key="D">To remove noise <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Typically about 10% of captions are replaced by an empty string.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What caption mix is recommended?</summary><div class="answer"><p>Mostly detailed synthetic captions with a fraction of original ones, plus caption dropout for guidance.</p></div></details>
+      </div>
+    </section>
+
+    <section id="balance" data-track>
+      <h2>Balancing and sampling</h2>
+<p>Web data follows a <strong>long tail</strong>: a few concepts (selfies, cats, sunsets) dominate and rare ones are almost absent. The model then draws the common ones well and the rare ones poorly. Counter with <strong>concept-balanced sampling</strong> (cluster embeddings and sample clusters more evenly), <strong>up-weighting</strong> rare high-quality concepts, and checking coverage with a held-out concept list. Also balance <strong>resolutions and aspect ratios</strong> with <strong>bucketing</strong>: group images of similar shapes into batches so no image is distorted by cropping to a square.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx10-04.py">import random
+random.seed(3)
+concepts = {"cat": 5000, "sunset": 4000, "car": 2500, "lighthouse": 120, "abacus": 30}
+total = sum(concepts.values())
+print("natural share:", {k: f"{v / total:.1%}" for k, v in concepts.items()})
+def balanced_weights(counts, temperature=0.5):                         # sample proportional to count ** temperature (1 = natural, 0 = uniform)
+    w = {k: v ** temperature for k, v in counts.items()}; z = sum(w.values()); return {k: v / z for k, v in w.items()}
+for temp in (1.0, 0.5, 0.0):
+    print(f"temperature {temp}:", {k: f"{v:.1%}" for k, v in balanced_weights(concepts, temp).items()})
+print("an image of an 'abacus' appears in about", f"{balanced_weights(concepts, 0.5)['abacus'] / (30 / total):.0f}x", "more batches than its natural frequency would give (so repeat epochs on rare images matter: watch for memorisation)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>natural share: {'cat': '42.9%', 'sunset': '34.3%', 'car': '21.5%', 'lighthouse': '1.0%', 'abacus': '0.3%'}
+temperature 1.0: {'cat': '42.9%', 'sunset': '34.3%', 'car': '21.5%', 'lighthouse': '1.0%', 'abacus': '0.3%'}
+temperature 0.5: {'cat': '35.3%', 'sunset': '31.6%', 'car': '25.0%', 'lighthouse': '5.5%', 'abacus': '2.7%'}
+temperature 0.0: {'cat': '20.0%', 'sunset': '20.0%', 'car': '20.0%', 'lighthouse': '20.0%', 'abacus': '20.0%'}
+an image of an 'abacus' appears in about 11x more batches than its natural frequency would give (so repeat epochs on rare images matter: watch for memorisation)</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx10-q05" data-topic="Data and troubleshooting" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How does aspect-ratio bucketing help?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It adds more data <span class="q-why">No.</span></li>
+          <li data-key="B">Images of similar shapes are batched together so none are distorted by square cropping, and the model learns varied aspect ratios <span class="q-why">Correct.</span></li>
+          <li data-key="C">It speeds the VAE <span class="q-why">No.</span></li>
+          <li data-key="D">It removes duplicates <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Each batch comes from a single bucket so tensors match in shape.</p></div>
+      </div>
+    </section>
+
+    <section id="buckets" data-track>
+      <h2>Resolution buckets</h2>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx10-05.py">def bucket(width, height, buckets=((1024, 1024), (1152, 896), (896, 1152), (1344, 768), (768, 1344))):
+    ar = width / height
+    return min(buckets, key=lambda b: abs(b[0] / b[1] - ar))
+for size in [(4000, 3000), (1080, 1920), (1000, 1000), (3000, 1300)]:
+    print(f"{size} (aspect {size[0] / size[1]:.2f}) -&gt; trained in bucket {bucket(*size)}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>(4000, 3000) (aspect 1.33) -&gt; trained in bucket (1152, 896)
+(1080, 1920) (aspect 0.56) -&gt; trained in bucket (768, 1344)
+(1000, 1000) (aspect 1.00) -&gt; trained in bucket (1024, 1024)
+(3000, 1300) (aspect 2.31) -&gt; trained in bucket (1344, 768)</code></pre>
+<p>Batches are drawn from one bucket at a time so tensors have equal shapes; the model learns to generate each aspect ratio and the conditioning includes the target size.</p>
+    </section>
+
+    <section id="troubleshoot" data-track>
+      <h2>Troubleshooting guide</h2>
+<p>Diagnose by <strong>symptom</strong>, then run the cheapest experiment that separates the likely causes.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Symptom</th><th>Likely causes</th><th>What to check or try</th></tr></thead>
+<tbody>
+<tr><td><strong>Pure noise or colour blobs after training</strong></td><td>Bug in the loss target, schedule or sampler; wrong normalisation</td><td>Overfit 10 images first; verify forward noising reconstructs; check data range is <code>[-1, 1]</code>; sample with the training schedule</td></tr><tr><td><strong>Blurry, low-detail samples</strong></td><td>Too few training steps; low capacity; MSE averaging at high noise; VAE too lossy</td><td>Train longer; check VAE reconstructions; use more sampling steps; try EMA weights</td></tr><tr><td><strong>Washed-out grey or mid-tone images; cannot make very dark or bright images</strong></td><td>Non-zero terminal SNR (the schedule never reaches pure noise) so the model leaks mean brightness</td><td>Zero-terminal-SNR rescaling, noise offset, v-prediction (<a href="dx1-math.html">DX1</a>)</td></tr><tr><td><strong>Oversaturated, burnt colours</strong></td><td>Guidance scale too high; no rescaling</td><td>Lower the scale (5 to 8), use CFG rescale or dynamic thresholding</td></tr><tr><td><strong>Samples look good but all similar (mode collapse, low diversity)</strong></td><td>High guidance; small or duplicated dataset; overfitting; distilled model</td><td>Lower guidance; de-duplicate; compare samples with nearest training images</td></tr><tr><td><strong>Copies of training images</strong></td><td>Memorisation from duplicates, small data, long training</td><td>Nearest-neighbour search in embedding space; de-duplicate; fewer epochs; regularise</td></tr><tr><td><strong>Checkerboard or grid artefacts</strong></td><td>Transposed convolutions or patch boundaries; VAE decoder; tiling seams</td><td>Use upsample plus conv; check VAE; overlap tiles</td></tr><tr><td><strong>Distorted anatomy (hands, faces)</strong></td><td>Insufficient examples; resolution too low; weak conditioning</td><td>More and better data; higher resolution; inpaint fixes; larger model</td></tr><tr><td><strong>Prompt ignored (wrong count, attributes swapped)</strong></td><td>Weak text encoder; poor captions; guidance too low</td><td>Better captions; stronger text encoder; attention-based layout controls</td></tr><tr><td><strong>Text unreadable</strong></td><td>Small encoder; few text examples; low latent resolution</td><td>Larger text encoder (T5), 16-channel VAE, text-rich data</td></tr><tr><td><strong>Duplicated subjects at large sizes</strong></td><td>Generating beyond the trained resolution</td><td>Native size plus upscaling; hires fix</td></tr><tr><td><strong>Loss is NaN or spikes</strong></td><td>Learning rate too high; fp16 overflow; bad batch; division by zero in SNR weighting</td><td>Lower LR, gradient clipping, bf16, check data for NaNs, clamp SNR weights</td></tr><tr><td><strong>Loss flat from the start</strong></td><td>Zero-initialised output not learning; frozen parameters; learning rate too small; wrong target</td><td>Check gradients are non-zero; verify that parameters update</td></tr><tr><td><strong>Training loss low, samples bad</strong></td><td>Loss is dominated by easy (low-noise) timesteps; sampler mismatch</td><td>Inspect loss per timestep; change weighting; evaluate samples regularly, not only loss</td></tr><tr><td><strong>EMA samples worse than raw</strong></td><td>EMA decay too high for short runs; EMA not initialised</td><td>Lower decay early (warm-up the decay), or evaluate both</td></tr><tr><td><strong>Fine-tune forgets the base model</strong></td><td>Learning rate too high; too many steps; no regularisation images</td><td>Lower rate and steps; use LoRA, prior-preservation images</td></tr><tr><td><strong>Fine-tune ignores the subject</strong></td><td>Too few steps; token collides with a common word; caption describes the subject</td><td>Use a rare token; train longer; caption only what should vary</td></tr><tr><td><strong>Results differ between runs or machines</strong></td><td>Non-deterministic kernels, library version, different schedulers</td><td>Pin versions and seeds, compare statistics rather than single images</td></tr>
+</tbody>
+</table>
+</div>
+<p>A <strong>debugging order</strong> that saves time: (1) overfit a tiny dataset to near-perfect samples, (2) check the schedule and data ranges, (3) verify sampling code with a model you trust, (4) inspect samples at several checkpoints and noise levels, (5) scale up only after small runs behave.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx10-06.py"># loss per timestep bucket tells you where the model is weak: early diffusion times are easy, high-noise times are hard
+import random
+random.seed(4)
+buckets = ["t 0-100", "t 100-300", "t 300-600", "t 600-1000"]
+base = [0.002, 0.010, 0.040, 0.120]                             # a typical shape of per-timestep MSE: small at low noise, larger at high noise
+logged = [[b * random.uniform(0.8, 1.2) for _ in range(50)] for b in base]
+for name, vals in zip(buckets, logged): print(f"{name:&gt;11}: mean loss {sum(vals) / len(vals):.4f}")
+print("a single averaged training loss would hide that the high-noise buckets, where global structure forms, are the ones that matter; log losses per bucket")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>    t 0-100: mean loss 0.0020
+  t 100-300: mean loss 0.0099
+  t 300-600: mean loss 0.0394
+ t 600-1000: mean loss 0.1232
+a single averaged training loss would hide that the high-noise buckets, where global structure forms, are the ones that matter; log losses per bucket</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx10-q06" data-topic="Data and troubleshooting" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Samples are washed-out grey and the model cannot produce very dark images. Most likely cause?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Learning rate too high <span class="q-why">No.</span></li>
+          <li data-key="B">The noise schedule does not reach zero signal-to-noise at the end, leaking the mean brightness; use zero-terminal-SNR or v-prediction <span class="q-why">Correct.</span></li>
+          <li data-key="C">Too many steps <span class="q-why">No.</span></li>
+          <li data-key="D">A broken GPU <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Fix the schedule, then retrain or fine-tune.</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx10-q07" data-topic="Data and troubleshooting" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the first debugging experiment for a new diffusion implementation?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Train on a billion images <span class="q-why">Slow.</span></li>
+          <li data-key="B">Overfit a tiny dataset (about 10 images) until samples reproduce them <span class="q-why">Correct.</span></li>
+          <li data-key="C">Tune guidance <span class="q-why">Later.</span></li>
+          <li data-key="D">Swap the optimiser <span class="q-why">Not first.</span></li>
+        </ul>
+        <div class="q-explain"><p>If it cannot overfit ten images, there is a bug.</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx10-q08" data-topic="Data and troubleshooting" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Training loss is low but samples are poor. Why might that happen?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The loss is wrong always <span class="q-why">No.</span></li>
+          <li data-key="B">The averaged loss is dominated by easy timesteps; check loss per noise level and evaluate samples directly <span class="q-why">Correct.</span></li>
+          <li data-key="C">The dataset is too small <span class="q-why">Not necessarily.</span></li>
+          <li data-key="D">The GPU is too slow <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Log samples at fixed seeds and per-bucket losses.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Fixes for oversaturated images?</summary><div class="answer"><p>Lower guidance scale, CFG rescale or dynamic thresholding.</p></div></details>
+      </div>
+    </section>
+
+    <section id="checklist" data-track>
+      <h2>A checklist before a big run</h2>
+<ul><li>Data: counts per stage, de-duplicated, filtered with inspected examples, captions sampled and read, licences recorded, evaluation images held out and decontaminated.</li><li>Pipeline: overfit-10-images test passes; forward and reverse processes verified numerically; sampler reproduces training images from noise at the end of the overfit test.</li><li>Training: mixed precision, gradient clipping, EMA, learning-rate warm-up, checkpointing with resume tested, deterministic data order by step, logging of per-timestep loss and sample grids at fixed seeds.</li><li>Evaluation: fixed prompt set covering rare concepts, metrics (FID, CLIP score, human comparison), safety checks and memorisation checks (<a href="dx5-evaluation.html">DX5</a>).</li><li>Budget: estimated compute and cost, early-stopping criteria, and a plan for what you will change if the first run underperforms.</li></ul>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Curate the data like code: license, filter with measured thresholds, de-duplicate with perceptual hashes or embeddings, re-caption carefully, balance concepts and aspect ratios, and check what each step removed. Debug by symptom: first overfit a tiny set, then check ranges, schedules and samplers, and log per-timestep losses and fixed-seed sample grids.</p></div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name two checks before a large training run.</summary><div class="answer"><p>The overfit-ten-images test and a verified resume-from-checkpoint (plus fixed-seed sample logging).</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Data and troubleshooting</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Data and troubleshooting">
+<details class="recall iq" data-level="basic" data-topic="Data and troubleshooting"><summary><span class="tag ok">Basic</span> Why de-duplicate training data?</summary><div class="answer"><p>Duplicates cause memorisation and bias the distribution toward repeated content; also decontaminate against evaluation images.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Data and troubleshooting"><summary><span class="tag ok">Basic</span> What is the first test of a new diffusion implementation?</summary><div class="answer"><p>Overfit about ten images until samples reproduce them; failure indicates a bug in the loss, schedule, data range or sampler.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data and troubleshooting"><summary><span class="tag warn">Medium</span> How do you find near-duplicate images?</summary><div class="answer"><p>Perceptual hashes such as dHash with Hamming distance, or embedding similarity with an approximate nearest-neighbour index.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data and troubleshooting"><summary><span class="tag warn">Medium</span> Why re-caption a dataset?</summary><div class="answer"><p>Alt text is short and noisy; detailed accurate captions greatly improve prompt following, usually mixed with some original captions.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data and troubleshooting"><summary><span class="tag warn">Medium</span> What is caption dropout and why use it?</summary><div class="answer"><p>Replacing captions with an empty string about 10% of the time so the model learns an unconditional prediction for classifier-free guidance.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data and troubleshooting"><summary><span class="tag warn">Medium</span> What causes washed-out grey samples and how do you fix them?</summary><div class="answer"><p>A schedule whose final signal-to-noise ratio is not zero leaks mean brightness; use zero-terminal-SNR rescaling, v-prediction or a noise offset.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data and troubleshooting"><summary><span class="tag warn">Medium</span> Samples are oversaturated. What do you change?</summary><div class="answer"><p>Lower the guidance scale, use CFG rescaling or dynamic thresholding.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data and troubleshooting"><summary><span class="tag warn">Medium</span> How do you detect memorisation?</summary><div class="answer"><p>Find nearest training images for generated samples in embedding space and check duplication rates, then reduce duplicates, epochs or model capacity.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data and troubleshooting"><summary><span class="tag warn">Medium</span> What is aspect-ratio bucketing?</summary><div class="answer"><p>Grouping images of similar shapes into batches so there is no square cropping, and the model learns varied aspect ratios.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Data and troubleshooting"><summary><span class="tag bad">Advanced</span> How can a quality filter harm diversity?</summary><div class="answer"><p>A biased scorer rates some styles or groups lower, so strict thresholds shift the mix; compare group proportions before and after and use per-group thresholds.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Data and troubleshooting"><summary><span class="tag bad">Advanced</span> Training loss is low but samples look bad. What do you check?</summary><div class="answer"><p>Per-timestep loss (high-noise levels matter), sampler correctness, EMA weights, and direct sample inspection at fixed seeds rather than the averaged loss.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Data and troubleshooting"><summary><span class="tag bad">Advanced</span> How do you fine-tune on a subject without forgetting the base model?</summary><div class="answer"><p>Use LoRA with a low learning rate and few steps, a rare identifier token and prior-preservation class images, and caption everything that should vary.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Data and troubleshooting"><summary><span class="tag bad">Advanced</span> What licensing and consent checks belong in a data pipeline?</summary><div class="answer"><p>Licence terms and permitted use, opt-out signals, personal data and likeness consent, illegal content removal and provenance records enabling deletion.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Data and troubleshooting"><summary><span class="tag bad">Advanced</span> How do you balance a long-tailed concept distribution?</summary><div class="answer"><p>Sample with count raised to a temperature below one, cluster embeddings to balance concepts, up-weight rare high-quality items, and watch for memorisation from repetition.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="dx9-flows-transformers.html"><span class="dir">Previous</span><span>DX9 Flow matching, diffusion transformers and modern architectures: the exact math in one dimension</span></a>
+      <a class="next" href="dx11-intuition.html"><span class="dir">Next</span><span>DX11 Diffusion models explained simply: analogies, pictures and plain-language answers</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

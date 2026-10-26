@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en" data-resource="diffusion-from-scratch" data-page="DX8">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Using pretrained diffusion models in practice: pipelines, schedulers, memory, parameters and workflows | Diffusion from scratch</title>
+<meta name="description" content="How to use real pretrained models: the Hugging Face diffusers pipeline structure, choosing schedulers and steps, classifier-free guidance scale, resolution and aspect ratio, memory and speed options for small GPUs, LoRA and ControlNet loading, batch and seed handling, with calculators for memory and latency.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Diffusion from scratch</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part DX8</p>
+      <h1>Using pretrained diffusion models in practice: pipelines, schedulers, memory, parameters and workflows</h1>
+      <p class="lede">Training your own model teaches the theory; most real work uses pretrained ones. This part shows the moving parts of a modern text-to-image pipeline, the settings that matter and why, how to fit big models on small GPUs, and how to run controlled, repeatable experiments. Library code is displayed (the libraries are not installed in this sandbox); the arithmetic is run.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~4 hours</span></div>
+    </div>
+
+    <section id="components" data-track>
+      <h2>The components of a text-to-image pipeline</h2>
+<p>A modern latent diffusion pipeline (Stable Diffusion family) is <strong>five replaceable parts</strong>:</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="The scheduler decides how the denoiser&#x27;s predictions are turned into the next latent; the VAE only appears at the start (for img2img) and the end." style="min-width:760px"><defs><marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah3a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah3b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah3d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah3)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah3)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah3)"/><line x1="747.0" y1="78.0" x2="747.0" y2="118.0" class="d-line" marker-end="url(#ah3)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">Prompt text</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle" class="d-sm">Text encoder (CLIP or T5)</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle" class="d-sm">Denoiser (U-Net or DiT) run for N steps with a scheduler</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle">VAE decoder</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="151.5" text-anchor="middle">Image</text></svg>
+</div>
+<figcaption>The scheduler decides how the denoiser's predictions are turned into the next latent; the VAE only appears at the start (for img2img) and the end.</figcaption></figure>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Component</th><th>Job</th><th>Typical size</th><th>Swap for</th></tr></thead>
+<tbody>
+<tr><td><strong>Tokenizer and text encoder</strong></td><td>Turn the prompt into embeddings (CLIP ViT-L, OpenCLIP, T5-XXL in newer models)</td><td>0.1 to 5 GB</td><td>Larger encoders improve prompt following</td></tr><tr><td><strong>Denoiser</strong></td><td>Predict noise (or velocity) given the noisy latent, the timestep and the text embeddings</td><td>1 to 12 GB</td><td>U-Net (SD 1.x, SDXL) or Diffusion Transformer (SD3, Flux)</td></tr><tr><td><strong>Scheduler (sampler)</strong></td><td>Update rule from one latent to the next (<a href="dx2-samplers.html">DX2</a>)</td><td>none</td><td>DDIM, Euler, DPM++ 2M, UniPC, LCM</td></tr><tr><td><strong>VAE</strong></td><td>Encode images to latents and decode latents to images (<a href="dx3-latent.html">DX3</a>)</td><td>0.3 GB</td><td>Fine-tuned VAEs fix colour and fine detail</td></tr><tr><td><strong>Safety checker / filters</strong></td><td>Optional output screening</td><td>small</td><td>Platform policy</td></tr>
+</tbody>
+</table>
+</div>
+<p>The latent has <code>1/8</code> the spatial resolution of the image and 4 or 16 channels, so a 1024 x 1024 image is denoised as a 128 x 128 latent.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx8-01.py">def latent_shape(width, height, channels=4, factor=8): return (channels, height // factor, width // factor)
+def latent_elements(width, height, channels=4): c, h, w = latent_shape(width, height, channels); return c * h * w
+for w, h in [(512, 512), (768, 768), (1024, 1024), (1536, 1024)]:
+    c, lh, lw = latent_shape(w, h)
+    print(f"{w}x{h} image -&gt; latent {c}x{lh}x{lw} = {latent_elements(w, h):,} numbers ({w * h * 3 / latent_elements(w, h):.0f}x fewer than the pixels)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>512x512 image -&gt; latent 4x64x64 = 16,384 numbers (48x fewer than the pixels)
+768x768 image -&gt; latent 4x96x96 = 36,864 numbers (48x fewer than the pixels)
+1024x1024 image -&gt; latent 4x128x128 = 65,536 numbers (48x fewer than the pixels)
+1536x1024 image -&gt; latent 4x128x192 = 98,304 numbers (48x fewer than the pixels)</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx8-q01" data-topic="Diffusion in practice" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does the scheduler do in a diffusion pipeline?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Encodes the prompt <span class="q-why">That is the text encoder.</span></li>
+          <li data-key="B">Defines how the denoiser's prediction is turned into the next latent (the sampling update rule) <span class="q-why">Correct.</span></li>
+          <li data-key="C">Decodes the image <span class="q-why">That is the VAE.</span></li>
+          <li data-key="D">Filters unsafe images <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>You can swap schedulers without retraining.</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx8-q02" data-topic="Diffusion in practice" data-type="numeric" data-answer="8" data-tol="0">
+        <div class="q-stem"><p>A 1024 x 1024 image is denoised as a latent with spatial size 128 x 128. What is the downsampling factor of the VAE?</p></div>
+        <div class="q-explain"><p>1024 / 128 = 8.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>List the parts of a latent diffusion pipeline.</summary><div class="answer"><p>Tokenizer and text encoder, denoiser (U-Net or DiT), scheduler, VAE (and optional safety filter).</p></div></details>
+      </div>
+    </section>
+
+    <section id="diffusers" data-track>
+      <h2>The diffusers library by example</h2>
+<p>These snippets are shown, not run. They are the standard shape of Hugging Face <code>diffusers</code> code.</p>
+<pre><code class="lang-py">import torch
+from diffusers import StableDiffusionXLPipeline, DPMSolverMultistepScheduler
+
+pipe = StableDiffusionXLPipeline.from_pretrained(
+    "stabilityai/stable-diffusion-xl-base-1.0",
+    torch_dtype=torch.float16,          # half precision halves memory and speeds up inference
+    use_safetensors=True,
+)
+pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)   # swap the sampler
+pipe.to("cuda")
+
+generator = torch.Generator("cuda").manual_seed(1234)                              # reproducibility
+image = pipe(
+    prompt="a lighthouse on a cliff at sunset, oil painting, detailed",
+    negative_prompt="blurry, low quality, watermark",
+    num_inference_steps=25,
+    guidance_scale=6.5,
+    width=1024, height=1024,
+    generator=generator,
+).images[0]
+image.save("lighthouse.png")</code></pre>
+<p>Key arguments:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Argument</th><th>Meaning</th><th>Guidance</th></tr></thead>
+<tbody>
+<tr><td><code>num_inference_steps</code></td><td>Number of denoiser calls</td><td>20 to 30 with a good solver; 1 to 8 for distilled models</td></tr><tr><td><code>guidance_scale</code></td><td>Classifier-free guidance weight</td><td>5 to 8 typical; higher follows the prompt harder but oversaturates; 0 to 2 for distilled models</td></tr><tr><td><code>negative_prompt</code></td><td>What to steer away from</td><td>Replaces the unconditional branch of CFG</td></tr><tr><td><code>generator</code> / seed</td><td>Source of the initial noise</td><td>Same seed, prompt and settings give the same image</td></tr><tr><td><code>width</code>, <code>height</code></td><td>Output size</td><td>Use the model's native resolution (multiples of 8 or 64)</td></tr><tr><td><code>num_images_per_prompt</code></td><td>Batch size</td><td>Memory grows with it</td></tr><tr><td><code>strength</code> (img2img)</td><td>How much noise to add to the input image</td><td>Low keeps the original, high changes it</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Image-to-image, inpainting and ControlNet</h3>
+<pre><code class="lang-py">from diffusers import StableDiffusionImg2ImgPipeline, StableDiffusionInpaintPipeline, ControlNetModel, StableDiffusionControlNetPipeline
+# img2img: start from a noised version of an existing picture (SDEdit); strength 0.3 keeps the layout, 0.8 repaints most of it
+out = img2img(prompt="same scene in winter", image=init_image, strength=0.5, guidance_scale=7.0).images[0]
+# inpainting: white mask pixels are regenerated, black are kept
+out = inpaint(prompt="a red door", image=photo, mask_image=mask).images[0]
+# ControlNet: add a spatial condition such as canny edges or a depth map
+controlnet = ControlNetModel.from_pretrained("lllyasviel/sd-controlnet-canny", torch_dtype=torch.float16)
+pipe = StableDiffusionControlNetPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", controlnet=controlnet, torch_dtype=torch.float16)
+out = pipe("a modern house", image=canny_edges, controlnet_conditioning_scale=1.0).images[0]</code></pre>
+<h3>Loading LoRAs and textual inversions</h3>
+<pre><code class="lang-py">pipe.load_lora_weights("path/or/hub-id", weight_name="style.safetensors")
+pipe.fuse_lora(lora_scale=0.8)                      # bake into the weights for speed; unfuse to remove
+pipe.load_textual_inversion("sd-concepts-library/cat-toy")      # adds a learned token to the vocabulary</code></pre>
+<p>Several LoRAs can be combined with weights; strong or conflicting LoRAs degrade quality, so test combinations.</p>
+    </section>
+
+    <section id="guidance" data-track>
+      <h2>Guidance scale: the dial that matters most</h2>
+<p>Classifier-free guidance runs the denoiser twice per step, once with the prompt and once without, and extrapolates: <code>eps = eps_uncond + w x (eps_cond - eps_uncond)</code>. The weight <code>w</code> is the guidance scale (<a href="dx2-samplers.html">DX2</a>).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx8-02.py">def cfg(eps_uncond, eps_cond, w): return [u + w * (c - u) for u, c in zip(eps_uncond, eps_cond)]
+u, c = [0.10, -0.20, 0.05], [0.30, -0.10, 0.25]
+for w in (0, 1, 3, 7.5, 15):
+    print(f"guidance {w:&gt;4}: {[round(v, 2) for v in cfg(u, c, w)]}  (0 ignores the prompt, 1 is the plain conditional prediction, larger exaggerates the prompt direction)")
+steps, cost_per_call = 25, 1.0
+print(f"cost: with guidance every step needs 2 denoiser calls -&gt; {2 * steps} calls instead of {steps}; distilled or guidance-free models skip the second call")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>guidance    0: [0.1, -0.2, 0.05]  (0 ignores the prompt, 1 is the plain conditional prediction, larger exaggerates the prompt direction)
+guidance    1: [0.3, -0.1, 0.25]  (0 ignores the prompt, 1 is the plain conditional prediction, larger exaggerates the prompt direction)
+guidance    3: [0.7, 0.1, 0.65]  (0 ignores the prompt, 1 is the plain conditional prediction, larger exaggerates the prompt direction)
+guidance  7.5: [1.6, 0.55, 1.55]  (0 ignores the prompt, 1 is the plain conditional prediction, larger exaggerates the prompt direction)
+guidance   15: [3.1, 1.3, 3.05]  (0 ignores the prompt, 1 is the plain conditional prediction, larger exaggerates the prompt direction)
+cost: with guidance every step needs 2 denoiser calls -&gt; 50 calls instead of 25; distilled or guidance-free models skip the second call</code></pre>
+<p>Effects of high <code>w</code>: stronger prompt adherence, <strong>less diversity</strong>, saturated colours, burnt-looking contrast and artefacts. Newer models are trained with <strong>guidance distillation</strong> and use scales near 1 to 4. Some pipelines use <strong>dynamic thresholding</strong> or <strong>rescaling</strong> to reduce oversaturation.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx8-q03" data-topic="Diffusion in practice" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does a very high guidance scale usually cause?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Perfect realism <span class="q-why">No.</span></li>
+          <li data-key="B">Strong prompt adherence but oversaturation, less diversity and artefacts <span class="q-why">Correct.</span></li>
+          <li data-key="C">Faster sampling <span class="q-why">No.</span></li>
+          <li data-key="D">Better text rendering always <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Typical values are 5 to 8 for non-distilled models.</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx8-q04" data-topic="Diffusion in practice" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why does classifier-free guidance double the compute per step?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It uses two GPUs <span class="q-why">No.</span></li>
+          <li data-key="B">It evaluates the denoiser with and without the prompt and combines the predictions <span class="q-why">Correct.</span></li>
+          <li data-key="C">It runs the VAE twice <span class="q-why">No.</span></li>
+          <li data-key="D">It repeats the text encoder <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Guidance-distilled models avoid the second pass.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is the CFG formula?</summary><div class="answer"><p>eps = eps_uncond + w x (eps_cond - eps_uncond), costing two denoiser calls per step.</p></div></details>
+      </div>
+    </section>
+
+    <section id="resolution" data-track>
+      <h2>Resolution and aspect ratio</h2>
+<p>Models are trained at specific sizes (SD 1.5 at 512, SDXL around 1024). Generating far from the native size produces <strong>duplicated subjects and odd compositions</strong>. Options: generate at native size and <strong>upscale</strong> with a dedicated model (ESRGAN, latent upscaler, tile-based diffusion upscaling), use <strong>hires fix</strong> (generate small, upsample the latent and refine with img2img at low strength), or use models trained with <strong>multiple aspect ratios</strong>.</p>
+<p>Compute grows quickly with resolution: the number of latent tokens is proportional to the area, and <strong>self-attention cost grows with the square of the tokens</strong>, so doubling both sides multiplies attention cost by about 16.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx8-03.py">def tokens(width, height, patch=2, factor=8): return (width // factor // patch) * (height // factor // patch)      # DiT-style latent patches
+base = tokens(512, 512)
+for w, h in [(512, 512), (768, 768), (1024, 1024), (2048, 2048)]:
+    t = tokens(w, h)
+    print(f"{w}x{h}: {t:&gt;6,} tokens | attention cost relative to 512x512: {(t / base) ** 2:&gt;7.0f}x | linear parts: {t / base:&gt;4.0f}x")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>512x512:  1,024 tokens | attention cost relative to 512x512:       1x | linear parts:    1x
+768x768:  2,304 tokens | attention cost relative to 512x512:       5x | linear parts:    2x
+1024x1024:  4,096 tokens | attention cost relative to 512x512:      16x | linear parts:    4x
+2048x2048: 16,384 tokens | attention cost relative to 512x512:     256x | linear parts:   16x</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx8-q05" data-topic="Diffusion in practice" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why does generating far above a model's native resolution often duplicate subjects?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The GPU runs out of memory <span class="q-why">That causes errors, not duplicates.</span></li>
+          <li data-key="B">The model never saw such layouts in training, so it tiles content to fill the canvas <span class="q-why">Correct.</span></li>
+          <li data-key="C">The scheduler fails <span class="q-why">No.</span></li>
+          <li data-key="D">The VAE breaks <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use hires fix or upscalers instead.</p></div>
+      </div>
+    </section>
+
+    <section id="memory" data-track>
+      <h2>Memory and speed on a small GPU</h2>
+<p>A 4 to 8 GB GPU can run large models with the right options.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Technique</th><th>Effect</th><th>Cost</th></tr></thead>
+<tbody>
+<tr><td><strong>fp16 / bf16 weights</strong></td><td>Halves memory and speeds inference</td><td>Rare numerical issues (use fp32 VAE if you see black images)</td></tr><tr><td><strong>Attention slicing / SDPA / xFormers / FlashAttention</strong></td><td>Lower peak attention memory, faster</td><td>None to small</td></tr><tr><td><strong>VAE tiling and slicing</strong></td><td>Decode large images in tiles</td><td>Possible seams</td></tr><tr><td><strong>Model CPU offload</strong></td><td>Keep only the active component on the GPU</td><td>Slower (PCIe transfers)</td></tr><tr><td><strong>Sequential CPU offload</strong></td><td>Offload per layer</td><td>Much slower, fits in about 2 to 3 GB</td></tr><tr><td><strong>Quantised weights (8-bit, 4-bit, fp8, GGUF)</strong></td><td>Smaller denoiser or text encoder</td><td>Small quality loss</td></tr><tr><td>**<code>torch.compile</code>, CUDA graphs**</td><td>Faster steps after warm-up</td><td>Compile time</td></tr><tr><td><strong>Few-step distilled models (LCM, Turbo, Lightning, Hyper)</strong></td><td>1 to 8 steps</td><td>Some loss of diversity and detail</td></tr><tr><td><strong>Token merging, caching, DeepCache</strong></td><td>Reuse computation between steps</td><td>Slight quality loss</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx8-04.py">def weights_gb(params, bytes_per): return params * bytes_per / 1e9
+models = {"SD 1.5 U-Net (0.86B)": 0.86e9, "SDXL U-Net (2.6B)": 2.6e9, "SD3 / Flux-class DiT (about 12B)": 12e9, "T5-XXL text encoder (4.7B)": 4.7e9}
+print(f"{'component':&gt;34} {'fp32':&gt;7} {'fp16':&gt;7} {'8-bit':&gt;7} {'4-bit':&gt;7}")
+for name, p in models.items():
+    print(f"{name:&gt;34} {weights_gb(p, 4):&gt;6.1f}G {weights_gb(p, 2):&gt;6.1f}G {weights_gb(p, 1):&gt;6.1f}G {weights_gb(p, 0.5):&gt;6.1f}G")
+print("a 12B DiT in fp16 needs about", weights_gb(12e9, 2), "GB for weights alone, so consumer GPUs use 8-bit/4-bit weights and offload the text encoder")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>                         component    fp32    fp16   8-bit   4-bit
+              SD 1.5 U-Net (0.86B)    3.4G    1.7G    0.9G    0.4G
+                 SDXL U-Net (2.6B)   10.4G    5.2G    2.6G    1.3G
+  SD3 / Flux-class DiT (about 12B)   48.0G   24.0G   12.0G    6.0G
+        T5-XXL text encoder (4.7B)   18.8G    9.4G    4.7G    2.4G
+a 12B DiT in fp16 needs about 24.0 GB for weights alone, so consumer GPUs use 8-bit/4-bit weights and offload the text encoder</code></pre>
+<h3>Latency estimate</h3>
+<p>Total time is about <code>steps x passes_per_step x time_per_denoiser_call + VAE decode + text encode</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx8-05.py">def seconds(steps, passes, ms_per_call, vae_ms=150, encode_ms=40): return (steps * passes * ms_per_call + vae_ms + encode_ms) / 1000
+configs = [("SDXL, 30 steps, CFG", 30, 2, 90), ("SDXL, 20 steps, DPM++, CFG", 20, 2, 90), ("distilled Turbo, 4 steps, no CFG", 4, 1, 90), ("single-step distilled", 1, 1, 90)]
+for name, steps, passes, ms in configs:
+    print(f"{name:&gt;34}: {seconds(steps, passes, ms):5.2f} s per image on a GPU taking {ms} ms per denoiser call")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>               SDXL, 30 steps, CFG:  5.59 s per image on a GPU taking 90 ms per denoiser call
+        SDXL, 20 steps, DPM++, CFG:  3.79 s per image on a GPU taking 90 ms per denoiser call
+  distilled Turbo, 4 steps, no CFG:  0.55 s per image on a GPU taking 90 ms per denoiser call
+             single-step distilled:  0.28 s per image on a GPU taking 90 ms per denoiser call</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx8-q06" data-topic="Diffusion in practice" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which option lets a large model run on a small GPU at the cost of speed?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Higher guidance <span class="q-why">No.</span></li>
+          <li data-key="B">CPU offload (keeping only the active component on the GPU) <span class="q-why">Correct.</span></li>
+          <li data-key="C">More steps <span class="q-why">No.</span></li>
+          <li data-key="D">Larger batch <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Transfers over PCIe slow it down.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name four ways to reduce VRAM use.</summary><div class="answer"><p>fp16 weights, efficient attention, VAE tiling, CPU offload, and quantised weights.</p></div></details>
+      </div>
+    </section>
+
+    <section id="schedulers" data-track>
+      <h2>Schedulers and step counts in practice</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Scheduler</th><th>Character</th><th>Typical steps</th></tr></thead>
+<tbody>
+<tr><td><strong>DDPM</strong> (ancestral, stochastic)</td><td>Faithful but slow</td><td>250 to 1000</td></tr><tr><td><strong>DDIM</strong></td><td>Deterministic, supports editing and inversion</td><td>20 to 50</td></tr><tr><td><strong>Euler / Euler a</strong></td><td>Simple ODE or SDE steps; "a" adds noise each step (varied results, does not converge to one image as steps grow)</td><td>20 to 40</td></tr><tr><td><strong>DPM++ 2M (Karras)</strong></td><td>Fast, high-order, strong default</td><td>20 to 30</td></tr><tr><td><strong>DPM++ SDE</strong></td><td>Stochastic, detailed, slower</td><td>20 to 30</td></tr><tr><td><strong>UniPC</strong></td><td>High quality at very low step counts</td><td>10 to 20</td></tr><tr><td><strong>LCM / Turbo / Lightning schedulers</strong></td><td>Match distilled models</td><td>1 to 8</td></tr><tr><td><strong>Flow-matching Euler (SD3, Flux)</strong></td><td>Straight-path ODE</td><td>20 to 50, or about 4 for distilled variants</td></tr>
+</tbody>
+</table>
+</div>
+<p>A good method: fix the seed and prompt, vary <strong>one</strong> setting at a time, and compare grids. More steps improve quality up to a plateau, after which they only waste time (and ancestral samplers keep changing the image).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx8-q07" data-topic="Diffusion in practice" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What distinguishes 'Euler a' (ancestral) from plain Euler?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is deterministic <span class="q-why">The opposite.</span></li>
+          <li data-key="B">It injects fresh noise each step, so results keep changing as steps increase and do not converge to one image <span class="q-why">Correct.</span></li>
+          <li data-key="C">It is slower to import <span class="q-why">No.</span></li>
+          <li data-key="D">It needs no seed <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use non-ancestral solvers for reproducible convergence.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How many steps does a good solver need?</summary><div class="answer"><p>About 20 to 30 for DPM++ or UniPC, versus 1 to 8 for distilled models and hundreds for plain DDPM.</p></div></details>
+      </div>
+    </section>
+
+    <section id="prompting" data-track>
+      <h2>Prompting that works</h2>
+<ul><li>Describe <strong>subject, setting, style, lighting, composition and medium</strong> concisely: "a ginger cat asleep on a windowsill, soft morning light, shallow depth of field, 35 mm photo".</li><li>Modern models with large text encoders understand <strong>natural sentences</strong>; older CLIP-based models respond to keyword lists and weighting syntax like <code>(word:1.3)</code>.</li><li><strong>Negative prompts</strong> help older models (remove "blurry, extra fingers"), and matter less for newer ones.</li><li><strong>Seeds</strong>: explore with random seeds, then fix a good seed and refine the prompt. Keep a record of prompt, negative prompt, seed, scheduler, steps, scale, size and model version: that is a reproducible experiment.</li><li><strong>Text in images</strong> is hard for small encoders; larger text encoders and newer models do better.</li><li><strong>Compositional prompts</strong> (counts, spatial relations, attribute binding) remain error-prone; use regional prompting, layout conditioning (ControlNet, GLIGEN) or iterative editing.</li></ul>
+    </section>
+
+    <section id="workflow" data-track>
+      <h2>A workflow for repeatable experiments</h2>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx8-06.py">import json, hashlib
+def run_card(model, prompt, negative, seed, scheduler, steps, cfg, width, height, lora=None):
+    card = dict(model=model, prompt=prompt, negative=negative, seed=seed, scheduler=scheduler, steps=steps, cfg=cfg, size=[width, height], lora=lora)
+    card["id"] = hashlib.sha1(json.dumps(card, sort_keys=True).encode()).hexdigest()[:10]       # identical settings give an identical id
+    return card
+a = run_card("sdxl-base-1.0", "a lighthouse at sunset", "blurry", 1234, "dpmpp_2m_karras", 25, 6.5, 1024, 1024)
+b = run_card("sdxl-base-1.0", "a lighthouse at sunset", "blurry", 1234, "dpmpp_2m_karras", 25, 6.5, 1024, 1024)
+c = run_card("sdxl-base-1.0", "a lighthouse at sunset", "blurry", 1235, "dpmpp_2m_karras", 25, 6.5, 1024, 1024)
+print("same settings -&gt; same id:", a["id"] == b["id"], "| a different seed -&gt; different id:", a["id"] != c["id"])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>same settings -&gt; same id: True | a different seed -&gt; different id: True</code></pre>
+<p>Practical advice:</p>
+<ol><li><strong>Fix everything except one variable</strong> per comparison; generate several seeds per setting, because a single image can mislead.</li><li>Judge with <strong>blind side-by-side comparisons</strong>, ideally by several people; add automatic metrics (CLIP score for prompt alignment, aesthetic predictors, FID for distributions, <a href="dx5-evaluation.html">DX5</a>) but trust them cautiously.</li><li><strong>Version</strong> everything: model hash, LoRA hashes, library versions (results can change between releases), and hardware (GPU kernels differ slightly).</li><li><strong>Be careful with licences and content</strong>: check each model's licence for commercial use, honour opt-outs, label AI-generated output where required, and keep safety filters on for user-facing products (<a href="dx5-evaluation.html">DX5</a>).</li><li><strong>Serving</strong>: batch requests, keep models warm in GPU memory, queue with priorities, cache text embeddings for repeated prompts, set time and resolution limits, and monitor GPU utilisation and queue latency (<a href="../system-design-guide/sd23-ml-systems.html">SD23</a>).</li></ol>
+<div class="callout key"><span class="callout-title">Key idea</span><p>A pipeline is text encoder, denoiser, scheduler and VAE; you can swap each. Quality comes from the right native resolution, a good solver with 20 to 30 steps, a moderate guidance scale and a fixed, recorded seed. Fit large models on small GPUs with half precision, efficient attention, tiling, offload and quantisation, or use distilled few-step models, and treat every run as a reproducible, versioned experiment.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx8-q08" data-topic="Diffusion in practice" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How should you compare two settings fairly?</p></div>
+        <ul class="q-options">
+          <li data-key="A">One image each <span class="q-why">Misleading.</span></li>
+          <li data-key="B">Change one variable, use the same seeds, compare several seeds, ideally blind <span class="q-why">Correct.</span></li>
+          <li data-key="C">Change everything <span class="q-why">No.</span></li>
+          <li data-key="D">Use the largest image <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Record the full configuration for reproducibility.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What must a reproducible image record contain?</summary><div class="answer"><p>Model and LoRA versions, prompt and negative prompt, seed, scheduler, steps, guidance scale, size and library version.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Diffusion in practice</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Diffusion in practice">
+<details class="recall iq" data-level="basic" data-topic="Diffusion in practice"><summary><span class="tag ok">Basic</span> Name the components of a Stable Diffusion pipeline.</summary><div class="answer"><p>Tokenizer and text encoder, the denoiser (U-Net or transformer), the scheduler, and the VAE decoder (plus an optional safety checker).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Diffusion in practice"><summary><span class="tag ok">Basic</span> What does the guidance scale control?</summary><div class="answer"><p>How strongly the conditional prediction is exaggerated relative to the unconditional one: higher values follow the prompt more but reduce diversity and can oversaturate.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Diffusion in practice"><summary><span class="tag ok">Basic</span> Why does the same seed reproduce an image?</summary><div class="answer"><p>The seed fixes the initial noise; with the same prompt, model, scheduler, steps and settings the deterministic pipeline gives the same output.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Diffusion in practice"><summary><span class="tag warn">Medium</span> How do you run a large model on an 8 GB GPU?</summary><div class="answer"><p>Use fp16 or bf16, efficient attention, VAE tiling, CPU offload of idle components, quantised weights and distilled few-step models.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Diffusion in practice"><summary><span class="tag warn">Medium</span> What is a negative prompt and how does it work?</summary><div class="answer"><p>It replaces the empty prompt in the unconditional branch of classifier-free guidance, so the sample is pushed away from what it describes.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Diffusion in practice"><summary><span class="tag warn">Medium</span> How many sampling steps are typical?</summary><div class="answer"><p>20 to 30 with a good solver such as DPM++ or UniPC; 1 to 8 for distilled models; hundreds for plain DDPM.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Diffusion in practice"><summary><span class="tag warn">Medium</span> What is the difference between Euler and Euler ancestral samplers?</summary><div class="answer"><p>Ancestral samplers inject fresh noise each step, so results keep changing as steps increase and do not converge to a single image.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Diffusion in practice"><summary><span class="tag warn">Medium</span> Why do high resolutions beyond the training size produce duplicated subjects?</summary><div class="answer"><p>The model has not seen such compositions and tiles content; generate at native size and upscale or use hires fix.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Diffusion in practice"><summary><span class="tag warn">Medium</span> How do img2img strength and inpainting masks work?</summary><div class="answer"><p>Img2img adds noise up to a level set by strength then denoises; low strength keeps the layout. Inpainting regenerates masked regions and preserves the rest.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Diffusion in practice"><summary><span class="tag bad">Advanced</span> How does latency scale with settings?</summary><div class="answer"><p>Roughly steps x passes per step x time per denoiser call, plus VAE decode; guidance doubles passes, and attention cost grows with the square of the token count.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Diffusion in practice"><summary><span class="tag bad">Advanced</span> How would you serve a text-to-image model at scale?</summary><div class="answer"><p>Keep models warm in GPU memory, batch requests, queue with priorities, cache embeddings, enforce resolution and time limits, filter outputs and monitor utilisation and latency.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Diffusion in practice"><summary><span class="tag bad">Advanced</span> How do you make experiments reproducible?</summary><div class="answer"><p>Record model and LoRA versions, prompts, seed, scheduler, steps, guidance, size and library versions, and compare several seeds per setting.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Diffusion in practice"><summary><span class="tag bad">Advanced</span> What is hires fix?</summary><div class="answer"><p>Generate at a native low resolution, upsample the latent or image, and refine with img2img at moderate strength to add detail without composition errors.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Diffusion in practice"><summary><span class="tag bad">Advanced</span> Why combine several LoRAs carefully?</summary><div class="answer"><p>Adapters can conflict or amplify each other; weights must be tuned and combinations tested, and strong LoRAs degrade base model quality.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="dx7-training-lab.html"><span class="dir">Previous</span><span>DX7 Training lab: a tiny diffusion model, then training at scale</span></a>
+      <a class="next" href="dx9-flows-transformers.html"><span class="dir">Next</span><span>DX9 Flow matching, diffusion transformers and modern architectures: the exact math in one dimension</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

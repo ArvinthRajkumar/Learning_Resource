@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD33">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Search internals and data modelling patterns: inverted indexes, BM25, multi-tenancy and time series | System Design</title>
+<meta name="description" content="How search engines work (tokenisation, inverted indexes, TF-IDF and BM25 ranking, sharding, relevance and typo tolerance) with a working implementation, plus data modelling patterns for multi-tenant SaaS, hierarchies, audit trails, time series and schema evolution.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD33</p>
+      <h1>Search internals and data modelling patterns: inverted indexes, BM25, multi-tenancy and time series</h1>
+      <p class="lede">Two skills separate strong designs from vague ones: knowing how a search box actually finds results, and shaping data so that the most important queries are cheap. This part builds a small search engine from scratch and then walks through the modelling patterns that appear in almost every product.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="search" data-track>
+      <h2>How a search engine works</h2>
+<p>A database <code>LIKE '%word%'</code> scans every row. A search engine inverts the problem: for each <strong>term</strong>, store the list of documents that contain it (the <strong>postings list</strong>). Finding documents containing "red" and "shoes" becomes intersecting two sorted lists, not scanning text.</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="Index time and query time must use the same analysis, otherwise terms never match." style="min-width:760px"><defs><marker id="ah57" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah57a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah57b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah57d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah57)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah57)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah57)"/><line x1="747.0" y1="78.0" x2="747.0" y2="118.0" class="d-line" marker-end="url(#ah57)"/><line x1="662.0" y1="147.0" x2="618.0" y2="147.0" class="d-line" marker-end="url(#ah57)"/><line x1="448.0" y1="147.0" x2="404.0" y2="147.0" class="d-line" marker-end="url(#ah57)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">Document text</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle" class="d-sm">Analyse: lowercase, tokenise, remove stop words, stem</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle" class="d-sm">Inverted index: term to postings</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle" class="d-sm">Query analysed the same way</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="151.5" text-anchor="middle" class="d-sm">Intersect or union postings</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="151.5" text-anchor="middle">Score and rank</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="151.5" text-anchor="middle">Top results</text></svg>
+</div>
+<figcaption>Index time and query time must use the same analysis, otherwise terms never match.</figcaption></figure>
+<h3>The analysis chain</h3>
+<ol><li><strong>Character filters</strong> (strip HTML, normalise accents).</li><li><strong>Tokeniser</strong> splits text into terms (words, n-grams for partial matches, language-specific for Chinese or Japanese).</li><li><strong>Token filters</strong>: lowercase, remove <strong>stop words</strong> ("the", "and"), <strong>stem</strong> or lemmatise ("running", "ran" to "run"), add synonyms.</li></ol>
+<h3>A working inverted index</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd33-01.py">import re, math
+from collections import defaultdict
+STOP = {"the", "a", "an", "and", "of", "to", "is", "in", "for", "on", "with"}
+def stem(t):
+    if t.endswith("ies") and len(t) &gt; 4: return t[:-3] + "y"
+    if t.endswith("ing") and len(t) &gt; 5:
+        t = t[:-3]
+        return t[:-1] if len(t) &gt; 2 and t[-1] == t[-2] else t           # running -&gt; runn -&gt; run
+    if t.endswith("s") and not t.endswith("ss") and len(t) &gt; 3: return t[:-1]
+    return t
+def analyse(text):
+    return [stem(t) for t in re.findall(r"[a-z0-9]+", text.lower()) if t not in STOP]
+DOCS = {
+    1: "Red running shoes for men",
+    2: "Blue running shorts with pockets",
+    3: "Red leather shoes, classic style",
+    4: "Waterproof trail running shoes in red and blue",
+    5: "Leather belt for men",
+}
+index, doc_len = defaultdict(dict), {}
+for doc_id, text in DOCS.items():
+    terms = analyse(text); doc_len[doc_id] = len(terms)
+    for t in terms: index[t][doc_id] = index[t].get(doc_id, 0) + 1          # term -&gt; {doc: term frequency}
+print("terms:", sorted(index))
+print("postings for 'shoe':", dict(index["shoe"]), "| for 'red':", dict(index["red"]))
+def search_and(query):
+    postings = [set(index.get(t, {})) for t in analyse(query)]
+    return sorted(set.intersection(*postings)) if postings else []
+print("'red shoes' (AND):", search_and("red shoes"), "| 'running shoes red blue':", search_and("running shoes red blue"))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>terms: ['belt', 'blue', 'classic', 'leather', 'men', 'pocket', 'red', 'run', 'shoe', 'short', 'style', 'trail', 'waterproof']
+postings for 'shoe': {1: 1, 3: 1, 4: 1} | for 'red': {1: 1, 3: 1, 4: 1}
+'red shoes' (AND): [1, 3, 4] | 'running shoes red blue': [4]</code></pre>
+<p>Real engines (Lucene, which powers Elasticsearch, OpenSearch and Solr) store postings in compressed, skippable blocks, keep term positions for phrase queries, and merge small index <strong>segments</strong> in the background.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd33-q01" data-topic="Search and data modelling" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is stored in an inverted index?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Documents sorted by date <span class="q-why">No.</span></li>
+          <li data-key="B">For each term, the list of documents (and often positions) containing it <span class="q-why">Correct.</span></li>
+          <li data-key="C">A hash of each query <span class="q-why">No.</span></li>
+          <li data-key="D">Only document titles <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>That is why lookups avoid scanning text.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd33-q02" data-topic="Search and data modelling" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why must index-time and query-time analysis match?</p></div>
+        <ul class="q-options">
+          <li data-key="A">For speed <span class="q-why">No.</span></li>
+          <li data-key="B">Otherwise a query's terms (for example unstemmed) never equal the indexed terms <span class="q-why">Correct.</span></li>
+          <li data-key="C">For encryption <span class="q-why">No.</span></li>
+          <li data-key="D">For sharding <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Same analyser on both sides.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name the steps of text analysis.</summary><div class="answer"><p>Character filtering, tokenisation, then token filters such as lowercasing, stop-word removal, stemming and synonyms.</p></div></details>
+      </div>
+    </section>
+
+    <section id="ranking" data-track>
+      <h2>Ranking: TF-IDF and BM25</h2>
+<p>Matching is not enough; results must be <strong>ordered by relevance</strong>.</p>
+<ul><li><strong>TF (term frequency)</strong>: a document mentioning a term more often is more relevant, with diminishing returns.</li><li><strong>IDF (inverse document frequency)</strong>: rare terms are more informative than common ones: <code>idf = ln(1 + (N - df + 0.5) / (df + 0.5))</code>.</li><li><strong>Length normalisation</strong>: a short document with the term is more focused than a long one.</li></ul>
+<p><strong>BM25</strong> is the standard formula that combines these:</p>
+<div class="formula"><div class="f-title">BM25 score of a document for a query</div><div class="f-body">sum over query terms of idf(t) x ( tf x (k1 + 1) ) / ( tf + k1 x (1 - b + b x len / avglen) )</div><dl class="f-defs"><dt>tf</dt><dd>term count in the document</dd><dt>len</dt><dd>document length</dd><dt>avglen</dt><dd>average length</dd></dl></div>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd33-02.py">import re, math
+from collections import defaultdict
+STOP = {"the", "a", "an", "and", "of", "to", "is", "in", "for", "on", "with"}
+def stem(t):
+    if t.endswith("ies") and len(t) &gt; 4: return t[:-3] + "y"
+    if t.endswith("ing") and len(t) &gt; 5:
+        t = t[:-3]
+        return t[:-1] if len(t) &gt; 2 and t[-1] == t[-2] else t           # running -&gt; runn -&gt; run
+    if t.endswith("s") and not t.endswith("ss") and len(t) &gt; 3: return t[:-1]
+    return t
+def analyse(text):
+    return [stem(t) for t in re.findall(r"[a-z0-9]+", text.lower()) if t not in STOP]
+DOCS = {
+    1: "Red running shoes for men",
+    2: "Blue running shorts with pockets",
+    3: "Red leather shoes, classic style",
+    4: "Waterproof trail running shoes in red and blue",
+    5: "Leather belt for men",
+}
+index, doc_len = defaultdict(dict), {}
+for doc_id, text in DOCS.items():
+    terms = analyse(text); doc_len[doc_id] = len(terms)
+    for t in terms: index[t][doc_id] = index[t].get(doc_id, 0) + 1          # term -&gt; {doc: term frequency}
+def bm25_search(query, k1=1.2, b=0.75, top=5):
+    N = len(DOCS); avg = sum(doc_len.values()) / N
+    scores = defaultdict(float)
+    for t in analyse(query):
+        df = len(index.get(t, {}))
+        if df == 0: continue
+        idf = math.log(1 + (N - df + 0.5) / (df + 0.5))
+        for d, tf in index[t].items():
+            scores[d] += idf * tf * (k1 + 1) / (tf + k1 * (1 - b + b * doc_len[d] / avg))
+    return sorted(((round(s, 3), d, DOCS[d]) for d, s in scores.items()), reverse=True)[:top]
+for q in ("red shoes", "running"):
+    print(f"query {q!r}:")
+    for row in bm25_search(q): print("   ", row)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>query 'red shoes':
+    (1.12, 1, 'Red running shoes for men')
+    (1.021, 3, 'Red leather shoes, classic style')
+    (0.938, 4, 'Waterproof trail running shoes in red and blue')
+query 'running':
+    (0.56, 2, 'Blue running shorts with pockets')
+    (0.56, 1, 'Red running shoes for men')
+    (0.469, 4, 'Waterproof trail running shoes in red and blue')</code></pre>
+<p>Documents matching <strong>more</strong> query terms and the <strong>rarer</strong> terms rise to the top; the OR semantics here returns partial matches ranked below full ones. Production relevance adds field boosts (title over body), freshness, popularity and click signals, and often a <strong>learning-to-rank</strong> model on top of the BM25 candidates, or <strong>vector search</strong> (<a href="sd23-ml-systems.html">SD23</a>) combined with keywords as <strong>hybrid search</strong>.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd33-q03" data-topic="Search and data modelling" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does IDF capture?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Document length <span class="q-why">No.</span></li>
+          <li data-key="B">Rare terms are more informative than common ones <span class="q-why">Correct.</span></li>
+          <li data-key="C">Recency <span class="q-why">No.</span></li>
+          <li data-key="D">Popularity <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>A match on 'xylophone' says more than on 'the'.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd33-q04" data-topic="Search and data modelling" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does the b parameter in BM25 control?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Term frequency saturation <span class="q-why">That is k1.</span></li>
+          <li data-key="B">How strongly document length normalises the score <span class="q-why">Correct.</span></li>
+          <li data-key="C">The number of shards <span class="q-why">No.</span></li>
+          <li data-key="D">Stop words <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>b = 0 ignores length, b = 1 fully normalises.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>BM25 in one sentence?</summary><div class="answer"><p>It scores documents by summed term weights: rare terms count more, repeated terms count with diminishing returns, and longer documents are penalised.</p></div></details>
+      </div>
+    </section>
+
+    <section id="scale" data-track>
+      <h2>Search at scale</h2>
+<ul><li><strong>Sharding</strong>: split the index into shards (by document id hash); every query goes to all shards (<strong>scatter-gather</strong>), each returns its top-k, and a coordinator merges them. More shards means more parallelism but more overhead; typical shard size is tens of gigabytes.</li><li><strong>Replicas</strong> give availability and read throughput.</li><li><strong>Indexing path</strong>: the database is the source of truth; changes flow via CDC or a queue to the indexer. The index is <strong>eventually consistent</strong>, so a just-saved item may not appear for about a second. Support reindexing from scratch with a new analyser by building a new index and switching an alias.</li><li><strong>Near-real-time</strong>: documents become searchable after a periodic refresh (about 1 s) that opens a new segment.</li><li><strong>Deep pagination</strong> (page 10,000) is expensive: each shard must produce that many results. Use <code>search_after</code> cursors, or limit depth.</li><li><strong>Filters and facets</strong> (brand, price, colour) use <strong>doc values</strong> or bitsets, cached and combined cheaply with AND.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd33-03.py">import heapq
+shards = [[(0.9, "doc1"), (0.5, "doc4"), (0.1, "doc7")], [(0.8, "doc2"), (0.7, "doc5")], [(0.95, "doc3"), (0.2, "doc9")]]
+def scatter_gather(shards, k):
+    top_per_shard = [sorted(s, reverse=True)[:k] for s in shards]               # each shard answers locally
+    return heapq.nlargest(k, (hit for hits in top_per_shard for hit in hits))   # coordinator merges
+print("global top 3 from three shards:", scatter_gather(shards, 3))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>global top 3 from three shards: [(0.95, 'doc3'), (0.9, 'doc1'), (0.8, 'doc2')]</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd33-q05" data-topic="Search and data modelling" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How does a distributed search query run?</p></div>
+        <ul class="q-options">
+          <li data-key="A">On one shard only <span class="q-why">No.</span></li>
+          <li data-key="B">Scatter to all shards, each returns local top-k, a coordinator merges them <span class="q-why">Correct.</span></li>
+          <li data-key="C">Locally on the client <span class="q-why">No.</span></li>
+          <li data-key="D">Using joins <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Deep pages are costly because each shard must return many results.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd33-q06" data-topic="Search and data modelling" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is a search index only eventually consistent with the database?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A bug <span class="q-why">No.</span></li>
+          <li data-key="B">Changes reach it asynchronously through a queue or CDC and become visible after a refresh <span class="q-why">Correct.</span></li>
+          <li data-key="C">Indexes cannot be updated <span class="q-why">No.</span></li>
+          <li data-key="D">It is read-only <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The database remains the source of truth.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why avoid deep pagination in search?</summary><div class="answer"><p>Every shard must compute and return all earlier results, so cost grows with the offset; use search_after cursors.</p></div></details>
+      </div>
+    </section>
+
+    <section id="fuzzy" data-track>
+      <h2>Typo tolerance and autocomplete</h2>
+<ul><li><strong>Edit distance (Levenshtein)</strong>: allow 1 to 2 edits for longer words. Engines use <strong>finite-state automata</strong> or <strong>n-gram</strong> indexes to find candidates quickly instead of comparing with every term.</li><li><strong>Phonetic</strong> matching (Soundex, Metaphone) for names.</li><li><strong>Autocomplete</strong>: a <strong>trie</strong> or <strong>edge n-grams</strong> (index "sho", "shoe", "shoes" as prefixes) with ranking by popularity (<a href="sd14-case-2.html">SD14</a>).</li><li><strong>Did you mean?</strong>: suggest the corrected query using term statistics and past queries.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd33-04.py">import re, math
+from collections import defaultdict
+STOP = {"the", "a", "an", "and", "of", "to", "is", "in", "for", "on", "with"}
+def stem(t):
+    if t.endswith("ies") and len(t) &gt; 4: return t[:-3] + "y"
+    if t.endswith("ing") and len(t) &gt; 5:
+        t = t[:-3]
+        return t[:-1] if len(t) &gt; 2 and t[-1] == t[-2] else t           # running -&gt; runn -&gt; run
+    if t.endswith("s") and not t.endswith("ss") and len(t) &gt; 3: return t[:-1]
+    return t
+def analyse(text):
+    return [stem(t) for t in re.findall(r"[a-z0-9]+", text.lower()) if t not in STOP]
+DOCS = {
+    1: "Red running shoes for men",
+    2: "Blue running shorts with pockets",
+    3: "Red leather shoes, classic style",
+    4: "Waterproof trail running shoes in red and blue",
+    5: "Leather belt for men",
+}
+index, doc_len = defaultdict(dict), {}
+for doc_id, text in DOCS.items():
+    terms = analyse(text); doc_len[doc_id] = len(terms)
+    for t in terms: index[t][doc_id] = index[t].get(doc_id, 0) + 1          # term -&gt; {doc: term frequency}
+def edit_distance(a, b):
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+vocabulary = sorted(index)
+for typo in ("shose", "leathr", "blu"):
+    best = sorted((edit_distance(typo, t), t) for t in vocabulary)[:2]
+    print(f"{typo!r} -&gt; suggestions {[t for d, t in best if d &lt;= 2]} (distances {[d for d, t in best]})")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>'shose' -&gt; suggestions ['shoe', 'short'] (distances [1, 2])
+'leathr' -&gt; suggestions ['leather'] (distances [1, 4])
+'blu' -&gt; suggestions ['blue', 'belt'] (distances [1, 2])</code></pre>
+    </section>
+
+    <section id="modelling" data-track>
+      <h2>Data modelling for the query, not the entity</h2>
+<p>Start from the <strong>access patterns</strong> (the queries and their frequency), then shape the data. The relational rule (normalise) and the NoSQL rule (denormalise for the query) are two answers to the same question. Review each table with: What are the keys? What are the top 5 queries? What is the growth rate? What must be transactional?</p>
+<h3>Multi-tenancy (SaaS)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Model</th><th>Isolation</th><th>Cost</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>**Shared tables with <code>tenant_id</code>**</td><td>Logical</td><td>Lowest</td><td>Every query must filter by tenant; use row-level security and composite indexes starting with <code>tenant_id</code>; one noisy tenant can hurt others</td></tr><tr><td><strong>Schema per tenant</strong></td><td>Stronger</td><td>Medium</td><td>Migrations run N times; limits on schema count</td></tr><tr><td><strong>Database per tenant</strong></td><td>Strongest</td><td>Highest</td><td>Easy per-tenant backup, residency and scaling; many connections</td></tr><tr><td><strong>Hybrid / cells</strong></td><td>Tiered</td><td>Flexible</td><td>Small tenants share a cell, large ones get their own; cells also bound the blast radius</td></tr>
+</tbody>
+</table>
+</div>
+<p>Include tenant id in <strong>every</strong> index and <strong>every</strong> cache key, and test cross-tenant leaks as a security requirement.</p>
+<h3>Hierarchies (categories, org charts, comments)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Pattern</th><th>Idea</th><th>Read subtree</th><th>Move subtree</th></tr></thead>
+<tbody>
+<tr><td><strong>Adjacency list</strong></td><td><code>parent_id</code> column</td><td>Recursive query</td><td>Cheap</td></tr><tr><td><strong>Materialised path</strong></td><td><code>path = '/1/4/9/'</code></td><td><code>LIKE '/1/4/%'</code> (index prefix)</td><td>Rewrite descendants</td></tr><tr><td><strong>Nested sets</strong></td><td>left/right numbers</td><td>Single range query</td><td>Expensive renumbering</td></tr><tr><td><strong>Closure table</strong></td><td>Row per ancestor-descendant pair</td><td>Simple join</td><td>Medium</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd33-05.py">import sqlite3
+db = sqlite3.connect(":memory:")
+db.executescript("""
+CREATE TABLE node (id INTEGER PRIMARY KEY, name TEXT, parent_id INT, path TEXT);
+INSERT INTO node VALUES (1,'Electronics',NULL,'/1/'),(2,'Phones',1,'/1/2/'),(3,'Laptops',1,'/1/3/'),(4,'Gaming laptops',3,'/1/3/4/'),(5,'Clothing',NULL,'/5/');
+CREATE INDEX idx_path ON node(path);
+""")
+print("subtree of Electronics by path prefix:", [r[0] for r in db.execute("SELECT name FROM node WHERE path LIKE '/1/%' ORDER BY path")])
+rec = db.execute("""WITH RECURSIVE sub(id, name) AS (SELECT id, name FROM node WHERE id = 3 UNION ALL SELECT n.id, n.name FROM node n JOIN sub s ON n.parent_id = s.id) SELECT name FROM sub""").fetchall()
+print("subtree of Laptops by recursive CTE:", [r[0] for r in rec])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>subtree of Electronics by path prefix: ['Electronics', 'Phones', 'Laptops', 'Gaming laptops']
+subtree of Laptops by recursive CTE: ['Laptops', 'Gaming laptops']</code></pre>
+<h3>Audit trails and history</h3>
+<ul><li><strong>Append-only history table</strong> (<code>entity_id, changed_at, changed_by, before, after</code>), written in the same transaction, or <strong>event sourcing</strong> (<a href="sd19-event-driven.html">SD19</a>).</li><li><strong>Temporal tables</strong> with <code>valid_from</code>/<code>valid_to</code> answer "what was true on 1 March?" (slowly changing dimensions in warehouses).</li><li><strong>Soft delete</strong> (<code>deleted_at</code>) keeps data recoverable but pollutes every query and breaks unique constraints (use partial unique indexes), so decide per entity and purge on a schedule; honour deletion laws such as GDPR with real deletion or crypto-shredding.</li></ul>
+<h3>Time series</h3>
+<p>Metrics, sensor data and events arrive in time order and are mostly appended and read by time range.</p>
+<ul><li><strong>Partition by time</strong> (daily or monthly) so old partitions are dropped or archived in one cheap operation and queries touch few partitions.</li><li>Cluster or sort by <code>(series_id, time)</code> for per-series scans; keep a <strong>recent hot tier</strong> on fast storage and a <strong>cold tier</strong> in object storage.</li><li><strong>Downsample</strong> with rollups (1 s -&gt; 1 min -&gt; 1 h) and set retention per resolution.</li><li>Beware <strong>high cardinality</strong> labels (user id as a metric label) which explode index size.</li><li>Engines: TimescaleDB, InfluxDB, ClickHouse, Prometheus, Cassandra with time-bucketed partition keys.</li></ul>
+<h3>Schema evolution without downtime</h3>
+<p>Use <strong>expand and contract</strong> (<a href="sd21-cloud-deployment.html">SD21</a>): add nullable columns or new tables, write both, backfill in batches, switch reads, then drop the old. Never rename in one step. Version document schemas (<code>schema_version</code> field) and migrate lazily on read. For events and APIs, evolve compatibly (optional fields, never reuse numbers).</p>
+<h3>Choosing keys</h3>
+<ul><li>Prefer <strong>surrogate</strong> keys (ids that carry no meaning) as primary keys; keep natural keys as unique constraints.</li><li>Choose <strong>time-ordered</strong> ids (ULID, UUIDv7, Snowflake ids from <a href="sd25-case-6.html">SD25</a>) to keep index inserts local.</li><li>Pick a <strong>shard key</strong> with high cardinality and even access, that appears in most queries; avoid monotonically increasing keys on range-sharded stores (hot last shard) unless you hash them.</li><li>Money in integer minor units; times in UTC; enums as lookup tables if they change.</li></ul>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Search engines invert text into term-to-document postings, rank with TF-IDF-style scores such as BM25, scatter queries over shards and merge top-k lists, and are fed asynchronously from the source-of-truth database. Model data from the queries backwards: tenant ids in every key, the right hierarchy pattern, time-partitioned series, and compatible schema changes.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd33-q07" data-topic="Search and data modelling" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In shared-table multi-tenancy, where should tenant_id appear?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Only in the users table <span class="q-why">Leaks.</span></li>
+          <li data-key="B">In every table, every index (as the leading column) and every cache key <span class="q-why">Correct.</span></li>
+          <li data-key="C">Nowhere <span class="q-why">No.</span></li>
+          <li data-key="D">Only in logs <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Missing it once can leak data across tenants.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd33-q08" data-topic="Search and data modelling" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which hierarchy pattern makes 'all descendants' a single indexed prefix query?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Adjacency list <span class="q-why">Needs recursion.</span></li>
+          <li data-key="B">Materialised path <span class="q-why">Correct.</span></li>
+          <li data-key="C">EAV <span class="q-why">No.</span></li>
+          <li data-key="D">A cache <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>path LIKE '/1/3/%' uses the index prefix.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is expand and contract?</summary><div class="answer"><p>Add the new schema, write both, backfill, switch reads, then remove the old, so each step is compatible.</p></div></details>
+        <details class="recall"><summary>Why partition time series by time?</summary><div class="answer"><p>Queries touch few partitions, and expiring old data is a cheap partition drop instead of a huge delete.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Search and data modelling</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Search and data modelling">
+<details class="recall iq" data-level="basic" data-topic="Search and data modelling"><summary><span class="tag ok">Basic</span> What is an inverted index?</summary><div class="answer"><p>A mapping from each term to the documents (and positions) that contain it, so queries intersect postings lists instead of scanning text.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Search and data modelling"><summary><span class="tag ok">Basic</span> What is text analysis in search?</summary><div class="answer"><p>Tokenising and normalising text (lowercase, stop words, stemming, synonyms) the same way at index and query time.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Search and data modelling"><summary><span class="tag warn">Medium</span> Explain TF-IDF and BM25.</summary><div class="answer"><p>TF rewards terms frequent in a document, IDF rewards terms rare across the corpus. BM25 adds saturating term frequency and document length normalisation with parameters k1 and b.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Search and data modelling"><summary><span class="tag warn">Medium</span> How does a distributed search query execute?</summary><div class="answer"><p>Scatter to all shards, each returns local top-k with scores, and the coordinator merges them; replicas add availability and throughput.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Search and data modelling"><summary><span class="tag warn">Medium</span> Why is search eventually consistent with the primary database?</summary><div class="answer"><p>Updates flow asynchronously through CDC or a queue and become visible after the next refresh; the database remains the source of truth.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Search and data modelling"><summary><span class="tag warn">Medium</span> How would you implement autocomplete?</summary><div class="answer"><p>A trie or edge n-gram index keyed by prefix, with candidates ranked by popularity and recency, cached and updated from query logs.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Search and data modelling"><summary><span class="tag warn">Medium</span> How do you add typo tolerance?</summary><div class="answer"><p>Fuzzy matching with edit distance via automata or n-gram candidates, phonetic algorithms for names, and query suggestions from term statistics.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Search and data modelling"><summary><span class="tag warn">Medium</span> Compare multi-tenancy models.</summary><div class="answer"><p>Shared tables with tenant_id are cheapest but need strict filtering; schema per tenant and database per tenant increase isolation and cost; cells or hybrids group tenants by size.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Search and data modelling"><summary><span class="tag warn">Medium</span> Hierarchy storage patterns?</summary><div class="answer"><p>Adjacency list (parent_id), materialised path, nested sets and closure table, trading read simplicity, subtree queries and move cost.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Search and data modelling"><summary><span class="tag bad">Advanced</span> How do you reindex without downtime?</summary><div class="answer"><p>Build a new index with the new analyser in parallel, replay or backfill data, keep it updated, then switch an alias atomically.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Search and data modelling"><summary><span class="tag bad">Advanced</span> Why is deep pagination expensive in search?</summary><div class="answer"><p>Each shard must compute and return all results up to the offset; use search_after cursors or cap the depth.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Search and data modelling"><summary><span class="tag bad">Advanced</span> How do you model time-series data?</summary><div class="answer"><p>Partition by time, key by series and time, downsample with rollups and retention tiers, and control label cardinality.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Search and data modelling"><summary><span class="tag bad">Advanced</span> How do you make schema changes with no downtime?</summary><div class="answer"><p>Expand and contract: add compatible structure, dual write, backfill in batches, switch reads, then remove the old structure.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Search and data modelling"><summary><span class="tag bad">Advanced</span> Soft delete trade-offs?</summary><div class="answer"><p>Recoverability and auditing versus polluted queries, broken unique constraints (use partial indexes) and legal deletion duties; purge on a schedule or use crypto-shredding.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd32-client-offline.html"><span class="dir">Previous</span><span>SD32 Client-side and mobile system design: offline-first, sync, push and media pipelines</span></a>
+      <a class="next" href="sd34-explained-simply.html"><span class="dir">Next</span><span>SD34 System design explained simply: analogies, misconceptions and how to say it in an interview</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

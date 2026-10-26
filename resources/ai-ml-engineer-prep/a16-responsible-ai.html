@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="A16">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Interpretability, fairness, privacy and robustness: responsible machine learning | AI/ML Prep</title>
+<meta name="description" content="Explaining models (permutation importance, partial dependence, local surrogates, exact Shapley values), measuring and mitigating unfairness, differential privacy and anonymisation, adversarial robustness, documentation and governance, each with runnable examples.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part A16</p>
+      <h1>Interpretability, fairness, privacy and robustness: responsible machine learning</h1>
+      <p class="lede">A model that is accurate but opaque, biased, leaky or brittle is a liability. This part covers the four properties interviewers and regulators ask about, with small experiments that make each one measurable instead of rhetorical.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="why" data-track>
+      <h2>Why responsibility is an engineering topic</h2>
+<p>Real systems decide loans, jobs, medical priorities and what billions of people see. Failures are concrete: a hiring model that penalises women, a face model that fails on darker skin, a recommender that amplifies harm, a model that memorises and leaks personal data, a classifier flipped by a sticker on a stop sign. The tools below turn vague worries into <strong>tests you can run and thresholds you can monitor</strong>. Regulation (EU AI Act, GDPR, sector rules, the NIST AI Risk Management Framework) increasingly requires them.</p>
+    </section>
+
+    <section id="interpret" data-track>
+      <h2>Interpretability: understanding predictions</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Level</th><th>Question</th><th>Methods</th></tr></thead>
+<tbody>
+<tr><td><strong>Intrinsically interpretable models</strong></td><td>Can a person read the model?</td><td>Linear and logistic regression, small decision trees, rule lists, generalised additive models (GAMs), scoring cards</td></tr><tr><td><strong>Global post-hoc</strong></td><td>Which features matter overall?</td><td>Permutation importance, partial dependence, surrogate models</td></tr><tr><td><strong>Local post-hoc</strong></td><td>Why this prediction?</td><td>LIME, SHAP, counterfactual explanations, saliency maps</td></tr><tr><td><strong>Mechanistic</strong></td><td>What do internal circuits compute?</td><td>Probing, activation patching, sparse autoencoders for LLMs</td></tr>
+</tbody>
+</table>
+</div>
+<p>First rule: if a simple model gets nearly the accuracy, <strong>use it</strong> and skip the explanation machinery.</p>
+<h3>Permutation importance</h3>
+<p>Shuffle one feature's values and measure how much the score drops. A large drop means the model relies on it. It is model-agnostic, uses held-out data, and can mislead when features are <strong>correlated</strong> (shuffling one leaves its twin to compensate, hiding importance).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a16-01.py">import random
+random.seed(1)
+def make(n):
+    rows = []
+    for _ in range(n):
+        a, b, noise = random.gauss(0, 1), random.gauss(0, 1), random.gauss(0, 1)
+        y = 1 if 2.0 * a + 0.5 * b + random.gauss(0, 0.5) &gt; 0 else 0                # feature a matters most, b a little, noise not at all
+        rows.append(([a, b, noise], y))
+    return rows
+train, test = make(2000), make(1000)
+w, bias = [0.0, 0.0, 0.0], 0.0
+import math
+for _ in range(60):                                                                  # logistic regression by gradient descent
+    gw, gb = [0.0] * 3, 0.0
+    for x, y in train:
+        p = 1 / (1 + math.exp(-(sum(wi * xi for wi, xi in zip(w, x)) + bias))); e = p - y
+        gw = [g + e * xi for g, xi in zip(gw, x)]; gb += e
+    w = [wi - 0.5 * g / len(train) for wi, g in zip(w, gw)]; bias -= 0.5 * gb / len(train)
+def accuracy(rows): return sum(((sum(wi * xi for wi, xi in zip(w, x)) + bias) &gt; 0) == (y == 1) for x, y in rows) / len(rows)
+base = accuracy(test)
+print("learned weights:", [round(v, 2) for v in w], "| test accuracy:", round(base, 3))
+for j, name in enumerate(["a", "b", "noise"]):
+    drops = []
+    for _ in range(10):
+        col = [x[j] for x, _ in test]; random.shuffle(col)
+        shuffled = [([*x[:j], col[i], *x[j + 1:]], y) for i, (x, y) in enumerate(test)]
+        drops.append(base - accuracy(shuffled))
+    print(f"permuting {name:&gt;5}: accuracy drops by {sum(drops) / len(drops):.3f}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>learned weights: [2.99, 0.74, 0.0] | test accuracy: 0.918
+permuting     a: accuracy drops by 0.403
+permuting     b: accuracy drops by 0.045
+permuting noise: accuracy drops by 0.000</code></pre>
+<h3>Partial dependence</h3>
+<p>Vary one feature over a grid, hold the others at their observed values, and average the predictions: the <strong>average effect</strong> of that feature on the output. Plot one line per instance (<strong>ICE curves</strong>) to see heterogeneity that the average hides. Like permutation importance it assumes feature independence.</p>
+<h3>Local surrogates (LIME) and exact Shapley values (SHAP)</h3>
+<p><strong>LIME</strong> perturbs the input near one example and fits a small interpretable model to the black box's responses in that neighbourhood. <strong>Shapley values</strong> come from cooperative game theory: the contribution of feature <code>i</code> is its <strong>average marginal contribution</strong> over all orders in which features could be added. They are the unique attribution satisfying efficiency (contributions sum to prediction minus baseline), symmetry, dummy and additivity. Exact computation is <code>2^n</code> subsets, so SHAP uses tricks (TreeSHAP for trees, sampling or kernel approximations for others).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a16-02.py">from itertools import combinations
+from math import factorial
+def model(x1, x2, x3): return 3 * x1 + 2 * x2 * x3 + 1                                # a model with an interaction between x2 and x3
+instance, baseline = (1.0, 2.0, 3.0), (0.0, 0.0, 0.0)
+def value(subset):                                                                    # features outside the subset take baseline values
+    return model(*[instance[i] if i in subset else baseline[i] for i in range(3)])
+n = 3; shap = []
+for i in range(n):
+    total = 0.0; others = [j for j in range(n) if j != i]
+    for k in range(n):
+        for S in combinations(others, k):
+            weight = factorial(k) * factorial(n - k - 1) / factorial(n)
+            total += weight * (value(set(S) | {i}) - value(set(S)))
+    shap.append(total)
+print("Shapley values:", [round(v, 2) for v in shap])
+print("they sum to prediction minus baseline:", round(sum(shap), 2), "=", model(*instance) - model(*baseline))
+print("x2 and x3 each receive half of the interaction term 2*x2*x3 = 12:", shap[1], shap[2])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>Shapley values: [3.0, 6.0, 6.0]
+they sum to prediction minus baseline: 15.0 = 15.0
+x2 and x3 each receive half of the interaction term 2*x2*x3 = 12: 6.0 6.0</code></pre>
+<h3>Counterfactual explanations</h3>
+<p>"Your loan was declined; <strong>if your income were 5,000 higher it would be approved.</strong>" Find the smallest change to the input that flips the decision; make it <strong>actionable</strong> (do not suggest changing age or immutable attributes) and <strong>plausible</strong>. This is the form of explanation most useful to the person affected.</p>
+<h3>Pitfalls</h3>
+<ul><li><strong>Explanation is not causation</strong>: attributions describe the model, not the world.</li><li><strong>Saliency maps</strong> for images can be unreliable (sanity checks show some are insensitive to model weights).</li><li><strong>Faithfulness versus plausibility</strong>: an explanation that looks reasonable may not reflect what the model used. For language models, written chain-of-thought can be unfaithful to the real computation.</li><li>Explanations can be <strong>gamed</strong> or used to launder bad models; validate with experts and ablation tests.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a16-q01" data-topic="Responsible AI" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does a large accuracy drop after permuting a feature indicate?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The feature is irrelevant <span class="q-why">The opposite.</span></li>
+          <li data-key="B">The model relies on that feature <span class="q-why">Correct.</span></li>
+          <li data-key="C">The data leaked <span class="q-why">Not necessarily.</span></li>
+          <li data-key="D">The feature is correlated with nothing <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>But correlated features can hide each other's importance.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a16-q02" data-topic="Responsible AI" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What property do Shapley value attributions satisfy?</p></div>
+        <ul class="q-options">
+          <li data-key="A">They are always positive <span class="q-why">No.</span></li>
+          <li data-key="B">They sum to the prediction minus the baseline (efficiency) <span class="q-why">Correct.</span></li>
+          <li data-key="C">They are causal <span class="q-why">No.</span></li>
+          <li data-key="D">They are unique per model <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Together with symmetry, dummy and additivity they are the unique fair attribution.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a16-q03" data-topic="Responsible AI" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why can an explanation be misleading?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Explanations are always accurate <span class="q-why">No.</span></li>
+          <li data-key="B">It describes the model's behaviour, not causality in the world, and may look plausible without being faithful <span class="q-why">Correct.</span></li>
+          <li data-key="C">It is too slow <span class="q-why">No.</span></li>
+          <li data-key="D">It uses too much memory <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Validate explanations with ablation tests and experts.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Global versus local explanations?</summary><div class="answer"><p>Global methods describe overall feature influence; local methods explain one prediction (LIME, SHAP, counterfactuals).</p></div></details>
+      </div>
+    </section>
+
+    <section id="fairness" data-track>
+      <h2>Fairness: defining and measuring</h2>
+<p>Fairness has no single definition. Common <strong>group fairness</strong> criteria, for a protected attribute <code>A</code> (such as gender), a label <code>Y</code> and a prediction <code>Y_hat</code>:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Criterion</th><th>Requires</th><th>Intuition</th></tr></thead>
+<tbody>
+<tr><td><strong>Demographic (statistical) parity</strong></td><td><code>P(Y_hat = 1 | A = a)</code> equal for all groups</td><td>Equal selection rates</td></tr><tr><td><strong>Equal opportunity</strong></td><td>Equal true positive rate across groups</td><td>Qualified people are accepted equally often</td></tr><tr><td><strong>Equalised odds</strong></td><td>Equal true and false positive rates</td><td>Equal error rates of both kinds</td></tr><tr><td><strong>Predictive parity / calibration</strong></td><td><code>P(Y = 1 | score)</code> equal across groups</td><td>A score means the same for everyone</td></tr><tr><td><strong>Individual fairness</strong></td><td>Similar individuals receive similar outcomes</td><td>Needs a similarity metric</td></tr><tr><td><strong>Counterfactual fairness</strong></td><td>Outcome unchanged if the attribute were different (causally)</td><td>Needs a causal model</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Impossibility results</strong>: when base rates differ between groups, a non-perfect classifier <strong>cannot satisfy calibration and equalised odds at the same time</strong> (Kleinberg et al., Chouldechova). So fairness is a <strong>policy choice</strong> about which error matters, made with stakeholders, not a number to maximise blindly.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a16-03.py">import random
+random.seed(2)
+def applicants(n):
+    rows = []
+    for _ in range(n):
+        g = random.choice("AB")
+        skill = random.gauss(0, 1) + (0.0 if g == "A" else -0.5)                       # historical disadvantage lowers B's measured score
+        qualified = skill + random.gauss(0, 0.7) &gt; 0.3 if g == "A" else skill + 0.5 + random.gauss(0, 0.7) &gt; 0.3     # same true qualification rule
+        rows.append((g, skill, qualified))
+    return rows
+data = applicants(20000)
+def report(threshold_for):
+    out = {}
+    for g in "AB":
+        grp = [(s, q) for gg, s, q in data if gg == g]
+        pred = [(s &gt; threshold_for[g], q) for s, q in grp]
+        sel = sum(p for p, _ in pred) / len(pred)
+        tpr = sum(p and q for p, q in pred) / max(1, sum(q for _, q in pred))
+        fpr = sum(p and not q for p, q in pred) / max(1, sum(not q for _, q in pred))
+        out[g] = (sel, tpr, fpr)
+    return out
+for name, th in [("one threshold (0.3)", {"A": 0.3, "B": 0.3}), ("group-specific thresholds", {"A": 0.3, "B": -0.2})]:
+    r = report(th)
+    print(f"{name:&gt;26}: " + " | ".join(f"group {g}: selected {r[g][0]:.2f}, TPR {r[g][1]:.2f}, FPR {r[g][2]:.2f}" for g in "AB"))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>       one threshold (0.3): group A: selected 0.38, TPR 0.74, FPR 0.14 | group B: selected 0.21, TPR 0.48, FPR 0.03
+ group-specific thresholds: group A: selected 0.38, TPR 0.74, FPR 0.14 | group B: selected 0.38, TPR 0.74, FPR 0.13</code></pre>
+<p>With one threshold the lower-scored group gets lower selection and true positive rates (the score is a biased measurement of ability); adjusting thresholds closes the gap but changes other metrics: a <strong>trade-off</strong> to be decided and documented, with legal advice, since using protected attributes for decisions can itself be unlawful in some contexts.</p>
+<h3>Where bias enters and how to mitigate</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Stage</th><th>Source</th><th>Mitigation</th></tr></thead>
+<tbody>
+<tr><td>Problem framing</td><td>Target proxy (arrests instead of crime, cost instead of need)</td><td>Choose the label deliberately</td></tr><tr><td>Data</td><td>Sampling bias, historical bias, label bias, missing groups</td><td>Collect representative data, audit labels, document</td></tr><tr><td>Features</td><td>Proxies for protected attributes (zip code), measurement differences</td><td>Review features; test for proxy leakage</td></tr><tr><td>Training</td><td>Optimising average accuracy hides minority errors</td><td>Reweighting, fairness constraints, adversarial debiasing</td></tr><tr><td>Post-processing</td><td>One threshold for all</td><td>Group thresholds, calibrated outputs (within legal limits)</td></tr><tr><td>Deployment</td><td>Feedback loops, different populations</td><td>Monitor metrics per group, appeals process</td></tr>
+</tbody>
+</table>
+</div>
+<p>Always <strong>evaluate by slices</strong> (group, region, device, language); report the worst group, not only the average; and include <strong>human oversight</strong> and <strong>contestability</strong> for consequential decisions.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a16-q04" data-topic="Responsible AI" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is demographic parity?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Equal accuracy <span class="q-why">No.</span></li>
+          <li data-key="B">Equal positive prediction (selection) rates across groups <span class="q-why">Correct.</span></li>
+          <li data-key="C">Equal feature values <span class="q-why">No.</span></li>
+          <li data-key="D">Equal group sizes <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It ignores whether the groups have different base rates.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a16-q05" data-topic="Responsible AI" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why can't a classifier usually satisfy calibration and equalised odds at once when base rates differ?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Computation limits <span class="q-why">No.</span></li>
+          <li data-key="B">It is a mathematical impossibility for imperfect classifiers, so the choice is a policy decision <span class="q-why">Correct.</span></li>
+          <li data-key="C">Bad code <span class="q-why">No.</span></li>
+          <li data-key="D">Small datasets <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Kleinberg and Chouldechova showed the incompatibility.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name three group fairness criteria.</summary><div class="answer"><p>Demographic parity, equal opportunity (equal true positive rates) and equalised odds.</p></div></details>
+      </div>
+    </section>
+
+    <section id="privacy" data-track>
+      <h2>Privacy</h2>
+<p>Models can <strong>memorise</strong> training data (language models emit rare strings; attacks recover training examples or tell if a record was in the training set: <strong>membership inference</strong>). Protections:</p>
+<ul><li><strong>Data minimisation</strong>, access control, retention limits, encryption, de-identification (remove direct identifiers). Beware that "anonymised" data can be <strong>re-identified</strong> by linking quasi-identifiers (zip, birth date, gender identify most people).</li><li><strong>k-anonymity</strong>: every combination of quasi-identifiers appears at least <code>k</code> times.</li><li><strong>Differential privacy (DP)</strong>: a mechanism is <code>epsilon</code>-DP if adding or removing any one person changes the probability of any output by at most a factor <code>e^epsilon</code>. Smaller <code>epsilon</code> means stronger privacy and noisier answers. The <strong>Laplace mechanism</strong> adds noise with scale <code>sensitivity / epsilon</code> to a query.</li><li><strong>DP-SGD</strong>: clip each example's gradient and add Gaussian noise during training, with a privacy accountant tracking the budget.</li><li><strong>Federated learning</strong>: train on devices and send only updates (still needs DP and secure aggregation).</li><li><strong>Synthetic data</strong> and <strong>secure computation</strong> (homomorphic encryption, trusted hardware) in specific settings.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/a16-04.py">import random, math
+random.seed(3)
+ages = [random.randint(18, 80) for _ in range(1000)]
+true_count = sum(a &gt; 60 for a in ages)                              # a counting query: sensitivity 1 (one person changes it by at most 1)
+def laplace(scale):                                                 # Laplace noise as the difference of two exponentials
+    return random.expovariate(1 / scale) - random.expovariate(1 / scale)
+def private_count(epsilon): return true_count + laplace(1 / epsilon)
+print("true count of people over 60:", true_count)
+for eps in (0.1, 1.0, 10.0):
+    answers = [private_count(eps) for _ in range(2000)]
+    err = sum(abs(a - true_count) for a in answers) / len(answers)
+    print(f"epsilon {eps:&gt;4}: typical absolute error {err:6.2f} (theory: 1/epsilon = {1 / eps:5.1f})")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>true count of people over 60: 322
+epsilon  0.1: typical absolute error  10.03 (theory: 1/epsilon =  10.0)
+epsilon  1.0: typical absolute error   1.02 (theory: 1/epsilon =   1.0)
+epsilon 10.0: typical absolute error   0.10 (theory: 1/epsilon =   0.1)</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a16-q06" data-topic="Responsible AI" data-type="numeric" data-answer="2" data-tol="0">
+        <div class="q-stem"><p>A counting query has sensitivity 1. With epsilon = 0.5, what is the Laplace noise scale?</p></div>
+        <div class="q-explain"><p>Scale = sensitivity / epsilon = 1 / 0.5 = 2.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a16-q07" data-topic="Responsible AI" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does a smaller epsilon mean in differential privacy?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Weaker privacy, more accuracy <span class="q-why">Opposite.</span></li>
+          <li data-key="B">Stronger privacy and more noise <span class="q-why">Correct.</span></li>
+          <li data-key="C">No noise <span class="q-why">No.</span></li>
+          <li data-key="D">Faster queries <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It is a privacy budget.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is membership inference?</summary><div class="answer"><p>An attack that determines whether a specific record was in a model's training set, exploiting differences in model behaviour on seen and unseen data.</p></div></details>
+      </div>
+    </section>
+
+    <section id="robust" data-track>
+      <h2>Robustness and adversarial examples</h2>
+<p>Small, carefully chosen perturbations can flip a model's prediction while looking identical to people. For a differentiable model the <strong>fast gradient sign method (FGSM)</strong> moves the input by <code>epsilon</code> in the direction that increases the loss: <code>x_adv = x + epsilon x sign(grad_x loss)</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a16-05.py">import random, math
+random.seed(4)
+dim = 100
+w_true = [random.gauss(0, 1) for _ in range(dim)]
+def sample():
+    y = random.choice([-1, 1]); x = [y * 0.2 * wi + random.gauss(0, 1) for wi in w_true]; return x, y         # many small weak signals
+train = [sample() for _ in range(2000)]
+w = [0.0] * dim
+for _ in range(40):
+    grad = [0.0] * dim
+    for x, y in train:
+        z = y * sum(wi * xi for wi, xi in zip(w, x)); s = -y / (1 + math.exp(z))
+        grad = [g + s * xi for g, xi in zip(grad, x)]
+    w = [wi - 0.1 * g / len(train) for wi, g in zip(w, grad)]
+test = [sample() for _ in range(1000)]
+acc = lambda data: sum((sum(wi * xi for wi, xi in zip(w, x)) &gt; 0) == (y == 1) for x, y in data) / len(data)
+def attack(x, y, eps): return [xi - eps * y * (1 if wi &gt; 0 else -1) for xi, wi in zip(x, w)]              # step against the true class along sign(w)
+print("clean accuracy:", round(acc(test), 3))
+for eps in (0.05, 0.1, 0.2, 0.4):
+    print(f"perturbation of size {eps} per coordinate -&gt; accuracy {acc([(attack(x, y, eps), y) for x, y in test]):.3f}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>clean accuracy: 0.963
+perturbation of size 0.05 per coordinate -&gt; accuracy 0.926
+perturbation of size 0.1 per coordinate -&gt; accuracy 0.853
+perturbation of size 0.2 per coordinate -&gt; accuracy 0.595
+perturbation of size 0.4 per coordinate -&gt; accuracy 0.078</code></pre>
+<p>A tiny change per coordinate is enough to wreck accuracy because the effect <strong>adds up across 100 dimensions</strong>: high-dimensional models are inherently fragile. Defences: <strong>adversarial training</strong> (train on attacked examples), input preprocessing, certified robustness bounds, ensembles, and detection. For <strong>language models</strong> the analogues are <strong>prompt injection</strong> and <strong>jailbreaks</strong> (<a href="a6-alignment-safety.html">A6</a>); treat model output as untrusted and constrain actions. Other robustness concerns: <strong>distribution shift</strong> (covariate, label, concept), <strong>spurious correlations</strong> (a model that recognises cows by grass), <strong>data poisoning</strong> and backdoors, and <strong>model extraction</strong> through the API.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a16-q08" data-topic="Responsible AI" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does FGSM do?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Trains faster <span class="q-why">No.</span></li>
+          <li data-key="B">Perturbs the input in the direction of the sign of the loss gradient to cause misclassification <span class="q-why">Correct.</span></li>
+          <li data-key="C">Compresses images <span class="q-why">No.</span></li>
+          <li data-key="D">Measures fairness <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Tiny per-coordinate changes add up in high dimensions.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name two defences against adversarial examples.</summary><div class="answer"><p>Adversarial training and certified or randomised smoothing defences (also input preprocessing and ensembles).</p></div></details>
+      </div>
+    </section>
+
+    <section id="governance" data-track>
+      <h2>Governance and documentation</h2>
+<ul><li><strong>Model cards</strong> record intended use, training data, evaluation by slice, limitations and ethical considerations; <strong>datasheets for datasets</strong> record how data was collected and its biases.</li><li><strong>Risk assessment</strong> before launch: who is affected, what can go wrong, severity, reversibility; classify by risk tier (the EU AI Act bans some uses, regulates "high-risk" ones and imposes transparency duties on others).</li><li><strong>Human oversight</strong>: human-in-the-loop for high-stakes decisions, with the ability to override, and appeals.</li><li><strong>Monitoring</strong> in production: performance, drift, fairness metrics per group, incident reporting, and a rollback plan (<a href="a7-mlops.html">A7</a>).</li><li><strong>Red teaming</strong> and external audits; <strong>transparency</strong> to users when they interact with AI or when content is AI-generated; <strong>provenance</strong> (watermarks, content credentials).</li><li><strong>Reproducibility</strong>: version data, code and configuration; keep decision logs.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/a16-06.py">checklist = {
+    "Intended use and out-of-scope uses written down": True,
+    "Training data provenance and consent documented": True,
+    "Metrics reported per slice (not only overall)": False,
+    "Fairness criteria chosen with stakeholders": False,
+    "Privacy review and retention policy": True,
+    "Adversarial and misuse testing done": False,
+    "Human oversight and appeal path defined": True,
+    "Monitoring and rollback plan in place": True,
+}
+missing = [k for k, v in checklist.items() if not v]
+print(f"{len(checklist) - len(missing)} of {len(checklist)} launch checks done; blocking items:")
+for m in missing: print("  -", m)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>5 of 8 launch checks done; blocking items:
+  - Metrics reported per slice (not only overall)
+  - Fairness criteria chosen with stakeholders
+  - Adversarial and misuse testing done</code></pre>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Prefer simple models when they suffice; explain complex ones with permutation importance, Shapley values and counterfactuals while knowing their limits; choose fairness criteria deliberately, measure them per group and accept that they trade off; protect privacy with minimisation and differential privacy; test robustness against adversaries and shift; and document, monitor and keep humans in the loop.</p></div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does a model card contain?</summary><div class="answer"><p>Intended use, training data, evaluation by slice, limitations, ethical considerations and contact or maintenance information.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Responsible AI</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Responsible AI">
+<details class="recall iq" data-level="basic" data-topic="Responsible AI"><summary><span class="tag ok">Basic</span> Why prefer an interpretable model when possible?</summary><div class="answer"><p>Simple models can be audited, debugged and trusted more easily, and often perform nearly as well on tabular data.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Responsible AI"><summary><span class="tag ok">Basic</span> What is permutation importance?</summary><div class="answer"><p>The drop in a held-out metric when one feature&#x27;s values are shuffled, showing reliance on that feature; it can mislead with correlated features.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Responsible AI"><summary><span class="tag warn">Medium</span> Explain Shapley values for feature attribution.</summary><div class="answer"><p>Each feature&#x27;s average marginal contribution over all orders of adding features; they sum to the prediction minus the baseline and are computed exactly for small models or approximated (TreeSHAP, sampling).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Responsible AI"><summary><span class="tag warn">Medium</span> What is a counterfactual explanation?</summary><div class="answer"><p>The smallest feasible change to the input that would change the decision, such as &#x27;approved if income were 5,000 higher&#x27;, ideally actionable and plausible.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Responsible AI"><summary><span class="tag warn">Medium</span> Define demographic parity, equal opportunity and equalised odds.</summary><div class="answer"><p>Equal selection rates across groups; equal true positive rates; equal true and false positive rates.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Responsible AI"><summary><span class="tag warn">Medium</span> Why can&#x27;t all fairness criteria hold at once?</summary><div class="answer"><p>When base rates differ, calibration and equalised odds are mutually incompatible for imperfect classifiers, so choices reflect policy and context.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Responsible AI"><summary><span class="tag warn">Medium</span> Where does bias enter an ML system?</summary><div class="answer"><p>In problem framing and labels, sampling and historical data, proxy features, optimisation of average metrics, thresholds, and deployment feedback loops.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Responsible AI"><summary><span class="tag warn">Medium</span> What is differential privacy?</summary><div class="answer"><p>A guarantee that any one person&#x27;s data changes the probability of any output by at most a factor e^epsilon, achieved by adding calibrated noise.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Responsible AI"><summary><span class="tag warn">Medium</span> What is membership inference?</summary><div class="answer"><p>An attack that decides whether a record was in the training data by exploiting model confidence differences, a privacy risk for overfit models.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Responsible AI"><summary><span class="tag bad">Advanced</span> What is an adversarial example and how does FGSM make one?</summary><div class="answer"><p>An input with a small, targeted perturbation that changes the prediction; FGSM adds epsilon times the sign of the loss gradient with respect to the input.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Responsible AI"><summary><span class="tag bad">Advanced</span> How do you defend against adversarial attacks?</summary><div class="answer"><p>Adversarial training, certified or randomised-smoothing defences, input validation, ensembles and monitoring, plus treating model outputs as untrusted in downstream systems.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Responsible AI"><summary><span class="tag bad">Advanced</span> What belongs in a model card?</summary><div class="answer"><p>Intended use and limits, training data, metrics by slice, ethical considerations, risks and maintenance contacts.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Responsible AI"><summary><span class="tag bad">Advanced</span> How do you test for proxy discrimination?</summary><div class="answer"><p>Check whether non-protected features predict the protected attribute, evaluate outcomes and error rates by group, and use counterfactual tests or feature ablations.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Responsible AI"><summary><span class="tag bad">Advanced</span> What does DP-SGD do?</summary><div class="answer"><p>It clips each example&#x27;s gradient and adds Gaussian noise during training, with accounting that tracks the privacy budget spent.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="a15-graph-ml.html"><span class="dir">Previous</span><span>A15 Graph machine learning: PageRank, embeddings, message passing and knowledge graphs</span></a>
+      <a class="next" href="a17-training-at-scale.html"><span class="dir">Next</span><span>A17 Training at scale: GPU performance, parallelism, mixed precision and scaling laws</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

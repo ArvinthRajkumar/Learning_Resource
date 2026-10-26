@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="A15">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Graph machine learning: PageRank, embeddings, message passing and knowledge graphs | AI/ML Prep</title>
+<meta name="description" content="Learning from relational data: graph representations, PageRank and centrality, spectral ideas, node embeddings from random walks, graph neural network message passing built by hand, link prediction, knowledge graphs and graph-based retrieval for LLMs.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part A15</p>
+      <h1>Graph machine learning: PageRank, embeddings, message passing and knowledge graphs</h1>
+      <p class="lede">Social networks, molecules, road maps, transactions and knowledge bases are graphs, and the structure carries information that a flat table throws away. This part shows how to measure graphs, learn representations of nodes, build a message-passing network from scratch and use knowledge graphs with language models.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="graphs" data-track>
+      <h2>Graphs as data</h2>
+<p>A graph is nodes (vertices) and edges, possibly directed, weighted and typed, with <strong>features</strong> on nodes and edges. Common machine learning tasks:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Task</th><th>Question</th><th>Example</th></tr></thead>
+<tbody>
+<tr><td><strong>Node classification</strong></td><td>What is the label of this node?</td><td>Is this account a bot?</td></tr><tr><td><strong>Link prediction</strong></td><td>Will these two nodes connect?</td><td>Friend or product recommendation, drug-target interaction</td></tr><tr><td><strong>Graph classification / regression</strong></td><td>A property of the whole graph</td><td>Is this molecule toxic? Solubility</td></tr><tr><td><strong>Community detection</strong></td><td>Which nodes cluster?</td><td>Interest groups, fraud rings</td></tr><tr><td><strong>Node ranking</strong></td><td>Which nodes matter?</td><td>Web search (PageRank), influencers</td></tr><tr><td><strong>Graph generation</strong></td><td>Produce new graphs</td><td>Drug design</td></tr>
+</tbody>
+</table>
+</div>
+<p>Representations: <strong>adjacency matrix</strong> <code>A</code> (n x n, simple but quadratic), <strong>adjacency list</strong> (sparse, standard), <strong>edge list</strong> (<code>(source, target, weight)</code>; the format of most datasets). Real graphs are <strong>sparse</strong>, have <strong>skewed degree distributions</strong> (a few hubs, many low-degree nodes), and show <strong>homophily</strong> (connected nodes are similar), which GNNs exploit.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a15-q01" data-topic="Graph ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is homophily and why does it matter for GNNs?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Hash collisions <span class="q-why">No.</span></li>
+          <li data-key="B">Connected nodes tend to be similar, so averaging neighbours reduces noise and helps prediction <span class="q-why">Correct.</span></li>
+          <li data-key="C">A normalisation <span class="q-why">No.</span></li>
+          <li data-key="D">Graph size <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>On low-homophily graphs message passing can hurt.</p></div>
+      </div>
+    </section>
+
+    <section id="pagerank" data-track>
+      <h2>Centrality and PageRank</h2>
+<p>Which nodes are important? <strong>Degree</strong> counts neighbours; <strong>betweenness</strong> counts shortest paths through a node; <strong>closeness</strong> measures average distance; <strong>eigenvector centrality</strong> says a node is important if its neighbours are. <strong>PageRank</strong> models a random surfer who follows a random link with probability <code>d</code> (damping, about 0.85) and jumps to a random page otherwise; a page's rank is the long-run fraction of time the surfer spends there. It is the stationary distribution of a Markov chain, computed by <strong>power iteration</strong>:</p>
+<p><code>PR(v) = (1 - d) / n + d * sum over u linking to v of PR(u) / outdegree(u)</code></p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a15-01.py">def pagerank(edges, n, d=0.85, iters=100):
+    out = [[] for _ in range(n)]
+    for u, v in edges: out[u].append(v)
+    pr = [1.0 / n] * n
+    for _ in range(iters):
+        new = [(1 - d) / n] * n
+        for u in range(n):
+            if out[u]:
+                share = d * pr[u] / len(out[u])
+                for v in out[u]: new[v] += share
+            else:
+                for v in range(n): new[v] += d * pr[u] / n               # dangling node: spread its rank evenly
+        pr = new
+    return pr
+# 0 -&gt; 1, 0 -&gt; 2, 1 -&gt; 2, 2 -&gt; 0, 3 -&gt; 2 ; node 4 links only to 3 ; node 2 is linked to by everybody
+edges = [(0, 1), (0, 2), (1, 2), (2, 0), (3, 2), (4, 3)]
+pr = pagerank(edges, 5)
+for node in sorted(range(5), key=lambda v: -pr[v]): print(f"node {node}: PageRank {pr[node]:.3f}")
+print("ranks sum to 1:", round(sum(pr), 6))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>node 2: PageRank 0.381
+node 0: PageRank 0.354
+node 1: PageRank 0.180
+node 3: PageRank 0.056
+node 4: PageRank 0.030
+ranks sum to 1: 1.0</code></pre>
+<p>Node 2 collects links from many nodes and ranks highest; node 4, linked to by nobody, ranks lowest. <strong>Personalised PageRank</strong> restarts at a chosen node instead of uniformly, giving relevance relative to that node (used for recommendations and graph-based retrieval).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a15-q02" data-topic="Graph ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is PageRank?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The number of links <span class="q-why">That is degree.</span></li>
+          <li data-key="B">The stationary distribution of a random surfer who follows links and occasionally jumps randomly <span class="q-why">Correct.</span></li>
+          <li data-key="C">Betweenness <span class="q-why">No.</span></li>
+          <li data-key="D">A sorting method <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Computed by power iteration with damping.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Write the PageRank update.</summary><div class="answer"><p>PR(v) = (1 - d)/n + d x sum over in-neighbours u of PR(u)/outdegree(u), iterated to convergence.</p></div></details>
+      </div>
+    </section>
+
+    <section id="spectral" data-track>
+      <h2>Spectral view in one page</h2>
+<p>The <strong>Laplacian</strong> <code>L = D - A</code> (degree matrix minus adjacency) encodes the graph. Its smallest eigenvalue is 0, and the number of zero eigenvalues equals the number of connected components. The eigenvector for the second smallest eigenvalue (the <strong>Fiedler vector</strong>) splits the graph into two well-connected halves: <strong>spectral clustering</strong> sorts nodes by it. Eigenvectors are the graph's "frequencies", and the idea of smoothing signals over a graph underlies <strong>graph convolution</strong>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a15-02.py">import random, math
+random.seed(1)
+# two dense groups of 5 nodes joined by a single bridge edge
+n = 10
+A = [[0] * n for _ in range(n)]
+def link(a, b): A[a][b] = A[b][a] = 1
+for group in (range(0, 5), range(5, 10)):
+    for i in group:
+        for j in group:
+            if i &lt; j: link(i, j)
+link(4, 5)
+deg = [sum(r) for r in A]
+L = [[(deg[i] if i == j else 0) - A[i][j] for j in range(n)] for i in range(n)]
+# power iteration on (c I - L), deflating the constant eigenvector, to find the Fiedler vector
+c = max(deg) * 2
+v = [random.random() for _ in range(n)]
+for _ in range(2000):
+    mean = sum(v) / n; v = [x - mean for x in v]                         # remove the all-ones (eigenvalue 0) direction
+    w = [c * v[i] - sum(L[i][j] * v[j] for j in range(n)) for i in range(n)]
+    norm = math.sqrt(sum(x * x for x in w)); v = [x / norm for x in w]
+print("Fiedler vector signs (nodes 0-4 vs 5-9):", ["+" if x &gt; 0 else "-" for x in v])
+print("spectral clustering recovers the two groups:", len({x &gt; 0 for x in v[:5]}) == 1 and len({x &gt; 0 for x in v[5:]}) == 1 and (v[0] &gt; 0) != (v[9] &gt; 0))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>Fiedler vector signs (nodes 0-4 vs 5-9): ['+', '+', '+', '+', '+', '-', '-', '-', '-', '-']
+spectral clustering recovers the two groups: True</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a15-q03" data-topic="Graph ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does the number of zero eigenvalues of the graph Laplacian equal?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The number of edges <span class="q-why">No.</span></li>
+          <li data-key="B">The number of connected components <span class="q-why">Correct.</span></li>
+          <li data-key="C">The diameter <span class="q-why">No.</span></li>
+          <li data-key="D">The maximum degree <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The Fiedler vector then splits a connected graph into two parts.</p></div>
+      </div>
+    </section>
+
+    <section id="embeddings" data-track>
+      <h2>Node embeddings from random walks</h2>
+<p>Give each node a dense vector so that nodes that are close in the graph have similar vectors. <strong>DeepWalk</strong> and <strong>node2vec</strong> run many <strong>random walks</strong>, treat each walk as a "sentence" of node ids and train <strong>skip-gram</strong> (word2vec, <a href="a4-nlp-embeddings.html">A4</a>) so that nodes appearing near each other in walks get similar vectors. node2vec's biased walks interpolate between breadth-first (local, structural roles) and depth-first (community) exploration. The embeddings feed classifiers, clustering and nearest-neighbour link prediction.</p>
+<p>The following builds the co-occurrence statistics from walks and factorises them with a few steps of SVD-like power iteration, a faithful miniature of the same principle:</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a15-03.py">import random, math
+random.seed(2)
+# a "barbell": two cliques of 4 connected through a path
+edges = [(0,1),(0,2),(0,3),(1,2),(1,3),(2,3),(3,4),(4,5),(5,6),(6,7),(6,8),(6,9),(7,8),(7,9),(8,9)]
+n = 10
+adj = [[] for _ in range(n)]
+for a, b in edges: adj[a].append(b); adj[b].append(a)
+def walk(start, length):
+    path = [start]
+    for _ in range(length - 1): path.append(random.choice(adj[path[-1]]))
+    return path
+cooc = [[0.0] * n for _ in range(n)]
+for _ in range(400):
+    for s in range(n):
+        w = walk(s, 12)
+        for i, a in enumerate(w):
+            for b in w[i + 1:i + 4]: cooc[a][b] += 1; cooc[b][a] += 1             # nodes within a window of 3 co-occur
+total = sum(map(sum, cooc)); rowsum = [sum(r) for r in cooc]
+ppmi = [[max(0.0, math.log(cooc[i][j] * total / (rowsum[i] * rowsum[j]))) if cooc[i][j] &gt; 0 else 0.0 for j in range(n)] for i in range(n)]   # positive pointwise mutual information
+def top_eigvecs(M, k, iters=300):
+    vecs = []
+    for _ in range(k):
+        v = [random.random() for _ in range(n)]
+        for _ in range(iters):
+            for u in vecs:                                                         # orthogonalise against earlier vectors
+                dot = sum(a * b for a, b in zip(v, u)); v = [a - dot * b for a, b in zip(v, u)]
+            w = [sum(M[i][j] * v[j] for j in range(n)) for i in range(n)]
+            norm = math.sqrt(sum(x * x for x in w)) or 1; v = [x / norm for x in w]
+        vecs.append(v)
+    return vecs
+vecs = top_eigvecs(ppmi, 2)
+emb = [(vecs[0][i], vecs[1][i]) for i in range(n)]
+cos = lambda a, b: sum(x * y for x, y in zip(a, b)) / (math.hypot(*a) * math.hypot(*b) + 1e-12)
+print("within the left clique, cosine(0,1):", round(cos(emb[0], emb[1]), 2), "| within the right clique, cosine(8,9):", round(cos(emb[8], emb[9]), 2))
+print("across the cliques, cosine(0,9):", round(cos(emb[0], emb[9]), 2), "| nodes in the same clique are closer than nodes in different cliques:", cos(emb[0], emb[1]) &gt; cos(emb[0], emb[9]) and cos(emb[8], emb[9]) &gt; cos(emb[0], emb[9]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>within the left clique, cosine(0,1): 1.0 | within the right clique, cosine(8,9): 1.0
+across the cliques, cosine(0,9): -0.06 | nodes in the same clique are closer than nodes in different cliques: True</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a15-q04" data-topic="Graph ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How does DeepWalk learn node embeddings?</p></div>
+        <ul class="q-options">
+          <li data-key="A">By matrix inversion <span class="q-why">No.</span></li>
+          <li data-key="B">It runs random walks and trains skip-gram on the walks as sentences of node ids <span class="q-why">Correct.</span></li>
+          <li data-key="C">By PageRank <span class="q-why">No.</span></li>
+          <li data-key="D">By sorting nodes <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Nodes that co-occur in walks get similar vectors.</p></div>
+      </div>
+    </section>
+
+    <section id="gnn" data-track>
+      <h2>Graph neural networks: message passing</h2>
+<p>A <strong>graph neural network (GNN)</strong> updates each node's feature vector by <strong>aggregating its neighbours' vectors</strong> and combining with its own, layer after layer. After <code>k</code> layers a node's representation depends on its <code>k</code>-hop neighbourhood. The general layer:</p>
+<p><code>h_v' = sigma( W_self h_v + W_neigh AGG({ h_u : u in N(v) }) )</code></p>
+<p>with <code>AGG</code> a permutation-invariant function (sum, mean, max) because neighbours have no order. Variants:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Model</th><th>Aggregation idea</th></tr></thead>
+<tbody>
+<tr><td><strong>GCN</strong></td><td>Degree-normalised average of neighbour features (a smoothed spectral convolution)</td></tr><tr><td><strong>GraphSAGE</strong></td><td>Sample a fixed number of neighbours, aggregate with mean, LSTM or pooling (scales to huge graphs, inductive)</td></tr><tr><td><strong>GAT</strong></td><td>Attention weights decide how much each neighbour matters</td></tr><tr><td><strong>GIN</strong></td><td>Sum aggregation with an MLP; as expressive as the Weisfeiler-Lehman test</td></tr><tr><td><strong>Message-passing networks</strong></td><td>General messages on edges, used in molecules</td></tr><tr><td><strong>Graph transformers</strong></td><td>Attention across all nodes with positional encodings of the structure</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/a15-04.py">import random
+random.seed(3)
+n = 60; labels = [0] * 30 + [1] * 30                                   # two communities of 30 nodes
+adj = [[] for _ in range(n)]
+for i in range(n):
+    for j in range(i + 1, n):
+        p = 0.2 if labels[i] == labels[j] else 0.02                    # many edges inside a community, few between (homophily)
+        if random.random() &lt; p: adj[i].append(j); adj[j].append(i)
+X = [[(0.4 if y else -0.4) + random.gauss(0, 1.0)] for y in labels]    # one feature per node: weak signal, heavy noise
+def gcn_layer(H):                                                      # average over the node and its neighbours
+    return [[sum(H[u][0] for u in adj[v] + [v]) / (len(adj[v]) + 1)] for v in range(n)]
+def accuracy(H): return sum((H[v][0] &gt; 0) == (labels[v] == 1) for v in range(n)) / n
+H = X
+print("raw noisy features, accuracy of the sign rule:", round(accuracy(H), 2))
+for layer in range(1, 6):
+    H = gcn_layer(H)
+    spread = max(h[0] for h in H) - min(h[0] for h in H)
+    print(f"after {layer} message-passing layer(s): accuracy {accuracy(H):.2f}, feature spread {spread:.2f}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>raw noisy features, accuracy of the sign rule: 0.58
+after 1 message-passing layer(s): accuracy 0.83, feature spread 2.40
+after 2 message-passing layer(s): accuracy 0.95, feature spread 1.39
+after 3 message-passing layer(s): accuracy 1.00, feature spread 1.15
+after 4 message-passing layer(s): accuracy 1.00, feature spread 0.95
+after 5 message-passing layer(s): accuracy 1.00, feature spread 0.83</code></pre>
+<p>Averaging neighbours cancels independent noise because nodes in a community share a label (<strong>homophily</strong>), so accuracy usually improves with a layer or two. But stacking too many layers makes all node vectors converge to the same value (<strong>over-smoothing</strong>, visible in the shrinking spread above) and long-range information is squeezed through <strong>bottlenecks</strong> (<strong>over-squashing</strong>). Practical GNNs use 2 to 4 layers, residual connections, normalisation and sampling.</p>
+<h3>A trainable layer from scratch</h3>
+<p>Learn the weights by gradient descent. Below, a one-layer GCN with a logistic output is trained on a graph where the <strong>structure</strong> carries the signal.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a15-05.py">import random, math
+random.seed(4)
+n = 40; labels = [0] * 20 + [1] * 20
+adj = [[] for _ in range(n)]
+def connect(a, b):
+    if a != b and b not in adj[a]: adj[a].append(b); adj[b].append(a)
+for i in range(n):
+    for j in range(i + 1, n):
+        p = 0.35 if labels[i] == labels[j] else 0.03                     # homophilous random graph (stochastic block model)
+        if random.random() &lt; p: connect(i, j)
+X = [[random.gauss(0.2 if y else -0.2, 1.0), random.gauss(0, 1)] for y in labels]      # weak, noisy features
+def aggregate(H): return [[sum(H[u][k] for u in adj[v] + [v]) / (len(adj[v]) + 1) for k in range(2)] for v in range(n)]
+def train(features, epochs=300, lr=0.5):
+    w, b = [0.0, 0.0], 0.0
+    idx = list(range(n)); train_idx = idx[:10] + idx[20:30]; test_idx = idx[10:20] + idx[30:]
+    for _ in range(epochs):
+        gw, gb = [0.0, 0.0], 0.0
+        for v in train_idx:
+            z = sum(wi * xi for wi, xi in zip(w, features[v])) + b; p = 1 / (1 + math.exp(-z)); err = p - labels[v]
+            gw = [g + err * xi for g, xi in zip(gw, features[v])]; gb += err
+        w = [wi - lr * g / len(train_idx) for wi, g in zip(w, gw)]; b -= lr * gb / len(train_idx)
+    acc = sum(((sum(wi * xi for wi, xi in zip(w, features[v])) + b) &gt; 0) == (labels[v] == 1) for v in test_idx) / len(test_idx)
+    return acc
+mlp_acc = train(X)                                   # ignores the graph
+gcn_acc = train(aggregate(aggregate(X)))             # two rounds of message passing, then the same classifier
+print(f"test accuracy on unseen nodes: features only {mlp_acc:.2f} | after 2 message-passing steps {gcn_acc:.2f}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>test accuracy on unseen nodes: features only 0.65 | after 2 message-passing steps 1.00</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a15-q05" data-topic="Graph ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is over-smoothing?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A rendering effect <span class="q-why">No.</span></li>
+          <li data-key="B">With many layers, node representations converge to nearly the same vector, losing discriminative information <span class="q-why">Correct.</span></li>
+          <li data-key="C">Noisy gradients <span class="q-why">No.</span></li>
+          <li data-key="D">Large learning rates <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use few layers, residuals and normalisation.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a15-q06" data-topic="Graph ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why must GNN aggregation functions be permutation invariant?</p></div>
+        <ul class="q-options">
+          <li data-key="A">For speed <span class="q-why">No.</span></li>
+          <li data-key="B">Neighbours have no natural order, so the result must not depend on it <span class="q-why">Correct.</span></li>
+          <li data-key="C">To save memory <span class="q-why">No.</span></li>
+          <li data-key="D">To avoid GPUs <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Sum, mean and max satisfy this.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is one layer of message passing?</summary><div class="answer"><p>Each node aggregates its neighbours' features with a permutation-invariant function and combines the result with its own features through learned weights.</p></div></details>
+        <details class="recall"><summary>Name three GNN variants.</summary><div class="answer"><p>GCN, GraphSAGE, GAT (and GIN or message-passing neural networks).</p></div></details>
+      </div>
+    </section>
+
+    <section id="link" data-track>
+      <h2>Link prediction</h2>
+<p>Predict whether an edge exists or will appear. Classical <strong>heuristics</strong> use neighbourhoods: <strong>common neighbours</strong>, <strong>Jaccard</strong>, <strong>Adamic-Adar</strong> (weights shared neighbours by <code>1 / log(degree)</code>, so rare shared neighbours count more). Learned methods score a pair from node embeddings (dot product, MLP). <strong>Training</strong> needs <strong>negative samples</strong> (non-edges), evaluation by AUC or <strong>hits@k</strong> with held-out edges, and care to <strong>hide the test edges</strong> during message passing to avoid leakage.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a15-06.py">import random, math
+random.seed(5)
+n = 60; group = [i // 20 for i in range(n)]
+edges = set()
+for i in range(n):
+    for j in range(i + 1, n):
+        if random.random() &lt; (0.25 if group[i] == group[j] else 0.02): edges.add((i, j))
+held = random.sample(sorted(edges), len(edges) // 5)
+train = edges - set(held)
+adj = [set() for _ in range(n)]
+for a, b in train: adj[a].add(b); adj[b].add(a)
+def common(a, b): return len(adj[a] &amp; adj[b])
+def adamic_adar(a, b): return sum(1 / math.log(len(adj[z]) + 1) for z in adj[a] &amp; adj[b])
+non_edges = random.sample([(i, j) for i in range(n) for j in range(i + 1, n) if (i, j) not in edges], len(held))
+def auc(score):
+    pos, neg = [score(a, b) for a, b in held], [score(a, b) for a, b in non_edges]
+    return sum((p &gt; q) + 0.5 * (p == q) for p in pos for q in neg) / (len(pos) * len(neg))
+print(f"held-out edges: {len(held)} | AUC common neighbours {auc(common):.2f} | AUC Adamic-Adar {auc(adamic_adar):.2f} | random guessing 0.50")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>held-out edges: 32 | AUC common neighbours 0.64 | AUC Adamic-Adar 0.65 | random guessing 0.50</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a15-q07" data-topic="Graph ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does Adamic-Adar add over counting common neighbours?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Direction <span class="q-why">No.</span></li>
+          <li data-key="B">It weights each shared neighbour by 1/log(degree), so rare, specific connections count more than hubs <span class="q-why">Correct.</span></li>
+          <li data-key="C">A neural network <span class="q-why">No.</span></li>
+          <li data-key="D">Edge types <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>A shared obscure friend says more than a shared celebrity.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What are the evaluation pitfalls in link prediction?</summary><div class="answer"><p>Leaking test edges into message passing, unrealistic negative sampling, and splitting without respect to time.</p></div></details>
+      </div>
+    </section>
+
+    <section id="kg" data-track>
+      <h2>Knowledge graphs and LLMs</h2>
+<p>A <strong>knowledge graph (KG)</strong> stores facts as <strong>triples</strong> <code>(head, relation, tail)</code>: <code>(Paris, capital_of, France)</code>. Examples: Wikidata, product catalogues, medical ontologies. Operations: <strong>querying</strong> (SPARQL, Cypher), <strong>reasoning</strong> with rules (<code>parent(x,y) and parent(y,z) =&gt; grandparent(x,z)</code>), and <strong>completion</strong> with embedding models such as <strong>TransE</strong>, which learns vectors so that <code>head + relation ~ tail</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a15-07.py">triples = [("ana", "parent_of", "bo"), ("bo", "parent_of", "cy"), ("bo", "parent_of", "di"), ("cy", "lives_in", "pune"), ("di", "lives_in", "goa"), ("ana", "lives_in", "pune")]
+parents = {}
+for h, r, t in triples:
+    if r == "parent_of": parents.setdefault(h, []).append(t)
+grandparents = sorted((g, c) for g, kids in parents.items() for p in kids for c in parents.get(p, []))
+print("inferred grandparent_of:", grandparents)
+lives = {h: t for h, r, t in triples if r == "lives_in"}
+print("grandchildren who live where the grandparent lives:", [(g, c) for g, c in grandparents if lives.get(g) == lives.get(c)])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>inferred grandparent_of: [('ana', 'cy'), ('ana', 'di')]
+grandchildren who live where the grandparent lives: [('ana', 'cy')]</code></pre>
+<p><strong>Graph-based retrieval for LLMs (GraphRAG)</strong>: extract entities and relations from documents with an LLM to build a graph, then answer multi-hop questions ("which suppliers of the part that failed also supply product X?") by traversing the graph and handing the relevant subgraph, or community summaries, to the model (<a href="a12-llm-apps.html">A12</a>). Strengths: multi-hop reasoning, global summaries, explainable paths. Costs: graph construction quality, maintenance, and complexity versus plain vector search; many systems combine both.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a15-q08" data-topic="Graph ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does GraphRAG add to plain vector retrieval?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Faster embeddings <span class="q-why">No.</span></li>
+          <li data-key="B">Explicit entities and relations that support multi-hop questions and global summaries <span class="q-why">Correct.</span></li>
+          <li data-key="C">Free storage <span class="q-why">No.</span></li>
+          <li data-key="D">No LLM <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>At the cost of building and maintaining the graph.</p></div>
+      </div>
+    </section>
+
+    <section id="scale" data-track>
+      <h2>Scale and practice</h2>
+<ul><li><strong>Mini-batching on graphs</strong>: sample neighbourhoods (GraphSAGE), clusters (Cluster-GCN) or subgraphs, because the full-batch graph rarely fits in GPU memory.</li><li><strong>Heterogeneous graphs</strong> have several node and edge types (users, items, shops): use relation-specific weights (R-GCN) or metapaths.</li><li><strong>Dynamic graphs</strong> change over time: temporal GNNs and time-aware sampling.</li><li><strong>Pitfalls</strong>: label leakage through edges, train-test splits that must be <strong>by node, edge or time</strong> consistently, class imbalance (rare fraud), and graphs with low homophily where aggregating neighbours hurts.</li><li><strong>Libraries</strong>: PyTorch Geometric, DGL, NetworkX (analysis), and graph databases (Neo4j) for storage and queries.</li><li><strong>When not to use a GNN</strong>: often a tabular model with hand-built graph features (degree, PageRank, neighbour statistics) is a strong, cheap baseline.</li></ul>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Graphs carry structure that tables lose. Measure it with centrality and PageRank, embed nodes from random walks, let GNNs average neighbour information (watching for over-smoothing), score links with neighbourhood heuristics or embeddings, and use knowledge graphs for explicit facts and multi-hop retrieval. Always beat a feature-engineered baseline first.</p></div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why sample neighbourhoods when training on large graphs?</summary><div class="answer"><p>The receptive field grows exponentially with depth, so full neighbourhoods do not fit in memory; sampling bounds the cost.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Graph ML</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Graph ML">
+<details class="recall iq" data-level="basic" data-topic="Graph ML"><summary><span class="tag ok">Basic</span> What tasks does graph machine learning cover?</summary><div class="answer"><p>Node classification, link prediction, graph classification or regression, community detection, ranking and graph generation.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Graph ML"><summary><span class="tag ok">Basic</span> What is PageRank?</summary><div class="answer"><p>The stationary distribution of a random surfer who follows links with probability d and jumps to a random node otherwise, computed by power iteration.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graph ML"><summary><span class="tag warn">Medium</span> What is homophily and why does it matter?</summary><div class="answer"><p>Connected nodes tend to share labels or features, so aggregating neighbour information helps; on heterophilous graphs plain message passing can hurt.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graph ML"><summary><span class="tag warn">Medium</span> Explain one layer of a graph neural network.</summary><div class="answer"><p>Each node aggregates its neighbours&#x27; features with a permutation-invariant function and combines the result with its own features through learned weights and a nonlinearity.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graph ML"><summary><span class="tag warn">Medium</span> GCN versus GraphSAGE versus GAT?</summary><div class="answer"><p>GCN uses degree-normalised averaging, GraphSAGE samples neighbours and supports inductive learning at scale, GAT learns attention weights over neighbours.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graph ML"><summary><span class="tag warn">Medium</span> What is over-smoothing?</summary><div class="answer"><p>With many layers node representations become nearly identical because repeated averaging mixes information across the graph; use few layers, residuals and normalisation.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graph ML"><summary><span class="tag warn">Medium</span> How does DeepWalk create node embeddings?</summary><div class="answer"><p>Random walks generate node sequences that are treated as sentences for skip-gram training, so nodes co-occurring in walks get similar vectors.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graph ML"><summary><span class="tag warn">Medium</span> Common link prediction heuristics?</summary><div class="answer"><p>Common neighbours, Jaccard similarity, Adamic-Adar and preferential attachment, evaluated with held-out edges and negative samples.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Graph ML"><summary><span class="tag bad">Advanced</span> What is over-squashing?</summary><div class="answer"><p>Information from exponentially many distant nodes must pass through fixed-size vectors along narrow paths, limiting long-range dependencies.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Graph ML"><summary><span class="tag bad">Advanced</span> How do you train GNNs on a graph with billions of edges?</summary><div class="answer"><p>Neighbour sampling (GraphSAGE), cluster or subgraph batching and distributed training; full-neighbourhood training is infeasible because the receptive field grows exponentially.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Graph ML"><summary><span class="tag bad">Advanced</span> What avoids leakage when evaluating link prediction?</summary><div class="answer"><p>Remove test edges from the graph used for message passing, split by time where relevant and sample realistic negatives.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Graph ML"><summary><span class="tag bad">Advanced</span> What are knowledge graph embeddings (TransE)?</summary><div class="answer"><p>Entities and relations are vectors trained so that head + relation is close to tail for true triples, enabling completion of missing facts.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Graph ML"><summary><span class="tag bad">Advanced</span> What is GraphRAG and when does it beat vector RAG?</summary><div class="answer"><p>Retrieval over a graph of extracted entities and relations, useful for multi-hop questions and global summaries; costlier to build and maintain.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Graph ML"><summary><span class="tag bad">Advanced</span> When would you not use a GNN?</summary><div class="answer"><p>When a tabular model with engineered graph features (degree, PageRank, neighbour statistics) already performs well, or the graph has low homophily or little structure.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="a14-probabilistic-ml.html"><span class="dir">Previous</span><span>A14 Probabilistic machine learning: Bayesian inference, MCMC, Gaussian processes and uncertainty</span></a>
+      <a class="next" href="a16-responsible-ai.html"><span class="dir">Next</span><span>A16 Interpretability, fairness, privacy and robustness: responsible machine learning</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

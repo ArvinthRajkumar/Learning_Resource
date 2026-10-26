@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD31">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Case studies 7: trending topics, food delivery dispatch, online auction, team chat and email | System Design</title>
+<meta name="description" content="Five more designs with runnable models: sliding-window trending topics, delivery matching and ETA, an auction with concurrent bids and sniping rules, a Slack-style workspace with huge channels, and an email service with queues and spam filtering.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD31</p>
+      <h1>Case studies 7: trending topics, food delivery dispatch, online auction, team chat and email</h1>
+      <p class="lede">This set adds real-time ranking over streams, matching supply with demand, correctness under competing writers, fan-out at very different scales and a protocol-heavy legacy system. As before: design first, compare after.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="trending" data-track>
+      <h2>Case 1: Trending topics</h2>
+<h3>Requirements</h3>
+<p>Show the top 10 trending hashtags per region for the last hour, updating within a minute. 500M tweets per day (about 6,000/s average, 20,000/s peak), each with about 2 hashtags.</p>
+<h3>Why it is hard</h3>
+<p>Counting is easy; counting <strong>recent</strong> items, per region, at 40,000 increments per second without storing every event is the problem. "Trending" is also not "most popular": it means <strong>unusually fast growth</strong> compared with normal.</p>
+<h3>Design</h3>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="Partition by hashtag so one worker owns each tag&#x27;s count; merge local top-K lists into a global one." style="min-width:760px"><defs><marker id="ah54" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah54a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah54b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah54d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah54)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah54)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah54)"/><line x1="747.0" y1="78.0" x2="747.0" y2="118.0" class="d-line" marker-end="url(#ah54)"/><line x1="662.0" y1="147.0" x2="618.0" y2="147.0" class="d-line" marker-end="url(#ah54)"/><line x1="448.0" y1="147.0" x2="404.0" y2="147.0" class="d-line" marker-end="url(#ah54)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">Tweets stream (Kafka)</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle" class="d-sm">Extract hashtags and region</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle" class="d-sm">Count in time buckets (stream processor)</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle" class="d-sm">Merge buckets into sliding windows</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="151.5" text-anchor="middle">Score vs baseline</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="151.5" text-anchor="middle">Top-K store (Redis)</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="151.5" text-anchor="middle">API and cache</text></svg>
+</div>
+<figcaption>Partition by hashtag so one worker owns each tag's count; merge local top-K lists into a global one.</figcaption></figure>
+<ul><li><strong>Time buckets</strong>: count per minute; a 60-minute window is the sum of the last 60 buckets. Subtract the expiring bucket instead of rescanning.</li><li><strong>Top-K</strong>: keep a heap of size K per window; merge partial heaps from partitions.</li><li><strong>Approximation</strong>: a <strong>Count-Min Sketch</strong> plus a small heap approximates heavy hitters in fixed memory when there are billions of distinct tags.</li><li><strong>Trend score</strong>: compare the current rate with a baseline, for example <code>(current - expected) / sqrt(expected + 1)</code>, or a ratio against the same hour yesterday, so a steadily popular tag (<code>#monday</code>) does not dominate a surging one.</li><li><strong>Abuse</strong>: spam and bots inflate counts; dedupe per user, weight by account quality, and apply a blocklist.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd31-01.py">from collections import defaultdict, deque
+import math
+class Trending:
+    def __init__(self, window=5):
+        self.window, self.buckets, self.total, self.baseline = window, deque(), defaultdict(int), defaultdict(lambda: 1.0)
+    def push_minute(self, counts):
+        self.buckets.append(counts)
+        for tag, n in counts.items(): self.total[tag] += n
+        if len(self.buckets) &gt; self.window:
+            old = self.buckets.popleft()
+            for tag, n in old.items():
+                self.total[tag] -= n
+                if self.total[tag] == 0: del self.total[tag]
+    def score(self, tag):                                              # surprise relative to the usual rate
+        expected = self.baseline[tag] * self.window
+        return (self.total[tag] - expected) / math.sqrt(expected + 1)
+    def top(self, k=3): return sorted(((round(self.score(t), 1), t, self.total[t]) for t in self.total), reverse=True)[:k]
+t = Trending(window=5)
+t.baseline.update({"#monday": 100.0, "#coffee": 20.0})
+for minute in range(6):
+    t.push_minute({"#monday": 100, "#coffee": 20, "#goal": 5 * (minute &gt; 2) * 40 + 1, "#rare": 2})
+print("by score (score, tag, count in window):", t.top())
+print("by raw count:", sorted(((n, tag) for tag, n in t.total.items()), reverse=True)[:3])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>by score (score, tag, count in window): [(244.9, '#goal', 605), (2.0, '#rare', 10), (0.0, '#monday', 500)]
+by raw count: [(605, '#goal'), (500, '#monday'), (100, '#coffee')]</code></pre>
+<p>The popular tag leads on raw count while the <strong>surging</strong> tag leads on score: that difference is the product. Per region, shard the same pipeline by region and keep a global rollup.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd31-q01" data-topic="Case studies 7" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is a trend score based on growth rather than raw counts?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is cheaper <span class="q-why">No.</span></li>
+          <li data-key="B">Constantly popular tags would otherwise always dominate; trending means unusually fast growth <span class="q-why">Correct.</span></li>
+          <li data-key="C">Counts are inaccurate <span class="q-why">No.</span></li>
+          <li data-key="D">It needs less memory <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Compare to a baseline.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd31-q02" data-topic="Case studies 7" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you maintain a sliding 60-minute count efficiently?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Rescan all events <span class="q-why">Too slow.</span></li>
+          <li data-key="B">Keep per-minute buckets and subtract the expiring bucket <span class="q-why">Correct.</span></li>
+          <li data-key="C">Recount hourly <span class="q-why">Not sliding.</span></li>
+          <li data-key="D">Use a cache <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Add the new bucket, remove the oldest.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name two ways to keep top-K cheap at huge scale.</summary><div class="answer"><p>Count-Min Sketch with a small heap, and merging per-partition top-K lists.</p></div></details>
+      </div>
+    </section>
+
+    <section id="dispatch" data-track>
+      <h2>Case 2: Food delivery dispatch</h2>
+<h3>Requirements</h3>
+<p>Customers order from restaurants; couriers deliver. Show an ETA, assign a courier within seconds, and track the delivery live. 1M orders/hour at peak in a large country; 200k couriers sending location every 4 seconds (50,000 updates/s).</p>
+<h3>Components</h3>
+<ul><li><strong>Location service</strong>: ingests courier GPS pings into an in-memory geo index (geohash or H3 cells, see <a href="sd24-case-5.html">SD24</a>); the latest position lives in Redis, the history in a stream or time-series store.</li><li><strong>Order service</strong>: state machine <code>placed -&gt; accepted -&gt; preparing -&gt; ready -&gt; picked_up -&gt; delivered</code> with transactional updates and events.</li><li><strong>Dispatch (matching) service</strong>: chooses a courier per order, balancing speed, fairness and cost.</li><li><strong>ETA service</strong>: restaurant preparation time + courier to restaurant + restaurant to customer, from road graphs, live traffic and a learned model.</li><li><strong>Tracking</strong>: push courier positions to the customer through WebSocket or SSE (<a href="sd29-web-delivery.html">SD29</a>); throttle updates to every few seconds.</li></ul>
+<h3>Matching</h3>
+<p>Greedy "nearest courier" is simple but can be globally poor. <strong>Batched matching</strong> collects orders and couriers for a short window (say 5 seconds) and solves an <strong>assignment problem</strong> minimising total cost (travel time, delay penalty), solved with the Hungarian algorithm or heuristics. Add <strong>batching</strong> (one courier carries two nearby orders) and re-dispatch if a courier declines.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd31-02.py">import itertools
+orders = {"o1": (3, 0), "o2": (0, 0)}
+couriers = {"c1": (1, 0), "c2": (7, 0)}
+dist = lambda a, b: abs(a[0] - b[0]) + abs(a[1] - b[1])
+# greedy: process orders in arrival order, give each the nearest free courier
+free, greedy = dict(couriers), {}
+for o, loc in orders.items():
+    c = min(free, key=lambda c: dist(free[c], loc)); greedy[o] = c; free.pop(c)
+greedy_cost = sum(dist(orders[o], couriers[c]) for o, c in greedy.items())
+# optimal assignment by brute force over permutations (Hungarian does this in O(n^3) for large n)
+best = min(itertools.permutations(couriers), key=lambda perm: sum(dist(orders[o], couriers[c]) for o, c in zip(orders, perm)))
+best_cost = sum(dist(orders[o], couriers[c]) for o, c in zip(orders, best))
+print("greedy:", greedy, "total distance", greedy_cost)
+print("batched optimal:", dict(zip(orders, best)), "total distance", best_cost)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>greedy: {'o1': 'c1', 'o2': 'c2'} total distance 9
+batched optimal: {'o1': 'c2', 'o2': 'c1'} total distance 5</code></pre>
+<p>Greedy gave the first order the nearest courier, who was also the only good option for the second order, which was left with the distant courier. Looking at the batch together is cheaper overall.</p>
+<h3>Deep dives</h3>
+<ul><li><strong>Surge and balance</strong>: when demand exceeds couriers, raise delivery fees, extend ETAs, pause new orders per zone (supply and demand are balanced per area).</li><li><strong>Idempotent order creation</strong> and payment authorisation first, capture on delivery (<a href="sd24-case-5.html">SD24</a> checkout).</li><li><strong>Failure</strong>: a courier goes silent (mark stale after N missed pings and re-dispatch); restaurant rejects (refund and notify).</li><li><strong>Hot areas</strong>: shard by city or geohash prefix; stadiums and rain create spikes.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd31-q03" data-topic="Case studies 7" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why can batched assignment beat greedy nearest-courier matching?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is simpler <span class="q-why">No.</span></li>
+          <li data-key="B">It minimises total cost across all orders together instead of locally <span class="q-why">Correct.</span></li>
+          <li data-key="C">It uses less memory <span class="q-why">No.</span></li>
+          <li data-key="D">It avoids GPS <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Greedy can steal the only good courier for another order.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What are the services in a delivery platform?</summary><div class="answer"><p>Location, order, dispatch/matching, ETA, tracking, payments and notifications.</p></div></details>
+      </div>
+    </section>
+
+    <section id="auction" data-track>
+      <h2>Case 3: Online auction</h2>
+<h3>Requirements</h3>
+<p>Sellers list items with an end time. Buyers place bids; the highest bid at the end wins. Thousands of bids on popular items in the last seconds. Rules: a bid must exceed the current highest by a minimum increment; <strong>anti-sniping</strong> extends the end time if a bid arrives in the last minute.</p>
+<h3>Correctness is the whole problem</h3>
+<p>Two bids arrive simultaneously: only one can win the same price. The check "is this bid higher than the current?" and the update must be <strong>atomic</strong>. Per auction, bids form a <strong>serial history</strong>.</p>
+<p>Options: a row lock or conditional update in the database (<code>UPDATE auction SET high_bid = ? WHERE id = ? AND high_bid &lt; ? - increment</code>), a <strong>single-writer</strong> per auction (route all bids for an auction to one partition and process in order) or optimistic versioning. Single-writer through a partitioned queue gives a natural ordering, an audit log of bids and a place to apply anti-sniping.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd31-03.py">class Auction:
+    def __init__(self, end, increment=5, snipe_window=60, extension=120):
+        self.end, self.inc, self.win, self.ext = end, increment, snipe_window, extension
+        self.high, self.leader, self.history = 0, None, []
+    def bid(self, user, amount, now):                       # processed by one writer, in order
+        if now &gt;= self.end: return "rejected: auction ended"
+        if amount &lt; self.high + self.inc: return f"rejected: need at least {self.high + self.inc}"
+        self.high, self.leader = amount, user
+        self.history.append((now, user, amount))
+        if self.end - now &lt;= self.win:                      # anti-sniping
+            self.end = now + self.ext
+            return f"accepted, end extended to {self.end}"
+        return "accepted"
+a = Auction(end=1000)
+for t, u, amt in [(100, "ana", 50), (200, "bo", 52), (300, "bo", 60), (950, "cy", 70), (1030, "ana", 75), (1160, "di", 90), (1200, "bo", 95)]:
+    print(f"t={t:&gt;4} {u}: {amt:&gt;3} -&gt; {a.bid(u, amt, t)}")
+print("winner:", a.leader, "at", a.high, "| bids recorded:", len(a.history))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>t= 100 ana:  50 -&gt; accepted
+t= 200 bo:  52 -&gt; rejected: need at least 55
+t= 300 bo:  60 -&gt; accepted
+t= 950 cy:  70 -&gt; accepted, end extended to 1070
+t=1030 ana:  75 -&gt; accepted, end extended to 1150
+t=1160 di:  90 -&gt; rejected: auction ended
+t=1200 bo:  95 -&gt; rejected: auction ended
+winner: ana at 75 | bids recorded: 4</code></pre>
+<h3>Other parts</h3>
+<ul><li><strong>Proxy bidding</strong> (automatic bidding up to a maximum), <strong>reserve prices</strong>, <strong>buy-it-now</strong>.</li><li><strong>Real-time updates</strong> to watchers: pub/sub fan-out per auction through WebSockets; throttle to a few updates per second.</li><li><strong>Closing</strong>: a scheduler (<a href="sd25-case-6.html">SD25</a>) closes auctions at the (possibly extended) end time; closing is idempotent and creates the order and payment hold.</li><li><strong>Fraud</strong>: shill bidding detection, bid retraction rules, payment verification before bidding on large items.</li><li><strong>Fair time</strong>: use server time only; clients display countdowns corrected by a server offset.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd31-q04" data-topic="Case studies 7" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you ensure two simultaneous bids cannot both win?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Hope <span class="q-why">No.</span></li>
+          <li data-key="B">Serialise bids per auction with a conditional update or a single ordered writer <span class="q-why">Correct.</span></li>
+          <li data-key="C">Faster servers <span class="q-why">No.</span></li>
+          <li data-key="D">Client-side checks <span class="q-why">Untrusted.</span></li>
+        </ul>
+        <div class="q-explain"><p>The check and the update must be atomic.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd31-q05" data-topic="Case studies 7" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does anti-sniping do?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Blocks bots <span class="q-why">No.</span></li>
+          <li data-key="B">Extends the end time when a bid arrives in the final window <span class="q-why">Correct.</span></li>
+          <li data-key="C">Hides bids <span class="q-why">No.</span></li>
+          <li data-key="D">Refunds bidders <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It gives others a chance to respond.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What events appear in an auction audit log?</summary><div class="answer"><p>Every accepted and rejected bid with time, user, amount and the resulting state and end time.</p></div></details>
+      </div>
+    </section>
+
+    <section id="teamchat" data-track>
+      <h2>Case 4: Team chat at scale (Slack, Discord)</h2>
+<h3>What differs from one-to-one chat (<a href="sd14-case-2.html">SD14</a>)</h3>
+<p>Workspaces contain <strong>channels</strong> with up to hundreds of thousands of members, threads, reactions, search, file sharing, unread counts per user per channel, mentions and presence. The same message is <strong>read by many</strong>, so reads dominate writes.</p>
+<h3>Design</h3>
+<ul><li><strong>Message path</strong>: client sends over WebSocket to a gateway, which writes to the channel's partition (a log keyed by channel id, assigning increasing message ids), then publishes to subscribers.</li><li><strong>Fan-out strategy</strong>: for a channel with <code>M</code> members, do not enqueue <code>M</code> copies. Gateways subscribe to the <strong>channels their connected users belong to</strong>; one publish reaches every gateway that has at least one member online. Offline members read from the log on return and get push notifications only for mentions or direct messages.</li><li><strong>Unread counts</strong>: store per user per channel only the <strong>last read message id</strong>; unread = latest id minus last read, with a cap for display. Avoid per-message read rows for large channels.</li><li><strong>Storage</strong>: messages keyed by <code>(channel_id, message_id)</code> in a wide-column or partitioned store, with time-bucketed partitions for old data; hot recent messages cached. Edits and deletes are new events or tombstones.</li><li><strong>Search</strong>: index messages asynchronously into a search cluster partitioned by workspace, enforcing channel permissions at query time.</li><li><strong>Presence</strong>: heartbeats into a fast store with TTL; broadcast changes only to people who care (same channel, or contacts), batched, because presence for 100,000 members is a storm.</li><li><strong>Large channels</strong> ("announcement" with 500k members): switch to <strong>pull</strong> for most members and rate limit posting and typing indicators.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd31-04.py">def fanout_cost(members, online_fraction, gateways=200):
+    online = int(members * online_fraction)
+    per_member_queue = members                                # naive: one queue write per member
+    per_gateway = min(gateways, online)                       # gateway-level pub/sub: one message per gateway with a subscriber
+    return per_member_queue, per_gateway
+for members in (50, 5_000, 500_000):
+    naive, smart = fanout_cost(members, 0.2)
+    print(f"channel of {members:&gt;7,} members: naive {naive:&gt;7,} queue writes vs {smart:&gt;3} gateway publishes per message")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>channel of      50 members: naive      50 queue writes vs  10 gateway publishes per message
+channel of   5,000 members: naive   5,000 queue writes vs 200 gateway publishes per message
+channel of 500,000 members: naive 500,000 queue writes vs 200 gateway publishes per message</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd31-q06" data-topic="Case studies 7" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you store unread counts for huge channels?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A row per message per user <span class="q-why">Enormous.</span></li>
+          <li data-key="B">The last-read message id per user per channel; unread = latest id minus last read <span class="q-why">Correct.</span></li>
+          <li data-key="C">Count on every open <span class="q-why">Slow.</span></li>
+          <li data-key="D">Not at all <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>One small pointer per membership.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why fan out per gateway instead of per member?</summary><div class="answer"><p>A message needs only one publish per gateway holding a subscriber, not one write per member.</p></div></details>
+      </div>
+    </section>
+
+    <section id="email" data-track>
+      <h2>Case 5: Email service</h2>
+<h3>Requirements</h3>
+<p>Send and receive email at scale (Gmail-style): mailboxes with folders and labels, search, attachments, spam filtering, and reliable delivery over the legacy <strong>SMTP</strong> protocol.</p>
+<h3>How email works</h3>
+<p><code>SMTP</code> moves mail between servers (sender's server looks up the recipient domain's <code>MX</code> record in DNS and connects, usually on port 25); <code>IMAP</code>/<code>POP3</code> or a web API lets clients read it. Key features: <strong>store and forward</strong> with retries on temporary failure (4xx) for days, bounce messages on permanent failure (5xx).</p>
+<h3>Sending pipeline</h3>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="Each stage is queue-backed so delivery survives crashes; retry with exponential backoff and give up after a few days." style="min-width:760px"><defs><marker id="ah55" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah55a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah55b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah55d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah55)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah55)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah55)"/><line x1="747.0" y1="78.0" x2="747.0" y2="118.0" class="d-line" marker-end="url(#ah55)"/><line x1="662.0" y1="147.0" x2="618.0" y2="147.0" class="d-line" marker-end="url(#ah55)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">Client submits</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle">Outbound queue</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle" class="d-sm">Spam and policy checks</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle">DNS MX lookup</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="151.5" text-anchor="middle" class="d-sm">SMTP delivery with retries</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="151.5" text-anchor="middle">Bounce handling</text></svg>
+</div>
+<figcaption>Each stage is queue-backed so delivery survives crashes; retry with exponential backoff and give up after a few days.</figcaption></figure>
+<p>Reputation matters: <strong>SPF</strong> (which IPs may send for a domain), <strong>DKIM</strong> (a cryptographic signature on the message) and <strong>DMARC</strong> (policy and reporting) prove authenticity. Warm up new sending IPs gradually, honour unsubscribe and bounces, and separate transactional from marketing streams.</p>
+<h3>Receiving and storage</h3>
+<ul><li><strong>Inbound</strong>: accept the message, run virus and spam checks (authentication results, IP reputation, content classifiers, user feedback), then deliver to the mailbox.</li><li><strong>Storage</strong>: messages are immutable blobs in object storage; metadata (labels, read flags, thread id) in a partitioned database keyed by user. Deduplicate large attachments by hash. Threading groups messages by <code>References</code>/<code>In-Reply-To</code> headers.</li><li><strong>Search</strong>: per-user inverted index (see <a href="sd33-search-data-modelling.html">SD33</a>), updated asynchronously.</li><li><strong>Scale</strong>: shard by user id so each mailbox lives on one shard; replicate across zones; back up and keep deletes recoverable for a period.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd31-05.py">import re
+SPAM_WORDS = {"winner": 2.0, "free": 1.0, "urgent": 1.5, "click here": 2.5, "unsubscribe": -0.5}
+def spam_score(subject, body, spf_pass, dkim_pass, links):
+    text = (subject + " " + body).lower()
+    score = sum(w for word, w in SPAM_WORDS.items() if word in text)
+    score += 0 if spf_pass else 2.0
+    score += 0 if dkim_pass else 1.5
+    score += 0.5 * max(0, links - 2)
+    score += 1.0 if re.search(r"[A-Z]{6,}", subject) else 0.0
+    return round(score, 1)
+msgs = [("Team notes", "meeting at 3", True, True, 0), ("URGENT WINNER", "free prize click here now", False, False, 6)]
+for s, b, spf, dkim, links in msgs:
+    sc = spam_score(s, b, spf, dkim, links)
+    print(f"{s!r}: score {sc} -&gt; {'SPAM folder' if sc &gt;= 5 else 'inbox'}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>'Team notes': score 0.0 -&gt; inbox
+'URGENT WINNER': score 13.5 -&gt; SPAM folder</code></pre>
+<p>Real filters combine many signals with machine-learning classifiers, user feedback loops and sender reputation, and are tuned to <strong>avoid false positives</strong>, because losing a real email is worse than letting some spam through.</p>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Trending is a growth statistic over sliding windows, dispatch is an assignment problem solved over a batch, auctions need one ordered writer per item, team chat survives huge channels by fanning out per gateway and tracking read pointers, and email is a store-and-forward protocol made reliable with queues, retries and authentication.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd31-q07" data-topic="Case studies 7" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What do SPF and DKIM do?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Compress mail <span class="q-why">No.</span></li>
+          <li data-key="B">Prove the sending server is authorised (SPF) and the message is signed by the domain (DKIM) <span class="q-why">Correct.</span></li>
+          <li data-key="C">Encrypt mailboxes <span class="q-why">No.</span></li>
+          <li data-key="D">Route mail <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>They support DMARC policy and fight spoofing.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd31-q08" data-topic="Case studies 7" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How does SMTP handle a temporary delivery failure?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Drops the mail <span class="q-why">No.</span></li>
+          <li data-key="B">Queues and retries with backoff for days, bouncing only on permanent failure <span class="q-why">Correct.</span></li>
+          <li data-key="C">Calls the user <span class="q-why">No.</span></li>
+          <li data-key="D">Retries immediately forever <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Store-and-forward gives reliability.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why queue every stage of mail delivery?</summary><div class="answer"><p>To survive crashes and temporary failures: messages are never lost and retried with backoff.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Case studies 7</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Case studies 7">
+<details class="recall iq" data-level="basic" data-topic="Case studies 7"><summary><span class="tag ok">Basic</span> How do you compute trending topics over the last hour?</summary><div class="answer"><p>Count per minute buckets, maintain the sliding window by adding the new bucket and removing the oldest, keep top-K per partition and merge, and score growth relative to a baseline.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 7"><summary><span class="tag warn">Medium</span> Why use a Count-Min Sketch for trending?</summary><div class="answer"><p>It tracks approximate frequencies of billions of distinct items in fixed memory with overestimate-only error, paired with a heap for the top items.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 7"><summary><span class="tag warn">Medium</span> Why is greedy nearest-courier matching suboptimal?</summary><div class="answer"><p>It can use up the only good courier for another order; batched assignment minimises total cost over the group.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 7"><summary><span class="tag warn">Medium</span> What services make up a food-delivery platform?</summary><div class="answer"><p>Location, order, dispatch, ETA, tracking, payments and notifications, with an event stream connecting them.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 7"><summary><span class="tag warn">Medium</span> How do you prevent two simultaneous auction bids both winning?</summary><div class="answer"><p>Serialise bids per auction through a single ordered writer or atomic conditional update that checks the current highest bid and increment.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 7"><summary><span class="tag warn">Medium</span> What is anti-sniping?</summary><div class="answer"><p>Extending the end time when a bid arrives near the end, so others can respond.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 7"><summary><span class="tag warn">Medium</span> How does email delivery handle failures?</summary><div class="answer"><p>Store-and-forward queues with retries and backoff on temporary (4xx) errors for days and bounces on permanent (5xx) errors.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 7"><summary><span class="tag warn">Medium</span> What are SPF, DKIM and DMARC?</summary><div class="answer"><p>SPF lists servers allowed to send for a domain, DKIM signs messages with the domain&#x27;s key, and DMARC sets policy and reporting based on both.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 7"><summary><span class="tag bad">Advanced</span> How does Slack-style chat avoid per-member fan-out?</summary><div class="answer"><p>Gateways subscribe to channels for their connected users, so one publish reaches each gateway with an interested user; offline users read from the log and unread counts are last-read pointers.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 7"><summary><span class="tag bad">Advanced</span> Why store the last read message id instead of read flags?</summary><div class="answer"><p>One small pointer per user per channel replaces millions of per-message rows, and unread is latest id minus pointer.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 7"><summary><span class="tag bad">Advanced</span> How does presence scale for large channels?</summary><div class="answer"><p>Heartbeats with TTL in a fast store, broadcasting changes only to interested peers in batches, and not showing presence for huge channels.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 7"><summary><span class="tag bad">Advanced</span> How would you design the ETA service?</summary><div class="answer"><p>Prep time plus courier-to-restaurant plus restaurant-to-customer travel from a road graph with live traffic, corrected by a model trained on historical delivery outcomes.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 7"><summary><span class="tag bad">Advanced</span> How do you handle a courier who stops sending location?</summary><div class="answer"><p>Mark the courier stale after missed pings, alert the customer if needed, and re-dispatch the order.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 7"><summary><span class="tag bad">Advanced</span> How would you detect bidding fraud?</summary><div class="answer"><p>Pattern analysis of bidder-seller relationships, new account behaviour, bid timing and retractions, plus payment verification for high-value items.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd30-sre-operations.html"><span class="dir">Previous</span><span>SD30 Site reliability engineering: SLOs, burn rates, capacity planning, load testing and incident response</span></a>
+      <a class="next" href="sd32-client-offline.html"><span class="dir">Next</span><span>SD32 Client-side and mobile system design: offline-first, sync, push and media pipelines</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

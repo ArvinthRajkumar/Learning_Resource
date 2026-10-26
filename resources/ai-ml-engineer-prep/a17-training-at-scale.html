@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="A17">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Training at scale: GPU performance, parallelism, mixed precision and scaling laws | AI/ML Prep</title>
+<meta name="description" content="How large models are trained: FLOPs and memory accounting, the roofline model and why attention and decoding are memory bound, mixed precision, data, tensor, pipeline and sequence parallelism, ZeRO and FSDP sharding, activation checkpointing, communication costs, scaling laws and the arithmetic of a training run.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part A17</p>
+      <h1>Training at scale: GPU performance, parallelism, mixed precision and scaling laws</h1>
+      <p class="lede">Training a large model is an exercise in accounting: how many floating-point operations, how many bytes in which memory, how many bytes over which wire. This part gives the formulas and calculators that let you answer 'will it fit, how fast, and what does it cost' before you launch a job.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~6 hours</span></div>
+    </div>
+
+    <section id="account" data-track>
+      <h2>The accounting mindset</h2>
+<p>Three resources limit training, and a good engineer tracks all of them:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Resource</th><th>Question</th><th>Unit</th></tr></thead>
+<tbody>
+<tr><td><strong>Compute</strong></td><td>How many operations does the job need, and how fast is the hardware?</td><td>FLOPs, FLOP/s</td></tr><tr><td><strong>Memory</strong></td><td>Do weights, gradients, optimiser state and activations fit on each GPU?</td><td>bytes</td></tr><tr><td><strong>Communication</strong></td><td>How much data must move between GPUs each step, over which links?</td><td>bytes, bytes/s</td></tr>
+</tbody>
+</table>
+</div>
+<p>Everything in distributed training (sharding, pipelining, checkpointing, overlap) is a trade between these three.</p>
+    </section>
+
+    <section id="flops" data-track>
+      <h2>Compute: how many FLOPs</h2>
+<p>For a dense transformer with <code>N</code> parameters trained on <code>D</code> tokens, a good rule is:</p>
+<div class="formula"><div class="f-title">Training compute</div><div class="f-body">FLOPs = 6 x N x D</div><dl class="f-defs"><dt>N</dt><dd>parameters</dd><dt>D</dt><dd>training tokens</dd></dl></div>
+<p>(The backward pass costs about twice the forward.) Inference costs about <code>2N</code> FLOPs per generated token. Attention adds terms that grow with sequence length, but for typical context lengths the <code>6ND</code> rule is within tens of percent.</p>
+<p><strong>Model FLOPs utilisation (MFU)</strong> is the fraction of the hardware's peak FLOP/s that your useful <code>6ND</code> work achieves. Well-tuned large runs reach roughly 35 to 55%; naive code gets far less. Time to train is <code>6ND / (num_gpus x peak_flops x MFU)</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a17-01.py">def training_estimate(params, tokens, gpus, peak_tflops, mfu, price_per_gpu_hour):
+    flops = 6 * params * tokens
+    seconds = flops / (gpus * peak_tflops * 1e12 * mfu)
+    gpu_hours = gpus * seconds / 3600
+    return flops, seconds / 86400, gpu_hours, gpu_hours * price_per_gpu_hour
+for name, N_, D_, g in [("1B model, 20B tokens", 1e9, 20e9, 8), ("7B model, 1T tokens", 7e9, 1e12, 512), ("70B model, 2T tokens", 70e9, 2e12, 2048)]:
+    flops, days, gh, cost = training_estimate(N_, D_, g, peak_tflops=312, mfu=0.4, price_per_gpu_hour=2.0)      # an A100-class GPU, bf16 peak 312 TFLOP/s
+    print(f"{name:&gt;22}: {flops:.2e} FLOPs | {g:&gt;4} GPUs -&gt; {days:7.1f} days | {gh:&gt;11,.0f} GPU-hours | about ${cost:&gt;12,.0f} at $2/GPU-hour")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>  1B model, 20B tokens: 1.20e+20 FLOPs |    8 GPUs -&gt;     1.4 days |         267 GPU-hours | about $         534 at $2/GPU-hour
+   7B model, 1T tokens: 4.20e+22 FLOPs |  512 GPUs -&gt;     7.6 days |      93,483 GPU-hours | about $     186,966 at $2/GPU-hour
+  70B model, 2T tokens: 8.40e+23 FLOPs | 2048 GPUs -&gt;    38.0 days |   1,869,658 GPU-hours | about $   3,739,316 at $2/GPU-hour</code></pre>
+<p>These figures leave out failures, restarts, evaluation, data pipeline stalls and failed experiments, which often double the real cost.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a17-q01" data-topic="Training at scale" data-type="numeric" data-answer="12" data-tol="0">
+        <div class="q-stem"><p>Training compute is about 6ND. How many FLOPs does a 1B-parameter model trained on 20B tokens need, in units of 10^19?</p></div>
+        <div class="q-explain"><p>6 x 1e9 x 20e9 = 1.2e20 = 12 x 10^19.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a17-q02" data-topic="Training at scale" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is MFU?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The fraction of memory used <span class="q-why">No.</span></li>
+          <li data-key="B">The fraction of the hardware's peak FLOP/s achieved by useful model computation <span class="q-why">Correct.</span></li>
+          <li data-key="C">The number of GPUs <span class="q-why">No.</span></li>
+          <li data-key="D">A learning-rate schedule <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Good large runs reach roughly 35 to 55%.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Give the formula for training compute.</summary><div class="answer"><p>About 6 x parameters x tokens FLOPs (2ND forward and 4ND backward).</p></div></details>
+      </div>
+    </section>
+
+    <section id="memory" data-track>
+      <h2>Memory: what lives on the GPU</h2>
+<p>For each parameter, training with the Adam optimiser in mixed precision typically stores:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Item</th><th>Bytes per parameter</th></tr></thead>
+<tbody>
+<tr><td>Weights in bf16/fp16 (used in forward and backward)</td><td>2</td></tr><tr><td>Gradients in bf16/fp16</td><td>2</td></tr><tr><td>fp32 master copy of the weights</td><td>4</td></tr><tr><td>Adam first moment (fp32)</td><td>4</td></tr><tr><td>Adam second moment (fp32)</td><td>4</td></tr><tr><td><strong>Total</strong></td><td><strong>16</strong></td></tr>
+</tbody>
+</table>
+</div>
+<p>Plus <strong>activations</strong> (stored for the backward pass; grow with batch size, sequence length and depth) and temporary buffers. A 7B model needs <code>7e9 x 16 = 112 GB</code> for states alone, more than one 80 GB GPU, before any activations.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a17-02.py">def memory_gb(params, bytes_per_param=16): return params * bytes_per_param / 1e9
+for name, p in [("1B", 1e9), ("7B", 7e9), ("13B", 13e9), ("70B", 70e9)]:
+    print(f"{name:&gt;4} parameters: training states {memory_gb(p):&gt;7.0f} GB | bf16 weights alone {memory_gb(p, 2):&gt;6.0f} GB | 4-bit inference weights {memory_gb(p, 0.5):&gt;6.1f} GB")
+def activation_gb(layers, hidden, seq, batch, bytes_per=2, factor=34):
+    return layers * seq * batch * hidden * factor * bytes_per / 1e9 / 2           # rough: about 34 x s x b x h bytes (fp16) per layer without checkpointing
+print("activations for a 32-layer, 4096-wide model, seq 4096, micro-batch 1:", round(activation_gb(32, 4096, 4096, 1), 1), "GB without activation checkpointing")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>  1B parameters: training states      16 GB | bf16 weights alone      2 GB | 4-bit inference weights    0.5 GB
+  7B parameters: training states     112 GB | bf16 weights alone     14 GB | 4-bit inference weights    3.5 GB
+ 13B parameters: training states     208 GB | bf16 weights alone     26 GB | 4-bit inference weights    6.5 GB
+ 70B parameters: training states    1120 GB | bf16 weights alone    140 GB | 4-bit inference weights   35.0 GB
+activations for a 32-layer, 4096-wide model, seq 4096, micro-batch 1: 18.3 GB without activation checkpointing</code></pre>
+<h3>Activation checkpointing (rematerialisation)</h3>
+<p>Instead of storing every layer's activations, store only a few <strong>checkpoints</strong> and <strong>recompute</strong> the rest during the backward pass. Memory drops from <code>O(layers)</code> to about <code>O(sqrt(layers))</code> (or <code>O(1)</code> per layer with per-block checkpoints) at the price of roughly <strong>one extra forward pass (about 33% more compute)</strong>. It is the standard way to trade compute for memory.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a17-q03" data-topic="Training at scale" data-type="numeric" data-answer="16" data-tol="0">
+        <div class="q-stem"><p>How many bytes per parameter does mixed-precision Adam training need for weights, gradients, master weights and two moments (2 + 2 + 4 + 4 + 4)?</p></div>
+        <div class="q-explain"><p>That is 16 bytes per parameter, before activations.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a17-q04" data-topic="Training at scale" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does activation checkpointing trade?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Accuracy for speed <span class="q-why">No.</span></li>
+          <li data-key="B">Extra computation (about one more forward pass) for much less activation memory <span class="q-why">Correct.</span></li>
+          <li data-key="C">Memory for disk <span class="q-why">No.</span></li>
+          <li data-key="D">Bandwidth for latency <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Recompute activations in the backward pass instead of storing them.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>List the per-parameter memory in mixed-precision Adam.</summary><div class="answer"><p>bf16 weights 2, bf16 gradients 2, fp32 master weights 4, and two fp32 Adam moments 4 + 4: 16 bytes.</p></div></details>
+      </div>
+    </section>
+
+    <section id="precision" data-track>
+      <h2>Mixed precision</h2>
+<p>Using 16-bit numbers for most arithmetic halves memory traffic and doubles tensor-core throughput.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Format</th><th>Bits</th><th>Exponent / mantissa</th><th>Range</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>fp32</td><td>32</td><td>8 / 23</td><td>huge</td><td>Master weights, optimiser state, sensitive reductions</td></tr><tr><td><strong>bf16</strong></td><td>16</td><td>8 / 7</td><td>same as fp32, coarse precision</td><td>Default for training: no loss scaling needed</td></tr><tr><td>fp16</td><td>16</td><td>5 / 10</td><td>limited (about 6e-5 to 65504)</td><td>Needs <strong>loss scaling</strong> to avoid gradient underflow</td></tr><tr><td>fp8 (E4M3, E5M2)</td><td>8</td><td>varies</td><td>very limited</td><td>Per-tensor scaling; used on recent GPUs</td></tr><tr><td>int8 / int4</td><td>8 / 4</td><td>integers</td><td>n/a</td><td>Mostly inference (quantisation, <a href="a5-llm-architectures.html">A5</a>)</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/a17-03.py">import struct
+def to_bf16(x):                                             # keep the top 16 bits of the float32 representation (truncation)
+    bits = struct.unpack("&gt;I", struct.pack("&gt;f", x))[0] &amp; 0xFFFF0000
+    return struct.unpack("&gt;f", struct.pack("&gt;I", bits))[0]
+def to_fp16(x):
+    try: return struct.unpack("&gt;e", struct.pack("&gt;e", x))[0]
+    except OverflowError: return float("inf")
+for x in (3.14159265, 1e-8, 70000.0, 0.1):
+    print(f"{x!r:&gt;12}: bf16 {to_bf16(x)!r:&gt;14} | fp16 {to_fp16(x)!r:&gt;14}")
+print("fp16 overflows above 65504 and flushes tiny gradients toward zero, which is why it needs loss scaling; bf16 keeps the range but loses precision")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>  3.14159265: bf16       3.140625 | fp16       3.140625
+       1e-08: bf16 9.953510016202927e-09 | fp16            0.0
+     70000.0: bf16        69632.0 | fp16            inf
+         0.1: bf16    0.099609375 | fp16 0.0999755859375
+fp16 overflows above 65504 and flushes tiny gradients toward zero, which is why it needs loss scaling; bf16 keeps the range but loses precision</code></pre>
+<p>Accumulate in fp32 (sums of many small numbers lose information in 16 bits), keep fp32 master weights, and watch for loss spikes and NaNs (gradient clipping, lower learning rate, skipping bad batches).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a17-q05" data-topic="Training at scale" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is bf16 usually preferred to fp16 for training?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is more precise <span class="q-why">It is less precise.</span></li>
+          <li data-key="B">It has the same exponent range as fp32, so it does not need loss scaling <span class="q-why">Correct.</span></li>
+          <li data-key="C">It is smaller <span class="q-why">Same size.</span></li>
+          <li data-key="D">It is faster to convert <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>fp16 has a narrow range and risks underflow.</p></div>
+      </div>
+    </section>
+
+    <section id="roofline" data-track>
+      <h2>The roofline: compute-bound versus memory-bound</h2>
+<p>A GPU has a peak compute rate <code>P</code> (FLOP/s) and a memory bandwidth <code>B</code> (bytes/s). An operation's <strong>arithmetic intensity</strong> <code>I</code> is FLOPs performed per byte moved from memory. Attainable performance is <code>min(P, B x I)</code>. The break-even intensity is <code>P / B</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a17-04.py">peak_flops, bandwidth = 312e12, 2.0e12                       # A100-class: 312 TFLOP/s bf16, 2 TB/s HBM
+print(f"ridge point: {peak_flops / bandwidth:.0f} FLOPs per byte (below this an operation is memory bound)")
+def matmul_intensity(m, k, n, bytes_per=2):
+    flops = 2 * m * k * n; moved = bytes_per * (m * k + k * n + m * n); return flops / moved
+for name, (m, k, n) in [("training matmul, batch 4096 tokens", (4096, 4096, 4096)), ("decoding, 1 token at a time", (1, 4096, 4096)), ("decoding, batch of 64 tokens", (64, 4096, 4096))]:
+    I = matmul_intensity(m, k, n); perf = min(peak_flops, bandwidth * I)
+    print(f"{name:&gt;36}: intensity {I:7.1f} FLOP/byte -&gt; {perf / 1e12:6.1f} TFLOP/s ({'compute' if I &gt;= peak_flops / bandwidth else 'memory'} bound)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>ridge point: 156 FLOPs per byte (below this an operation is memory bound)
+  training matmul, batch 4096 tokens: intensity  1365.3 FLOP/byte -&gt;  312.0 TFLOP/s (compute bound)
+         decoding, 1 token at a time: intensity     1.0 FLOP/byte -&gt;    2.0 TFLOP/s (memory bound)
+        decoding, batch of 64 tokens: intensity    62.1 FLOP/byte -&gt;  124.1 TFLOP/s (memory bound)</code></pre>
+<p>Consequences you can state in an interview:</p>
+<ul><li><strong>Large matrix multiplications in training are compute bound</strong>; keep tensor cores busy with big, aligned shapes.</li><li><strong>Autoregressive decoding with small batches is memory bound</strong>: each token re-reads all the weights, so throughput is about <code>bandwidth / model_bytes</code> tokens per second per sequence, and <strong>batching</strong> raises intensity (<a href="a5-llm-architectures.html">A5</a>).</li><li><strong>Elementwise operations</strong> (layer norm, GELU, softmax, dropout) are memory bound; <strong>fusion</strong> (one kernel instead of many) and <strong>FlashAttention</strong> (tiling attention in fast on-chip memory so the <code>n x n</code> score matrix never hits HBM) reduce traffic.</li><li><strong>torch.compile</strong>, fused optimisers and CUDA graphs cut launch overhead and memory round trips.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a17-q06" data-topic="Training at scale" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is single-sequence autoregressive decoding memory bound?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It does too many FLOPs <span class="q-why">No.</span></li>
+          <li data-key="B">Each token re-reads all weights for very few FLOPs, so arithmetic intensity is low <span class="q-why">Correct.</span></li>
+          <li data-key="C">The network is slow <span class="q-why">No.</span></li>
+          <li data-key="D">The CPU is slow <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Batching more sequences raises intensity.</p></div>
+      </div>
+    </section>
+
+    <section id="comms" data-track>
+      <h2>Communication: the interconnect</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Link</th><th>Typical bandwidth</th></tr></thead>
+<tbody>
+<tr><td>GPU HBM memory</td><td>about 2,000 to 3,000 GB/s</td></tr><tr><td>NVLink between GPUs in a node</td><td>about 300 to 900 GB/s</td></tr><tr><td>PCIe</td><td>about 32 to 64 GB/s</td></tr><tr><td>InfiniBand / Ethernet between nodes</td><td>about 25 to 100 GB/s per node (several NICs)</td></tr>
+</tbody>
+</table>
+</div>
+<p>Collective operations: <strong>all-reduce</strong> (sum a tensor across GPUs and give everyone the result), <strong>all-gather</strong> (assemble shards on every GPU), <strong>reduce-scatter</strong> (sum and leave each GPU a shard) and <strong>all-to-all</strong> (used by mixture of experts). A <strong>ring all-reduce</strong> of <code>S</code> bytes across <code>p</code> GPUs moves about <code>2 S (p - 1) / p</code> bytes per GPU, nearly independent of <code>p</code>, so it scales well if the link is fast.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a17-05.py">def ring_allreduce_seconds(bytes_total, gpus, link_gbps):
+    per_gpu = 2 * bytes_total * (gpus - 1) / gpus
+    return per_gpu / (link_gbps * 1e9)
+grads = 7e9 * 2                                                                   # bf16 gradients of a 7B model: 14 GB
+for name, bw in [("PCIe (32 GB/s)", 32), ("InfiniBand node link (50 GB/s)", 50), ("NVLink (450 GB/s)", 450)]:
+    print(f"all-reduce of 14 GB over 8 GPUs on {name:&gt;30}: {ring_allreduce_seconds(grads, 8, bw) * 1000:7.0f} ms")
+step_compute = 6 * 7e9 * 4096 * 8 / (8 * 312e12 * 0.4)                           # one step with a global batch of 8 sequences of 4096 tokens
+print(f"compute per step on 8 GPUs at 40% MFU: {step_compute * 1000:.0f} ms -&gt; communication must overlap with backward compute or it dominates")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>all-reduce of 14 GB over 8 GPUs on                 PCIe (32 GB/s):     766 ms
+all-reduce of 14 GB over 8 GPUs on InfiniBand node link (50 GB/s):     490 ms
+all-reduce of 14 GB over 8 GPUs on              NVLink (450 GB/s):      54 ms
+compute per step on 8 GPUs at 40% MFU: 1378 ms -&gt; communication must overlap with backward compute or it dominates</code></pre>
+<p><strong>Overlap</strong> communication with computation (start reducing a layer's gradients while computing earlier layers' backward pass) and increase the per-GPU batch so computation per byte moved is higher.</p>
+    </section>
+
+    <section id="parallelism" data-track>
+      <h2>Parallelism strategies</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Strategy</th><th>What is split</th><th>Memory effect</th><th>Communication</th><th>Best for</th></tr></thead>
+<tbody>
+<tr><td><strong>Data parallel (DP / DDP)</strong></td><td>The batch; every GPU holds a full model copy</td><td>None (replicated)</td><td>All-reduce gradients once per step</td><td>Models that fit on one GPU</td></tr><tr><td><strong>Sharded data parallel (ZeRO / FSDP)</strong></td><td>Optimiser state, gradients and weights across data-parallel ranks</td><td>Divides model state by <code>p</code></td><td>All-gather weights per layer, reduce-scatter gradients</td><td>Medium and large models without model-parallel code</td></tr><tr><td><strong>Tensor parallel (TP)</strong></td><td>Individual matrices (columns/rows) across GPUs</td><td>Divides weights and activations</td><td>All-reduce per layer (needs NVLink)</td><td>Very large layers; within a node</td></tr><tr><td><strong>Pipeline parallel (PP)</strong></td><td>Consecutive layers across GPUs (stages)</td><td>Divides weights</td><td>Point-to-point activations between stages</td><td>Spanning nodes; needs micro-batching to avoid idle "bubbles"</td></tr><tr><td><strong>Sequence / context parallel</strong></td><td>The sequence dimension</td><td>Divides activations</td><td>Ring or all-to-all attention</td><td>Very long contexts</td></tr><tr><td><strong>Expert parallel (EP)</strong></td><td>Experts of a mixture-of-experts layer</td><td>Divides expert weights</td><td>All-to-all token routing</td><td>MoE models</td></tr>
+</tbody>
+</table>
+</div>
+<p>Large runs combine them (<strong>3D parallelism</strong>): tensor parallel inside a node over NVLink, pipeline parallel across nodes, data parallel (usually sharded) across replicas.</p>
+<h3>ZeRO and FSDP: shard the model state</h3>
+<p>ZeRO (Zero Redundancy Optimizer) stages remove the replication in data parallelism:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Stage</th><th>Shards</th><th>Memory per GPU for <code>psi</code> parameters with <code>p</code> GPUs (mixed-precision Adam)</th></tr></thead>
+<tbody>
+<tr><td>Baseline DP</td><td>nothing</td><td>16 psi bytes</td></tr><tr><td>ZeRO-1</td><td>optimiser states</td><td>4 psi + 12 psi / p</td></tr><tr><td>ZeRO-2</td><td>+ gradients</td><td>2 psi + 14 psi / p</td></tr><tr><td>ZeRO-3 / FSDP</td><td>+ weights</td><td>16 psi / p</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/a17-06.py">def zero_memory_gb(params, p, stage):
+    psi = params
+    per_param = {0: 16, 1: 4 + 12 / p, 2: 2 + 14 / p, 3: 16 / p}[stage]
+    return psi * per_param / 1e9
+for stage in (0, 1, 2, 3):
+    print(f"7B model on 8 GPUs, ZeRO stage {stage}: {zero_memory_gb(7e9, 8, stage):6.1f} GB of model state per GPU" + ("   (fits in 80 GB)" if zero_memory_gb(7e9, 8, stage) &lt; 60 else "   (does not fit in 80 GB with activations)"))
+print("70B model on 64 GPUs, ZeRO-3:", round(zero_memory_gb(70e9, 64, 3), 1), "GB per GPU")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>7B model on 8 GPUs, ZeRO stage 0:  112.0 GB of model state per GPU   (does not fit in 80 GB with activations)
+7B model on 8 GPUs, ZeRO stage 1:   38.5 GB of model state per GPU   (fits in 80 GB)
+7B model on 8 GPUs, ZeRO stage 2:   26.2 GB of model state per GPU   (fits in 80 GB)
+7B model on 8 GPUs, ZeRO stage 3:   14.0 GB of model state per GPU   (fits in 80 GB)
+70B model on 64 GPUs, ZeRO-3: 17.5 GB per GPU</code></pre>
+<p>FSDP trades extra communication (gathering each layer's weights just before use, in both forward and backward) for memory. <strong>CPU or NVMe offload</strong> (ZeRO-Offload/Infinity) trades PCIe bandwidth for capacity.</p>
+<h3>Pipeline bubbles</h3>
+<p>With <code>p</code> stages and <code>m</code> micro-batches, a simple schedule leaves a fraction <code>(p - 1) / (m + p - 1)</code> of time idle (the <strong>bubble</strong>). Use many micro-batches (<code>m &gt;&gt; p</code>) or interleaved schedules to shrink it.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a17-07.py">for p in (4, 8):
+    print(f"{p} pipeline stages: " + " | ".join(f"{m} micro-batches -&gt; bubble {(p - 1) / (m + p - 1):.0%}" for m in (4, 16, 64)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>4 pipeline stages: 4 micro-batches -&gt; bubble 43% | 16 micro-batches -&gt; bubble 16% | 64 micro-batches -&gt; bubble 4%
+8 pipeline stages: 4 micro-batches -&gt; bubble 64% | 16 micro-batches -&gt; bubble 30% | 64 micro-batches -&gt; bubble 10%</code></pre>
+<h3>Tensor parallel in one picture</h3>
+<p>A linear layer <code>Y = X W</code> with <code>W</code> split by <strong>columns</strong> across two GPUs: each computes its own slice of the output without communication; the next layer, split by <strong>rows</strong>, consumes those slices and needs one <strong>all-reduce</strong> to sum partial results. Transformer blocks are arranged so there are two all-reduces per layer (attention and MLP). The verified miniature:</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a17-08.py">import random
+random.seed(1)
+def matmul(A, B): return [[sum(a * b for a, b in zip(row, col)) for col in zip(*B)] for row in A]
+X = [[random.randint(-3, 3) for _ in range(4)] for _ in range(3)]
+W1 = [[random.randint(-3, 3) for _ in range(6)] for _ in range(4)]          # first layer: split by columns
+W2 = [[random.randint(-3, 3) for _ in range(4)] for _ in range(6)]          # second layer: split by rows
+full = matmul(matmul(X, W1), W2)
+W1_a, W1_b = [r[:3] for r in W1], [r[3:] for r in W1]                       # "GPU a" and "GPU b" each hold half the columns
+W2_a, W2_b = W2[:3], W2[3:]                                                 # and the matching half of the rows
+part_a = matmul(matmul(X, W1_a), W2_a)                                      # computed independently on each device
+part_b = matmul(matmul(X, W1_b), W2_b)
+combined = [[a + b for a, b in zip(ra, rb)] for ra, rb in zip(part_a, part_b)]      # the single all-reduce (a sum)
+print("tensor-parallel result equals the single-device result:", combined == full)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>tensor-parallel result equals the single-device result: True</code></pre>
+<p>(The nonlinearity between the layers is elementwise, so it acts on each GPU's own slice without communication; the all-reduce happens once at the end of the pair.)</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a17-q07" data-topic="Training at scale" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which strategy shards optimiser state, gradients and weights across data-parallel ranks?</p></div>
+        <ul class="q-options">
+          <li data-key="A">DDP <span class="q-why">Replicates everything.</span></li>
+          <li data-key="B">ZeRO-3 / FSDP <span class="q-why">Correct.</span></li>
+          <li data-key="C">Pipeline parallelism <span class="q-why">Splits layers.</span></li>
+          <li data-key="D">Tensor parallelism <span class="q-why">Splits matrices.</span></li>
+        </ul>
+        <div class="q-explain"><p>Memory per GPU becomes about 16 psi / p.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Where do you place tensor parallelism and why?</summary><div class="answer"><p>Inside a node over NVLink, because it needs an all-reduce per layer and so needs very high bandwidth.</p></div></details>
+        <details class="recall"><summary>What is the pipeline bubble?</summary><div class="answer"><p>The idle fraction (p - 1)/(m + p - 1) with p stages and m micro-batches; reduce it with more micro-batches or interleaved schedules.</p></div></details>
+      </div>
+    </section>
+
+    <section id="scaling" data-track>
+      <h2>Scaling laws and the compute budget</h2>
+<p>Empirically, loss falls as a <strong>power law</strong> in parameters, data and compute. <strong>Chinchilla</strong> (Hoffmann et al., 2022) found that for a fixed compute budget, parameters and tokens should grow together, at roughly <strong>20 tokens per parameter</strong>; many earlier models were over-sized and under-trained. Given compute <code>C = 6ND</code>, the compute-optimal choice is about <code>N = sqrt(C / 120)</code> and <code>D = 20 N</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a17-09.py">import math
+for C in (1e21, 1e23, 1e25):
+    N_opt = math.sqrt(C / 120); D_opt = 20 * N_opt
+    print(f"compute {C:.0e} FLOPs: compute-optimal about {N_opt / 1e9:7.1f}B parameters trained on {D_opt / 1e12:6.2f}T tokens")
+print("A 7B model trained on 2T tokens uses", round(2e12 / 7e9), "tokens per parameter, far beyond 20: 'over-training' makes a smaller model that is cheaper to serve")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>compute 1e+21 FLOPs: compute-optimal about     2.9B parameters trained on   0.06T tokens
+compute 1e+23 FLOPs: compute-optimal about    28.9B parameters trained on   0.58T tokens
+compute 1e+25 FLOPs: compute-optimal about   288.7B parameters trained on   5.77T tokens
+A 7B model trained on 2T tokens uses 286 tokens per parameter, far beyond 20: 'over-training' makes a smaller model that is cheaper to serve</code></pre>
+<p>Why train beyond compute-optimal? Training cost is paid once but <strong>inference cost is paid on every request</strong>; a smaller, longer-trained model gives the same quality at lower serving cost. Other scaling considerations: <strong>data quality and repetition</strong> (the supply of fresh high-quality text is limited; repeating data a few epochs is fine, many is not), <strong>emergent behaviours</strong> that appear with scale, and <strong>test-time compute</strong> (reasoning models spend extra inference compute for accuracy).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a17-q08" data-topic="Training at scale" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Chinchilla's compute-optimal rule of thumb is about:</p></div>
+        <ul class="q-options">
+          <li data-key="A">1 token per parameter <span class="q-why">No.</span></li>
+          <li data-key="B">20 tokens per parameter <span class="q-why">Correct.</span></li>
+          <li data-key="C">1,000 tokens per parameter <span class="q-why">No.</span></li>
+          <li data-key="D">Only more parameters <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Models are often trained far beyond it to reduce serving cost.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why train a smaller model on more tokens than compute-optimal?</summary><div class="answer"><p>Training is a one-time cost but inference is paid on every request, so a smaller model reaching the same quality is cheaper overall.</p></div></details>
+      </div>
+    </section>
+
+    <section id="stability" data-track>
+      <h2>Hyperparameters and stability at scale</h2>
+<ul><li><strong>Learning rate</strong> scales with model width (use parameterisations such as muP so small-model experiments transfer); <strong>warm up</strong> the rate over the first thousands of steps and <strong>decay</strong> (cosine or linear).</li><li><strong>Batch size</strong>: larger batches improve throughput up to the <strong>critical batch size</strong>; beyond it, extra examples add little. Scale learning rate with batch size carefully.</li><li><strong>Gradient clipping</strong> (norm 1.0) tames spikes; <strong>weight decay</strong> (decoupled, AdamW); <strong>epsilon</strong> in Adam matters in low precision.</li><li><strong>Loss spikes</strong>: monitor gradient norm, roll back to a checkpoint and skip the bad data window; consider QK-norm, z-loss and lower precision-sensitive operations in fp32.</li><li><strong>Checkpointing</strong>: save model, optimiser and data-loader state frequently and asynchronously; failures are routine on thousands of GPUs (a 10,000 GPU cluster sees a hardware fault every few hours), so jobs must <strong>resume automatically</strong>.</li><li><strong>Data loading</strong> must keep GPUs fed: sharded, streamed, shuffled deterministically by step so resumption reproduces the same stream.</li></ul>
+    </section>
+
+    <section id="perf" data-track>
+      <h2>Debugging performance</h2>
+<p>A checklist when throughput is lower than expected:</p>
+<ol><li>Compute <strong>MFU</strong> from tokens per second: <code>tokens/s x 6N / (gpus x peak)</code>. Compare with 40% as a target.</li><li>Look at a <strong>profiler trace</strong>: are GPUs idle waiting for data, for communication, or on small kernels?</li><li><strong>Data pipeline</strong>: increase workers, prefetch, use faster storage and pre-tokenised packed sequences.</li><li><strong>Kernel efficiency</strong>: fused attention (FlashAttention), fused norm and optimiser kernels, large aligned shapes (multiples of 8 or 64), <code>torch.compile</code>.</li><li><strong>Communication</strong>: overlap, bucket gradients, place tensor-parallel groups within an NVLink domain, check network topology and stragglers.</li><li><strong>Memory</strong>: reduce fragmentation, tune micro-batch size, use activation checkpointing selectively, avoid CPU-GPU synchronisation (<code>.item()</code>, <code>print</code> in the loop).</li><li><strong>Stragglers</strong>: one slow GPU slows everyone; monitor per-rank step times.</li></ol>
+<pre><code class="lang-py" data-embed="solutions/snippets/a17-10.py">def mfu(tokens_per_sec, params, gpus, peak_tflops): return tokens_per_sec * 6 * params / (gpus * peak_tflops * 1e12)
+for label, tps in [("untuned baseline", 9_000), ("after fused kernels and data fixes", 21_000), ("well-tuned", 34_000)]:
+    print(f"{label:&gt;34}: {tps:&gt;6} tokens/s on 8 GPUs training a 7B model -&gt; MFU {mfu(tps, 7e9, 8, 312):.0%}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>                  untuned baseline:   9000 tokens/s on 8 GPUs training a 7B model -&gt; MFU 15%
+after fused kernels and data fixes:  21000 tokens/s on 8 GPUs training a 7B model -&gt; MFU 35%
+                        well-tuned:  34000 tokens/s on 8 GPUs training a 7B model -&gt; MFU 57%</code></pre>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Do the arithmetic first: 6ND FLOPs for compute, about 16 bytes per parameter for training state, the ring all-reduce cost for communication. Fit the model with sharding, mixed precision and activation checkpointing; keep GPUs busy by overlapping communication with computation; respect the roofline (training is compute bound, decoding is memory bound); and choose model and data size with scaling laws, remembering serving cost.</p></div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Training at scale</h2>
+      <p class="muted">15 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Training at scale">
+<details class="recall iq" data-level="basic" data-topic="Training at scale"><summary><span class="tag ok">Basic</span> How many FLOPs does training a transformer need?</summary><div class="answer"><p>About 6 x parameters x tokens: 2ND for the forward pass and 4ND for the backward pass.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Training at scale"><summary><span class="tag ok">Basic</span> How much memory per parameter does mixed-precision Adam training need?</summary><div class="answer"><p>About 16 bytes: 2 for bf16 weights, 2 for gradients, 4 for fp32 master weights and 8 for the two Adam moments, plus activations.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Training at scale"><summary><span class="tag warn">Medium</span> Why bf16 instead of fp16 for training?</summary><div class="answer"><p>bf16 has fp32&#x27;s exponent range so it needs no loss scaling, while fp16&#x27;s narrow range risks overflow and underflow.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Training at scale"><summary><span class="tag warn">Medium</span> What is MFU?</summary><div class="answer"><p>Model FLOPs utilisation: useful model FLOP/s divided by the hardware&#x27;s peak FLOP/s; well-tuned runs reach about 35 to 55%.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Training at scale"><summary><span class="tag warn">Medium</span> Explain activation checkpointing.</summary><div class="answer"><p>Store only some activations and recompute the others in the backward pass, trading about 33% more compute for much less memory.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Training at scale"><summary><span class="tag warn">Medium</span> Data parallel versus tensor parallel versus pipeline parallel?</summary><div class="answer"><p>Data parallel splits the batch with full model copies; tensor parallel splits individual matrices; pipeline parallel splits layers into stages processed in micro-batches.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Training at scale"><summary><span class="tag warn">Medium</span> What does ZeRO stage 3 / FSDP do?</summary><div class="answer"><p>Shards optimiser state, gradients and parameters across data-parallel ranks so memory per GPU falls to about 16 psi / p, at the cost of gathering weights layer by layer.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Training at scale"><summary><span class="tag warn">Medium</span> What is the pipeline bubble?</summary><div class="answer"><p>Idle time of (p - 1)/(m + p - 1) with p stages and m micro-batches; reduced by more micro-batches or interleaved schedules.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Training at scale"><summary><span class="tag warn">Medium</span> Why place tensor parallelism inside a node?</summary><div class="answer"><p>It requires an all-reduce per layer and so needs NVLink-class bandwidth; inter-node links are too slow.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Training at scale"><summary><span class="tag bad">Advanced</span> Explain the roofline model.</summary><div class="answer"><p>Attainable performance is min(peak FLOP/s, bandwidth x arithmetic intensity); low-intensity operations are memory bound and high-intensity ones compute bound.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Training at scale"><summary><span class="tag bad">Advanced</span> Why is decoding memory bound and how do you help it?</summary><div class="answer"><p>Each generated token reads all the weights for few FLOPs. Batch more sequences, use quantisation, KV-cache optimisations, speculative decoding and fused kernels.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Training at scale"><summary><span class="tag bad">Advanced</span> What is FlashAttention?</summary><div class="answer"><p>An exact attention algorithm that tiles computation in on-chip memory so the n x n score matrix never materialises in HBM, reducing memory traffic and memory use.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Training at scale"><summary><span class="tag bad">Advanced</span> State the Chinchilla result.</summary><div class="answer"><p>For a fixed compute budget, model size and training tokens should scale together, about 20 tokens per parameter; many earlier models were under-trained.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Training at scale"><summary><span class="tag bad">Advanced</span> Why train a model beyond compute-optimal?</summary><div class="answer"><p>Inference cost dominates over a model&#x27;s lifetime, so a smaller model trained on more data reaches a quality target with cheaper serving.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Training at scale"><summary><span class="tag bad">Advanced</span> How do you handle failures in long training runs?</summary><div class="answer"><p>Frequent asynchronous checkpoints including optimiser and data-loader state, automatic restart, health checks to evict bad nodes, and monitoring for loss spikes with rollback.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="a16-responsible-ai.html"><span class="dir">Previous</span><span>A16 Interpretability, fairness, privacy and robustness: responsible machine learning</span></a>
+      <a class="next" href="a18-intuition.html"><span class="dir">Next</span><span>A18 Machine learning and LLMs explained simply: analogies, pictures and the questions beginners ask</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

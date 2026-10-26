@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en" data-resource="diffusion-from-scratch" data-page="DX11">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Diffusion models explained simply: analogies, pictures and plain-language answers | Diffusion from scratch</title>
+<meta name="description" content="Plain-language explanations of how diffusion models work: adding and removing noise, why predicting noise is enough, the latent space, guidance, samplers, LoRA and ControlNet, with everyday analogies, small experiments and a ladder of explanations from a child to an engineer.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Diffusion from scratch</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part DX11</p>
+      <h1>Diffusion models explained simply: analogies, pictures and plain-language answers</h1>
+      <p class="lede">If you can explain diffusion to a curious friend, you understand it. This page gives the pictures, the analogies and the 30-second answers, then climbs a ladder from the simplest explanation to the technically precise one, so you can match your explanation to your audience.</p>
+      <div class="meta"><span class="tag ok">Basic</span><span class="tag warn">Medium</span><span class="tag">~3 hours</span></div>
+    </div>
+
+    <section id="idea" data-track>
+      <h2>The one-sentence idea</h2>
+<p><strong>Diffusion models learn to remove a little noise from a picture; generating an image means starting with pure noise and removing noise step by step until a picture appears.</strong></p>
+<p>Everything else (schedules, samplers, latent spaces, guidance, transformers) is machinery to make that process work well, quickly and under your control.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx11-q01" data-topic="Intuition guide" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the core idea of a diffusion model in one sentence?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Compress images into short codes <span class="q-why">That is an autoencoder.</span></li>
+          <li data-key="B">Learn to remove noise step by step, then generate by starting from pure noise and denoising <span class="q-why">Correct.</span></li>
+          <li data-key="C">Pit two networks against each other <span class="q-why">That is a GAN.</span></li>
+          <li data-key="D">Copy training images <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Everything else is machinery around that.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>State diffusion in one sentence.</summary><div class="answer"><p>Learn to remove noise in small steps and generate by denoising from pure noise toward an image.</p></div></details>
+      </div>
+    </section>
+
+    <section id="ladder" data-track>
+      <h2>The ladder of explanations</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Audience</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td><strong>A ten-year-old</strong></td><td>Imagine a photo slowly turning into TV static. The computer learns to play the film backwards: given static, it guesses what picture it came from, a bit at a time. Start from random static and play it backwards and you get a brand-new picture.</td></tr><tr><td><strong>A curious adult</strong></td><td>The model is trained by taking real images, adding random noise in many small steps until nothing is left but static, and asking a neural network at each step to guess the noise that was added. To make an image it starts from pure static and repeatedly subtracts the noise the network predicts. A text prompt steers the guesses.</td></tr><tr><td><strong>A programmer</strong></td><td>Forward process <code>x_t = sqrt(alpha_bar_t) x0 + sqrt(1 - alpha_bar_t) eps</code>. Train a network <code>eps_theta(x_t, t, c)</code> with MSE against <code>eps</code>. Sample by iterating a solver (DDPM, DDIM, DPM-Solver) from <code>x_T ~ N(0, I)</code> to <code>x_0</code>, using classifier-free guidance to mix conditional and unconditional predictions.</td></tr><tr><td><strong>A researcher</strong></td><td>The network estimates the score <code>grad log p_t(x)</code> of progressively smoothed data distributions; sampling integrates the reverse-time SDE or the probability-flow ODE. Training maximises a variational bound that reduces to weighted denoising score matching; flow matching regresses velocities along chosen paths.</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx11-q02" data-topic="Intuition guide" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In the programmer's view, what does the network estimate at each step?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The final caption <span class="q-why">No.</span></li>
+          <li data-key="B">The noise added to the image (or an equivalent quantity such as velocity) <span class="q-why">Correct.</span></li>
+          <li data-key="C">The learning rate <span class="q-why">No.</span></li>
+          <li data-key="D">The image size <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Training minimises MSE between predicted and true noise.</p></div>
+      </div>
+    </section>
+
+    <section id="pieces" data-track>
+      <h2>Pictures for each piece</h2>
+<h3>Adding noise: the forward process</h3>
+<p><strong>Picture</strong>: a sandcastle in the tide. Each wave erodes a little; after enough waves only flat sand remains. You can describe the state after any number of waves directly, without simulating each wave, because Gaussian noise combines nicely (that closed form is what makes training cheap).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx11-01.py">import math, random
+random.seed(1)
+pixel = 0.8                                                     # one pixel of a clean image, scaled to [-1, 1]
+T = 10
+betas = [0.05 + 0.1 * i / (T - 1) for i in range(T)]            # a small noise schedule
+alpha_bar = 1.0; rows = []
+for t, b in enumerate(betas, 1):
+    alpha_bar *= (1 - b)
+    signal, noise = math.sqrt(alpha_bar), math.sqrt(1 - alpha_bar)
+    rows.append((t, signal, noise))
+for t, s, n in rows[::3]:
+    print(f"step {t:&gt;2}: keep {s:.2f} of the signal and mix in {n:.2f} of noise  -&gt; pixel value about {s * pixel:.2f} + {n:.2f} x random")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>step  1: keep 0.97 of the signal and mix in 0.22 of noise  -&gt; pixel value about 0.78 + 0.22 x random
+step  4: keep 0.87 of the signal and mix in 0.49 of noise  -&gt; pixel value about 0.70 + 0.49 x random
+step  7: keep 0.74 of the signal and mix in 0.68 of noise  -&gt; pixel value about 0.59 + 0.68 x random
+step 10: keep 0.59 of the signal and mix in 0.81 of noise  -&gt; pixel value about 0.47 + 0.81 x random</code></pre>
+<h3>Removing noise: the reverse process</h3>
+<p><strong>Picture</strong>: restoring a dirty painting. A conservator does not repaint it in one go; they clean a little, step back and look, and clean a little more. At each step the network looks at the noisy image, estimates what is noise and what is picture, and removes a small portion of the noise.</p>
+<h3>Why predict the noise (not the picture)?</h3>
+<p><strong>Picture</strong>: a stain on a shirt. If you can tell exactly where the stain is, subtracting it gives the clean shirt; and spotting a stain is an easier, more uniform task than imagining the whole shirt from scratch. The noise has a simple, known distribution (Gaussian) at every step, so the target is well-behaved. Predicting noise, the clean image or a mix (<strong>v</strong>) are mathematically equivalent but differ in how easy they are to train at different noise levels.</p>
+<h3>Why many small steps?</h3>
+<p><strong>Picture</strong>: walking down a mountain path in the fog. Each step you can only judge the slope near your feet; small steps keep you on the path. Big jumps risk leaving it. Fewer, smarter steps (better solvers such as DDIM or DPM-Solver) are like using a better map; <strong>distilled</strong> models learn to take giant steps safely.</p>
+<h3>The role of randomness</h3>
+<p><strong>Picture</strong>: a sculptor starting from a block versus from fog. The initial noise decides <strong>which</strong> picture emerges (the seed), and the prompt decides the <strong>kind</strong> of picture. Same seed and settings: same picture. Different seed: a different picture of the same kind.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx11-02.py">import random
+def fake_generate(seed, prompt):                               # a stand-in: the "image" is determined by seed and prompt
+    r = random.Random(f"{seed}|{prompt}"); return [round(r.random(), 2) for _ in range(5)]
+print("same seed and prompt  :", fake_generate(7, "a cat") == fake_generate(7, "a cat"))
+print("different seed        :", fake_generate(7, "a cat") != fake_generate(8, "a cat"))
+print("same seed, new prompt :", fake_generate(7, "a cat") != fake_generate(7, "a dog"))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>same seed and prompt  : True
+different seed        : True
+same seed, new prompt : True</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx11-q03" data-topic="Intuition guide" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why can training jump directly to any noise level?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The network is large <span class="q-why">No.</span></li>
+          <li data-key="B">Gaussian noise composes, so the noisy image at step t has a closed form from the clean image <span class="q-why">Correct.</span></li>
+          <li data-key="C">The dataset is small <span class="q-why">No.</span></li>
+          <li data-key="D">Because of caching <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>That makes each training step cheap.</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx11-q04" data-topic="Intuition guide" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does the random seed decide?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The prompt <span class="q-why">No.</span></li>
+          <li data-key="B">The initial noise, and therefore which particular image appears <span class="q-why">Correct.</span></li>
+          <li data-key="C">The model size <span class="q-why">No.</span></li>
+          <li data-key="D">The VAE <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Same seed and settings reproduce the same image.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why predict noise?</summary><div class="answer"><p>It has a simple, known Gaussian distribution at every step, making the target well-behaved and equivalent to predicting the clean image.</p></div></details>
+      </div>
+    </section>
+
+    <section id="practical" data-track>
+      <h2>Making it practical</h2>
+<h3>Latent diffusion</h3>
+<p><strong>Picture</strong>: working on a thumbnail instead of the full poster. A compressing network (the VAE) shrinks the image to a small "sketch" (the <strong>latent</strong>); the diffusion happens on the sketch (cheap), and the VAE blows the finished sketch back up into a full image. That is why Stable Diffusion runs on gaming GPUs: about 48 times fewer numbers to denoise.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx11-03.py">pixels = 512 * 512 * 3
+latent = 64 * 64 * 4
+print(f"a 512x512 RGB image has {pixels:,} numbers; its latent has {latent:,} ({pixels / latent:.0f}x fewer), so every denoising step is about {pixels / latent:.0f}x cheaper")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>a 512x512 RGB image has 786,432 numbers; its latent has 16,384 (48x fewer), so every denoising step is about 48x cheaper</code></pre>
+<h3>Text conditioning</h3>
+<p><strong>Picture</strong>: a client talking to the conservator. The prompt is turned into numbers by a text encoder (CLIP or T5); at every denoising step the network can <strong>look at the prompt</strong> through cross-attention, deciding where in the image each word should have an effect: "red" near the car, "sunset" in the sky.</p>
+<h3>Classifier-free guidance</h3>
+<p><strong>Picture</strong>: a friend asking "what would you draw?" twice: once ignoring the request and once listening to it. The difference between the two answers points in the direction of "more like what was asked". <strong>Guidance</strong> exaggerates that direction by a chosen amount: a little improves matching, too much looks burnt and samey, like turning a contrast slider too far.</p>
+<h3>Samplers and steps</h3>
+<p><strong>Picture</strong>: different driving routes to the same place. All samplers move from noise to image; some take many careful turns (slow, stable), others use a smart shortcut (fast), some add random detours (variety but no convergence). 20 to 30 steps with a good solver is the usual sweet spot.</p>
+<h3>Fine-tuning with LoRA</h3>
+<p><strong>Picture</strong>: sticky notes on a textbook. The big book (the model) stays untouched; you add small notes that nudge it toward your style or subject. They are tiny files you can attach, remove or combine.</p>
+<h3>ControlNet and adapters</h3>
+<p><strong>Picture</strong>: tracing paper under the canvas. A second network reads a guide (edges, depth, a pose skeleton) and tells the artist where lines must go, while the prompt still decides what is painted.</p>
+<h3>Image-to-image and inpainting</h3>
+<p><strong>Picture</strong>: starting the restoration from a half-cleaned painting. Add noise only up to a chosen level to an existing picture, then denoise: a little noise keeps the layout, a lot lets the model repaint. Inpainting regenerates only the masked area and keeps the rest.</p>
+<h3>Flow matching and transformers</h3>
+<p><strong>Picture</strong>: instead of retracing the sandcastle's erosion, draw the shortest road from "noise" to "picture" and learn the speed to travel along it: fewer wiggles, fewer steps. And replace the original convolutional network with a <strong>transformer</strong> that treats the image as a sequence of patches, the same recipe that scaled language models.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx11-q05" data-topic="Intuition guide" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is latent diffusion cheaper?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It uses fewer steps <span class="q-why">Not necessarily.</span></li>
+          <li data-key="B">Denoising happens on a much smaller latent instead of full-size pixels <span class="q-why">Correct.</span></li>
+          <li data-key="C">It skips the text encoder <span class="q-why">No.</span></li>
+          <li data-key="D">It uses no network <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The VAE compresses and decompresses.</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx11-q06" data-topic="Intuition guide" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How does classifier-free guidance work in an analogy?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Two networks fight <span class="q-why">No.</span></li>
+          <li data-key="B">Compare what the model draws with and without the prompt and exaggerate the difference toward the prompt <span class="q-why">Correct.</span></li>
+          <li data-key="C">It filters bad words <span class="q-why">No.</span></li>
+          <li data-key="D">It enlarges the image <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Too much guidance burns colours and reduces variety.</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx11-q07" data-topic="Intuition guide" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does LoRA add?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A new text encoder <span class="q-why">No.</span></li>
+          <li data-key="B">Small trainable low-rank matrices on top of frozen weights, like sticky notes on a textbook <span class="q-why">Correct.</span></li>
+          <li data-key="C">More steps <span class="q-why">No.</span></li>
+          <li data-key="D">A bigger VAE <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The adapters are small and swappable.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Explain latent diffusion with an analogy.</summary><div class="answer"><p>Work on a small sketch instead of the full poster, then enlarge the finished sketch with a decoder.</p></div></details>
+        <details class="recall"><summary>Explain guidance in one sentence.</summary><div class="answer"><p>Exaggerate the difference between the prompted and unprompted predictions to follow the prompt more closely.</p></div></details>
+      </div>
+    </section>
+
+    <section id="faq" data-track>
+      <h2>Questions beginners ask</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Question</th><th>Plain answer</th></tr></thead>
+<tbody>
+<tr><td>Does it copy pictures from its training data?</td><td>It learns statistical patterns, not a database of images, but rare, duplicated images can be memorised and reproduced, which is why de-duplication and memorisation tests matter.</td></tr><tr><td>Why are hands and text hard?</td><td>They are small, highly structured details; with coarse latents and limited examples the model gets them roughly right but not exactly. Bigger models, better captions and higher-resolution VAEs help.</td></tr><tr><td>Why does the same prompt give different images?</td><td>The starting noise differs. Fix the seed to reproduce.</td></tr><tr><td>Why is generation slow compared with a GAN?</td><td>A GAN makes the image in one pass; diffusion does 20 to 50 passes. Distillation brings it down to 1 to 4.</td></tr><tr><td>Why is training expensive?</td><td>Huge datasets and large networks; each training example is used at random noise levels over many epochs.</td></tr><tr><td>What does 'denoising' have to do with creating something new?</td><td>Denoising from pure noise requires inventing plausible detail at every step; with different noise you invent different detail.</td></tr><tr><td>Can it be controlled?</td><td>Yes: prompts, negative prompts, seeds, guidance, img2img, inpainting, ControlNet, LoRA and regional prompts.</td></tr><tr><td>Is more steps always better?</td><td>Not beyond a plateau; and ancestral samplers keep changing the image as steps increase.</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Diffusion is learned noise removal played backwards: add noise to real images, teach a network to predict that noise, then start from static and subtract predicted noise step by step. The prompt steers, guidance exaggerates the steering, the latent space makes it cheap, and LoRA, ControlNet and img2img give control. Match the depth of your explanation to the listener.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx11-q08" data-topic="Intuition guide" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why can diffusion models make different images from one prompt?</p></div>
+        <ul class="q-options">
+          <li data-key="A">They are broken <span class="q-why">No.</span></li>
+          <li data-key="B">Different starting noise leads to different details <span class="q-why">Correct.</span></li>
+          <li data-key="C">They ignore prompts <span class="q-why">No.</span></li>
+          <li data-key="D">They use random models <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>That is useful for exploring variations.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Can diffusion models memorise images?</summary><div class="answer"><p>Yes, especially duplicated or rare ones, so de-duplication and memorisation tests are important.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Intuition guide</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Intuition guide">
+<details class="recall iq" data-level="basic" data-topic="Intuition guide"><summary><span class="tag ok">Basic</span> Explain diffusion models to a ten-year-old.</summary><div class="answer"><p>Imagine a photo slowly turning into TV static; the computer learns to play the film backwards, so starting from static it can make a new picture.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Intuition guide"><summary><span class="tag ok">Basic</span> Why predict noise instead of the image?</summary><div class="answer"><p>The noise has a simple known distribution at every step, so the target is well-behaved; knowing the noise lets you subtract it to recover the image.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Intuition guide"><summary><span class="tag ok">Basic</span> What does the seed do?</summary><div class="answer"><p>It determines the initial noise and therefore which particular image appears; the prompt determines the kind of image.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Intuition guide"><summary><span class="tag warn">Medium</span> Explain latent diffusion with an analogy.</summary><div class="answer"><p>Work on a small sketch of the poster and enlarge the finished sketch with a decoder, which makes each step far cheaper.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Intuition guide"><summary><span class="tag warn">Medium</span> Explain classifier-free guidance simply.</summary><div class="answer"><p>Compare what the model draws with and without the prompt, and exaggerate that difference to follow the prompt more closely; too much looks burnt and samey.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Intuition guide"><summary><span class="tag warn">Medium</span> Explain LoRA simply.</summary><div class="answer"><p>Small add-on matrices on frozen weights, like sticky notes on a textbook, that nudge the model toward a style or subject.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Intuition guide"><summary><span class="tag warn">Medium</span> Explain ControlNet simply.</summary><div class="answer"><p>A guide such as edges or depth is read by a second network that tells the model where structure must go while the prompt decides what is drawn.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Intuition guide"><summary><span class="tag warn">Medium</span> Why many small steps?</summary><div class="answer"><p>Each step can only correct locally, like walking downhill in fog; smaller steps keep the path accurate, and better solvers or distillation take bigger steps safely.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Intuition guide"><summary><span class="tag warn">Medium</span> Why are hands and text hard?</summary><div class="answer"><p>They are small, highly structured details; with coarse latents, limited examples and weak captions the model approximates them without exact structure.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Intuition guide"><summary><span class="tag bad">Advanced</span> Explain flow matching to an engineer.</summary><div class="answer"><p>Pick a path from noise to data, regress a network onto its velocity, then integrate the learned ODE with a few Euler steps; straighter paths need fewer steps.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Intuition guide"><summary><span class="tag bad">Advanced</span> How do you explain the score function to a researcher?</summary><div class="answer"><p>The gradient of the log density of noised data; the noise-prediction network estimates it up to a scale, and sampling follows it with added noise (SDE) or without (ODE).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Intuition guide"><summary><span class="tag bad">Advanced</span> How would you explain the privacy risk of diffusion models?</summary><div class="answer"><p>They can memorise duplicated training images and regenerate them, so de-duplication, memorisation tests, opt-outs and differential privacy methods reduce the risk.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Intuition guide"><summary><span class="tag bad">Advanced</span> What is the difference between a GAN and a diffusion model, simply?</summary><div class="answer"><p>A GAN makes an image in one pass trained against a critic and can be unstable; diffusion makes it over many denoising steps with a stable regression loss and greater diversity, but slower sampling.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Intuition guide"><summary><span class="tag bad">Advanced</span> Why does more guidance reduce diversity?</summary><div class="answer"><p>It pushes every sample toward the highest-likelihood region for the prompt, collapsing variation and over-sharpening features.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="dx10-data-troubleshooting.html"><span class="dir">Previous</span><span>DX10 Data curation and troubleshooting: building image datasets and fixing common diffusion failures</span></a>
+      <a class="next" href="index.html"><span class="dir">Next</span><span>Hub</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

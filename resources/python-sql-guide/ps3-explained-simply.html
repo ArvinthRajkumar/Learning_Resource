@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="PS3">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Python and SQL explained simply: analogies, misconceptions and model answers | Python + SQL</title>
+<meta name="description" content="The big ideas of Python and SQL in plain language with everyday analogies: variables and references, mutability, scope, generators, decorators, classes, exceptions, concurrency; tables, keys, joins, grouping, windows, indexes, transactions and normalisation, each with a short model answer.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part PS3</p>
+      <h1>Python and SQL explained simply: analogies, misconceptions and model answers</h1>
+      <p class="lede">When an idea feels slippery, an analogy often makes it click. This page gives one for each core concept in Python and SQL, names the misunderstanding that trips people up, and ends each with a 30-second answer you can say aloud in an interview.</p>
+      <div class="meta"><span class="tag ok">Basic</span><span class="tag warn">Medium</span><span class="tag">~3 hours</span></div>
+    </div>
+
+    <section id="howto" data-track>
+      <h2>How to use this page</h2>
+<p>Read the analogy, then try the small experiment. Cover the answer and say it aloud. Good answers say <strong>what it is</strong>, <strong>what problem it solves</strong> and <strong>one trade-off or pitfall</strong>.</p>
+    </section>
+
+    <section id="values" data-track>
+      <h2>Python: how values and names work</h2>
+<h3>Variables are labels, not boxes</h3>
+<p><strong>Analogy</strong>: a name tag stuck on an object. Assigning <code>b = a</code> sticks a second tag on the same object; it does not copy the object. Reassigning <code>a = [9]</code> moves the <code>a</code> tag to a new object and leaves <code>b</code> on the old one. <strong>Pitfall</strong>: expecting <code>b</code> to be an independent copy. Use <code>copy()</code> or <code>copy.deepcopy()</code> when you need one.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps3-01.py">a = [1, 2]
+b = a             # two labels on one list
+b.append(3)
+print("a is", a, "because both names point at the same list")
+a = [9]           # moves the label a, leaving b alone
+print("after rebinding a:", a, "| b is still", b)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>a is [1, 2, 3] because both names point at the same list
+after rebinding a: [9] | b is still [1, 2, 3]</code></pre>
+<h3>Mutable versus immutable</h3>
+<p><strong>Analogy</strong>: an immutable object is a printed photograph (to change it you make a new one); a mutable object is a whiteboard (anyone holding it can erase and rewrite). <strong>Why it matters</strong>: immutable values (numbers, strings, tuples) are safe to share and can be dictionary keys; mutable ones (lists, dicts, sets) can surprise you when shared, for example as default arguments. <strong>Answer</strong>: "Immutable objects cannot change after creation, so sharing them is safe and they can be hashed. Mutable objects can change in place, which is convenient but means every name referring to the object sees the change."</p>
+<h3>Scope: where a name is visible</h3>
+<p><strong>Analogy</strong>: a building with rooms. You look for something in the room you are in first, then the room that contains it, then the whole building, then the city's public library (built-ins). That is LEGB: Local, Enclosing, Global, Built-in.</p>
+<h3>Functions are objects</h3>
+<p><strong>Analogy</strong>: a recipe card you can hand to someone, store in a drawer or write notes on. Because functions are values, you can pass them as arguments (callbacks, <code>key=</code>), return them (closures) and store them in dictionaries (dispatch tables).</p>
+<h3>Closures and decorators</h3>
+<p><strong>Analogy for closures</strong>: a function that carries a small backpack of the variables it was created with. <strong>Decorator</strong>: a gift wrapper: it wraps a function in another function that adds behaviour (timing, caching, access checks) before or after, without changing the original.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps3-02.py">import functools, time
+def timed(fn):
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        start = time.perf_counter()
+        result = fn(*args, **kwargs)
+        wrapper.last_seconds = time.perf_counter() - start                     # the "backpack": wrapper remembers fn
+        return result
+    return wrapper
+@timed
+def add(a, b): return a + b
+print(add(2, 3), "| name preserved by wraps:", add.__name__, "| measured something:", add.last_seconds &gt;= 0)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>5 | name preserved by wraps: add | measured something: True</code></pre>
+<p><strong>Answer</strong>: "A decorator is a function that takes a function and returns a new function that wraps it. <code>@timed</code> above <code>def f</code> means <code>f = timed(f)</code>."</p>
+<h3>Generators and iterators</h3>
+<p><strong>Analogy</strong>: a printer that prints one page at a time on request instead of printing a thousand pages into a heap first. A generator produces values lazily, one <code>yield</code> at a time, using constant memory, and can only be read once.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps3-03.py">def countdown(n):
+    while n &gt; 0:
+        yield n                 # pause here and hand back one value
+        n -= 1
+it = countdown(3)
+print(next(it), next(it), next(it), "| then:", list(it), "(already exhausted)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>3 2 1 | then: [] (already exhausted)</code></pre>
+<h3>Exceptions</h3>
+<p><strong>Analogy</strong>: a fire alarm. When something goes wrong, normal flow stops and the alarm travels up through the building (the call stack) until someone (a <code>try/except</code>) handles it. Catch only what you can handle; let the rest rise. <code>finally</code> is the "turn off the stove whatever happened" step. <strong>Pitfall</strong>: <code>except Exception: pass</code> hides real problems.</p>
+<h3>Classes and objects</h3>
+<p><strong>Analogy</strong>: a class is a cookie cutter, objects are the cookies. The cutter defines the shape (methods) and each cookie has its own decoration (attributes). <strong>Inheritance</strong> says "is a kind of"; <strong>composition</strong> says "has a" and is usually more flexible.</p>
+<h3>Threads, processes and async</h3>
+<p><strong>Analogy</strong>: a kitchen. <em>Threads</em> are several cooks sharing one stove (in CPython only one holds the stove for Python code at a time, the GIL), fine when most cooks are waiting for deliveries (I/O). <em>Processes</em> are separate kitchens: truly parallel, but ingredients must be shipped between them. <em>asyncio</em> is one very organised cook who starts the pasta water, then chops while it heats, never standing idle: many waiting tasks, one thread. <strong>Answer</strong>: "Use asyncio or threads for I/O-bound work, processes for CPU-bound work."</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-ps3-q01" data-topic="Explained simply" data-type="single" data-answer="B">
+        <div class="q-stem"><p>After <code>b = a</code> where a is a list, what does <code>b.append(1)</code> do to a?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Nothing <span class="q-why">No.</span></li>
+          <li data-key="B">a also changes, because both names refer to the same list <span class="q-why">Correct.</span></li>
+          <li data-key="C">It raises an error <span class="q-why">No.</span></li>
+          <li data-key="D">a becomes a copy <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Assignment never copies.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-ps3-q02" data-topic="Explained simply" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does a generator hold in memory?</p></div>
+        <ul class="q-options">
+          <li data-key="A">All values <span class="q-why">No.</span></li>
+          <li data-key="B">Only its current state, producing one value at a time <span class="q-why">Correct.</span></li>
+          <li data-key="C">A copy of the list <span class="q-why">No.</span></li>
+          <li data-key="D">Nothing at all <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>That is why it handles huge or infinite streams.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-ps3-q03" data-topic="Explained simply" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which workload suits threads or asyncio?</p></div>
+        <ul class="q-options">
+          <li data-key="A">CPU-bound maths <span class="q-why">Use processes.</span></li>
+          <li data-key="B">I/O-bound waiting (network, disk) <span class="q-why">Correct.</span></li>
+          <li data-key="C">None <span class="q-why">No.</span></li>
+          <li data-key="D">Only GUIs <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The GIL is released while waiting on I/O.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Explain LEGB in a sentence.</summary><div class="answer"><p>Python looks for a name in the local scope, then enclosing functions, then global, then built-ins.</p></div></details>
+        <details class="recall"><summary>What does @decorator do?</summary><div class="answer"><p>It replaces the function with decorator(function), letting you wrap extra behaviour around it.</p></div></details>
+      </div>
+    </section>
+
+    <section id="sql" data-track>
+      <h2>SQL: how relational data works</h2>
+<h3>Tables, rows, keys</h3>
+<p><strong>Analogy</strong>: a spreadsheet with rules. Each row is one thing; the <strong>primary key</strong> is its unique ID card; a <strong>foreign key</strong> is a reference to another sheet's ID card, and the database refuses a reference to someone who does not exist.</p>
+<h3>SELECT is a recipe in a fixed order</h3>
+<p>You <em>write</em> <code>SELECT ... FROM ... WHERE ... GROUP BY ... HAVING ... ORDER BY ... LIMIT</code>, but the database <em>thinks</em> in this order: <strong>FROM</strong> (choose and join tables) -&gt; <strong>WHERE</strong> (filter rows) -&gt; <strong>GROUP BY</strong> (make groups) -&gt; <strong>HAVING</strong> (filter groups) -&gt; <strong>SELECT</strong> (compute columns) -&gt; <strong>ORDER BY</strong> -&gt; <strong>LIMIT</strong>. That is why you cannot use a <code>SELECT</code> alias in <code>WHERE</code> but can in <code>ORDER BY</code>, and why <code>WHERE</code> cannot test an aggregate while <code>HAVING</code> can.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/ps3-04.sql">SELECT city, COUNT(*) AS customers        -- 5. compute
+FROM customers                              -- 1. take the table
+WHERE city IS NOT NULL                      -- 2. filter rows
+GROUP BY city                               -- 3. make groups
+HAVING COUNT(*) &gt; 1                         -- 4. filter groups
+ORDER BY customers DESC, city;              -- 6. sort</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>city</th><th>customers</th></tr></thead>
+<tbody><tr><td>London</td><td>2</td></tr><tr><td>Mumbai</td><td>2</td></tr><tr><td>Paris</td><td>2</td></tr></tbody>
+</table>
+</div>
+<h3>Joins</h3>
+<p><strong>Analogy</strong>: matching two lists by a shared ID, like matching guest names with their meal choices. <em>Inner join</em>: only guests found in both lists. <em>Left join</em>: every guest, with the meal if there is one (blank if not). The common mistake is joining on a column with duplicates, which multiplies rows.</p>
+<h3>NULL</h3>
+<p><strong>Analogy</strong>: a blank on a form meaning "unknown", not "zero" and not "empty". Asking whether two unknowns are equal gives "unknown", not yes. That is <strong>three-valued logic</strong>: use <code>IS NULL</code>, not <code>= NULL</code>, and remember <code>NOT IN</code> returns nothing if the list contains an unknown.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/ps3-05.sql">SELECT NULL = NULL AS equal_to_itself, NULL IS NULL AS is_null, 1 NOT IN (2, NULL) AS not_in_with_null, COALESCE(NULL, 'fallback') AS coalesced;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>equal_to_itself</th><th>is_null</th><th>not_in_with_null</th><th>coalesced</th></tr></thead>
+<tbody><tr><td>NULL</td><td>1</td><td>NULL</td><td>fallback</td></tr></tbody>
+</table>
+</div>
+<h3>GROUP BY versus window functions</h3>
+<p><strong>Analogy</strong>: a class's test results. <code>GROUP BY</code> produces <strong>one summary row per class</strong> (the average score per class) and the individual students disappear. A <strong>window function</strong> keeps every student and <strong>adds a column</strong> beside each one (their class average, their rank in class).</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/ps3-06.sql">SELECT name, dept_id, salary,
+       ROUND(AVG(salary) OVER (PARTITION BY dept_id)) AS dept_avg,
+       RANK() OVER (PARTITION BY dept_id ORDER BY salary DESC) AS rank_in_dept
+FROM employees WHERE dept_id = 1 ORDER BY rank_in_dept, name;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>dept_id</th><th>salary</th><th>dept_avg</th><th>rank_in_dept</th></tr></thead>
+<tbody><tr><td>Alice</td><td>1</td><td>150000</td><td>130000.0</td><td>1</td></tr><tr><td>Bob</td><td>1</td><td>120000</td><td>130000.0</td><td>2</td></tr><tr><td>Carol</td><td>1</td><td>120000</td><td>130000.0</td><td>2</td></tr></tbody>
+</table>
+</div>
+<h3>Index</h3>
+<p><strong>Analogy</strong>: the index at the back of a book. Looking up "photosynthesis" there is quicker than reading every page; but the index takes space and must be updated whenever pages change. A <em>composite</em> index is like an index sorted by surname and then first name: it helps if you know the surname, not if you only know the first name.</p>
+<h3>Transactions and ACID</h3>
+<p><strong>Analogy</strong>: a bank transfer written on a single sheet: either the whole sheet is filed (both the debit and credit happen) or it is torn up (neither does). <strong>Isolation</strong> means two clerks working at once do not see each other's half-finished sheets; <strong>durability</strong> means once filed it survives a power cut.</p>
+<h3>Normalisation</h3>
+<p><strong>Analogy</strong>: do not write a customer's address on every order slip; write it once on a customer card and refer to the card. Then when the customer moves you correct one card, not hundreds of slips. The reverse (<strong>denormalisation</strong>) is photocopying the address onto every slip because reading is faster, accepting the burden of keeping copies in sync.</p>
+<h3>Constraints</h3>
+<p><strong>Analogy</strong>: guard rails on a mountain road. <code>NOT NULL</code>, <code>UNIQUE</code>, <code>CHECK</code>, <code>FOREIGN KEY</code> make invalid data impossible no matter which program writes it, so you do not depend on every application remembering the rules.</p>
+<h3>Injection and parameters</h3>
+<p><strong>Analogy</strong>: filling a form versus letting someone rewrite the form. With <strong>parameters</strong>, user input is data inside a box on the form; with string concatenation, the user can write new instructions on the form itself.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps3-07.py">import sqlite3
+db = sqlite3.connect(":memory:")
+db.executescript("CREATE TABLE u(name TEXT, pw TEXT); INSERT INTO u VALUES ('ana','s3cret');")
+evil = "nobody' OR '1'='1"
+print("concatenated :", db.execute("SELECT name FROM u WHERE name = '" + evil + "'").fetchall())
+print("parameterised:", db.execute("SELECT name FROM u WHERE name = ?", (evil,)).fetchall())</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>concatenated : [('ana',)]
+parameterised: []</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-ps3-q04" data-topic="Explained simply" data-type="single" data-answer="C">
+        <div class="q-stem"><p>In SQL's logical processing order, which runs first?</p></div>
+        <ul class="q-options">
+          <li data-key="A">SELECT <span class="q-why">Fifth.</span></li>
+          <li data-key="B">WHERE <span class="q-why">Second.</span></li>
+          <li data-key="C">FROM <span class="q-why">Correct.</span></li>
+          <li data-key="D">ORDER BY <span class="q-why">Last-ish.</span></li>
+        </ul>
+        <div class="q-explain"><p>FROM and JOIN produce the rows everything else works on.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-ps3-q05" data-topic="Explained simply" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why does WHERE x = NULL return nothing?</p></div>
+        <ul class="q-options">
+          <li data-key="A">NULL is zero <span class="q-why">No.</span></li>
+          <li data-key="B">NULL means unknown, and a comparison with unknown is unknown, not true; use IS NULL <span class="q-why">Correct.</span></li>
+          <li data-key="C">A syntax error <span class="q-why">No.</span></li>
+          <li data-key="D">NULL is empty text <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Three-valued logic.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-ps3-q06" data-topic="Explained simply" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How does a window function differ from GROUP BY?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is slower <span class="q-why">Not necessarily.</span></li>
+          <li data-key="B">It adds a computed column to every row without collapsing rows into groups <span class="q-why">Correct.</span></li>
+          <li data-key="C">It needs no ORDER BY <span class="q-why">No.</span></li>
+          <li data-key="D">It only works on numbers <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use it for ranks, running totals and per-group comparisons.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>WHERE versus HAVING?</summary><div class="answer"><p>WHERE filters rows before grouping; HAVING filters groups after aggregation.</p></div></details>
+        <details class="recall"><summary>What does an index cost?</summary><div class="answer"><p>Storage and slower writes, in exchange for faster reads on the indexed columns.</p></div></details>
+      </div>
+    </section>
+
+    <section id="together" data-track>
+      <h2>Python meets SQL</h2>
+<h3>Why an ORM</h3>
+<p><strong>Analogy</strong>: a translator between two languages. The ORM turns rows into Python objects and method calls into SQL. It saves boilerplate and handles safe parameters, but a translator can say things clumsily (the <strong>N+1 problem</strong>: one query for the list plus one per item), so read the SQL it generates.</p>
+<h3>N+1 in a picture</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps3-08.py">import sqlite3
+db = sqlite3.connect(":memory:")
+db.executescript("CREATE TABLE author(id INT, name TEXT); CREATE TABLE book(id INT, author_id INT, title TEXT);"
+                 "INSERT INTO author VALUES (1,'a'),(2,'b'),(3,'c'); INSERT INTO book VALUES (1,1,'x'),(2,1,'y'),(3,2,'z'),(4,3,'w');")
+queries = 0
+authors = db.execute("SELECT id, name FROM author").fetchall(); queries += 1
+for aid, name in authors:                                               # N more queries, one per author
+    db.execute("SELECT title FROM book WHERE author_id = ?", (aid,)).fetchall(); queries += 1
+print("queries with the N+1 pattern for 3 authors:", queries)
+joined = db.execute("SELECT a.name, b.title FROM author a JOIN book b ON b.author_id = a.id").fetchall()
+print("queries with one join:", 1, "| rows:", len(joined))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>queries with the N+1 pattern for 3 authors: 4
+queries with one join: 1 | rows: 4</code></pre>
+<h3>Connections and pools</h3>
+<p><strong>Analogy</strong>: taxis at a rank. Opening a database connection is like ordering a new taxi from the depot each time (slow). A <strong>pool</strong> keeps a few taxis waiting; you borrow one, ride, and give it back. Forgetting to give it back (not closing a connection) eventually leaves the rank empty.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-ps3-q07" data-topic="Explained simply" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the N+1 query problem?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A bug in SQL <span class="q-why">No.</span></li>
+          <li data-key="B">One query to fetch a list plus one extra query for each item, instead of a single join or batch <span class="q-why">Correct.</span></li>
+          <li data-key="C">A deadlock <span class="q-why">No.</span></li>
+          <li data-key="D">An index error <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It multiplies round trips.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-ps3-q08" data-topic="Explained simply" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why use parameters instead of string concatenation in SQL?</p></div>
+        <ul class="q-options">
+          <li data-key="A">They are shorter <span class="q-why">No.</span></li>
+          <li data-key="B">Input is treated as data, so it cannot change the meaning of the query (no injection) <span class="q-why">Correct.</span></li>
+          <li data-key="C">They are required for SELECT <span class="q-why">No.</span></li>
+          <li data-key="D">They cache results <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Never put user input into SQL text.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does a connection pool do?</summary><div class="answer"><p>It reuses a fixed set of open connections to avoid the cost of connecting each time and to cap load on the database.</p></div></details>
+      </div>
+    </section>
+
+    <section id="glossary" data-track>
+      <h2>Mini glossary</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Term</th><th>Plain meaning</th></tr></thead>
+<tbody>
+<tr><td><strong>Idempotent</strong></td><td>Doing it twice has the same effect as once</td></tr><tr><td><strong>Immutable</strong></td><td>Cannot be changed after creation</td></tr><tr><td><strong>Hashable</strong></td><td>Has a stable fingerprint, so it can be a dict key or set member</td></tr><tr><td><strong>Lazy</strong></td><td>Computed only when needed</td></tr><tr><td><strong>Race condition</strong></td><td>The result depends on the unlucky timing of two actions</td></tr><tr><td><strong>Deadlock</strong></td><td>Two parties each wait for something the other holds</td></tr><tr><td><strong>Cardinality</strong></td><td>Number of distinct values (or rows in a result)</td></tr><tr><td><strong>Selectivity</strong></td><td>Fraction of rows a condition keeps</td></tr><tr><td><strong>Surrogate key</strong></td><td>An ID with no business meaning, created by the database</td></tr><tr><td><strong>Transaction</strong></td><td>A group of changes that succeed or fail together</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Names are labels on objects; functions are values; generators are lazy; exceptions travel up. In SQL, think in the logical order (FROM before SELECT), treat NULL as unknown, keep rows with window functions and summarise with GROUP BY, protect data with constraints and transactions, and always pass values as parameters.</p></div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Explained simply</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Explained simply">
+<details class="recall iq" data-level="basic" data-topic="Explained simply"><summary><span class="tag ok">Basic</span> Explain variables in Python to a beginner.</summary><div class="answer"><p>A variable is a name tag attached to an object; assignment attaches the tag, it does not copy the object.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Explained simply"><summary><span class="tag ok">Basic</span> Explain mutable and immutable.</summary><div class="answer"><p>Immutable objects cannot change after creation, like a printed photo; mutable objects change in place, like a whiteboard that everyone holding it can edit.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Explained simply"><summary><span class="tag ok">Basic</span> Explain a decorator.</summary><div class="answer"><p>A function that takes a function and returns a wrapped version adding behaviour such as timing or caching.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Explained simply"><summary><span class="tag ok">Basic</span> Explain a generator.</summary><div class="answer"><p>A function that yields values one at a time on demand, using little memory and being single-use.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Explained simply"><summary><span class="tag warn">Medium</span> Threads versus processes versus asyncio?</summary><div class="answer"><p>Threads and asyncio suit I/O-bound waiting; processes give true parallelism for CPU-bound work, with the cost of separate memory.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Explained simply"><summary><span class="tag warn">Medium</span> Explain the order SQL evaluates a SELECT.</summary><div class="answer"><p>FROM and joins, WHERE, GROUP BY, HAVING, SELECT expressions, DISTINCT, ORDER BY, then LIMIT.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Explained simply"><summary><span class="tag warn">Medium</span> Explain NULL.</summary><div class="answer"><p>NULL means unknown, so comparisons with it are unknown rather than true or false; use IS NULL and be careful with NOT IN.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Explained simply"><summary><span class="tag warn">Medium</span> Window function versus GROUP BY?</summary><div class="answer"><p>GROUP BY collapses rows into one per group; a window function keeps all rows and adds a computed column.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Explained simply"><summary><span class="tag warn">Medium</span> What is an index in plain words?</summary><div class="answer"><p>A sorted lookup structure like a book index that finds rows quickly at the cost of space and slower writes.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Explained simply"><summary><span class="tag warn">Medium</span> What is a transaction in plain words?</summary><div class="answer"><p>A bundle of changes that all happen or none happen, isolated from others and durable once committed.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Explained simply"><summary><span class="tag warn">Medium</span> Why normalise?</summary><div class="answer"><p>To store each fact once so updates are made in one place and contradictions cannot arise.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Explained simply"><summary><span class="tag bad">Advanced</span> What is SQL injection and how is it prevented?</summary><div class="answer"><p>Attacker input altering the query&#x27;s meaning when concatenated into SQL; prevented by parameterised queries and least-privilege accounts.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Explained simply"><summary><span class="tag bad">Advanced</span> What is the N+1 problem?</summary><div class="answer"><p>Running one query for a list and one more per item; fix with a join, batch query or eager loading.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Explained simply"><summary><span class="tag bad">Advanced</span> Why use a connection pool?</summary><div class="answer"><p>Opening connections is expensive; pools reuse a bounded set of connections, improving latency and protecting the database.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="ps2-projects.html"><span class="dir">Previous</span><span>PS2 Python and SQL projects: migrations, repositories, data quality, reports and an API</span></a>
+      <a class="next" href="interview-questions.html"><span class="dir">Next</span><span>IQ Interview question bank</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

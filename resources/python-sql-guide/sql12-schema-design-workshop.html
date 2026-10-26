@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="SQL12">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Schema design workshop: four worked designs with constraints and queries | Python + SQL</title>
+<meta name="description" content="Four complete schema designs built step by step and run: a library, a booking system with overlap prevention, a social graph with followers and feeds, and an inventory ledger, with the reasoning, constraints, indexes and the queries each design must answer.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SQL12</p>
+      <h1>Schema design workshop: four worked designs with constraints and queries</h1>
+      <p class="lede">Design questions are asked in almost every backend and data interview, and they are won by method, not memory. Each workshop here follows the same routine: list the questions the schema must answer, find the entities and relationships, add constraints, then test the design with real queries.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="routine" data-track>
+      <h2>The design routine</h2>
+<ol><li><strong>Requirements to queries</strong>: write the 5 to 10 questions the system must answer and the writes it must perform.</li><li><strong>Entities and relationships</strong>: nouns become tables; decide <strong>one-to-many</strong> (foreign key on the many side), <strong>many-to-many</strong> (a junction table) and <strong>one-to-one</strong> (shared key).</li><li><strong>Keys</strong>: a surrogate primary key per table, natural keys as <code>UNIQUE</code>.</li><li><strong>Types and constraints</strong>: <code>NOT NULL</code>, <code>CHECK</code>, <code>UNIQUE</code>, <code>FOREIGN KEY</code>. Constraints are the schema's way of making invalid states impossible.</li><li><strong>Normalise</strong> to remove redundancy (<a href="sql3-design.html">SQL3</a>), then <strong>denormalise deliberately</strong> only for measured needs.</li><li><strong>Indexes</strong> for the foreign keys and the filters in your queries.</li><li><strong>Test</strong> with sample data and the planned queries, including the failure cases.</li></ol>
+<p>SQLite does not enforce foreign keys unless <code>PRAGMA foreign_keys = ON</code> (each connection); the snippets switch it on.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql12-q01" data-topic="Schema design workshop" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What should schema design start from?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A diagram of every possible table <span class="q-why">No.</span></li>
+          <li data-key="B">The questions the system must answer and the writes it must perform <span class="q-why">Correct.</span></li>
+          <li data-key="C">The ORM <span class="q-why">No.</span></li>
+          <li data-key="D">The index list <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Queries and access patterns drive the model.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Give the seven design steps.</summary><div class="answer"><p>Questions, entities, keys, types and constraints, normalise, indexes, then test with data and queries.</p></div></details>
+      </div>
+    </section>
+
+    <section id="library" data-track>
+      <h2>Workshop 1: a library</h2>
+<p><strong>Needs</strong>: members borrow copies of books; a book can have several authors; a copy is on loan to at most one member at a time; track due dates and fines. Queries: who has overdue books; which books are available; which authors are most borrowed.</p>
+<p><strong>Entities</strong>: <code>book</code> (the work), <code>copy</code> (a physical item of a book), <code>author</code>, <code>book_author</code> (many-to-many), <code>member</code>, <code>loan</code> (a copy borrowed by a member).</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql12-01.sql">PRAGMA foreign_keys = ON;
+CREATE TABLE author (id INTEGER PRIMARY KEY, name TEXT NOT NULL);
+CREATE TABLE book (id INTEGER PRIMARY KEY, isbn TEXT NOT NULL UNIQUE, title TEXT NOT NULL, year INT CHECK (year BETWEEN 1400 AND 2100));
+CREATE TABLE book_author (book_id INT NOT NULL REFERENCES book(id), author_id INT NOT NULL REFERENCES author(id), PRIMARY KEY (book_id, author_id));
+CREATE TABLE copy (id INTEGER PRIMARY KEY, book_id INT NOT NULL REFERENCES book(id), barcode TEXT NOT NULL UNIQUE);
+CREATE TABLE member (id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE);
+CREATE TABLE loan (
+  id INTEGER PRIMARY KEY, copy_id INT NOT NULL REFERENCES copy(id), member_id INT NOT NULL REFERENCES member(id),
+  borrowed_on TEXT NOT NULL, due_on TEXT NOT NULL, returned_on TEXT,
+  CHECK (due_on &gt; borrowed_on), CHECK (returned_on IS NULL OR returned_on &gt;= borrowed_on));
+-- a copy can have at most one open (unreturned) loan: a partial unique index enforces it
+CREATE UNIQUE INDEX one_open_loan_per_copy ON loan(copy_id) WHERE returned_on IS NULL;
+CREATE INDEX idx_loan_member ON loan(member_id);
+INSERT INTO author VALUES (1,'Le Guin'),(2,'Pratchett'),(3,'Gaiman');
+INSERT INTO book VALUES (1,'111','A Wizard of Earthsea',1968),(2,'222','Good Omens',1990),(3,'333','Guards! Guards!',1989);
+INSERT INTO book_author VALUES (1,1),(2,2),(2,3),(3,2);
+INSERT INTO copy VALUES (1,1,'B-1'),(2,2,'B-2'),(3,2,'B-3'),(4,3,'B-4');
+INSERT INTO member VALUES (1,'Ana','ana@x.org'),(2,'Bo','bo@x.org');
+INSERT INTO loan VALUES (1,1,1,'2024-03-01','2024-03-15',NULL),(2,2,1,'2024-03-05','2024-03-19','2024-03-12'),(3,3,2,'2024-03-10','2024-03-24',NULL);
+SELECT m.name, b.title, l.due_on FROM loan l JOIN member m ON m.id = l.member_id JOIN copy c ON c.id = l.copy_id JOIN book b ON b.id = c.book_id
+WHERE l.returned_on IS NULL AND l.due_on &lt; '2024-03-20' ORDER BY l.due_on;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>title</th><th>due_on</th></tr></thead>
+<tbody><tr><td>Ana</td><td>A Wizard of Earthsea</td><td>2024-03-15</td></tr></tbody>
+</table>
+</div>
+<p>Overdue loans: open (no return date) and past due on the reference date. Next, availability: copies with no open loan, and a check that the constraint blocks a double loan.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql12-02.sql">PRAGMA foreign_keys = ON;
+CREATE TABLE copy (id INTEGER PRIMARY KEY, book_id INT NOT NULL, barcode TEXT NOT NULL UNIQUE);
+CREATE TABLE loan (id INTEGER PRIMARY KEY, copy_id INT NOT NULL REFERENCES copy(id), member_id INT NOT NULL, borrowed_on TEXT NOT NULL, due_on TEXT NOT NULL, returned_on TEXT);
+CREATE UNIQUE INDEX one_open_loan_per_copy ON loan(copy_id) WHERE returned_on IS NULL;
+INSERT INTO copy VALUES (1,1,'B-1'),(2,2,'B-2'),(3,2,'B-3');
+INSERT INTO loan VALUES (1,1,1,'2024-03-01','2024-03-15',NULL),(2,2,1,'2024-03-05','2024-03-19','2024-03-12');
+INSERT INTO loan VALUES (3,1,2,'2024-03-16','2024-03-30',NULL);</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>error</th></tr></thead>
+<tbody><tr><td>UNIQUE constraint failed: loan.copy_id</td></tr></tbody>
+</table>
+</div>
+<p>The third insert fails: copy 1 already has an open loan, and the database says so without any application code. Availability query:</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql12-03.sql">CREATE TABLE copy (id INTEGER PRIMARY KEY, book_id INT, barcode TEXT);
+CREATE TABLE loan (id INTEGER PRIMARY KEY, copy_id INT, returned_on TEXT);
+INSERT INTO copy VALUES (1,1,'B-1'),(2,2,'B-2'),(3,2,'B-3');
+INSERT INTO loan VALUES (1,1,NULL),(2,2,'2024-03-12');
+SELECT c.book_id, COUNT(*) AS available_copies
+FROM copy c WHERE NOT EXISTS (SELECT 1 FROM loan l WHERE l.copy_id = c.id AND l.returned_on IS NULL)
+GROUP BY c.book_id ORDER BY c.book_id;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>book_id</th><th>available_copies</th></tr></thead>
+<tbody><tr><td>2</td><td>2</td></tr></tbody>
+</table>
+</div>
+<p><strong>Design notes</strong>: separating <code>book</code> from <code>copy</code> avoids repeating the title for every physical item; <code>book_author</code> handles many authors per book; fines are <strong>derived</strong> (due date, return date, daily rate), so compute them in queries or a view instead of storing a number that can disagree with the dates.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql12-q02" data-topic="Schema design workshop" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you guarantee a copy has at most one open loan?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Application code only <span class="q-why">Can race.</span></li>
+          <li data-key="B">A partial unique index on copy_id WHERE returned_on IS NULL <span class="q-why">Correct.</span></li>
+          <li data-key="C">A nullable column <span class="q-why">No.</span></li>
+          <li data-key="D">A view <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The database enforces it for every writer.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-sql12-q03" data-topic="Schema design workshop" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why store a fine as a derived value instead of a column?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Columns are slow <span class="q-why">No.</span></li>
+          <li data-key="B">A stored number can disagree with the dates it derives from <span class="q-why">Correct.</span></li>
+          <li data-key="C">SQL cannot store money <span class="q-why">No.</span></li>
+          <li data-key="D">Indexes forbid it <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Compute from due and return dates.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you model many authors per book?</summary><div class="answer"><p>A book_author junction table with a composite primary key of book id and author id.</p></div></details>
+      </div>
+    </section>
+
+    <section id="booking" data-track>
+      <h2>Workshop 2: bookings without overlaps</h2>
+<p><strong>Needs</strong>: rooms can be booked for date ranges; two bookings for the same room must never overlap. This is the classic "double booking" problem.</p>
+<p>Two ranges <code>[s1, e1)</code> and <code>[s2, e2)</code> overlap exactly when <code>s1 &lt; e2 AND s2 &lt; e1</code>. Use <strong>half-open</strong> intervals (check-out day is free for the next guest). The strongest guarantee comes from the database: PostgreSQL has <strong>exclusion constraints</strong> on <code>daterange</code>. SQLite and MySQL have no such constraint, so use a trigger (and serialised writes or locking) as below.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql12-04.sql">CREATE TABLE room (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE);
+CREATE TABLE booking (id INTEGER PRIMARY KEY, room_id INT NOT NULL REFERENCES room(id), guest TEXT NOT NULL,
+                      start_day TEXT NOT NULL, end_day TEXT NOT NULL, CHECK (end_day &gt; start_day));
+CREATE INDEX idx_booking_room_dates ON booking(room_id, start_day, end_day);
+CREATE TRIGGER no_overlap BEFORE INSERT ON booking
+BEGIN
+  SELECT RAISE(ABORT, 'room already booked for those dates')
+  WHERE EXISTS (SELECT 1 FROM booking b WHERE b.room_id = NEW.room_id AND b.start_day &lt; NEW.end_day AND NEW.start_day &lt; b.end_day);
+END;
+INSERT INTO room VALUES (1,'Sea view'),(2,'Garden');
+INSERT INTO booking VALUES (1,1,'Ana','2024-05-01','2024-05-05'),(2,1,'Bo','2024-05-05','2024-05-08'),(3,2,'Cy','2024-05-02','2024-05-04');
+INSERT INTO booking VALUES (4,1,'Di','2024-05-04','2024-05-06');</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>error</th></tr></thead>
+<tbody><tr><td>room already booked for those dates</td></tr></tbody>
+</table>
+</div>
+<p>Booking 2 starts the day booking 1 ends (allowed), and the fourth booking overlaps the first, so the trigger aborts it. In production (PostgreSQL):</p>
+<pre><code>CREATE EXTENSION btree_gist;
+ALTER TABLE booking ADD CONSTRAINT no_overlap
+  EXCLUDE USING gist (room_id WITH =, daterange(start_day, end_day) WITH &amp;&amp;);</code></pre>
+<p>Finding free rooms for a date range is an anti-join:</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql12-05.sql">CREATE TABLE room (id INTEGER PRIMARY KEY, name TEXT);
+CREATE TABLE booking (id INTEGER PRIMARY KEY, room_id INT, start_day TEXT, end_day TEXT);
+INSERT INTO room VALUES (1,'Sea view'),(2,'Garden'),(3,'Attic');
+INSERT INTO booking VALUES (1,1,'2024-05-01','2024-05-05'),(2,2,'2024-05-02','2024-05-04'),(3,3,'2024-04-20','2024-04-25');
+SELECT r.name AS free_room FROM room r
+WHERE NOT EXISTS (SELECT 1 FROM booking b WHERE b.room_id = r.id AND b.start_day &lt; '2024-05-04' AND '2024-05-03' &lt; b.end_day)
+ORDER BY r.name;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>free_room</th></tr></thead>
+<tbody><tr><td>Attic</td></tr></tbody>
+</table>
+</div>
+<p><strong>Concurrency</strong>: two requests can both pass the check before either inserts. Prevent it with the exclusion constraint, a serialisable transaction with retry, a row lock on the room (<code>SELECT ... FOR UPDATE</code>) or a per-room unique "slot" table (one row per room per night with a unique key), which turns overlap detection into a unique-violation (<a href="../system-design-guide/sd24-case-5.html">SD24</a>, <a href="sql8-transactions-deep.html">SQL8</a>).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql12-q04" data-topic="Schema design workshop" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Two half-open ranges [s1,e1) and [s2,e2) overlap when:</p></div>
+        <ul class="q-options">
+          <li data-key="A">s1 = s2 <span class="q-why">Too narrow.</span></li>
+          <li data-key="B">s1 &lt; e2 AND s2 &lt; e1 <span class="q-why">Correct.</span></li>
+          <li data-key="C">e1 = e2 <span class="q-why">No.</span></li>
+          <li data-key="D">s1 &lt; s2 <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Back-to-back bookings (e1 = s2) do not overlap.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-sql12-q05" data-topic="Schema design workshop" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which prevents double booking even under concurrent requests in PostgreSQL?</p></div>
+        <ul class="q-options">
+          <li data-key="A">An application check <span class="q-why">Racy.</span></li>
+          <li data-key="B">An exclusion constraint on room and date range <span class="q-why">Correct.</span></li>
+          <li data-key="C">A longer timeout <span class="q-why">No.</span></li>
+          <li data-key="D">A cache <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The constraint is checked atomically inside the database.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why use half-open intervals for bookings?</summary><div class="answer"><p>A guest's check-out day can be the next guest's check-in day without counting as an overlap.</p></div></details>
+      </div>
+    </section>
+
+    <section id="social" data-track>
+      <h2>Workshop 3: a social graph</h2>
+<p><strong>Needs</strong>: users follow users; posts; a feed of posts from followed users; follower counts; mutual follows. Queries: who follows me; who do I follow; mutual follows; my feed, newest first.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql12-06.sql">PRAGMA foreign_keys = ON;
+CREATE TABLE user (id INTEGER PRIMARY KEY, handle TEXT NOT NULL UNIQUE);
+CREATE TABLE follow (follower_id INT NOT NULL REFERENCES user(id), followee_id INT NOT NULL REFERENCES user(id), since TEXT NOT NULL,
+                     PRIMARY KEY (follower_id, followee_id), CHECK (follower_id &lt;&gt; followee_id));
+CREATE INDEX idx_follow_followee ON follow(followee_id, follower_id);   -- the reverse lookup: who follows X
+CREATE TABLE post (id INTEGER PRIMARY KEY, author_id INT NOT NULL REFERENCES user(id), body TEXT NOT NULL, created TEXT NOT NULL);
+CREATE INDEX idx_post_author_created ON post(author_id, created DESC);
+INSERT INTO user VALUES (1,'ana'),(2,'bo'),(3,'cy'),(4,'di');
+INSERT INTO follow VALUES (1,2,'2024-01-01'),(1,3,'2024-01-02'),(2,1,'2024-01-03'),(3,1,'2024-01-04'),(4,1,'2024-01-05'),(2,3,'2024-01-06');
+INSERT INTO post VALUES (1,2,'bo post 1','2024-03-01'),(2,3,'cy post 1','2024-03-02'),(3,2,'bo post 2','2024-03-03'),(4,4,'di post','2024-03-04'),(5,1,'ana post','2024-03-05');
+-- feed for ana: posts by people ana follows, newest first
+SELECT u.handle, p.body, p.created FROM post p JOIN follow f ON f.followee_id = p.author_id JOIN user u ON u.id = p.author_id
+WHERE f.follower_id = 1 ORDER BY p.created DESC LIMIT 10;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>handle</th><th>body</th><th>created</th></tr></thead>
+<tbody><tr><td>bo</td><td>bo post 2</td><td>2024-03-03</td></tr><tr><td>cy</td><td>cy post 1</td><td>2024-03-02</td></tr><tr><td>bo</td><td>bo post 1</td><td>2024-03-01</td></tr></tbody>
+</table>
+</div>
+<p>Mutual follows (friends) and follower counts:</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql12-07.sql">CREATE TABLE user (id INTEGER PRIMARY KEY, handle TEXT);
+CREATE TABLE follow (follower_id INT, followee_id INT, PRIMARY KEY (follower_id, followee_id));
+INSERT INTO user VALUES (1,'ana'),(2,'bo'),(3,'cy'),(4,'di');
+INSERT INTO follow VALUES (1,2),(1,3),(2,1),(3,1),(4,1),(2,3);
+SELECT a.handle AS person, b.handle AS mutual_friend
+FROM follow f1 JOIN follow f2 ON f2.follower_id = f1.followee_id AND f2.followee_id = f1.follower_id
+JOIN user a ON a.id = f1.follower_id JOIN user b ON b.id = f1.followee_id WHERE f1.follower_id &lt; f1.followee_id ORDER BY 1, 2;
+SELECT u.handle, (SELECT COUNT(*) FROM follow f WHERE f.followee_id = u.id) AS followers, (SELECT COUNT(*) FROM follow f WHERE f.follower_id = u.id) AS following FROM user u ORDER BY followers DESC, u.handle;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>person</th><th>mutual_friend</th></tr></thead>
+<tbody><tr><td>ana</td><td>bo</td></tr><tr><td>ana</td><td>cy</td></tr></tbody>
+</table>
+</div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>handle</th><th>followers</th><th>following</th></tr></thead>
+<tbody><tr><td>ana</td><td>3</td><td>2</td></tr><tr><td>cy</td><td>2</td><td>1</td></tr><tr><td>bo</td><td>1</td><td>2</td></tr><tr><td>di</td><td>0</td><td>1</td></tr></tbody>
+</table>
+</div>
+<p><strong>Scaling notes</strong>: the follow table is an <strong>edge list</strong>; both lookup directions need an index. Computing a feed with a join works for small graphs; at scale, <strong>precompute feeds</strong> (fan-out on write) for ordinary users and merge celebrity posts at read time (<a href="../system-design-guide/sd14-case-2.html">SD14</a>). Follower counts become <strong>denormalised counters</strong> updated asynchronously. For deep graph traversals (friends of friends of friends) consider a graph database or a recursive CTE with limits.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql12-q06" data-topic="Schema design workshop" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A follow table needs which indexes?</p></div>
+        <ul class="q-options">
+          <li data-key="A">None <span class="q-why">Slow.</span></li>
+          <li data-key="B">The primary key (follower, followee) plus an index for the reverse direction (followee, follower) <span class="q-why">Correct.</span></li>
+          <li data-key="C">Only on handle <span class="q-why">No.</span></li>
+          <li data-key="D">A full-text index <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Both 'who do I follow' and 'who follows me' are common.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How does feed design change at scale?</summary><div class="answer"><p>Precompute feeds for ordinary users (fan-out on write) and merge celebrity posts at read time.</p></div></details>
+      </div>
+    </section>
+
+    <section id="ledger" data-track>
+      <h2>Workshop 4: an inventory ledger</h2>
+<p><strong>Needs</strong>: track stock across warehouses; never lose track of why stock changed; prevent negative stock; produce the current level and the history. <strong>Principle</strong>: store <strong>movements</strong> (an append-only ledger), derive balances. Updating a "quantity" column in place loses history and invites errors.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql12-08.sql">PRAGMA foreign_keys = ON;
+CREATE TABLE product (id INTEGER PRIMARY KEY, sku TEXT NOT NULL UNIQUE);
+CREATE TABLE warehouse (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE);
+CREATE TABLE stock_movement (
+  id INTEGER PRIMARY KEY, product_id INT NOT NULL REFERENCES product(id), warehouse_id INT NOT NULL REFERENCES warehouse(id),
+  delta INT NOT NULL CHECK (delta &lt;&gt; 0), reason TEXT NOT NULL CHECK (reason IN ('receipt','sale','return','adjustment','transfer')),
+  ref TEXT, created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE INDEX idx_move_prod_wh ON stock_movement(product_id, warehouse_id);
+-- derived balance as a view
+CREATE VIEW stock_level AS SELECT product_id, warehouse_id, SUM(delta) AS on_hand FROM stock_movement GROUP BY product_id, warehouse_id;
+-- guard: a movement may not take stock below zero
+CREATE TRIGGER no_negative_stock BEFORE INSERT ON stock_movement
+BEGIN
+  SELECT RAISE(ABORT, 'insufficient stock')
+  WHERE (SELECT COALESCE(SUM(delta), 0) FROM stock_movement WHERE product_id = NEW.product_id AND warehouse_id = NEW.warehouse_id) + NEW.delta &lt; 0;
+END;
+INSERT INTO product VALUES (1,'PEN'),(2,'DESK');
+INSERT INTO warehouse VALUES (1,'North'),(2,'South');
+INSERT INTO stock_movement (product_id, warehouse_id, delta, reason, ref) VALUES (1,1,100,'receipt','PO-1'),(1,1,-30,'sale','ORD-9'),(1,2,50,'receipt','PO-2'),(2,1,5,'receipt','PO-3'),(1,1,-20,'sale','ORD-10');
+SELECT p.sku, w.name AS warehouse, s.on_hand FROM stock_level s JOIN product p ON p.id = s.product_id JOIN warehouse w ON w.id = s.warehouse_id ORDER BY p.sku, w.name;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>sku</th><th>warehouse</th><th>on_hand</th></tr></thead>
+<tbody><tr><td>DESK</td><td>North</td><td>5</td></tr><tr><td>PEN</td><td>North</td><td>50</td></tr><tr><td>PEN</td><td>South</td><td>50</td></tr></tbody>
+</table>
+</div>
+<p>Attempting to sell more than is on hand is rejected:</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql12-09.sql">CREATE TABLE stock_movement (id INTEGER PRIMARY KEY, product_id INT, warehouse_id INT, delta INT);
+CREATE TRIGGER no_negative_stock BEFORE INSERT ON stock_movement
+BEGIN
+  SELECT RAISE(ABORT, 'insufficient stock')
+  WHERE (SELECT COALESCE(SUM(delta), 0) FROM stock_movement WHERE product_id = NEW.product_id AND warehouse_id = NEW.warehouse_id) + NEW.delta &lt; 0;
+END;
+INSERT INTO stock_movement (product_id, warehouse_id, delta) VALUES (1, 1, 50);
+INSERT INTO stock_movement (product_id, warehouse_id, delta) VALUES (1, 1, -60);</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>error</th></tr></thead>
+<tbody><tr><td>insufficient stock</td></tr></tbody>
+</table>
+</div>
+<p><strong>Design notes</strong>: the ledger is auditable and supports time travel (<code>WHERE created &lt;= ?</code>); summing a long ledger on every read is slow, so keep a <strong>balance table</strong> updated in the same transaction (or a snapshot plus recent movements) and reconcile it against the ledger regularly; a <strong>transfer</strong> is two movements (out of one warehouse, into another) in <strong>one transaction</strong>; reservations (stock held for a cart) are a separate table with expiry (<a href="../system-design-guide/sd24-case-5.html">SD24</a>). Accounting systems use exactly this double-entry idea.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql12-q07" data-topic="Schema design workshop" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why store stock movements instead of updating a quantity?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It uses less space <span class="q-why">No.</span></li>
+          <li data-key="B">It keeps a full audit trail and lets balances be derived and reconciled <span class="q-why">Correct.</span></li>
+          <li data-key="C">It is required by SQL <span class="q-why">No.</span></li>
+          <li data-key="D">It avoids transactions <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Double-entry accounting uses the same idea.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you keep a ledger fast?</summary><div class="answer"><p>Maintain a balance or snapshot table in the same transaction and reconcile it against the ledger.</p></div></details>
+      </div>
+    </section>
+
+    <section id="mistakes" data-track>
+      <h2>Common design mistakes</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Mistake</th><th>Better</th></tr></thead>
+<tbody>
+<tr><td>Comma-separated lists in a column</td><td>A junction table</td></tr><tr><td>One generic <code>attributes</code> EAV table for everything</td><td>Real columns, or <code>JSONB</code> for truly variable extras</td></tr><tr><td>Storing derived values (totals, ages) that can drift</td><td>Compute them, or maintain them transactionally</td></tr><tr><td>Missing foreign keys "for speed"</td><td>Keep them; index them; the integrity is worth it</td></tr><tr><td>Nullable columns that mean different things</td><td>Separate tables or explicit status columns</td></tr><tr><td>Using floats for money</td><td><code>NUMERIC</code> or integer minor units</td></tr><tr><td>Natural keys that change (email as primary key)</td><td>Surrogate key plus a unique constraint</td></tr><tr><td>Soft deletes everywhere with unique conflicts</td><td>Partial unique indexes on <code>WHERE deleted_at IS NULL</code></td></tr><tr><td>Time without time zone</td><td>Store UTC timestamps</td></tr><tr><td>No <code>created_at</code>/<code>updated_at</code></td><td>Add audit columns by default</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Start from the queries, model entities and relationships, let constraints make bad states impossible (partial unique indexes, checks, triggers or exclusion constraints), store events or movements and derive balances, and index both directions of a relationship.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql12-q08" data-topic="Schema design workshop" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which is a design smell?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A junction table for many-to-many <span class="q-why">Correct design.</span></li>
+          <li data-key="B">A comma-separated list of ids in one column <span class="q-why">Correct: violates first normal form and cannot be indexed or constrained.</span></li>
+          <li data-key="C">Foreign keys <span class="q-why">Good.</span></li>
+          <li data-key="D">UTC timestamps <span class="q-why">Good.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use a child or junction table.</p></div>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Schema design workshop</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Schema design workshop">
+<details class="recall iq" data-level="basic" data-topic="Schema design workshop"><summary><span class="tag ok">Basic</span> How do you start designing a schema?</summary><div class="answer"><p>List the queries and writes the system must support, identify entities and relationships, choose keys and constraints, normalise, then add indexes and test with data.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Schema design workshop"><summary><span class="tag ok">Basic</span> How do you model many-to-many relationships?</summary><div class="answer"><p>A junction table whose composite primary key combines the two foreign keys, with indexes for both directions.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Schema design workshop"><summary><span class="tag warn">Medium</span> How do you prevent two open loans of one book copy?</summary><div class="answer"><p>A partial unique index on copy_id where returned_on IS NULL.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Schema design workshop"><summary><span class="tag warn">Medium</span> When do two date ranges overlap?</summary><div class="answer"><p>For half-open ranges, when start1 &lt; end2 and start2 &lt; end1.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Schema design workshop"><summary><span class="tag warn">Medium</span> How do you stop double bookings in PostgreSQL?</summary><div class="answer"><p>An exclusion constraint on the resource and the date range (gist with the &amp;&amp; operator), enforced atomically by the database.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Schema design workshop"><summary><span class="tag warn">Medium</span> Why store movements in a ledger rather than a quantity?</summary><div class="answer"><p>It gives an audit trail, supports time travel and lets balances be derived and reconciled.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Schema design workshop"><summary><span class="tag warn">Medium</span> Why derive values such as fines or totals instead of storing them?</summary><div class="answer"><p>Stored derived values can disagree with their sources; compute them or maintain them transactionally.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Schema design workshop"><summary><span class="tag warn">Medium</span> How do you model followers in a social network?</summary><div class="answer"><p>An edge table (follower, followee) with a composite primary key and an index on the reverse direction, plus counters denormalised if needed.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Schema design workshop"><summary><span class="tag bad">Advanced</span> How does feed design change at scale?</summary><div class="answer"><p>Compute feeds on write for ordinary users and merge celebrity posts at read time, using denormalised stores and caches.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Schema design workshop"><summary><span class="tag bad">Advanced</span> How would you implement soft delete safely?</summary><div class="answer"><p>Add deleted_at, filter it in views or default scopes, use partial unique indexes where deleted_at IS NULL, and purge or anonymise on a schedule.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Schema design workshop"><summary><span class="tag bad">Advanced</span> How do you model versioned or historical data?</summary><div class="answer"><p>History tables or temporal columns with valid_from and valid_to, or an event log from which state is derived.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Schema design workshop"><summary><span class="tag bad">Advanced</span> EAV versus JSON columns versus real columns?</summary><div class="answer"><p>Use real columns for core attributes; JSONB for genuinely variable extras with indexes; avoid EAV, which loses types, constraints and query simplicity.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Schema design workshop"><summary><span class="tag bad">Advanced</span> How do you design for multi-tenancy in the schema?</summary><div class="answer"><p>A tenant_id in every table and index, row-level security, unique constraints scoped by tenant, or separate schemas or databases for stronger isolation.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Schema design workshop"><summary><span class="tag bad">Advanced</span> How do you migrate a live schema safely?</summary><div class="answer"><p>Expand and contract: add compatible structure, dual write, backfill in batches, switch reads, then remove the old structure.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sql11-optimiser-internals.html"><span class="dir">Previous</span><span>SQL11 Inside the query optimiser: join algorithms, cost estimates, statistics and index structures</span></a>
+      <a class="next" href="ps0-python-sql.html"><span class="dir">Next</span><span>PS0 Using SQL from Python: DB-API, transactions, ORMs, pandas and pipelines</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

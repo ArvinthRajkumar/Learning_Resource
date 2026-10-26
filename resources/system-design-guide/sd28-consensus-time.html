@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD28">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Consensus, clocks and coordination: Raft, leader election, logical time and CRDTs | System Design</title>
+<meta name="description" content="How distributed nodes agree: why clocks cannot be trusted, Lamport and vector clocks, leader election, the Raft protocol with a working simulation, quorums and failure cases, coordination services and CRDTs with runnable merges.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD28</p>
+      <h1>Consensus, clocks and coordination: Raft, leader election, logical time and CRDTs</h1>
+      <p class="lede">Most hard distributed-systems questions reduce to two problems: nodes disagree about time, and nodes disagree about who is in charge. This part explains the tools that solve them, in plain language first and then with small programs you can run and break.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="why" data-track>
+      <h2>Why agreement is hard</h2>
+<p>Put three servers in three buildings. Messages between them can be slow, lost, duplicated or reordered, and any server can crash and restart. You cannot tell a <strong>crashed</strong> server from a <strong>slow</strong> one, because both are silent. Yet the system must still answer questions such as "who is the leader?", "was this payment recorded?" and "which update came first?".</p>
+<p>The famous results explain the limits:</p>
+<ul><li><strong>Two Generals</strong>: with an unreliable channel, two parties can never be <em>certain</em> they agree.</li><li><strong>FLP impossibility</strong>: in a fully asynchronous network, no algorithm can guarantee consensus if even one node may crash. Real protocols work around it using <strong>timeouts</strong> (partial synchrony) and <strong>randomisation</strong>.</li><li><strong>CAP</strong>: during a network partition you choose consistency or availability.</li></ul>
+<p>Think of consensus as a group of friends choosing a restaurant over unreliable text messages: they need a rule so that everyone who finally decides decides the <em>same</em> place, even if some phones were off.</p>
+    </section>
+
+    <section id="clocks" data-track>
+      <h2>Clocks lie</h2>
+<p>Every machine has its own clock, and clocks <strong>drift</strong> (by milliseconds per day) and <strong>jump</strong> (when NTP corrects them). Two events on different machines cannot be ordered reliably by wall-clock time. Consequences:</p>
+<ul><li>"Last write wins" by timestamp can silently drop a newer write written from a machine whose clock is behind.</li><li>Lease and lock expiry based on local clocks is unsafe if a process pauses (garbage collection) or the clock jumps. Use <strong>fencing tokens</strong> (<a href="sd25-case-6.html">SD25</a>).</li><li>Google Spanner uses atomic clocks and GPS to bound clock uncertainty (<strong>TrueTime</strong>) and waits out the uncertainty before committing; most systems cannot afford that and use logical time instead.</li></ul>
+<p>Monotonic clocks (<code>time.monotonic()</code>) measure <strong>durations</strong> on one machine and never go backwards; wall clocks measure <strong>calendar time</strong> and can. Use the first for timeouts and the second for display.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd28-q01" data-topic="Consensus and time" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is 'last write wins by timestamp' risky across machines?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Timestamps are too short <span class="q-why">No.</span></li>
+          <li data-key="B">Clocks drift and jump, so a newer write may carry an older timestamp and be discarded <span class="q-why">Correct.</span></li>
+          <li data-key="C">It uses too much memory <span class="q-why">No.</span></li>
+          <li data-key="D">It needs consensus <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use logical clocks or version vectors when losing writes is unacceptable.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd28-q02" data-topic="Consensus and time" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which clock should measure a timeout on one machine?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Wall-clock time <span class="q-why">It can jump.</span></li>
+          <li data-key="B">A monotonic clock <span class="q-why">Correct.</span></li>
+          <li data-key="C">NTP <span class="q-why">No.</span></li>
+          <li data-key="D">Either <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Monotonic clocks never go backwards.</p></div>
+      </div>
+    </section>
+
+    <section id="logical" data-track>
+      <h2>Logical time</h2>
+<p>What matters is usually <em>causality</em>: did A happen before B because A could have influenced B? Write <code>A -&gt; B</code> ("happened before"). Events on one node are ordered; a send happens before its receive; and the relation is transitive. Two events with no path between them are <strong>concurrent</strong>.</p>
+<h3>Lamport clocks</h3>
+<p>Each node keeps a counter. Increment it on every event; stamp each message with it; on receive, set <code>counter = max(local, message) + 1</code>. If <code>A -&gt; B</code> then <code>L(A) &lt; L(B)</code>. The converse is false: a smaller stamp does not prove causality. Lamport clocks give a consistent total order (break ties with the node id) but cannot detect concurrency.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd28-01.py">class Node:
+    def __init__(self, name): self.name, self.t, self.log = name, 0, []
+    def event(self, what):
+        self.t += 1; self.log.append((self.t, self.name, what)); return self.t
+    def send(self, what):
+        self.t += 1; self.log.append((self.t, self.name, "send " + what)); return self.t
+    def receive(self, stamp, what):
+        self.t = max(self.t, stamp) + 1; self.log.append((self.t, self.name, "recv " + what))
+a, b, c = Node("A"), Node("B"), Node("C")
+a.event("start"); s = a.send("m1"); b.event("local"); b.receive(s, "m1")
+s2 = b.send("m2"); c.event("local"); c.receive(s2, "m2")
+for line in sorted(a.log + b.log + c.log): print(line)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>(1, 'A', 'start')
+(1, 'B', 'local')
+(1, 'C', 'local')
+(2, 'A', 'send m1')
+(3, 'B', 'recv m1')
+(4, 'B', 'send m2')
+(5, 'C', 'recv m2')</code></pre>
+<h3>Vector clocks</h3>
+<p>Each node keeps a vector with one counter per node. This <strong>can</strong> tell whether two events are ordered or concurrent: <code>V1 &lt;= V2</code> componentwise means "before"; if neither is <code>&lt;=</code> the other, they are concurrent (a real conflict, as in Dynamo-style stores).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd28-02.py">def merge(a, b): return {k: max(a.get(k, 0), b.get(k, 0)) for k in sorted(a.keys() | b.keys())}
+def compare(a, b):
+    keys = a.keys() | b.keys()
+    le = all(a.get(k, 0) &lt;= b.get(k, 0) for k in keys)
+    ge = all(a.get(k, 0) &gt;= b.get(k, 0) for k in keys)
+    return "equal" if le and ge else "before" if le else "after" if ge else "CONCURRENT"
+v1 = {"A": 1}                         # write on node A
+v2 = merge(v1, {"B": 1})              # B saw v1 then wrote
+v3 = {"A": 2}                         # A wrote again without seeing B's write
+print("v1 vs v2:", compare(v1, v2))
+print("v2 vs v3:", compare(v2, v3), "-&gt; a genuine conflict that the application must merge")
+print("merged:", merge(v2, v3))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>v1 vs v2: before
+v2 vs v3: CONCURRENT -&gt; a genuine conflict that the application must merge
+merged: {'A': 2, 'B': 1}</code></pre>
+<p><strong>Hybrid logical clocks (HLC)</strong> combine physical time and a logical counter so timestamps stay close to real time yet respect causality (used by CockroachDB and others).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd28-q03" data-topic="Consensus and time" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What can vector clocks do that Lamport clocks cannot?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Be smaller <span class="q-why">They are larger.</span></li>
+          <li data-key="B">Detect that two events are concurrent <span class="q-why">Correct.</span></li>
+          <li data-key="C">Use fewer messages <span class="q-why">No.</span></li>
+          <li data-key="D">Order all events <span class="q-why">Lamport already gives a total order.</span></li>
+        </ul>
+        <div class="q-explain"><p>Incomparable vectors mean concurrent updates.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>State the Lamport clock rules.</summary><div class="answer"><p>Increment on every event; stamp sent messages; on receive set the counter to max(local, received) + 1.</p></div></details>
+      </div>
+    </section>
+
+    <section id="quorum" data-track>
+      <h2>Quorums</h2>
+<p>With <code>N</code> replicas, a write acknowledged by <code>W</code> and a read from <code>R</code> replicas always overlap if <code>R + W &gt; N</code>. Majority quorums (<code>N/2 + 1</code>) are special: <strong>any two majorities intersect</strong>, so two different leaders cannot both be elected in the same term, which is the key safety fact behind Paxos and Raft.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Cluster size</th><th>Majority</th><th>Failures tolerated</th></tr></thead>
+<tbody>
+<tr><td>3</td><td>2</td><td>1</td></tr><tr><td>5</td><td>3</td><td>2</td></tr><tr><td>7</td><td>4</td><td>3</td></tr><tr><td>4</td><td>3</td><td>1 (no better than 3)</td></tr>
+</tbody>
+</table>
+</div>
+<p>Use odd sizes: a fourth node adds cost but no extra fault tolerance. Larger clusters tolerate more failures but make every write wait for more acknowledgements.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd28-03.py">from itertools import combinations
+nodes = range(5)
+majorities = [set(c) for c in combinations(nodes, 3)]
+print("every pair of 3-of-5 majorities overlaps:", all(a &amp; b for a in majorities for b in majorities))
+print("two disjoint minorities of 2-of-5 exist (so 2 acks would be unsafe):", any(not (set(a) &amp; set(b)) for a in combinations(nodes, 2) for b in combinations(nodes, 2)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>every pair of 3-of-5 majorities overlaps: True
+two disjoint minorities of 2-of-5 exist (so 2 acks would be unsafe): True</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd28-q04" data-topic="Consensus and time" data-type="numeric" data-answer="3" data-tol="0">
+        <div class="q-stem"><p>How many node failures can a 7-node majority-quorum cluster tolerate?</p></div>
+        <div class="q-explain"><p>Majority is 4, so 7 - 4 = 3 nodes can fail.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd28-q05" data-topic="Consensus and time" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why must two majorities of the same cluster always intersect?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Because networks are reliable <span class="q-why">No.</span></li>
+          <li data-key="B">Each has more than half the nodes, so they share at least one node <span class="q-why">Correct.</span></li>
+          <li data-key="C">Because of timeouts <span class="q-why">No.</span></li>
+          <li data-key="D">Because of leader election only <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>That shared node prevents two conflicting decisions.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why odd cluster sizes?</summary><div class="answer"><p>A fourth node adds cost without tolerating more failures than three; odd sizes maximise fault tolerance per node.</p></div></details>
+      </div>
+    </section>
+
+    <section id="raft" data-track>
+      <h2>Leader election and Raft</h2>
+<p><strong>Raft</strong> was designed to be understandable. A cluster has one <strong>leader</strong>; clients send writes to it; it replicates a <strong>log</strong> of commands to <strong>followers</strong>; a command is <strong>committed</strong> once a majority has stored it; every node applies committed commands in order to the same state machine. Because all nodes apply the same log in the same order, they end in the same state (<strong>replicated state machine</strong>).</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="Raft roles. Each election has a numbered term, and a node votes at most once per term." style="min-width:760px"><defs><marker id="ah52" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah52a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah52b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah52d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah52)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah52)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah52)"/><line x1="747.0" y1="78.0" x2="747.0" y2="118.0" class="d-line" marker-end="url(#ah52)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle" class="d-sm">Follower waits for heartbeats</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle" class="d-sm">Timeout: becomes Candidate and asks for votes</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle" class="d-sm">Wins a majority: becomes Leader</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle" class="d-sm">Leader sends heartbeats and replicates log entries</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="151.5" text-anchor="middle" class="d-sm">A higher term seen: step down to Follower</text></svg>
+</div>
+<figcaption>Raft roles. Each election has a numbered term, and a node votes at most once per term.</figcaption></figure>
+<h3>The three sub-problems</h3>
+<ol><li><strong>Leader election</strong>. Followers use a randomised election timeout (for example 150 to 300 ms). The first to time out increments its <strong>term</strong>, votes for itself and requests votes. A node grants its vote if it has not voted in that term and the candidate's log is at least as up to date as its own. Randomised timeouts make split votes rare and quickly resolved.</li><li><strong>Log replication</strong>. The leader appends the command, sends <code>AppendEntries</code> to followers, and when a majority acknowledge, marks it committed and tells followers. Followers must have a matching previous entry, otherwise they reject and the leader backs up and repairs their log.</li><li><strong>Safety</strong>. Only a candidate with all committed entries can win, so a committed entry is never lost, and a new leader never overwrites committed entries.</li></ol>
+<h3>A runnable miniature</h3>
+<p>The simulation below runs three nodes through an election, replication, a leader crash and a re-election. It is simplified (no real network or timers) but follows the rules above.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd28-04.py">class RaftNode:
+    def __init__(self, nid): self.id, self.term, self.voted_for, self.log, self.commit, self.role, self.alive = nid, 0, None, [], 0, "follower", True
+    def last(self): return (self.log[-1][0], len(self.log)) if self.log else (0, 0)    # (term of last entry, length)
+class Cluster:
+    def __init__(self, n=3): self.nodes = [RaftNode(i) for i in range(n)]
+    def alive(self): return [n for n in self.nodes if n.alive]
+    def election(self, cand_id):
+        c = self.nodes[cand_id]; c.term += 1; c.role = "candidate"; c.voted_for = c.id; votes = 1
+        for n in self.alive():
+            if n is c: continue
+            if n.term &lt; c.term: n.term, n.voted_for = c.term, None        # newer term: reset the vote
+            if n.voted_for in (None, c.id) and c.last() &gt;= n.last():       # candidate log at least as up to date
+                n.voted_for = c.id; votes += 1
+        if votes &gt; len(self.nodes) // 2:
+            c.role = "leader"
+            for n in self.alive():
+                if n is not c: n.role = "follower"
+            return True
+        c.role = "follower"; return False
+    def leader(self): return next((n for n in self.alive() if n.role == "leader"), None)
+    def write(self, cmd):
+        L = self.leader()
+        if L is None: return "no leader"
+        L.log.append((L.term, cmd)); acks = 1
+        for n in self.alive():
+            if n is not L:
+                n.log = list(L.log); n.term = L.term; acks += 1               # followers copy the leader's log
+        if acks &gt; len(self.nodes) // 2:
+            for n in self.alive(): n.commit = len(L.log)
+            return "committed"
+        return "not committed (no majority)"
+cl = Cluster(3)
+print("node 0 election won:", cl.election(0))
+print("write x=1:", cl.write("x=1"), "| write y=2:", cl.write("y=2"))
+cl.nodes[0].alive = False
+print("leader crashed; leader now:", cl.leader())
+print("node 1 election (term", cl.nodes[1].term + 1, ") won:", cl.election(1))
+print("write z=3 with 2 of 3 alive:", cl.write("z=3"))
+cl.nodes[2].alive = False
+print("write w=4 with 1 of 3 alive:", cl.write("w=4"))
+print("logs:", {n.id: [c for _, c in n.log] for n in cl.nodes})</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>node 0 election won: True
+write x=1: committed | write y=2: committed
+leader crashed; leader now: None
+node 1 election (term 2 ) won: True
+write z=3 with 2 of 3 alive: committed
+write w=4 with 1 of 3 alive: not committed (no majority)
+logs: {0: ['x=1', 'y=2'], 1: ['x=1', 'y=2', 'z=3', 'w=4'], 2: ['x=1', 'y=2', 'z=3']}</code></pre>
+<p>Notice that with two of three nodes alive the cluster keeps working; with one of three it <strong>refuses</strong> writes (it chooses consistency over availability). That is CAP in action.</p>
+<h3>Raft failure cases to be able to explain</h3>
+<ul><li><strong>Leader partitioned away</strong>: it keeps thinking it leads but cannot reach a majority, so it cannot commit; the majority side elects a new leader with a higher term; when the partition heals the old leader sees the higher term and steps down, discarding uncommitted entries.</li><li><strong>Split vote</strong>: no candidate gets a majority; timeouts expire at different random moments; another election occurs.</li><li><strong>Stale reads</strong>: a deposed leader may serve old data unless reads go through the log, use a leader lease, or use <code>ReadIndex</code> confirmation with a majority.</li><li><strong>Membership changes</strong>: adding or removing nodes safely needs joint consensus or one-at-a-time changes.</li><li><strong>Log compaction</strong>: take snapshots so the log does not grow forever.</li></ul>
+<h3>Paxos in one paragraph</h3>
+<p>Paxos reaches the same goal with <strong>proposers</strong>, <strong>acceptors</strong> and <strong>learners</strong>, in two phases: <em>prepare/promise</em> (a proposer asks acceptors to promise not to accept lower-numbered proposals and to report anything already accepted) and <em>accept/accepted</em> (it proposes a value, which must be the highest-numbered previously accepted value if any). Multi-Paxos elects a stable leader to skip phase one. Raft, Zab (ZooKeeper) and Viewstamped Replication are close relatives. Byzantine fault tolerant protocols (PBFT, blockchains) tolerate <em>lying</em> nodes and need <code>3f + 1</code> nodes.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd28-q06" data-topic="Consensus and time" data-type="single" data-answer="B">
+        <div class="q-stem"><p>When does a Raft leader consider an entry committed?</p></div>
+        <ul class="q-options">
+          <li data-key="A">When it is appended locally <span class="q-why">Not yet replicated.</span></li>
+          <li data-key="B">When a majority of nodes have stored it <span class="q-why">Correct.</span></li>
+          <li data-key="C">When all nodes have it <span class="q-why">Too strict.</span></li>
+          <li data-key="D">After one second <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Majority replication ensures any future leader has it.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd28-q07" data-topic="Consensus and time" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A leader is partitioned from the majority. What happens to its writes?</p></div>
+        <ul class="q-options">
+          <li data-key="A">They commit normally <span class="q-why">It cannot reach a majority.</span></li>
+          <li data-key="B">They cannot commit, and it steps down when it sees a higher term <span class="q-why">Correct.</span></li>
+          <li data-key="C">They are duplicated <span class="q-why">No.</span></li>
+          <li data-key="D">They are encrypted <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The majority side elects a new leader.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What are Raft's three sub-problems?</summary><div class="answer"><p>Leader election, log replication, and safety (only up-to-date candidates win, committed entries are never lost).</p></div></details>
+      </div>
+    </section>
+
+    <section id="coordination" data-track>
+      <h2>Coordination services</h2>
+<p>You rarely implement consensus yourself. You <strong>use</strong> a small replicated service (ZooKeeper, etcd, Consul) for:</p>
+<ul><li><strong>Leader election</strong> and <strong>distributed locks</strong> (ephemeral nodes or leases, with fencing tokens).</li><li><strong>Configuration and service discovery</strong> with <strong>watches</strong> that notify on change.</li><li><strong>Membership</strong> and health tracking via sessions and heartbeats.</li><li><strong>Barriers and queues</strong> for coordinating batch workers.</li></ul>
+<p>Keep them small and off the hot path: they provide strongly consistent metadata for hundreds of thousands of data-plane requests, not the data itself. Examples of consensus inside bigger systems: Kafka's controller (KRaft), Kubernetes (etcd stores all cluster state), CockroachDB and Spanner (a Raft or Paxos group per data range).</p>
+    </section>
+
+    <section id="gossip" data-track>
+      <h2>Gossip and failure detection</h2>
+<p>For large clusters of hundreds of nodes, all-to-all heartbeats do not scale. <strong>Gossip</strong> has each node periodically exchange state with a few random peers; information spreads exponentially, reaching all <code>N</code> nodes in <code>O(log N)</code> rounds, with no central coordinator. Cassandra and Consul use it for membership. <strong>Phi accrual failure detectors</strong> output a suspicion level instead of a yes/no, adapting to network jitter. <strong>SWIM</strong> adds indirect probes to reduce false positives.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd28-05.py">import random
+random.seed(3)
+def gossip_rounds(n, fanout=2):
+    informed, rounds = {0}, 0
+    while len(informed) &lt; n:
+        new = set()
+        for node in informed:
+            new |= set(random.sample(range(n), fanout))
+        informed |= new; rounds += 1
+    return rounds
+for n in (10, 100, 1000, 10000):
+    print(f"{n:&gt;6} nodes: all informed after {gossip_rounds(n)} rounds")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>    10 nodes: all informed after 3 rounds
+   100 nodes: all informed after 8 rounds
+  1000 nodes: all informed after 10 rounds
+ 10000 nodes: all informed after 14 rounds</code></pre>
+<p>The round count grows with <code>log N</code>, not <code>N</code>.</p>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How fast does gossip spread information?</summary><div class="answer"><p>In O(log N) rounds, because the informed set roughly multiplies each round.</p></div></details>
+      </div>
+    </section>
+
+    <section id="crdt" data-track>
+      <h2>CRDTs: agreement without coordination</h2>
+<p>Sometimes you do not want consensus, you want replicas that accept writes anywhere (even offline) and <strong>merge automatically</strong>. A <strong>conflict-free replicated data type</strong> has a merge operation that is <strong>commutative, associative and idempotent</strong>, so replicas converge regardless of message order or duplication (they form a <em>join semilattice</em>).</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>CRDT</th><th>Idea</th></tr></thead>
+<tbody>
+<tr><td><strong>G-Counter</strong></td><td>One counter per replica, only increments; value is the sum; merge is componentwise max</td></tr><tr><td><strong>PN-Counter</strong></td><td>Two G-Counters (increments and decrements)</td></tr><tr><td><strong>G-Set / 2P-Set</strong></td><td>Grow-only set; two-phase set with tombstones for removal</td></tr><tr><td><strong>OR-Set</strong></td><td>Observed-remove set: each add gets a unique tag; remove deletes seen tags, so add-wins semantics</td></tr><tr><td><strong>LWW-Register</strong></td><td>Last-writer-wins by timestamp (loses concurrent updates)</td></tr><tr><td><strong>Sequence CRDTs</strong> (RGA, Logoot)</td><td>Collaborative text editing without a central server</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd28-06.py">class GCounter:
+    def __init__(self, rid): self.rid, self.counts = rid, {}
+    def inc(self, n=1): self.counts[self.rid] = self.counts.get(self.rid, 0) + n
+    def value(self): return sum(self.counts.values())
+    def merge(self, other):
+        for k, v in other.counts.items(): self.counts[k] = max(self.counts.get(k, 0), v)
+a, b, c = GCounter("a"), GCounter("b"), GCounter("c")
+a.inc(3); b.inc(2); c.inc(4)
+# merge in different orders, with a duplicate delivery: all replicas converge
+x, y = GCounter("x"), GCounter("y")
+for r in (a, b, c, a): x.merge(r)
+for r in (c, a, b): y.merge(r)
+print("replica x:", x.value(), "| replica y:", y.value(), "| identical state:", x.counts == y.counts)
+class ORSet:
+    def __init__(self, rid): self.rid, self.n, self.adds, self.removed = rid, 0, set(), set()
+    def add(self, e): self.n += 1; self.adds.add((e, f"{self.rid}{self.n}"))
+    def remove(self, e): self.removed |= {t for t in self.adds if t[0] == e}
+    def elements(self): return sorted({e for e, tag in self.adds if (e, tag) not in self.removed})
+    def merge(self, o): self.adds |= o.adds; self.removed |= o.removed
+p, q = ORSet("p"), ORSet("q")
+p.add("milk"); q.merge(p)                      # both see milk
+p.remove("milk"); q.add("milk")                # concurrent: p removes the old milk, q adds a new milk
+p.merge(q); q.merge(p)
+print("concurrent remove and add -&gt; add wins on both replicas:", p.elements(), q.elements())</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>replica x: 9 | replica y: 9 | identical state: True
+concurrent remove and add -&gt; add wins on both replicas: ['milk'] ['milk']</code></pre>
+<p>CRDTs trade away some semantics (for example you cannot enforce "balance never below zero" without coordination) for availability and low latency. They power Redis Enterprise active-active, Riak, and collaborative editors.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd28-q08" data-topic="Consensus and time" data-type="single" data-answer="A">
+        <div class="q-stem"><p>Which property makes a CRDT merge safe for duplicated and reordered messages?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is commutative, associative and idempotent <span class="q-why">Correct.</span></li>
+          <li data-key="B">It uses locks <span class="q-why">No.</span></li>
+          <li data-key="C">It uses timestamps only <span class="q-why">No.</span></li>
+          <li data-key="D">It is encrypted <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Replicas converge regardless of delivery order.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is the catch with CRDTs?</summary><div class="answer"><p>They cannot enforce invariants needing coordination, such as a non-negative balance, and some types lose concurrent updates (LWW).</p></div></details>
+      </div>
+    </section>
+
+    <section id="summary" data-track>
+      <h2>Putting it together</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Need</th><th>Tool</th></tr></thead>
+<tbody>
+<tr><td>Order events across machines</td><td>Lamport or hybrid logical clocks</td></tr><tr><td>Detect concurrent updates</td><td>Vector clocks (or dotted version vectors)</td></tr><tr><td>Pick one leader and replicate a log</td><td>Raft or Paxos (use etcd/ZooKeeper)</td></tr><tr><td>Cross-node mutual exclusion</td><td>Lease from a consensus service plus fencing tokens</td></tr><tr><td>Membership in big clusters</td><td>Gossip with a failure detector</td></tr><tr><td>Offline-capable replicas that always merge</td><td>CRDTs</td></tr><tr><td>Strictly serialisable transactions across shards</td><td>Consensus per shard plus two-phase commit (Spanner, CockroachDB)</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Do not trust wall clocks; use logical time for ordering. Use majority quorums so decisions cannot conflict. Use an existing consensus service rather than writing your own. Where you can tolerate merging, CRDTs avoid coordination altogether.</p></div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Consensus and time</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Consensus and time">
+<details class="recall iq" data-level="basic" data-topic="Consensus and time"><summary><span class="tag ok">Basic</span> Why can&#x27;t distributed machines rely on wall-clock time to order events?</summary><div class="answer"><p>Clocks drift and can jump when corrected, so two machines disagree. Ordering by timestamps can drop newer writes; use logical or hybrid clocks, or version vectors.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Consensus and time"><summary><span class="tag ok">Basic</span> What is a quorum?</summary><div class="answer"><p>A majority (or configured number) of replicas that must participate. Any two majorities overlap, so conflicting decisions cannot both succeed.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Consensus and time"><summary><span class="tag warn">Medium</span> Explain Lamport clocks.</summary><div class="answer"><p>Each node keeps a counter, increments it per event, stamps messages, and on receive sets it to max(local, received) + 1. If A happened before B then its stamp is smaller; the reverse does not hold.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Consensus and time"><summary><span class="tag warn">Medium</span> What do vector clocks add?</summary><div class="answer"><p>One counter per node lets you decide whether two versions are ordered or concurrent, which detects true conflicts (as in Dynamo-style stores).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Consensus and time"><summary><span class="tag warn">Medium</span> Describe Raft in three parts.</summary><div class="answer"><p>Leader election with terms and randomised timeouts, log replication where an entry commits once a majority stores it, and safety rules ensuring only up-to-date candidates win and committed entries are never lost.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Consensus and time"><summary><span class="tag warn">Medium</span> Why use odd cluster sizes for consensus?</summary><div class="answer"><p>Majorities of 2n+1 nodes tolerate n failures; adding one more node (2n+2) needs a larger majority and tolerates no more failures.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Consensus and time"><summary><span class="tag warn">Medium</span> What happens in Raft when the leader is partitioned from the majority?</summary><div class="answer"><p>It cannot commit new entries. The majority side elects a new leader with a higher term; when the partition heals the old leader steps down and its uncommitted entries are discarded.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Consensus and time"><summary><span class="tag warn">Medium</span> Why must stale leaders not serve reads blindly?</summary><div class="answer"><p>A deposed leader may not know it was replaced and return old data. Reads go through the log, use a leader lease with bounded clock drift, or confirm leadership with a quorum.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Consensus and time"><summary><span class="tag bad">Advanced</span> State the FLP result and how real systems cope.</summary><div class="answer"><p>In a fully asynchronous system consensus cannot be guaranteed if even one node may crash. Real protocols assume partial synchrony and use timeouts and randomisation, giving up liveness (not safety) during bad periods.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Consensus and time"><summary><span class="tag bad">Advanced</span> Paxos versus Raft?</summary><div class="answer"><p>Both give consensus with majorities. Paxos separates proposers, acceptors and learners with two phases and is notoriously subtle; Raft decomposes the problem around a strong leader and a replicated log and is easier to implement and teach.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Consensus and time"><summary><span class="tag bad">Advanced</span> What is a CRDT and where is it used?</summary><div class="answer"><p>A data type whose merge is commutative, associative and idempotent so replicas converge without coordination: counters, sets, registers, collaborative text. Used in active-active databases and editors, with limits on enforceable invariants.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Consensus and time"><summary><span class="tag bad">Advanced</span> Hybrid logical clocks: what and why?</summary><div class="answer"><p>They combine physical time with a logical counter so timestamps stay near real time but still respect causality; used by distributed databases to order transactions without special hardware.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Consensus and time"><summary><span class="tag bad">Advanced</span> How does gossip detect failures and spread membership?</summary><div class="answer"><p>Nodes periodically exchange state with random peers so information reaches all nodes in O(log N) rounds; failure detectors such as phi accrual or SWIM turn missed heartbeats into suspicion levels.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Consensus and time"><summary><span class="tag bad">Advanced</span> Why does Spanner use atomic clocks?</summary><div class="answer"><p>TrueTime exposes a bounded uncertainty interval; Spanner waits out the uncertainty before committing so timestamps give external consistency across the globe.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd27-glossary.html"><span class="dir">Previous</span><span>SD27 System design glossary: terms, acronyms and patterns</span></a>
+      <a class="next" href="sd29-web-delivery.html"><span class="dir">Next</span><span>SD29 Web delivery: HTTP caching, TLS, CDNs, real-time connections and client performance</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

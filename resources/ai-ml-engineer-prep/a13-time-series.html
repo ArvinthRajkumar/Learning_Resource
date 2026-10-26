@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="A13">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Time series: forecasting, seasonality, stationarity and anomaly detection | AI/ML Prep</title>
+<meta name="description" content="Working with data ordered in time: trend and seasonality, moving averages and exponential smoothing, autocorrelation and stationarity, autoregressive models fit from scratch, honest backtesting, forecasting metrics and anomaly detection, with runnable code.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part A13</p>
+      <h1>Time series: forecasting, seasonality, stationarity and anomaly detection</h1>
+      <p class="lede">Time series break the assumption behind most of machine learning: that examples are independent. Today depends on yesterday. This part shows how to describe, forecast and monitor such data, and how to evaluate forecasts without fooling yourself.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="different" data-track>
+      <h2>What makes time series different</h2>
+<p>Observations are ordered and <strong>dependent</strong>. Consequences:</p>
+<ul><li><strong>Never shuffle</strong> the data for splitting. Training must use the past and testing the future; otherwise information leaks backward in time (look-ahead bias).</li><li><strong>Features</strong> include lags, rolling statistics and calendar effects (hour, weekday, holiday).</li><li><strong>Structure</strong> to look for: <strong>trend</strong> (long-run direction), <strong>seasonality</strong> (repeating pattern with a known period), <strong>cycles</strong> (irregular longer swings), <strong>noise</strong>, and <strong>level shifts</strong> or <strong>outliers</strong>.</li><li><strong>Frequency</strong> and <strong>gaps</strong> matter: resample to a regular grid, decide how to fill missing values (forward-fill, interpolate, leave as missing) and keep <strong>time zones</strong> consistent.</li></ul>
+<p>Typical tasks: <strong>forecasting</strong> (demand, traffic, load, revenue), <strong>anomaly detection</strong> (outages, fraud, sensor faults), <strong>classification</strong> of sequences, <strong>nowcasting</strong> and <strong>causal impact</strong> estimation.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a13-q01" data-topic="Time series" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why must time series not be randomly shuffled for train-test splits?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is slower <span class="q-why">No.</span></li>
+          <li data-key="B">The future would leak into training, giving unrealistically good scores <span class="q-why">Correct.</span></li>
+          <li data-key="C">Shuffling changes the mean <span class="q-why">No.</span></li>
+          <li data-key="D">Time series have no labels <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Always train on the past and test on the future.</p></div>
+      </div>
+    </section>
+
+    <section id="decomp" data-track>
+      <h2>Decomposition: trend, season, remainder</h2>
+<p>A series is often modelled as <code>y = trend + seasonal + remainder</code> (additive) or <code>y = trend x seasonal x remainder</code> (multiplicative; use when seasonal swings grow with the level, or take logs to make it additive). A simple decomposition: estimate the trend with a <strong>centred moving average</strong> over one period, average the detrended values for each position in the cycle to get the seasonal profile, and what is left is the remainder.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a13-01.py">import math, random
+random.seed(1)
+period, n = 7, 70
+series = [50 + 0.5 * t + 10 * math.sin(2 * math.pi * (t % period) / period) + random.gauss(0, 1.5) for t in range(n)]    # trend + weekly season + noise
+def moving_average(x, w):                                              # centred moving average for odd w
+    h = w // 2
+    return [sum(x[i - h:i + h + 1]) / w if h &lt;= i &lt; len(x) - h else None for i in range(len(x))]
+trend = moving_average(series, period)
+detrended = [s - t if t is not None else None for s, t in zip(series, trend)]
+seasonal = [sum(d for i, d in enumerate(detrended) if d is not None and i % period == k) / sum(1 for i, d in enumerate(detrended) if d is not None and i % period == k) for k in range(period)]
+mean_seasonal = sum(seasonal) / period
+seasonal = [s - mean_seasonal for s in seasonal]                       # centre the seasonal profile at zero
+true_profile = [10 * math.sin(2 * math.pi * k / period) for k in range(period)]
+print("estimated seasonal profile:", [round(s, 1) for s in seasonal])
+print("true seasonal profile     :", [round(s, 1) for s in true_profile])
+rem = [d - seasonal[i % period] for i, d in enumerate(detrended) if d is not None]
+print("remainder std (should be about the noise level 1.5):", round((sum(r * r for r in rem) / len(rem)) ** 0.5, 2))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>estimated seasonal profile: [-0.8, 8.2, 9.9, 4.3, -4.5, -9.3, -7.8]
+true seasonal profile     : [0.0, 7.8, 9.7, 4.3, -4.3, -9.7, -7.8]
+remainder std (should be about the noise level 1.5): 1.26</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a13-q02" data-topic="Time series" data-type="single" data-answer="B">
+        <div class="q-stem"><p>When do you prefer a multiplicative decomposition?</p></div>
+        <ul class="q-options">
+          <li data-key="A">When there is no seasonality <span class="q-why">No.</span></li>
+          <li data-key="B">When seasonal swings grow with the level of the series <span class="q-why">Correct.</span></li>
+          <li data-key="C">When the data is binary <span class="q-why">No.</span></li>
+          <li data-key="D">Never <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Taking logs turns it into an additive one.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name the components of a time series.</summary><div class="answer"><p>Trend, seasonality, cycles (optional), and the remainder or noise.</p></div></details>
+      </div>
+    </section>
+
+    <section id="smoothing" data-track>
+      <h2>Smoothing and simple forecasts</h2>
+<p>Start with <strong>baselines</strong>; a fancy model that cannot beat them is not worth deploying.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Method</th><th>Forecast</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><strong>Naive</strong></td><td>next value = last value</td><td>Surprisingly hard to beat for random-walk-like data</td></tr><tr><td><strong>Seasonal naive</strong></td><td>next value = value one season ago</td><td>The right baseline for strongly seasonal data</td></tr><tr><td><strong>Moving average</strong></td><td>mean of the last <code>k</code> values</td><td>Smooths noise, lags behind trends</td></tr><tr><td><strong>Simple exponential smoothing</strong></td><td>weighted average with weights decaying geometrically</td><td><code>level = alpha x y + (1 - alpha) x level</code></td></tr><tr><td><strong>Holt (trend)</strong></td><td>level and trend components</td><td>For trending data</td></tr><tr><td><strong>Holt-Winters</strong></td><td>level, trend and seasonal components</td><td>Additive or multiplicative seasonality</td></tr><tr><td><strong>ARIMA / SARIMA</strong></td><td>autoregression, differencing and moving-average errors</td><td>Classic statistical workhorse</td></tr><tr><td><strong>ETS state-space</strong></td><td>exponential smoothing in a likelihood framework</td><td>Prediction intervals</td></tr><tr><td><strong>Prophet-style</strong></td><td>trend with changepoints + seasonality + holidays</td><td>Business series with holidays</td></tr><tr><td><strong>Gradient boosting on lag features</strong></td><td>tabular model on lags and calendar features</td><td>Strong in practice, handles many series</td></tr><tr><td><strong>Deep models</strong> (LSTM, temporal CNN, transformers, N-BEATS, TFT)</td><td>learned representations</td><td>Need lots of data; compare against the baselines</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/a13-02.py">import random, math
+random.seed(2)
+period, n = 7, 120
+y = [100 + 0.3 * t + 12 * math.sin(2 * math.pi * (t % period) / period) + random.gauss(0, 2) for t in range(n)]
+train, test = y[:100], y[100:]
+def mae(a, b): return sum(abs(p - q) for p, q in zip(a, b)) / len(a)
+naive = [train[-1]] * len(test)
+seasonal_naive = [train[len(train) - period + (i % period)] for i in range(len(test))]
+def ses(x, alpha):
+    level = x[0]
+    for v in x[1:]: level = alpha * v + (1 - alpha) * level
+    return level
+ses_fc = [ses(train, 0.3)] * len(test)
+def holt_winters(x, period, alpha=0.3, beta=0.05, gamma=0.3, horizon=20):
+    level, trend = sum(x[:period]) / period, (sum(x[period:2 * period]) - sum(x[:period])) / period ** 2
+    season = [x[i] - level for i in range(period)]
+    for t in range(period, len(x)):
+        last_level = level
+        level = alpha * (x[t] - season[t % period]) + (1 - alpha) * (level + trend)
+        trend = beta * (level - last_level) + (1 - beta) * trend
+        season[t % period] = gamma * (x[t] - level) + (1 - gamma) * season[t % period]
+    return [level + (h + 1) * trend + season[(len(x) + h) % period] for h in range(horizon)]
+hw = holt_winters(train, period, horizon=len(test))
+for name, fc in [("naive", naive), ("seasonal naive", seasonal_naive), ("simple exp. smoothing", ses_fc), ("Holt-Winters", hw)]:
+    print(f"{name:&gt;22}: MAE {mae(test, fc):6.2f}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>                 naive: MAE   9.02
+        seasonal naive: MAE   4.78
+ simple exp. smoothing: MAE   7.77
+          Holt-Winters: MAE   1.16</code></pre>
+<p>Choose smoothing parameters by minimising the error on a validation window, not by eye. <strong>Seasonal naive</strong> is the bar to beat for seasonal series; the models that capture level, trend and season win by a wide margin when the structure is stable.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a13-q03" data-topic="Time series" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the right baseline for a strongly seasonal series?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Predict zero <span class="q-why">No.</span></li>
+          <li data-key="B">Seasonal naive: the value one season ago <span class="q-why">Correct.</span></li>
+          <li data-key="C">The overall mean <span class="q-why">Usually worse.</span></li>
+          <li data-key="D">A neural network <span class="q-why">Not a baseline.</span></li>
+        </ul>
+        <div class="q-explain"><p>A model must beat it to justify its complexity.</p></div>
+      </div>
+    </section>
+
+    <section id="acf" data-track>
+      <h2>Autocorrelation and stationarity</h2>
+<p>The <strong>autocorrelation function (ACF)</strong> at lag <code>k</code> is the correlation between the series and itself shifted by <code>k</code>. Peaks at lag 7 reveal a weekly pattern; slow decay reveals trend or a unit root; the <strong>partial ACF</strong> isolates the direct effect of each lag.</p>
+<p>A series is <strong>(weakly) stationary</strong> when its mean, variance and autocorrelation do not change over time. Many classic models (ARMA) assume stationarity, so transform first: <strong>difference</strong> (<code>y_t - y_(t-1)</code>) to remove trend, <strong>seasonal difference</strong> (<code>y_t - y_(t-m)</code>) to remove seasonality, take <strong>logs</strong> to stabilise variance. A <strong>random walk</strong> is non-stationary but its differences are stationary noise; the <strong>Augmented Dickey-Fuller</strong> test checks for a unit root.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a13-03.py">import random, math
+random.seed(3)
+def acf(x, max_lag):
+    m = sum(x) / len(x); var = sum((v - m) ** 2 for v in x)
+    return [sum((x[i] - m) * (x[i + k] - m) for i in range(len(x) - k)) / var for k in range(max_lag + 1)]
+n = 400
+white = [random.gauss(0, 1) for _ in range(n)]
+walk = [0.0]
+for _ in range(n - 1): walk.append(walk[-1] + random.gauss(0, 1))
+weekly = [math.sin(2 * math.pi * t / 7) + random.gauss(0, 0.3) for t in range(n)]
+diff = [walk[i] - walk[i - 1] for i in range(1, n)]
+for name, s in [("white noise", white), ("random walk", walk), ("weekly season", weekly), ("differenced walk", diff)]:
+    a = acf(s, 8)
+    print(f"{name:&gt;17}: ACF lags 1..8 =", [round(v, 2) for v in a[1:]])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>      white noise: ACF lags 1..8 = [-0.06, 0.05, 0.0, 0.05, -0.05, 0.02, -0.02, -0.04]
+      random walk: ACF lags 1..8 = [0.99, 0.98, 0.98, 0.97, 0.96, 0.96, 0.95, 0.95]
+    weekly season: ACF lags 1..8 = [0.5, -0.18, -0.73, -0.75, -0.18, 0.51, 0.83, 0.52]
+ differenced walk: ACF lags 1..8 = [0.03, 0.02, -0.01, -0.04, -0.04, 0.01, -0.04, -0.04]</code></pre>
+<p>White noise has near-zero ACF; the random walk's ACF decays very slowly (non-stationary) but its first difference looks like white noise; the weekly series peaks at lag 7.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a13-q04" data-topic="Time series" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A series' ACF decays very slowly and stays high at many lags. What does that suggest?</p></div>
+        <ul class="q-options">
+          <li data-key="A">White noise <span class="q-why">That has no autocorrelation.</span></li>
+          <li data-key="B">Non-stationarity such as a trend or unit root; difference the series <span class="q-why">Correct.</span></li>
+          <li data-key="C">A perfect model <span class="q-why">No.</span></li>
+          <li data-key="D">Missing values <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Differencing often yields a stationary series.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a13-q05" data-topic="Time series" data-type="numeric" data-answer="1" data-tol="0">
+        <div class="q-stem"><p>How many differences (d) does a random walk need to become stationary?</p></div>
+        <div class="q-explain"><p>The first difference of a random walk is white noise.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does stationarity require?</summary><div class="answer"><p>Constant mean, variance and autocorrelation structure over time.</p></div></details>
+      </div>
+    </section>
+
+    <section id="ar" data-track>
+      <h2>Autoregressive models from scratch</h2>
+<p>An <strong>AR(p)</strong> model predicts the next value from the previous <code>p</code>: <code>y_t = c + phi_1 y_(t-1) + ... + phi_p y_(t-p) + noise</code>. Fit by least squares on lag features (plain linear regression). <strong>ARIMA(p, d, q)</strong> adds <code>d</code> differences and <code>q</code> moving-average error terms; <strong>SARIMA</strong> adds seasonal terms.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a13-04.py">import random
+random.seed(4)
+TRUE_PHI = (0.6, -0.3)
+y = [0.0, 0.0]
+for _ in range(1500): y.append(TRUE_PHI[0] * y[-1] + TRUE_PHI[1] * y[-2] + random.gauss(0, 1))
+def solve(A, b):                                               # Gaussian elimination for the normal equations
+    n = len(b); M = [row[:] + [b[i]] for i, row in enumerate(A)]
+    for i in range(n):
+        p = max(range(i, n), key=lambda r: abs(M[r][i])); M[i], M[p] = M[p], M[i]
+        for r in range(i + 1, n):
+            f = M[r][i] / M[i][i]
+            for c in range(i, n + 1): M[r][c] -= f * M[i][c]
+    x = [0.0] * n
+    for i in reversed(range(n)): x[i] = (M[i][n] - sum(M[i][j] * x[j] for j in range(i + 1, n))) / M[i][i]
+    return x
+def fit_ar(series, p):
+    X = [[1.0] + [series[t - k] for k in range(1, p + 1)] for t in range(p, len(series))]
+    target = [series[t] for t in range(p, len(series))]
+    XtX = [[sum(X[r][i] * X[r][j] for r in range(len(X))) for j in range(p + 1)] for i in range(p + 1)]
+    Xty = [sum(X[r][i] * target[r] for r in range(len(X))) for i in range(p + 1)]
+    return solve(XtX, Xty)
+coef = fit_ar(y, 2)
+print("true phi:", TRUE_PHI, "| estimated phi:", [round(c, 2) for c in coef[1:]], "| intercept:", round(coef[0], 2))
+def forecast(series, coef, steps):
+    out, hist = [], series[:]
+    for _ in range(steps):
+        nxt = coef[0] + sum(coef[k] * hist[-k] for k in range(1, len(coef))); out.append(nxt); hist.append(nxt)
+    return out
+print("multi-step forecasts decay toward the mean:", [round(v, 2) for v in forecast(y, coef, 6)])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>true phi: (0.6, -0.3) | estimated phi: [0.58, -0.25] | intercept: 0.01
+multi-step forecasts decay toward the mean: [0.95, 0.03, -0.21, -0.12, -0.0, 0.04]</code></pre>
+<p>Forecasts several steps ahead feed on their own predictions, so uncertainty <strong>widens with the horizon</strong> and point forecasts regress toward the mean; report <strong>prediction intervals</strong> (from the model's noise or by quantile regression) not just a line.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a13-q06" data-topic="Time series" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why do multi-step forecasts from an AR model drift toward the mean?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A bug <span class="q-why">No.</span></li>
+          <li data-key="B">Each step uses earlier forecasts instead of data, so the signal decays and uncertainty grows <span class="q-why">Correct.</span></li>
+          <li data-key="C">The mean is always the answer <span class="q-why">No.</span></li>
+          <li data-key="D">Seasonality <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Prediction intervals should widen with the horizon.</p></div>
+      </div>
+    </section>
+
+    <section id="mlts" data-track>
+      <h2>Machine learning on time series</h2>
+<p>Turn forecasting into supervised learning with <strong>lag features</strong> and <strong>rolling statistics</strong>, plus calendar and external features (price, promotions, weather), then use a tree ensemble or a linear model. Care points:</p>
+<ul><li>Build features using <strong>only past information</strong> at prediction time (shift before rolling; features known in the future, such as holidays, are allowed).</li><li><strong>Direct</strong> strategy (a model per horizon) versus <strong>recursive</strong> (one-step model fed its own forecasts, errors compound).</li><li><strong>Many series</strong>: one global model across series (with series id or statistics as features) often beats one model per series.</li><li><strong>Intermittent demand</strong> (many zeros) needs specialised methods (Croston) or probabilistic models.</li><li><strong>Hierarchies</strong> (store, region, country) need <strong>reconciliation</strong> so forecasts add up.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/a13-05.py">import random, math
+random.seed(5)
+n = 300
+x = [20 + 0.05 * t + 6 * math.sin(2 * math.pi * t / 24) + random.gauss(0, 1) for t in range(n)]      # hourly-like with a 24-step cycle
+def features(series, t):                                       # only information available before time t
+    window = series[max(0, t - 24):t]
+    return [series[t - 1], series[t - 24], sum(window) / len(window), t % 24]
+rows = [(features(x, t), x[t]) for t in range(48, n)]
+split = int(len(rows) * 0.8)
+train, test = rows[:split], rows[split:]
+def knn_predict(train, f, k=5):
+    near = sorted(train, key=lambda r: sum((a - b) ** 2 for a, b in zip(r[0], f)))[:k]
+    return sum(r[1] for r in near) / k
+pred = [knn_predict(train, f) for f, _ in test]
+mae = lambda a, b: sum(abs(p - q) for p, q in zip(a, b)) / len(a)
+seasonal_naive = [f[1] for f, _ in test]                       # feature 1 is the value 24 steps ago
+print(f"nearest-neighbour regression on lag features MAE {mae([t for _, t in test], pred):.2f} | seasonal naive MAE {mae([t for _, t in test], seasonal_naive):.2f}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>nearest-neighbour regression on lag features MAE 1.52 | seasonal naive MAE 1.51</code></pre>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Direct versus recursive multi-step forecasting?</summary><div class="answer"><p>Direct trains a model per horizon; recursive repeats a one-step model feeding back its forecasts, which compounds error.</p></div></details>
+      </div>
+    </section>
+
+    <section id="backtest" data-track>
+      <h2>Evaluation: backtesting honestly</h2>
+<p>A single train-test split can be lucky. Use <strong>rolling-origin (walk-forward) evaluation</strong>: train on data up to time <code>T</code>, forecast the next <code>h</code> steps, score, move the origin forward, repeat, and average. Use an <strong>expanding</strong> window (all history) or a <strong>sliding</strong> window (recent history only, adapts faster) and keep the <strong>gap</strong> between training end and test start equal to your real deployment delay.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Metric</th><th>Formula idea</th><th>Caveat</th></tr></thead>
+<tbody>
+<tr><td><strong>MAE</strong></td><td>mean absolute error</td><td>Same units as the data, robust</td></tr><tr><td><strong>RMSE</strong></td><td>root mean squared error</td><td>Penalises large errors</td></tr><tr><td><strong>MAPE</strong></td><td>mean absolute percentage error</td><td>Explodes near zero and is asymmetric</td></tr><tr><td><strong>sMAPE</strong></td><td>symmetric percentage error</td><td>Better but still odd near zero</td></tr><tr><td><strong>MASE</strong></td><td>MAE scaled by the naive forecast's MAE</td><td>Scale-free; below 1 beats the naive baseline</td></tr><tr><td><strong>Pinball (quantile) loss</strong></td><td>asymmetric loss for quantiles</td><td>Evaluates prediction intervals</td></tr><tr><td><strong>Coverage</strong></td><td>fraction of actuals inside the interval</td><td>A 90% interval should cover about 90%</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/a13-06.py">import random, math
+random.seed(6)
+period, n = 7, 160
+y = [100 + 0.2 * t + 10 * math.sin(2 * math.pi * (t % period) / period) + random.gauss(0, 2) for t in range(n)]
+def seasonal_naive(train, h): return [train[len(train) - period + (i % period)] for i in range(h)]
+def mean_forecast(train, h): return [sum(train[-28:]) / 28] * h
+def walk_forward(model, start=80, horizon=7, step=7):
+    errors = []
+    for origin in range(start, n - horizon + 1, step):
+        fc = model(y[:origin], horizon)
+        errors += [abs(a - b) for a, b in zip(y[origin:origin + horizon], fc)]
+    return sum(errors) / len(errors)
+naive_errors = [abs(y[t] - y[t - 1]) for t in range(1, n)]
+naive_mae = sum(naive_errors) / len(naive_errors)
+for name, model in [("seasonal naive", seasonal_naive), ("trailing mean", mean_forecast)]:
+    m = walk_forward(model)
+    print(f"{name:&gt;15}: walk-forward MAE {m:5.2f} | MASE vs one-step naive {m / naive_mae:4.2f}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code> seasonal naive: walk-forward MAE  2.56 | MASE vs one-step naive 0.44
+  trailing mean: walk-forward MAE  6.69 | MASE vs one-step naive 1.14</code></pre>
+<p>Report the metric <strong>per horizon</strong> (error grows with lead time), per segment (volume tier, region) and as a <strong>business cost</strong> (stock-outs versus overstock are not symmetric). Beware leakage from <strong>future-looking normalisation</strong> and from tuning hyperparameters on the test period.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a13-q07" data-topic="Time series" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is walk-forward (rolling-origin) evaluation?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A random split <span class="q-why">No.</span></li>
+          <li data-key="B">Repeatedly training on data up to an origin, forecasting the next horizon, scoring, and moving the origin forward <span class="q-why">Correct.</span></li>
+          <li data-key="C">Cross-validation with shuffling <span class="q-why">No.</span></li>
+          <li data-key="D">Training on the test set <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It averages over many forecast origins.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a13-q08" data-topic="Time series" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A MASE of 0.8 means:</p></div>
+        <ul class="q-options">
+          <li data-key="A">The model is 80% accurate <span class="q-why">No.</span></li>
+          <li data-key="B">The model's error is 20% lower than the naive forecast's on the scaled measure <span class="q-why">Correct.</span></li>
+          <li data-key="C">Worse than naive <span class="q-why">That is above 1.</span></li>
+          <li data-key="D">No meaning <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>MASE below 1 beats the naive baseline.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why report error per horizon?</summary><div class="answer"><p>Error grows with lead time, and decisions often depend on a specific horizon.</p></div></details>
+      </div>
+    </section>
+
+    <section id="anomaly" data-track>
+      <h2>Anomaly detection</h2>
+<p>Define what "anomalous" means for the use: <strong>point</strong> anomalies (a spike), <strong>contextual</strong> anomalies (normal value at the wrong time: 3 am traffic at noon levels), and <strong>collective</strong> anomalies (a sequence is odd). Approaches:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Approach</th><th>Idea</th></tr></thead>
+<tbody>
+<tr><td><strong>Thresholds / control charts</strong></td><td>Alert beyond mean ± 3 sigma (use robust statistics)</td></tr><tr><td><strong>Residual-based</strong></td><td>Forecast with a good model, flag large residuals relative to their spread</td></tr><tr><td><strong>Seasonal-aware baselines</strong></td><td>Compare with the same hour last week</td></tr><tr><td><strong>Robust z-score (MAD)</strong></td><td>Median and median absolute deviation resist the outliers themselves</td></tr><tr><td><strong>Change-point detection</strong></td><td>CUSUM, Bayesian online change point detection for level shifts</td></tr><tr><td><strong>Isolation forest, one-class models</strong></td><td>Unsupervised outlier scores on feature windows</td></tr><tr><td><strong>Autoencoders</strong></td><td>High reconstruction error means unusual</td></tr><tr><td><strong>Supervised</strong></td><td>When labelled incidents exist</td></tr>
+</tbody>
+</table>
+</div>
+<p>Practical concerns: <strong>alert fatigue</strong> (tune for precision, set a minimum duration), <strong>seasonality</strong> (a naive threshold fires every evening), <strong>drift</strong> (baselines must adapt), and <strong>explanations</strong> (which metric and by how much).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a13-07.py">import random, math, statistics
+random.seed(7)
+period, n = 24, 24 * 14
+y = [50 + 20 * math.sin(2 * math.pi * (t % period) / period) + random.gauss(0, 2) for t in range(n)]
+injected = {200: +40, 250: -35, 300: +30}                    # three spikes
+for t, d in injected.items(): y[t] += d
+naive_flags = [t for t in range(n) if abs(y[t] - statistics.mean(y)) &gt; 3 * statistics.pstdev(y)]
+def seasonal_flags(y, period, history_days=7, threshold=5):
+    profile = [statistics.median(y[d * period + h] for d in range(history_days)) for h in range(period)]       # typical value for each hour of day
+    resid = [y[t] - profile[t % period] for t in range(len(y))]
+    med = statistics.median(resid); mad = statistics.median(abs(r - med) for r in resid)                        # robust spread of the residuals
+    scale = 1.4826 * mad
+    return [t for t, r in enumerate(resid) if abs(r - med) / scale &gt; threshold]
+flags = seasonal_flags(y, period)
+print("injected anomalies:", sorted(injected))
+print("global 3-sigma threshold flags:", naive_flags, "(misses anomalies hidden inside the daily swing)")
+print("seasonal robust z-score flags :", flags)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>injected anomalies: [200, 250, 300]
+global 3-sigma threshold flags: [200] (misses anomalies hidden inside the daily swing)
+seasonal robust z-score flags : [200, 250, 300]</code></pre>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why does a global 3-sigma threshold fail on seasonal data?</summary><div class="answer"><p>Normal seasonal peaks and troughs look extreme or hide real anomalies; compare with the same time in previous cycles.</p></div></details>
+      </div>
+    </section>
+
+    <section id="production" data-track>
+      <h2>Putting it into production</h2>
+<ul><li><strong>Monitor</strong> forecast error continuously; retrain on a schedule or when error drifts; keep a <strong>fallback</strong> (seasonal naive) when the model fails or data is late.</li><li><strong>Data quality</strong>: late-arriving data, backfills and revisions change history; store <strong>as-of</strong> versions so backtests use what was known at the time.</li><li><strong>Business rules</strong>: round to whole units, enforce minimums and maximums, handle new items (cold start) with hierarchical or similar-item forecasts.</li><li><strong>Uncertainty</strong> drives decisions (safety stock uses the upper quantile), so deliver quantiles, not only means.</li><li><strong>Cost</strong>: simple models on millions of series are cheaper and often as accurate as deep ones; compare on the metric that matters.</li></ul>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Respect time: split by time, build features from the past only, beat the naive and seasonal-naive baselines, choose transformations to reach stationarity, evaluate with walk-forward backtests and scale-free metrics, report prediction intervals, and use seasonal-aware, robust methods for anomaly detection.</p></div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Time series</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Time series">
+<details class="recall iq" data-level="basic" data-topic="Time series"><summary><span class="tag ok">Basic</span> Why can&#x27;t you shuffle time series data for train-test splits?</summary><div class="answer"><p>The future would leak into training, giving unrealistically good results. Split by time and evaluate on later data.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Time series"><summary><span class="tag ok">Basic</span> What are the components of a time series?</summary><div class="answer"><p>Trend, seasonality, cycles and noise (remainder), combined additively or multiplicatively.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time series"><summary><span class="tag warn">Medium</span> What is stationarity and how do you achieve it?</summary><div class="answer"><p>Constant mean, variance and autocorrelation over time. Difference to remove trend, seasonally difference to remove seasonality and take logs to stabilise variance.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time series"><summary><span class="tag warn">Medium</span> What baselines should a forecast beat?</summary><div class="answer"><p>Naive (last value) and seasonal naive (value one season ago); a complex model that cannot beat them is not worth deploying.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time series"><summary><span class="tag warn">Medium</span> Explain exponential smoothing.</summary><div class="answer"><p>A weighted average of past observations with geometrically decaying weights: level = alpha x observation + (1 - alpha) x previous level; Holt and Holt-Winters add trend and seasonality.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time series"><summary><span class="tag warn">Medium</span> What is ARIMA(p, d, q)?</summary><div class="answer"><p>Autoregression on p lags, d differences to achieve stationarity and a moving average of q past errors; SARIMA adds seasonal terms.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time series"><summary><span class="tag warn">Medium</span> What does the ACF show?</summary><div class="answer"><p>Correlation of the series with lagged copies of itself: peaks reveal seasonality and slow decay indicates non-stationarity; the PACF shows direct lag effects.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time series"><summary><span class="tag warn">Medium</span> Explain walk-forward validation.</summary><div class="answer"><p>Train on data up to an origin, forecast the next horizon, score, then move the origin forward and repeat, averaging errors, which mimics real deployment.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time series"><summary><span class="tag warn">Medium</span> Why is MAPE problematic?</summary><div class="answer"><p>It explodes or is undefined near zero actuals and penalises over-forecasts and under-forecasts asymmetrically; MASE or MAE are safer.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Time series"><summary><span class="tag bad">Advanced</span> How do you use gradient boosting for forecasting?</summary><div class="answer"><p>Create lag, rolling and calendar features using only past information, train a global model across series, and forecast directly per horizon or recursively.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Time series"><summary><span class="tag bad">Advanced</span> Direct versus recursive multi-step forecasting?</summary><div class="answer"><p>Direct trains one model per horizon; recursive reuses a one-step model feeding back forecasts, which compounds errors but is simpler.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Time series"><summary><span class="tag bad">Advanced</span> How would you detect anomalies in seasonal data?</summary><div class="answer"><p>Compare against a seasonal baseline (same time in previous cycles) or a forecast, using robust statistics such as MAD on the residuals, then tune thresholds and minimum duration to limit false alerts.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Time series"><summary><span class="tag bad">Advanced</span> What is a prediction interval and why report it?</summary><div class="answer"><p>A range expected to contain the future value with stated probability; decisions such as safety stock depend on the upper quantile, not the mean.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Time series"><summary><span class="tag bad">Advanced</span> How do you forecast intermittent demand?</summary><div class="answer"><p>Specialised methods such as Croston or probabilistic count models, evaluated with quantile or inventory-based metrics rather than MAPE.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="a12-llm-apps.html"><span class="dir">Previous</span><span>A12 Advanced LLM application engineering: RAG, agents, evaluation and cost</span></a>
+      <a class="next" href="a14-probabilistic-ml.html"><span class="dir">Next</span><span>A14 Probabilistic machine learning: Bayesian inference, MCMC, Gaussian processes and uncertainty</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

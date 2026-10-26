@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="X8">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Advanced tree techniques: LCA, binary lifting, Euler tours, diameter, rerooting and treaps | DSA Master Guide</title>
+<meta name="description" content="Query techniques for trees: depth and parents, lowest common ancestor by binary lifting, Euler tour subtree queries with a Fenwick tree, diameter and centres, rerooting dynamic programming, heavy-light decomposition ideas and randomised treaps, all checked against brute force.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part X8</p>
+      <h1>Advanced tree techniques: LCA, binary lifting, Euler tours, diameter, rerooting and treaps</h1>
+      <p class="lede">Tree problems at interview level go beyond traversal: find the common ancestor of two nodes, sum a subtree after updates, answer distances, or compute something for every possible root. This part gives the standard toolkit with the reasoning and tested code.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="basics" data-track>
+      <h2>Trees as data: rooted, parents and depths</h2>
+<p>A tree with <code>n</code> nodes has <code>n - 1</code> edges and exactly one path between any two nodes. Most techniques begin by <strong>rooting</strong> the tree and computing, for every node, its <strong>parent</strong>, <strong>depth</strong> and <strong>subtree size</strong> in one DFS (use an explicit stack for deep trees in Python).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x8-01.py">import random
+random.seed(1)
+def random_tree(n):
+    return [(random.randrange(i), i) for i in range(1, n)]            # edge (parent, child); node 0 is the root
+def build(n, edges):
+    adj = [[] for _ in range(n)]
+    for a, b in edges: adj[a].append(b); adj[b].append(a)
+    return adj
+def dfs_info(n, adj, root=0):
+    parent, depth, order, size = [-1] * n, [0] * n, [], [1] * n
+    stack = [root]
+    while stack:                                                       # iterative preorder
+        u = stack.pop(); order.append(u)
+        for v in adj[u]:
+            if v != parent[u]: parent[v], depth[v] = u, depth[u] + 1; stack.append(v)
+    for u in reversed(order):                                          # children before parents
+        if parent[u] &gt;= 0: size[parent[u]] += size[u]
+    return parent, depth, order, size
+n = 12; edges = random_tree(n); adj = build(n, edges)
+parent, depth, order, size = dfs_info(n, adj)
+print("parent:", parent); print("depth :", depth); print("subtree sizes:", size, "| root size is n:", size[0] == n)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>parent: [-1, 0, 0, 1, 0, 3, 3, 3, 6, 3, 1, 7]
+depth : [0, 1, 1, 2, 1, 3, 3, 3, 4, 3, 2, 4]
+subtree sizes: [12, 9, 1, 7, 1, 1, 2, 2, 1, 1, 1, 1] | root size is n: True</code></pre>
+    </section>
+
+    <section id="lca" data-track>
+      <h2>Lowest common ancestor (LCA)</h2>
+<p>The <strong>LCA</strong> of <code>u</code> and <code>v</code> is the deepest node that is an ancestor of both. Distance between them is <code>depth[u] + depth[v] - 2 depth[lca]</code>. Three common methods:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Method</th><th>Preprocess</th><th>Query</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>Walk up with depths</td><td>none</td><td>O(h)</td><td>Simple; fine for balanced or small trees</td></tr><tr><td><strong>Binary lifting</strong></td><td>O(n log n)</td><td>O(log n)</td><td>Easy to code; also gives k-th ancestor</td></tr><tr><td>Euler tour + sparse table (RMQ)</td><td>O(n log n)</td><td>O(1)</td><td>Fastest queries</td></tr><tr><td>Tarjan offline (union-find)</td><td>O(n alpha)</td><td>batch</td><td>All queries known in advance</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Binary lifting</h3>
+<p>Store <code>up[k][v]</code>, the <code>2^k</code>-th ancestor of <code>v</code>. Lift the deeper node to the same depth by jumping with the bits of the depth difference, then lift both together from the largest jump down while their ancestors differ.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x8-02.py">import random
+random.seed(2)
+LOG = 5
+def preprocess(n, parent):
+    up = [[0] * n for _ in range(LOG)]
+    for v in range(n): up[0][v] = parent[v] if parent[v] &gt;= 0 else v          # the root is its own ancestor
+    for k in range(1, LOG):
+        for v in range(n): up[k][v] = up[k - 1][up[k - 1][v]]
+    return up
+def lca(u, v, depth, up):
+    if depth[u] &lt; depth[v]: u, v = v, u
+    diff = depth[u] - depth[v]
+    for k in range(LOG):
+        if diff &gt;&gt; k &amp; 1: u = up[k][u]
+    if u == v: return u
+    for k in reversed(range(LOG)):
+        if up[k][u] != up[k][v]: u, v = up[k][u], up[k][v]
+    return up[0][u]
+def lca_naive(u, v, parent, depth):
+    while depth[u] &gt; depth[v]: u = parent[u]
+    while depth[v] &gt; depth[u]: v = parent[v]
+    while u != v: u, v = parent[u], parent[v]
+    return u
+def kth_ancestor(v, k, up):
+    for i in range(LOG):
+        if k &gt;&gt; i &amp; 1: v = up[i][v]
+    return v
+n = 30
+parent = [-1] + [random.randrange(i) for i in range(1, n)]
+depth = [0] * n
+for v in range(1, n): depth[v] = depth[parent[v]] + 1
+up = preprocess(n, parent)
+for _ in range(500):
+    u, v = random.randrange(n), random.randrange(n)
+    assert lca(u, v, depth, up) == lca_naive(u, v, parent, depth)
+print("binary lifting LCA matches the naive walk on 500 random queries")
+deep = max(range(n), key=lambda v: depth[v])
+print("deepest node", deep, "at depth", depth[deep], "| its 2nd ancestor:", kth_ancestor(deep, 2, up), "equals walking up twice:", parent[parent[deep]] if depth[deep] &gt;= 2 else None)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>binary lifting LCA matches the naive walk on 500 random queries
+deepest node 15 at depth 5 | its 2nd ancestor: 9 equals walking up twice: 9</code></pre>
+<p>The same table answers "k-th ancestor", "is <code>u</code> an ancestor of <code>v</code>" (compare after lifting) and path queries when combined with extra tables (max edge on the path, using <code>mx[k][v]</code> alongside <code>up</code>).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x8-q01" data-topic="Advanced trees" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In binary lifting, what does up[k][v] store?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The k-th child <span class="q-why">No.</span></li>
+          <li data-key="B">The 2^k-th ancestor of v <span class="q-why">Correct.</span></li>
+          <li data-key="C">The depth <span class="q-why">No.</span></li>
+          <li data-key="D">The size <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Jumps compose: up[k] = up[k-1] applied twice.</p></div>
+      </div>
+      <div class="quiz" data-qid="xd-x8-q02" data-topic="Advanced trees" data-type="numeric" data-answer="6" data-tol="0">
+        <div class="q-stem"><p>In a tree, depth[u] = 5, depth[v] = 7 and depth[lca] = 3. What is the distance between u and v?</p></div>
+        <div class="q-explain"><p>5 + 7 - 2 x 3 = 6.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>State the binary lifting LCA steps.</summary><div class="answer"><p>Lift the deeper node by the depth difference, then lift both nodes together from the largest jump down while their ancestors differ, and return the parent.</p></div></details>
+      </div>
+    </section>
+
+    <section id="euler" data-track>
+      <h2>Euler tour: turning subtrees into ranges</h2>
+<p>Record the time you <strong>enter</strong> and <strong>exit</strong> each node in a DFS: <code>tin[v]</code>, <code>tout[v]</code>. A node <code>u</code> is an ancestor of <code>v</code> exactly when <code>tin[u] &lt;= tin[v] &lt; tout[u]</code>. Crucially, the **subtree of <code>v</code> is the contiguous range** <code>[tin[v], tout[v])</code> in DFS order. So "sum over a subtree" becomes "sum over a range", and a Fenwick tree (<a href="x1-advanced-structures.html">X1</a>) handles point updates with range queries in <code>O(log n)</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x8-03.py">import random
+random.seed(3)
+n = 40
+parent = [-1] + [random.randrange(i) for i in range(1, n)]
+children = [[] for _ in range(n)]
+for v in range(1, n): children[parent[v]].append(v)
+tin, tout, timer = [0] * n, [0] * n, 0
+stack = [(0, 0)]
+while stack:                                                           # iterative DFS with enter/exit events
+    v, state = stack.pop()
+    if state == 0:
+        tin[v] = timer; timer += 1
+        stack.append((v, 1))
+        for c in children[v]: stack.append((c, 0))
+    else:
+        tout[v] = timer
+class Fenwick:
+    def __init__(self, n): self.t = [0] * (n + 1)
+    def add(self, i, d):
+        i += 1
+        while i &lt; len(self.t): self.t[i] += d; i += i &amp; -i
+    def prefix(self, i):                                               # sum of [0, i)
+        s = 0
+        while i &gt; 0: s += self.t[i]; i -= i &amp; -i
+        return s
+values = [random.randint(1, 9) for _ in range(n)]
+fw = Fenwick(n)
+for v in range(n): fw.add(tin[v], values[v])
+def subtree_sum(v): return fw.prefix(tout[v]) - fw.prefix(tin[v])
+def subtree_sum_naive(v):
+    return values[v] + sum(subtree_sum_naive(c) for c in children[v])
+for _ in range(100):
+    v = random.randrange(n); assert subtree_sum(v) == subtree_sum_naive(v)
+for _ in range(100):                                                   # point updates, then re-check
+    v, d = random.randrange(n), random.randint(-5, 5)
+    values[v] += d; fw.add(tin[v], d)
+    w = random.randrange(n); assert subtree_sum(w) == subtree_sum_naive(w)
+print("subtree sums with point updates verified against recursion; root subtree sum:", subtree_sum(0), "=", sum(values))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>subtree sums with point updates verified against recursion; root subtree sum: 186 = 186</code></pre>
+<p>For <strong>path</strong> queries with updates (sum from root to <code>v</code>), use the same tour: adding <code>d</code> to node <code>u</code> adds <code>d</code> to every node in <code>u</code>'s subtree's root-path sums, a <strong>range update, point query</strong> (Fenwick on a difference array).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x8-q03" data-topic="Advanced trees" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why does the Euler tour make subtree queries easy?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It sorts nodes <span class="q-why">No.</span></li>
+          <li data-key="B">A subtree occupies a contiguous range of the DFS order <span class="q-why">Correct.</span></li>
+          <li data-key="C">It balances the tree <span class="q-why">No.</span></li>
+          <li data-key="D">It computes parents <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Then a Fenwick or segment tree answers range sums.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you test ancestry with tin and tout?</summary><div class="answer"><p>u is an ancestor of v exactly when tin[u] &lt;= tin[v] &lt; tout[u].</p></div></details>
+      </div>
+    </section>
+
+    <section id="diameter" data-track>
+      <h2>Diameter, centres and farthest nodes</h2>
+<p>The <strong>diameter</strong> is the longest path in a tree. Classic two-pass method: BFS from any node to find the farthest node <code>a</code>; BFS from <code>a</code> to find the farthest node <code>b</code>; the distance <code>a</code> to <code>b</code> is the diameter. This works because the farthest node from any start is always an end of some diameter (for unweighted or non-negative weighted trees). The <strong>centre</strong> is the middle node (or two nodes) of the diameter path; rooting there minimises the height.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x8-04.py">import random, itertools
+from collections import deque
+random.seed(4)
+def bfs(adj, src):
+    dist = {src: 0}; q = deque([src])
+    while q:
+        u = q.popleft()
+        for v in adj[u]:
+            if v not in dist: dist[v] = dist[u] + 1; q.append(v)
+    return dist
+def diameter(adj):
+    d0 = bfs(adj, 0); a = max(d0, key=d0.get)
+    da = bfs(adj, a); b = max(da, key=da.get)
+    return da[b], a, b
+for _ in range(200):
+    n = random.randint(2, 12)
+    adj = [[] for _ in range(n)]
+    for i in range(1, n):
+        p = random.randrange(i); adj[p].append(i); adj[i].append(p)
+    best = max(bfs(adj, s)[t] for s in range(n) for t in range(n))
+    assert diameter(adj)[0] == best
+print("two-pass diameter matches the brute-force maximum over all pairs on 200 random trees")
+path_adj = [[1], [0, 2], [1, 3], [2, 4], [3]]
+print("diameter of a path of 5 nodes:", diameter(path_adj)[0])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>two-pass diameter matches the brute-force maximum over all pairs on 200 random trees
+diameter of a path of 5 nodes: 4</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x8-q04" data-topic="Advanced trees" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you find a tree's diameter with two BFS runs?</p></div>
+        <ul class="q-options">
+          <li data-key="A">BFS from the root twice <span class="q-why">No.</span></li>
+          <li data-key="B">BFS from any node to find the farthest node a, then BFS from a; the farthest distance is the diameter <span class="q-why">Correct.</span></li>
+          <li data-key="C">DFS and count leaves <span class="q-why">No.</span></li>
+          <li data-key="D">Sort edges <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The farthest node from any start is an end of a diameter.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why does the two-BFS diameter method work?</summary><div class="answer"><p>From any node the farthest node is an endpoint of some longest path, so a second search from it finds the other end.</p></div></details>
+      </div>
+    </section>
+
+    <section id="reroot" data-track>
+      <h2>Rerooting: answers for every root in O(n)</h2>
+<p>Some problems ask, for <strong>every</strong> node as the root, a quantity such as the sum of distances to all other nodes. Recomputing from scratch costs <code>O(n^2)</code>. <strong>Rerooting</strong> computes it once for the root (a down pass), then derives each child's answer from its parent's (an up pass).</p>
+<p>For the sum of distances: let <code>down[v]</code> be the sum of distances from <code>v</code> to nodes in its subtree and <code>size[v]</code> the subtree size. Then <code>ans[root] = down[root]</code>, and moving the root from <code>p</code> to a child <code>c</code> brings the <code>size[c]</code> nodes of <code>c</code>'s subtree one step closer and the other <code>n - size[c]</code> nodes one step farther: <code>ans[c] = ans[p] - size[c] + (n - size[c])</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x8-05.py">import random
+from collections import deque
+random.seed(5)
+def sum_distances_all_roots(n, adj):
+    parent, order = [-1] * n, []
+    stack = [0]
+    while stack:
+        u = stack.pop(); order.append(u)
+        for v in adj[u]:
+            if v != parent[u]: parent[v] = u; stack.append(v)
+    size, down = [1] * n, [0] * n
+    for u in reversed(order):                                           # down pass
+        p = parent[u]
+        if p &gt;= 0: size[p] += size[u]; down[p] += down[u] + size[u]
+    ans = [0] * n; ans[0] = down[0]
+    for u in order[1:]:                                                 # up pass: parents are processed first
+        ans[u] = ans[parent[u]] - size[u] + (n - size[u])
+    return ans
+def brute(n, adj):
+    out = []
+    for s in range(n):
+        dist = {s: 0}; q = deque([s])
+        while q:
+            u = q.popleft()
+            for v in adj[u]:
+                if v not in dist: dist[v] = dist[u] + 1; q.append(v)
+        out.append(sum(dist.values()))
+    return out
+for _ in range(200):
+    n = random.randint(1, 15)
+    adj = [[] for _ in range(n)]
+    for i in range(1, n):
+        p = random.randrange(i); adj[p].append(i); adj[i].append(p)
+    assert sum_distances_all_roots(n, adj) == brute(n, adj)
+print("rerooting matches brute force on 200 random trees; star with 4 leaves:", sum_distances_all_roots(5, [[1, 2, 3, 4], [0], [0], [0], [0]]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>rerooting matches brute force on 200 random trees; star with 4 leaves: [4, 7, 7, 7, 7]</code></pre>
+<p>The same two-pass pattern solves: the root minimising height, the number of nodes within distance <code>k</code> of each node (with more bookkeeping), tree DP "for every root" such as maximum independent set weight (<a href="x3-advanced-dp.html">X3</a>).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x8-q05" data-topic="Advanced trees" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the benefit of rerooting DP?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Smaller memory <span class="q-why">No.</span></li>
+          <li data-key="B">Computing a quantity for every possible root in O(n) instead of O(n^2) <span class="q-why">Correct.</span></li>
+          <li data-key="C">Balancing the tree <span class="q-why">No.</span></li>
+          <li data-key="D">Faster parsing <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Derive each child's answer from its parent's.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What are the two passes of rerooting?</summary><div class="answer"><p>A bottom-up pass computing subtree answers for the root, then a top-down pass deriving each child's answer from its parent's.</p></div></details>
+      </div>
+    </section>
+
+    <section id="hld" data-track>
+      <h2>Heavy-light decomposition (HLD) in outline</h2>
+<p>Query "max (or sum) on the path between <code>u</code> and <code>v</code>" with point or range updates. HLD splits the tree into <strong>heavy paths</strong>: each node's heavy child is the child with the largest subtree. Any root-to-node path crosses at most <code>O(log n)</code> light edges, so it consists of <code>O(log n)</code> heavy-path segments. Lay out each heavy path contiguously in an array (DFS order visiting the heavy child first) and run a <strong>segment tree</strong> or Fenwick tree over it; a path query becomes <code>O(log n)</code> range queries, <code>O(log^2 n)</code> total.</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="HLD turns arbitrary tree paths into a few array ranges." style="min-width:760px"><defs><marker id="ah1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah1a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah1b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah1d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah1)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah1)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah1)"/><line x1="747.0" y1="78.0" x2="747.0" y2="118.0" class="d-line" marker-end="url(#ah1)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">Compute subtree sizes</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle" class="d-sm">Choose the heavy child of each node</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle" class="d-sm">Assign positions so heavy chains are contiguous</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle" class="d-sm">Build a segment tree over positions</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="151.5" text-anchor="middle" class="d-sm">Path query: jump chain by chain toward the LCA, querying each segment</text></svg>
+</div>
+<figcaption>HLD turns arbitrary tree paths into a few array ranges.</figcaption></figure>
+<p>Use it when a problem has both <strong>path queries</strong> and <strong>updates</strong> and binary lifting (static) is not enough. The implementation is long; knowing when it applies and the <code>O(log^2 n)</code> bound is what interviews usually check.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x8-q06" data-topic="Advanced trees" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why does a root-to-node path cross only O(log n) light edges in heavy-light decomposition?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Light edges are rare <span class="q-why">Not the reason.</span></li>
+          <li data-key="B">Each light edge at least doubles the subtree size you move into, so there can be only log n of them <span class="q-why">Correct.</span></li>
+          <li data-key="C">Heavy edges are free <span class="q-why">No.</span></li>
+          <li data-key="D">Trees are shallow <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Going up a light edge, the parent's subtree is at least twice the child's.</p></div>
+      </div>
+    </section>
+
+    <section id="treaps" data-track>
+      <h2>Balanced trees and treaps</h2>
+<p>A <strong>treap</strong> stores <code>(key, priority)</code>: it is a binary search tree by key and a heap by priority. Giving each node a <strong>random</strong> priority makes the tree balanced in expectation (expected height <code>O(log n)</code>), with simple code based on <code>split</code> and <code>merge</code>. It supports order statistics, range operations and implicit-key sequences (insert, delete, reverse a range).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x8-06.py">import random
+random.seed(6)
+class Node:
+    __slots__ = ("key", "pri", "left", "right", "size")
+    def __init__(self, key): self.key, self.pri, self.left, self.right, self.size = key, random.random(), None, None, 1
+def sz(t): return t.size if t else 0
+def upd(t): t.size = 1 + sz(t.left) + sz(t.right)
+def split(t, key):                                                # (keys &lt; key, keys &gt;= key)
+    if not t: return None, None
+    if t.key &lt; key:
+        a, b = split(t.right, key); t.right = a; upd(t); return t, b
+    a, b = split(t.left, key); t.left = b; upd(t); return a, t
+def merge(a, b):                                                  # all keys of a &lt; all keys of b
+    if not a or not b: return a or b
+    if a.pri &gt; b.pri: a.right = merge(a.right, b); upd(a); return a
+    b.left = merge(a, b.left); upd(b); return b
+def insert(t, key):
+    a, b = split(t, key); return merge(merge(a, Node(key)), b)
+def erase(t, key):
+    a, b = split(t, key); _, c = split(b, key + 1); return merge(a, c)
+def kth(t, k):                                                    # k-th smallest, 0-indexed
+    while t:
+        if k &lt; sz(t.left): t = t.left
+        elif k == sz(t.left): return t.key
+        else: k -= sz(t.left) + 1; t = t.right
+def height(t): return 0 if not t else 1 + max(height(t.left), height(t.right))
+root, shadow = None, []
+for _ in range(2000):
+    x = random.randrange(10_000)
+    if x in shadow: continue
+    shadow.append(x); root = insert(root, x)
+for x in random.sample(shadow, 500):
+    root = erase(root, x); shadow.remove(x)
+shadow.sort()
+assert all(kth(root, i) == shadow[i] for i in range(0, len(shadow), 17))
+print(f"{sz(root)} keys after random inserts and deletes; order statistics verified; height {height(root)} (a balanced tree would be about {len(shadow).bit_length()}, a chain would be {len(shadow)})")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>1286 keys after random inserts and deletes; order statistics verified; height 25 (a balanced tree would be about 11, a chain would be 1286)</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x8-q07" data-topic="Advanced trees" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What makes a treap balanced in expectation?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Rotations on every insert <span class="q-why">Not necessary.</span></li>
+          <li data-key="B">Random heap priorities determine the shape like a random insertion order <span class="q-why">Correct.</span></li>
+          <li data-key="C">A colour bit <span class="q-why">That is red-black.</span></li>
+          <li data-key="D">Sorted insertion <span class="q-why">That unbalances plain BSTs.</span></li>
+        </ul>
+        <div class="q-explain"><p>Expected height is O(log n).</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What do split and merge do?</summary><div class="answer"><p>Split partitions a treap by key into two treaps; merge joins two treaps whose keys are ordered, choosing the root by priority.</p></div></details>
+      </div>
+    </section>
+
+    <section id="choose" data-track>
+      <h2>Choosing a technique</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Question</th><th>Tool</th></tr></thead>
+<tbody>
+<tr><td>Common ancestor, distance between nodes, k-th ancestor</td><td>Binary lifting (or Euler tour + RMQ)</td></tr><tr><td>Subtree sum or update, "is <code>u</code> in <code>v</code>'s subtree"</td><td>Euler tour ranges + Fenwick</td></tr><tr><td>Path query with updates</td><td>Heavy-light decomposition + segment tree</td></tr><tr><td>Longest path, tree centre</td><td>Two BFS passes</td></tr><tr><td>Answer for every possible root</td><td>Rerooting DP</td></tr><tr><td>Dynamic ordered set with order statistics</td><td>Treap, AVL, or a skip list</td></tr><tr><td>Offline many queries on a static tree</td><td>Tarjan offline LCA, or sort and sweep</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Root the tree and precompute parents, depths and DFS order once. Then LCA is binary lifting, subtrees are contiguous ranges of the Euler tour, paths are a few heavy-chain ranges, "every root" is rerooting, and random priorities give balance for free. Always test against a simple recursive version on small random trees.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x8-q08" data-topic="Advanced trees" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which technique answers many 'sum over the subtree of v' queries with point updates?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Binary lifting <span class="q-why">Ancestors only.</span></li>
+          <li data-key="B">Euler tour plus a Fenwick tree <span class="q-why">Correct.</span></li>
+          <li data-key="C">Two BFS <span class="q-why">Diameter.</span></li>
+          <li data-key="D">A treap <span class="q-why">Sets.</span></li>
+        </ul>
+        <div class="q-explain"><p>Subtree equals a contiguous range.</p></div>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Advanced trees</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Advanced trees">
+<details class="recall iq" data-level="basic" data-topic="Advanced trees"><summary><span class="tag ok">Basic</span> How do you compute depth, parent and subtree size for every node?</summary><div class="answer"><p>One DFS from the root (iterative for deep trees) records parent and depth; subtree sizes accumulate from children to parents in reverse visit order.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Advanced trees"><summary><span class="tag ok">Basic</span> What is the lowest common ancestor?</summary><div class="answer"><p>The deepest node that is an ancestor of both given nodes. The tree distance between u and v is depth[u] + depth[v] - 2 depth[lca].</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Advanced trees"><summary><span class="tag warn">Medium</span> Explain binary lifting.</summary><div class="answer"><p>Precompute up[k][v], the 2^k-th ancestor of v. For LCA, lift the deeper node to equal depth using the bits of the difference, then lift both while their 2^k ancestors differ, and return the parent. O(n log n) preprocessing, O(log n) per query.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Advanced trees"><summary><span class="tag warn">Medium</span> How does an Euler tour turn subtree queries into range queries?</summary><div class="answer"><p>Record entry and exit times in DFS. A subtree occupies the contiguous range [tin, tout), so subtree sums with point updates use a Fenwick tree in O(log n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Advanced trees"><summary><span class="tag warn">Medium</span> How do you test whether u is an ancestor of v?</summary><div class="answer"><p>tin[u] &lt;= tin[v] &lt; tout[u] using entry and exit times.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Advanced trees"><summary><span class="tag warn">Medium</span> How do you find the diameter of a tree?</summary><div class="answer"><p>BFS from any node to the farthest node a, then BFS from a; the farthest distance is the diameter. It works for non-negative edge weights.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Advanced trees"><summary><span class="tag warn">Medium</span> What is a tree centre?</summary><div class="answer"><p>The middle node (or two nodes) of a diameter path; rooting there minimises the height.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Advanced trees"><summary><span class="tag bad">Advanced</span> Explain rerooting dynamic programming.</summary><div class="answer"><p>Compute answers for the root in a bottom-up pass, then derive each child&#x27;s answer from its parent&#x27;s in a top-down pass, solving &#x27;for every root&#x27; queries in O(n), such as the sum of distances.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Advanced trees"><summary><span class="tag bad">Advanced</span> Give the rerooting recurrence for the sum of distances.</summary><div class="answer"><p>ans[child] = ans[parent] - size[child] + (n - size[child]): nodes in the child&#x27;s subtree get one closer and all others one farther.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Advanced trees"><summary><span class="tag bad">Advanced</span> What is heavy-light decomposition and its complexity?</summary><div class="answer"><p>It splits the tree into heavy chains by choosing the largest-subtree child at each node. A path crosses O(log n) light edges, so path queries with a segment tree cost O(log^2 n).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Advanced trees"><summary><span class="tag bad">Advanced</span> Why does a path touch only O(log n) light edges?</summary><div class="answer"><p>Each light edge leads to a subtree at most half the size of its parent&#x27;s, so the subtree size at least doubles going up, limiting light edges to log n.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Advanced trees"><summary><span class="tag bad">Advanced</span> What is a treap and why is it balanced?</summary><div class="answer"><p>A BST by key and a heap by random priority. The random priorities make its shape equal to a random-insertion BST, giving expected O(log n) height with simple split and merge operations.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Advanced trees"><summary><span class="tag bad">Advanced</span> How would you support &#x27;k-th smallest&#x27; in a dynamic set?</summary><div class="answer"><p>A balanced BST or treap with subtree sizes (order-statistic tree), or a Fenwick tree over compressed values with binary descent.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Advanced trees"><summary><span class="tag bad">Advanced</span> What is the offline Tarjan LCA algorithm?</summary><div class="answer"><p>A DFS using union-find that answers all LCA queries in near-linear time when they are known in advance.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="x7-more-problems.html"><span class="dir">Previous</span><span>X7 More interview problems with verified solutions</span></a>
+      <a class="next" href="x9-techniques.html"><span class="dir">Next</span><span>X9 Problem-solving techniques: sqrt decomposition, Mo's algorithm, divide and conquer, meet in the middle, bit tricks and randomisation</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>
