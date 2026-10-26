@@ -1,0 +1,845 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="P10">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Problems 10: Stacks & Queues | DSA Master Guide</title>
+<meta name="description" content="13 practice problems with hints, approach, dry run, tested Python solution and edge cases.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Practice 10</p>
+      <h1>Problems: Stacks &amp; Queues</h1>
+      <p class="lede">Practice problems for module 10, ordered from easy to hard. Original or classic textbook problems; none claim to be real company questions.</p>
+      <div class="meta"><span class="tag ok">1 Easy</span><span class="tag warn">10 Medium</span><span class="tag bad">2 Hard</span></div>
+    </div>
+
+    <div class="callout tip"><p class="mb-0">Method for every problem: read the statement, work the sample by hand, then reveal hints one at a time. Write your own solution first, run it on the edge cases, and only then open the approach and solution. Every solution here was executed against its test cases (see <code>solutions/test_dsa.py</code>).</p></div>
+
+    <h2 id="problem-index">Problem index</h2>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="#prob-valid_parens">Balanced Brackets</a></td><td><span class="tag ok">Easy</span></td><td>Stack</td></tr><tr><td><a href="#prob-next_greater">Next Greater Element</a></td><td><span class="tag warn">Medium</span></td><td>Monotonic stack</td></tr><tr><td><a href="#prob-eval_postfix">Evaluate Postfix Expression</a></td><td><span class="tag warn">Medium</span></td><td>Stack, expression evaluation</td></tr><tr><td><a href="#prob-daily_temperatures">Days Until a Warmer Temperature</a></td><td><span class="tag warn">Medium</span></td><td>Monotonic stack</td></tr><tr><td><a href="#prob-my_queue">Queue Using Two Stacks</a></td><td><span class="tag warn">Medium</span></td><td>Stacks and queues design</td></tr><tr><td><a href="#prob-min_stack">Min Stack</a></td><td><span class="tag warn">Medium</span></td><td>Stack design</td></tr><tr><td><a href="#prob-decode_string">Decode a String</a></td><td><span class="tag warn">Medium</span></td><td>Stack of states</td></tr><tr><td><a href="#prob-basic_calculator_ii">Basic Calculator II</a></td><td><span class="tag warn">Medium</span></td><td>Stack, operator precedence</td></tr><tr><td><a href="#prob-lru_cache">LRU Cache</a></td><td><span class="tag warn">Medium</span></td><td>Design: hash map + ordered recency</td></tr><tr><td><a href="#prob-asteroid_collision">Asteroid Collision</a></td><td><span class="tag warn">Medium</span></td><td>Stack simulation</td></tr><tr><td><a href="#prob-remove_k_digits">Remove K Digits</a></td><td><span class="tag warn">Medium</span></td><td>Monotonic stack (greedy)</td></tr><tr><td><a href="#prob-sliding_window_max">Sliding Window Maximum</a></td><td><span class="tag bad">Hard</span></td><td>Monotonic deque</td></tr><tr><td><a href="#prob-largest_rectangle">Largest Rectangle in a Histogram</a></td><td><span class="tag bad">Hard</span></td><td>Monotonic stack</td></tr>
+</tbody>
+</table>
+</div>
+
+    <section id="prob-valid_parens" data-track>
+      <h2>Balanced Brackets</h2>
+      <p><span class="tag ok">Easy</span> <span class="tag">Stack</span> <span class="tag">LC 20</span> <span class="tag accent">must-do</span></p>
+      <p>Given a string of ()[]{} characters, return True if every opening bracket is closed by the same type in the correct order.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #20, also on widely shared must-practise lists such as Blind 75). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Stack (Stacks &amp; Queues)</td></tr><tr><td>Input format</td><td>A string s.</td></tr><tr><td>Output format</td><td>True or False.</td></tr><tr><td>Constraints</td><td>len &lt;= 10^4</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>"{[]}"</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>True</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> [ closes inside { correctly.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Check for an empty stack before peeking.</p></div></details>
+      <details class="recall"><summary>Hint 2</summary><div class="answer"><p>A dict mapping closer -&gt; opener keeps code short.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Push opening brackets. On a closing bracket the top of the stack must be its matching opener; pop it. At the end the stack must be empty.</p></div></details>
+      <details class="box"><summary>Step-by-step dry run</summary><div class="d-body">
+<p class="muted small">Call: <code>valid_parens("{[]}")</code>, returns <code>True</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>ch (after)</th><th>stack (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>pairs = {")": "(", "]": "[", "}": "{"}</code></td><td>-</td><td>-</td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>stack = []</code></td><td>-</td><td><strong><code>[]</code></strong></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>for ch in s:</code></td><td><strong><code>'{'</code></strong></td><td><code>[]</code></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>if ch in pairs:                      # closing bracket</code></td><td><code>'{'</code></td><td><code>[]</code></td></tr>
+<tr><td class="num">5</td><td class="num">9</td><td><code>stack.append(ch)                 # opening bracket</code></td><td><code>'{'</code></td><td><strong><code>['{']</code></strong></td></tr>
+<tr><td class="num">6</td><td class="num">4</td><td><code>for ch in s:</code></td><td><strong><code>'['</code></strong></td><td><code>['{']</code></td></tr>
+<tr><td class="num">7</td><td class="num">5</td><td><code>if ch in pairs:                      # closing bracket</code></td><td><code>'['</code></td><td><code>['{']</code></td></tr>
+<tr><td class="num">8</td><td class="num">9</td><td><code>stack.append(ch)                 # opening bracket</code></td><td><code>'['</code></td><td><strong><code>['{', '[']</code></strong></td></tr>
+<tr><td class="num">9</td><td class="num">4</td><td><code>for ch in s:</code></td><td><strong><code>']'</code></strong></td><td><code>['{', '[']</code></td></tr>
+<tr><td class="num">10</td><td class="num">5</td><td><code>if ch in pairs:                      # closing bracket</code></td><td><code>']'</code></td><td><code>['{', '[']</code></td></tr>
+<tr><td class="num">11</td><td class="num">6</td><td><code>if not stack or stack.pop() != pairs[ch]:</code></td><td><code>']'</code></td><td><strong><code>['{']</code></strong></td></tr>
+<tr><td class="num">12</td><td class="num">4</td><td><code>for ch in s:</code></td><td><strong><code>'}'</code></strong></td><td><code>['{']</code></td></tr>
+<tr><td class="num">13</td><td class="num">5</td><td><code>if ch in pairs:                      # closing bracket</code></td><td><code>'}'</code></td><td><code>['{']</code></td></tr>
+<tr><td class="num">14</td><td class="num">6</td><td><code>if not stack or stack.pop() != pairs[ch]:</code></td><td><code>'}'</code></td><td><strong><code>[]</code></strong></td></tr>
+<tr><td class="num">15</td><td class="num">4</td><td><code>for ch in s:</code></td><td><code>'}'</code></td><td><code>[]</code></td></tr>
+<tr><td class="num">16</td><td class="num">10</td><td><code>return not stack</code></td><td><code>'}'</code></td><td><code>[]</code></td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/valid_parens.py">def valid_parens(s):
+    pairs = {")": "(", "]": "[", "}": "{"}
+    stack = []
+    for ch in s:
+        if ch in pairs:                      # closing bracket
+            if not stack or stack.pop() != pairs[ch]:
+                return False
+        else:
+            stack.append(ch)                 # opening bracket
+    return not stack</code></pre>
+      <p><strong>Complexity:</strong> Time O(n); Space O(n).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Empty string</li><li>Only closers ")"</li><li>Leftover openers "(("</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>valid_parens("()[]{}")</code></td><td><code>True</code></td><td>pass</td></tr><tr><td><code>valid_parens("(]")</code></td><td><code>False</code></td><td>pass</td></tr><tr><td><code>valid_parens("([)]")</code></td><td><code>False</code></td><td>pass</td></tr><tr><td><code>valid_parens("{[]}")</code></td><td><code>True</code></td><td>pass</td></tr><tr><td><code>valid_parens("")</code></td><td><code>True</code></td><td>pass</td></tr><tr><td><code>valid_parens("((")</code></td><td><code>False</code></td><td>pass</td></tr><tr><td><code>valid_parens(")")</code></td><td><code>False</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-next_greater" data-track>
+      <h2>Next Greater Element</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Monotonic stack</span></p>
+      <p>For each element find the first greater element to its right, or -1.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Monotonic stack (Stacks &amp; Queues)</td></tr><tr><td>Input format</td><td>List nums.</td></tr><tr><td>Output format</td><td>List of answers.</td></tr><tr><td>Constraints</td><td>len &lt;= 10^5</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>[4,5,2,25]</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>[5, 25, 25, -1]</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> 4 -&gt; 5, 5 -&gt; 25, 2 -&gt; 25, 25 -&gt; none.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Store indices, not values.</p></div></details>
+      <details class="recall"><summary>Hint 2</summary><div class="answer"><p>Pop while nums[stack[-1]] &lt; current.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Brute force is O(n^2). Keep a stack of indices whose answer is still unknown (values decreasing). A new bigger value resolves everything smaller on top of the stack.</p></div></details>
+      <details class="box"><summary>Step-by-step dry run</summary><div class="d-body">
+<p class="muted small">Call: <code>next_greater([4, 5, 2, 25])</code>, returns <code>[5, 25, 25, -1]</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>i (after)</th><th>x (after)</th><th>stack (after)</th><th>res (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>res = [-1] * len(nums)</code></td><td>-</td><td>-</td><td>-</td><td><strong><code>[-1, -1, -1, -1]</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>stack = []                      # indices waiting for a greater value</code></td><td>-</td><td>-</td><td><strong><code>[]</code></strong></td><td><code>[-1, -1, -1, -1]</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>for i, x in enumerate(nums):</code></td><td><strong><code>0</code></strong></td><td><strong><code>4</code></strong></td><td><code>[]</code></td><td><code>[-1, -1, -1, -1]</code></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>while stack and nums[stack[-1]] &lt; x:</code></td><td><code>0</code></td><td><code>4</code></td><td><code>[]</code></td><td><code>[-1, -1, -1, -1]</code></td></tr>
+<tr><td class="num">5</td><td class="num">7</td><td><code>stack.append(i)</code></td><td><code>0</code></td><td><code>4</code></td><td><strong><code>[0]</code></strong></td><td><code>[-1, -1, -1, -1]</code></td></tr>
+<tr><td class="num">6</td><td class="num">4</td><td><code>for i, x in enumerate(nums):</code></td><td><strong><code>1</code></strong></td><td><strong><code>5</code></strong></td><td><code>[0]</code></td><td><code>[-1, -1, -1, -1]</code></td></tr>
+<tr><td class="num">7</td><td class="num">5</td><td><code>while stack and nums[stack[-1]] &lt; x:</code></td><td><code>1</code></td><td><code>5</code></td><td><code>[0]</code></td><td><code>[-1, -1, -1, -1]</code></td></tr>
+<tr><td class="num">8</td><td class="num">6</td><td><code>res[stack.pop()] = x</code></td><td><code>1</code></td><td><code>5</code></td><td><strong><code>[]</code></strong></td><td><strong><code>[5, -1, -1, -1]</code></strong></td></tr>
+<tr><td class="num">9</td><td class="num">5</td><td><code>while stack and nums[stack[-1]] &lt; x:</code></td><td><code>1</code></td><td><code>5</code></td><td><code>[]</code></td><td><code>[5, -1, -1, -1]</code></td></tr>
+<tr><td class="num">10</td><td class="num">7</td><td><code>stack.append(i)</code></td><td><code>1</code></td><td><code>5</code></td><td><strong><code>[1]</code></strong></td><td><code>[5, -1, -1, -1]</code></td></tr>
+<tr><td class="num">11</td><td class="num">4</td><td><code>for i, x in enumerate(nums):</code></td><td><strong><code>2</code></strong></td><td><strong><code>2</code></strong></td><td><code>[1]</code></td><td><code>[5, -1, -1, -1]</code></td></tr>
+<tr><td class="num">12</td><td class="num">5</td><td><code>while stack and nums[stack[-1]] &lt; x:</code></td><td><code>2</code></td><td><code>2</code></td><td><code>[1]</code></td><td><code>[5, -1, -1, -1]</code></td></tr>
+<tr><td class="num">13</td><td class="num">7</td><td><code>stack.append(i)</code></td><td><code>2</code></td><td><code>2</code></td><td><strong><code>[1, 2]</code></strong></td><td><code>[5, -1, -1, -1]</code></td></tr>
+<tr><td class="num">14</td><td class="num">4</td><td><code>for i, x in enumerate(nums):</code></td><td><strong><code>3</code></strong></td><td><strong><code>25</code></strong></td><td><code>[1, 2]</code></td><td><code>[5, -1, -1, -1]</code></td></tr>
+<tr><td class="num">15</td><td class="num">5</td><td><code>while stack and nums[stack[-1]] &lt; x:</code></td><td><code>3</code></td><td><code>25</code></td><td><code>[1, 2]</code></td><td><code>[5, -1, -1, -1]</code></td></tr>
+<tr><td class="num">16</td><td class="num">6</td><td><code>res[stack.pop()] = x</code></td><td><code>3</code></td><td><code>25</code></td><td><strong><code>[1]</code></strong></td><td><strong><code>[5, -1, 25, -1]</code></strong></td></tr>
+<tr><td class="num">17</td><td class="num">5</td><td><code>while stack and nums[stack[-1]] &lt; x:</code></td><td><code>3</code></td><td><code>25</code></td><td><code>[1]</code></td><td><code>[5, -1, 25, -1]</code></td></tr>
+<tr><td class="num">18</td><td class="num">6</td><td><code>res[stack.pop()] = x</code></td><td><code>3</code></td><td><code>25</code></td><td><strong><code>[]</code></strong></td><td><strong><code>[5, 25, 25, -1]</code></strong></td></tr>
+<tr><td class="num">19</td><td class="num">5</td><td><code>while stack and nums[stack[-1]] &lt; x:</code></td><td><code>3</code></td><td><code>25</code></td><td><code>[]</code></td><td><code>[5, 25, 25, -1]</code></td></tr>
+<tr><td class="num">20</td><td class="num">7</td><td><code>stack.append(i)</code></td><td><code>3</code></td><td><code>25</code></td><td><strong><code>[3]</code></strong></td><td><code>[5, 25, 25, -1]</code></td></tr>
+<tr><td class="num">21</td><td class="num">4</td><td><code>for i, x in enumerate(nums):</code></td><td><code>3</code></td><td><code>25</code></td><td><code>[3]</code></td><td><code>[5, 25, 25, -1]</code></td></tr>
+<tr><td class="num">22</td><td class="num">8</td><td><code>return res</code></td><td><code>3</code></td><td><code>25</code></td><td><code>[3]</code></td><td><code>[5, 25, 25, -1]</code></td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/next_greater.py">def next_greater(nums):
+    res = [-1] * len(nums)
+    stack = []                      # indices waiting for a greater value
+    for i, x in enumerate(nums):
+        while stack and nums[stack[-1]] &lt; x:
+            res[stack.pop()] = x
+        stack.append(i)
+    return res</code></pre>
+      <p><strong>Complexity:</strong> Time O(n) - each index is pushed and popped once; Space O(n).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Decreasing list -&gt; all -1</li><li>Equal values (strictly greater needed)</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>next_greater([4,5,2,25])</code></td><td><code>[5, 25, 25, -1]</code></td><td>pass</td></tr><tr><td><code>next_greater([13,7,6,12])</code></td><td><code>[-1, 12, 12, -1]</code></td><td>pass</td></tr><tr><td><code>next_greater([3,3])</code></td><td><code>[-1, -1]</code></td><td>pass</td></tr><tr><td><code>next_greater([])</code></td><td><code>[]</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-eval_postfix" data-track>
+      <h2>Evaluate Postfix Expression</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Stack, expression evaluation</span> <span class="tag">LC 150</span></p>
+      <p>Evaluate an expression in Reverse Polish Notation with + - * /. Division truncates toward zero.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #150). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Stack, expression evaluation (Stacks &amp; Queues)</td></tr><tr><td>Input format</td><td>List of tokens.</td></tr><tr><td>Output format</td><td>Integer result.</td></tr><tr><td>Constraints</td><td>tokens &lt;= 10^4</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>["2","1","+","3","*"]</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>9</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> (2 + 1) * 3 = 9.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>The first popped value is the RIGHT operand.</p></div></details>
+      <details class="recall"><summary>Hint 2</summary><div class="answer"><p>Use int(a / b) to truncate toward zero.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Numbers are pushed. For an operator pop b then a (order matters!), compute a op b and push the result.</p></div></details>
+      <details class="box"><summary>Step-by-step dry run</summary><div class="d-body">
+<p class="muted small">Call: <code>eval_postfix(["2", "1", "+", "3", "*"])</code>, returns <code>9</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>t (after)</th><th>stack (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>stack = []</code></td><td>-</td><td><strong><code>[]</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>for t in tokens:</code></td><td><strong><code>'2'</code></strong></td><td><code>[]</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>if t in "+-*/" and len(t) == 1:</code></td><td><code>'2'</code></td><td><code>[]</code></td></tr>
+<tr><td class="num">4</td><td class="num">11</td><td><code>stack.append(int(t))</code></td><td><code>'2'</code></td><td><strong><code>[2]</code></strong></td></tr>
+<tr><td class="num">5</td><td class="num">3</td><td><code>for t in tokens:</code></td><td><strong><code>'1'</code></strong></td><td><code>[2]</code></td></tr>
+<tr><td class="num">6</td><td class="num">4</td><td><code>if t in "+-*/" and len(t) == 1:</code></td><td><code>'1'</code></td><td><code>[2]</code></td></tr>
+<tr><td class="num">7</td><td class="num">11</td><td><code>stack.append(int(t))</code></td><td><code>'1'</code></td><td><strong><code>[2, 1]</code></strong></td></tr>
+<tr><td class="num">8</td><td class="num">3</td><td><code>for t in tokens:</code></td><td><strong><code>'+'</code></strong></td><td><code>[2, 1]</code></td></tr>
+<tr><td class="num">9</td><td class="num">4</td><td><code>if t in "+-*/" and len(t) == 1:</code></td><td><code>'+'</code></td><td><code>[2, 1]</code></td></tr>
+<tr><td class="num">10</td><td class="num">5</td><td><code>b, a = stack.pop(), stack.pop()</code></td><td><code>'+'</code></td><td><strong><code>[]</code></strong></td></tr>
+<tr><td class="num">11</td><td class="num">6</td><td><code>if t == "+": stack.append(a + b)</code></td><td><code>'+'</code></td><td><strong><code>[3]</code></strong></td></tr>
+<tr><td class="num">12</td><td class="num">3</td><td><code>for t in tokens:</code></td><td><strong><code>'3'</code></strong></td><td><code>[3]</code></td></tr>
+<tr><td class="num">13</td><td class="num">4</td><td><code>if t in "+-*/" and len(t) == 1:</code></td><td><code>'3'</code></td><td><code>[3]</code></td></tr>
+<tr><td class="num">14</td><td class="num">11</td><td><code>stack.append(int(t))</code></td><td><code>'3'</code></td><td><strong><code>[3, 3]</code></strong></td></tr>
+<tr><td class="num">15</td><td class="num">3</td><td><code>for t in tokens:</code></td><td><strong><code>'*'</code></strong></td><td><code>[3, 3]</code></td></tr>
+<tr><td class="num">16</td><td class="num">4</td><td><code>if t in "+-*/" and len(t) == 1:</code></td><td><code>'*'</code></td><td><code>[3, 3]</code></td></tr>
+<tr><td class="num">17</td><td class="num">5</td><td><code>b, a = stack.pop(), stack.pop()</code></td><td><code>'*'</code></td><td><strong><code>[]</code></strong></td></tr>
+<tr><td class="num">18</td><td class="num">6</td><td><code>if t == "+": stack.append(a + b)</code></td><td><code>'*'</code></td><td><code>[]</code></td></tr>
+<tr><td class="num">19</td><td class="num">7</td><td><code>elif t == "-": stack.append(a - b)</code></td><td><code>'*'</code></td><td><code>[]</code></td></tr>
+<tr><td class="num">20</td><td class="num">8</td><td><code>elif t == "*": stack.append(a * b)</code></td><td><code>'*'</code></td><td><strong><code>[9]</code></strong></td></tr>
+<tr><td class="num">21</td><td class="num">3</td><td><code>for t in tokens:</code></td><td><code>'*'</code></td><td><code>[9]</code></td></tr>
+<tr><td class="num">22</td><td class="num">12</td><td><code>return stack[0]</code></td><td><code>'*'</code></td><td><code>[9]</code></td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/eval_postfix.py">def eval_postfix(tokens):
+    stack = []
+    for t in tokens:
+        if t in "+-*/" and len(t) == 1:
+            b, a = stack.pop(), stack.pop()
+            if t == "+": stack.append(a + b)
+            elif t == "-": stack.append(a - b)
+            elif t == "*": stack.append(a * b)
+            else: stack.append(int(a / b))
+        else:
+            stack.append(int(t))
+    return stack[0]</code></pre>
+      <p><strong>Complexity:</strong> Time O(n); Space O(n).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Negative numbers such as "-11" (len &gt; 1)</li><li>Subtraction / division operand order</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>eval_postfix(["2","1","+","3","*"])</code></td><td><code>9</code></td><td>pass</td></tr><tr><td><code>eval_postfix(["4","13","5","/","+"])</code></td><td><code>6</code></td><td>pass</td></tr><tr><td><code>eval_postfix(["10","6","9","3","+","-11","*","/","*","17","+","5","+"])</code></td><td><code>22</code></td><td>pass</td></tr><tr><td><code>eval_postfix(["7"])</code></td><td><code>7</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-daily_temperatures" data-track>
+      <h2>Days Until a Warmer Temperature</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Monotonic stack</span> <span class="tag">LC 739</span></p>
+      <p>For each day, return how many days you must wait for a warmer temperature (0 if never).</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #739). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Monotonic stack (Stacks &amp; Queues)</td></tr><tr><td>Input format</td><td>List temps.</td></tr><tr><td>Output format</td><td>List of waits.</td></tr><tr><td>Constraints</td><td>len &lt;= 10^5</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>[73,74,75,71,69,72,76,73]</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>[1,1,4,2,1,1,0,0]</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> Day 2 (75) waits 4 days until 76.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>wait = i - popped_index.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Same monotonic stack idea as Next Greater, but store the distance between indices.</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/daily_temperatures.py">def daily_temperatures(temps):
+    res = [0] * len(temps)
+    stack = []
+    for i, t in enumerate(temps):
+        while stack and temps[stack[-1]] &lt; t:
+            j = stack.pop()
+            res[j] = i - j
+        stack.append(i)
+    return res</code></pre>
+      <p><strong>Complexity:</strong> Time O(n); Space O(n).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Strictly decreasing temps -&gt; all 0</li><li>Equal temperatures do not count</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>daily_temperatures([73,74,75,71,69,72,76,73])</code></td><td><code>[1, 1, 4, 2, 1, 1, 0, 0]</code></td><td>pass</td></tr><tr><td><code>daily_temperatures([30,40,50,60])</code></td><td><code>[1, 1, 1, 0]</code></td><td>pass</td></tr><tr><td><code>daily_temperatures([30])</code></td><td><code>[0]</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-my_queue" data-track>
+      <h2>Queue Using Two Stacks</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Stacks and queues design</span> <span class="tag">LC 232</span></p>
+      <p>Implement a FIFO queue with push, pop, peek and empty using only two stacks (Python lists with append/pop).</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #232). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Stacks and queues design (Stacks &amp; Queues)</td></tr><tr><td>Input format</td><td>A sequence of operations.</td></tr><tr><td>Output format</td><td>Results of the operations.</td></tr><tr><td>Constraints</td><td>ops &lt;= 100</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>push(1), push(2), peek(), pop(), empty()</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>[None, None, 1, 1, False]</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> Elements come out in insertion order.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Only refill the outbox when it is empty.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Push onto an <code>inbox</code> stack. To pop/peek, if the <code>outbox</code> is empty move everything from inbox to outbox (this reverses the order); then use the top of outbox.</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/my_queue.py">class MyQueue:
+    def __init__(self):
+        self.inbox, self.outbox = [], []
+
+    def push(self, x):
+        self.inbox.append(x)
+
+    def _shift(self):
+        if not self.outbox:
+            while self.inbox:
+                self.outbox.append(self.inbox.pop())
+
+    def pop(self):
+        self._shift()
+        return self.outbox.pop()
+
+    def peek(self):
+        self._shift()
+        return self.outbox[-1]
+
+    def empty(self):
+        return not self.inbox and not self.outbox</code></pre>
+      <p><strong>Complexity:</strong> push O(1); pop/peek amortised O(1); Space O(n).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Pop on empty queue</li><li>Interleaved push and pop</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>(lambda q: [q.push(1), q.push(2), q.peek(), q.pop(), q.empty()])(MyQueue())</code></td><td><code>[None, None, 1, 1, False]</code></td><td>pass</td></tr><tr><td><code>(lambda q: [q.push(5), q.pop(), q.empty()])(MyQueue())</code></td><td><code>[None, 5, True]</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-min_stack" data-track>
+      <h2>Min Stack</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Stack design</span> <span class="tag">LC 155</span></p>
+      <p>Design a stack supporting push, pop, top and get_min, all in O(1).</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #155). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Stack design (Stacks &amp; Queues)</td></tr><tr><td>Input format</td><td>Sequence of operations.</td></tr><tr><td>Output format</td><td>Results.</td></tr><tr><td>Constraints</td><td>ops &lt;= 10^4</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>push(3), push(1), get_min(), pop(), get_min()</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>[None, None, 1, 1, 3]</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> After popping 1 the minimum goes back to 3.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Each stack entry is a (value, min_so_far) pair.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Store each value together with the minimum so far. The top pair always knows the current minimum.</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/min_stack.py">class MinStack:
+    def __init__(self):
+        self.data = []                       # (value, min so far)
+
+    def push(self, x):
+        lowest = min(x, self.data[-1][1]) if self.data else x
+        self.data.append((x, lowest))
+
+    def pop(self):
+        return self.data.pop()[0]
+
+    def top(self):
+        return self.data[-1][0]
+
+    def get_min(self):
+        return self.data[-1][1]</code></pre>
+      <p><strong>Complexity:</strong> All operations O(1); Space O(n).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Duplicates of the minimum</li><li>Pop the minimum</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>(lambda s: [s.push(3), s.push(1), s.get_min(), s.pop(), s.get_min()])(MinStack())</code></td><td><code>[None, None, 1, 1, 3]</code></td><td>pass</td></tr><tr><td><code>(lambda s: [s.push(2), s.push(2), s.pop(), s.get_min()])(MinStack())</code></td><td><code>[None, None, 2, 2]</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-decode_string" data-track>
+      <h2>Decode a String</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Stack of states</span> <span class="tag">LC 394</span></p>
+      <p>Decode strings like 3[a2[c]] where k[text] means text repeated k times.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #394). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Stack of states (Stacks &amp; Queues)</td></tr><tr><td>Input format</td><td>String s.</td></tr><tr><td>Output format</td><td>Decoded string.</td></tr><tr><td>Constraints</td><td>len &lt;= 100</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>"3[a2[c]]"</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>"accaccacc"</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> 2[c] -&gt; cc, so a2[c] -&gt; acc, repeated 3 times.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Numbers can have several digits.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Use a stack. On "[" push the current text and the repeat count and start fresh. On "]" pop them, repeat the current text that many times, and glue it after the saved text.</p></div></details>
+      <details class="box"><summary>Step-by-step dry run</summary><div class="d-body">
+<p class="muted small">Call: <code>decode_string("3[a2[c]]")</code>, returns <code>'accaccacc'</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>ch (after)</th><th>cur (after)</th><th>num (after)</th><th>stack (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>stack, cur, num = [], "", 0</code></td><td>-</td><td><strong><code>''</code></strong></td><td><strong><code>0</code></strong></td><td><strong><code>[]</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>for ch in s:</code></td><td><strong><code>'3'</code></strong></td><td><code>''</code></td><td><code>0</code></td><td><code>[]</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>if ch.isdigit():</code></td><td><code>'3'</code></td><td><code>''</code></td><td><code>0</code></td><td><code>[]</code></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>num = num * 10 + int(ch)</code></td><td><code>'3'</code></td><td><code>''</code></td><td><strong><code>3</code></strong></td><td><code>[]</code></td></tr>
+<tr><td class="num">5</td><td class="num">3</td><td><code>for ch in s:</code></td><td><strong><code>'['</code></strong></td><td><code>''</code></td><td><code>3</code></td><td><code>[]</code></td></tr>
+<tr><td class="num">6</td><td class="num">4</td><td><code>if ch.isdigit():</code></td><td><code>'['</code></td><td><code>''</code></td><td><code>3</code></td><td><code>[]</code></td></tr>
+<tr><td class="num">7</td><td class="num">6</td><td><code>elif ch == "[":</code></td><td><code>'['</code></td><td><code>''</code></td><td><code>3</code></td><td><code>[]</code></td></tr>
+<tr><td class="num">8</td><td class="num">7</td><td><code>stack.append((cur, num))       # save state</code></td><td><code>'['</code></td><td><code>''</code></td><td><code>3</code></td><td><strong><code>[('', 3)]</code></strong></td></tr>
+<tr><td class="num">9</td><td class="num">8</td><td><code>cur, num = "", 0</code></td><td><code>'['</code></td><td><code>''</code></td><td><strong><code>0</code></strong></td><td><code>[('', 3)]</code></td></tr>
+<tr><td class="num">10</td><td class="num">3</td><td><code>for ch in s:</code></td><td><strong><code>'a'</code></strong></td><td><code>''</code></td><td><code>0</code></td><td><code>[('', 3)]</code></td></tr>
+<tr><td class="num">11</td><td class="num">4</td><td><code>if ch.isdigit():</code></td><td><code>'a'</code></td><td><code>''</code></td><td><code>0</code></td><td><code>[('', 3)]</code></td></tr>
+<tr><td class="num">12</td><td class="num">6</td><td><code>elif ch == "[":</code></td><td><code>'a'</code></td><td><code>''</code></td><td><code>0</code></td><td><code>[('', 3)]</code></td></tr>
+<tr><td class="num">13</td><td class="num">9</td><td><code>elif ch == "]":</code></td><td><code>'a'</code></td><td><code>''</code></td><td><code>0</code></td><td><code>[('', 3)]</code></td></tr>
+<tr><td class="num">14</td><td class="num">13</td><td><code>cur += ch</code></td><td><code>'a'</code></td><td><strong><code>'a'</code></strong></td><td><code>0</code></td><td><code>[('', 3)]</code></td></tr>
+<tr><td class="num">15</td><td class="num">3</td><td><code>for ch in s:</code></td><td><strong><code>'2'</code></strong></td><td><code>'a'</code></td><td><code>0</code></td><td><code>[('', 3)]</code></td></tr>
+<tr><td class="num">16</td><td class="num">4</td><td><code>if ch.isdigit():</code></td><td><code>'2'</code></td><td><code>'a'</code></td><td><code>0</code></td><td><code>[('', 3)]</code></td></tr>
+<tr><td class="num">17</td><td class="num">5</td><td><code>num = num * 10 + int(ch)</code></td><td><code>'2'</code></td><td><code>'a'</code></td><td><strong><code>2</code></strong></td><td><code>[('', 3)]</code></td></tr>
+<tr><td class="num">18</td><td class="num">3</td><td><code>for ch in s:</code></td><td><strong><code>'['</code></strong></td><td><code>'a'</code></td><td><code>2</code></td><td><code>[('', 3)]</code></td></tr>
+<tr><td class="num">19</td><td class="num">4</td><td><code>if ch.isdigit():</code></td><td><code>'['</code></td><td><code>'a'</code></td><td><code>2</code></td><td><code>[('', 3)]</code></td></tr>
+<tr><td class="num">20</td><td class="num">6</td><td><code>elif ch == "[":</code></td><td><code>'['</code></td><td><code>'a'</code></td><td><code>2</code></td><td><code>[('', 3)]</code></td></tr>
+<tr><td class="num">21</td><td class="num">7</td><td><code>stack.append((cur, num))       # save state</code></td><td><code>'['</code></td><td><code>'a'</code></td><td><code>2</code></td><td><strong><code>[('', 3), ('a', 2)]</code></strong></td></tr>
+<tr><td class="num">22</td><td class="num">8</td><td><code>cur, num = "", 0</code></td><td><code>'['</code></td><td><strong><code>''</code></strong></td><td><strong><code>0</code></strong></td><td><code>[('', 3), ('a', 2)]</code></td></tr>
+<tr><td class="num">23</td><td class="num">3</td><td><code>for ch in s:</code></td><td><strong><code>'c'</code></strong></td><td><code>''</code></td><td><code>0</code></td><td><code>[('', 3), ('a', 2)]</code></td></tr>
+<tr><td class="num">24</td><td class="num">4</td><td><code>if ch.isdigit():</code></td><td><code>'c'</code></td><td><code>''</code></td><td><code>0</code></td><td><code>[('', 3), ('a', 2)]</code></td></tr>
+<tr><td class="num">25</td><td class="num">6</td><td><code>elif ch == "[":</code></td><td><code>'c'</code></td><td><code>''</code></td><td><code>0</code></td><td><code>[('', 3), ('a', 2)]</code></td></tr>
+<tr><td class="num">26</td><td class="num">9</td><td><code>elif ch == "]":</code></td><td><code>'c'</code></td><td><code>''</code></td><td><code>0</code></td><td><code>[('', 3), ('a', 2)]</code></td></tr>
+<tr><td class="num">27</td><td class="num">13</td><td><code>cur += ch</code></td><td><code>'c'</code></td><td><strong><code>'c'</code></strong></td><td><code>0</code></td><td><code>[('', 3), ('a', 2)]</code></td></tr>
+<tr><td class="num">28</td><td class="num">3</td><td><code>for ch in s:</code></td><td><strong><code>']'</code></strong></td><td><code>'c'</code></td><td><code>0</code></td><td><code>[('', 3), ('a', 2)]</code></td></tr>
+<tr><td class="num">29</td><td class="num">4</td><td><code>if ch.isdigit():</code></td><td><code>']'</code></td><td><code>'c'</code></td><td><code>0</code></td><td><code>[('', 3), ('a', 2)]</code></td></tr>
+<tr><td class="num">30</td><td class="num">6</td><td><code>elif ch == "[":</code></td><td><code>']'</code></td><td><code>'c'</code></td><td><code>0</code></td><td><code>[('', 3), ('a', 2)]</code></td></tr>
+<tr><td class="num">31</td><td class="num">9</td><td><code>elif ch == "]":</code></td><td><code>']'</code></td><td><code>'c'</code></td><td><code>0</code></td><td><code>[('', 3), ('a', 2)]</code></td></tr>
+<tr><td class="num">32</td><td class="num">10</td><td><code>prev, k = stack.pop()</code></td><td><code>']'</code></td><td><code>'c'</code></td><td><code>0</code></td><td><strong><code>[('', 3)]</code></strong></td></tr>
+<tr><td class="num">33</td><td class="num">11</td><td><code>cur = prev + cur * k           # repeat and attach</code></td><td><code>']'</code></td><td><strong><code>'acc'</code></strong></td><td><code>0</code></td><td><code>[('', 3)]</code></td></tr>
+<tr><td class="num">34</td><td class="num">3</td><td><code>for ch in s:</code></td><td><code>']'</code></td><td><code>'acc'</code></td><td><code>0</code></td><td><code>[('', 3)]</code></td></tr>
+<tr><td class="num">35</td><td class="num">4</td><td><code>if ch.isdigit():</code></td><td><code>']'</code></td><td><code>'acc'</code></td><td><code>0</code></td><td><code>[('', 3)]</code></td></tr>
+<tr><td class="num">36</td><td class="num">6</td><td><code>elif ch == "[":</code></td><td><code>']'</code></td><td><code>'acc'</code></td><td><code>0</code></td><td><code>[('', 3)]</code></td></tr>
+<tr><td class="num">37</td><td class="num">9</td><td><code>elif ch == "]":</code></td><td><code>']'</code></td><td><code>'acc'</code></td><td><code>0</code></td><td><code>[('', 3)]</code></td></tr>
+<tr><td class="num">38</td><td class="num">10</td><td><code>prev, k = stack.pop()</code></td><td><code>']'</code></td><td><code>'acc'</code></td><td><code>0</code></td><td><strong><code>[]</code></strong></td></tr>
+<tr><td class="num">39</td><td class="num">11</td><td><code>cur = prev + cur * k           # repeat and attach</code></td><td><code>']'</code></td><td><strong><code>'accaccacc'</code></strong></td><td><code>0</code></td><td><code>[]</code></td></tr>
+<tr><td class="num">40</td><td class="num">3</td><td><code>for ch in s:</code></td><td><code>']'</code></td><td><code>'accaccacc'</code></td><td><code>0</code></td><td><code>[]</code></td></tr>
+<tr><td class="num">41</td><td class="num">14</td><td><code>return cur</code></td><td><code>']'</code></td><td><code>'accaccacc'</code></td><td><code>0</code></td><td><code>[]</code></td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/decode_string.py">def decode_string(s):
+    stack, cur, num = [], "", 0
+    for ch in s:
+        if ch.isdigit():
+            num = num * 10 + int(ch)
+        elif ch == "[":
+            stack.append((cur, num))       # save state
+            cur, num = "", 0
+        elif ch == "]":
+            prev, k = stack.pop()
+            cur = prev + cur * k           # repeat and attach
+        else:
+            cur += ch
+    return cur</code></pre>
+      <p><strong>Complexity:</strong> Time O(output length); Space O(depth).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Nested brackets</li><li>Multi-digit numbers like 10[a]</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>decode_string("3[a2[c]]")</code></td><td><code>'accaccacc'</code></td><td>pass</td></tr><tr><td><code>decode_string("2[ab]c")</code></td><td><code>'ababc'</code></td><td>pass</td></tr><tr><td><code>decode_string("abc")</code></td><td><code>'abc'</code></td><td>pass</td></tr><tr><td><code>decode_string("10[a]")</code></td><td><code>'aaaaaaaaaa'</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-basic_calculator_ii" data-track>
+      <h2>Basic Calculator II</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Stack, operator precedence</span> <span class="tag">LC 227</span></p>
+      <p>Evaluate an expression with non-negative integers and + - * / (integer division truncating toward zero), no parentheses.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #227). The guide does not claim any company asked it.</p><p><strong>Why interviewers ask this:</strong> A stack-and-precedence problem that appears in many forms (calculator, expression evaluation).</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Stack, operator precedence (Stacks &amp; Queues)</td></tr><tr><td>Input format</td><td>String s.</td></tr><tr><td>Output format</td><td>Integer.</td></tr><tr><td>Constraints</td><td>len &lt;= 10^5</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>"3+2*2"</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>7</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> 2*2 is done first: 3 + 4.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Multiplication and division are resolved immediately.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Keep the previous operator. When a number ends, apply: + pushes it, - pushes its negative, * and / combine with the stack top. The answer is the sum of the stack.</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/basic_calculator_ii.py">def basic_calculator_ii(s):
+    stack, num, op = [], 0, "+"
+    for i, ch in enumerate(s):
+        if ch.isdigit():
+            num = num * 10 + int(ch)
+        if (not ch.isdigit() and ch != " ") or i == len(s) - 1:
+            if op == "+":
+                stack.append(num)
+            elif op == "-":
+                stack.append(-num)
+            elif op == "*":
+                stack.append(stack.pop() * num)
+            else:
+                stack.append(int(stack.pop() / num))
+            op, num = ch, 0
+    return sum(stack)</code></pre>
+      <p><strong>Complexity:</strong> Time O(n); Space O(n).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Spaces</li><li>Single number</li><li>Division truncating negatives</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>basic_calculator_ii("3+2*2")</code></td><td><code>7</code></td><td>pass</td></tr><tr><td><code>basic_calculator_ii(" 3/2 ")</code></td><td><code>1</code></td><td>pass</td></tr><tr><td><code>basic_calculator_ii(" 3+5 / 2 ")</code></td><td><code>5</code></td><td>pass</td></tr><tr><td><code>basic_calculator_ii("14-3/2")</code></td><td><code>13</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-lru_cache" data-track>
+      <h2>LRU Cache</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Design: hash map + ordered recency</span> <span class="tag">LC 146</span></p>
+      <p>Design a cache with a fixed capacity. get(key) returns the value or -1; put(key, value) inserts or updates. When full, evict the least recently used key.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #146). The guide does not claim any company asked it.</p><p><strong>Why interviewers ask this:</strong> The most famous design question: a hash map plus recency order gives O(1) get and put.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Design: hash map + ordered recency (Stacks &amp; Queues)</td></tr><tr><td>Input format</td><td>Sequence of operations.</td></tr><tr><td>Output format</td><td>Results.</td></tr><tr><td>Constraints</td><td>capacity &lt;= 3000</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>capacity 2: put(1,1), put(2,2), get(1), put(3,3), get(2)</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>[None, None, 1, None, -1]</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> Putting 3 evicts key 2, the least recently used.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Use move_to_end and popitem(last=False).</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Python's OrderedDict keeps insertion order and can move a key to the end in O(1). Move a key to the end on every get/put and pop from the front when over capacity. (Interviewers may ask for the dict + doubly linked list version.)</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/lru_cache.py">from collections import OrderedDict
+
+class LRUCache:
+    def __init__(self, capacity):
+        self.cap = capacity
+        self.data = OrderedDict()
+
+    def get(self, key):
+        if key not in self.data:
+            return -1
+        self.data.move_to_end(key)          # most recently used
+        return self.data[key]
+
+    def put(self, key, value):
+        if key in self.data:
+            self.data.move_to_end(key)
+        self.data[key] = value
+        if len(self.data) &gt; self.cap:
+            self.data.popitem(last=False)   # evict the least recently used</code></pre>
+      <p><strong>Complexity:</strong> get and put O(1); Space O(capacity).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Capacity 1</li><li>Updating an existing key refreshes it</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>(lambda c: [c.put(1,1), c.put(2,2), c.get(1), c.put(3,3), c.get(2), c.put(4,4), c.get(1), c.get(3), c.get(4)])(LRUCache(2))</code></td><td><code>[None, None, 1, None, -1, None, -1, 3, 4]</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-asteroid_collision" data-track>
+      <h2>Asteroid Collision</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Stack simulation</span> <span class="tag">LC 735</span></p>
+      <p>Positive numbers move right, negative move left, same speed. When two meet the smaller (absolute value) explodes, equal ones both explode. Return the survivors.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #735). The guide does not claim any company asked it.</p><p><strong>Why interviewers ask this:</strong> A stack simulation with several cases; checks you handle chain reactions.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Stack simulation (Stacks &amp; Queues)</td></tr><tr><td>Input format</td><td>List asteroids.</td></tr><tr><td>Output format</td><td>List.</td></tr><tr><td>Constraints</td><td>len &lt;= 10^4</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>[5,10,-5]</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>[5,10]</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> -5 hits 10 and explodes.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>A new asteroid may destroy many.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Use a stack. A negative asteroid collides with the stack top only if the top is positive. Pop smaller ones; stop if the top is bigger; destroy both if equal.</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/asteroid_collision.py">def asteroid_collision(asteroids):
+    stack = []
+    for a in asteroids:
+        alive = True
+        while alive and a &lt; 0 and stack and stack[-1] &gt; 0:
+            if stack[-1] &lt; -a:
+                stack.pop()             # the top explodes, keep checking
+            elif stack[-1] == -a:
+                stack.pop()
+                alive = False
+            else:
+                alive = False
+        if alive:
+            stack.append(a)
+    return stack</code></pre>
+      <p><strong>Complexity:</strong> Time O(n); Space O(n).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Equal sizes</li><li>All moving the same way</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>asteroid_collision([5,10,-5])</code></td><td><code>[5, 10]</code></td><td>pass</td></tr><tr><td><code>asteroid_collision([8,-8])</code></td><td><code>[]</code></td><td>pass</td></tr><tr><td><code>asteroid_collision([10,2,-5])</code></td><td><code>[10]</code></td><td>pass</td></tr><tr><td><code>asteroid_collision([-2,-1,1,2])</code></td><td><code>[-2, -1, 1, 2]</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-remove_k_digits" data-track>
+      <h2>Remove K Digits</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Monotonic stack (greedy)</span> <span class="tag">LC 402</span></p>
+      <p>Remove k digits from the number string so the remaining number is as small as possible.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #402). The guide does not claim any company asked it.</p><p><strong>Why interviewers ask this:</strong> A greedy monotonic-stack problem: remove larger digits that come before smaller ones.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Monotonic stack (greedy) (Stacks &amp; Queues)</td></tr><tr><td>Input format</td><td>String num and k.</td></tr><tr><td>Output format</td><td>String.</td></tr><tr><td>Constraints</td><td>len &lt;= 10^5</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>"1432219", k=3</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>"1219"</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> Remove 4, 3, 2.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Use "0" if nothing is left.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Scan digits; while the previous kept digit is larger than the current one and removals remain, pop it. After the scan remove from the end if needed, then strip leading zeros.</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/remove_k_digits.py">def remove_k_digits(num, k):
+    stack = []
+    for d in num:
+        while k and stack and stack[-1] &gt; d:
+            stack.pop()
+            k -= 1
+        stack.append(d)
+    if k:
+        stack = stack[:-k]
+    return "".join(stack).lstrip("0") or "0"</code></pre>
+      <p><strong>Complexity:</strong> Time O(n); Space O(n).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Remove all digits</li><li>Leading zeros after removal</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>remove_k_digits("1432219",3)</code></td><td><code>'1219'</code></td><td>pass</td></tr><tr><td><code>remove_k_digits("10200",1)</code></td><td><code>'200'</code></td><td>pass</td></tr><tr><td><code>remove_k_digits("10",2)</code></td><td><code>'0'</code></td><td>pass</td></tr><tr><td><code>remove_k_digits("12345",2)</code></td><td><code>'123'</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-sliding_window_max" data-track>
+      <h2>Sliding Window Maximum</h2>
+      <p><span class="tag bad">Hard</span> <span class="tag">Monotonic deque</span> <span class="tag">LC 239</span></p>
+      <p>Return the maximum of every window of size k as it slides over the list.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #239). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Monotonic deque (Stacks &amp; Queues)</td></tr><tr><td>Input format</td><td>List nums and k.</td></tr><tr><td>Output format</td><td>List of maxima.</td></tr><tr><td>Constraints</td><td>len &lt;= 10^5</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>[1,3,-1,-3,5,3,6,7], k=3</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>[3,3,5,5,6,7]</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> Each window's maximum.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>collections.deque gives O(1) popleft.</p></div></details>
+      <details class="recall"><summary>Hint 2</summary><div class="answer"><p>Pop from the back while the back value is smaller than the new one.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Brute force O(nk). Keep a deque of indices whose values decrease from front to back. The front is always the window maximum; drop indices that left the window and smaller values behind the new element.</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/sliding_window_max.py">from collections import deque
+
+def sliding_window_max(nums, k):
+    dq, res = deque(), []              # dq holds indices, values decreasing
+    for i, x in enumerate(nums):
+        while dq and nums[dq[-1]] &lt;= x:
+            dq.pop()
+        dq.append(i)
+        if dq[0] &lt;= i - k:             # front slid out of the window
+            dq.popleft()
+        if i &gt;= k - 1:
+            res.append(nums[dq[0]])
+    return res</code></pre>
+      <p><strong>Complexity:</strong> Time O(n); Space O(k).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>k = 1</li><li>k = n</li><li>Decreasing / increasing input</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>sliding_window_max([1,3,-1,-3,5,3,6,7],3)</code></td><td><code>[3, 3, 5, 5, 6, 7]</code></td><td>pass</td></tr><tr><td><code>sliding_window_max([1],1)</code></td><td><code>[1]</code></td><td>pass</td></tr><tr><td><code>sliding_window_max([9,8,7],3)</code></td><td><code>[9]</code></td><td>pass</td></tr><tr><td><code>sliding_window_max([1,2,3],1)</code></td><td><code>[1, 2, 3]</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-largest_rectangle" data-track>
+      <h2>Largest Rectangle in a Histogram</h2>
+      <p><span class="tag bad">Hard</span> <span class="tag">Monotonic stack</span> <span class="tag">LC 84</span></p>
+      <p>Bars of width 1 have the given heights. Return the area of the largest rectangle that fits inside the histogram.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #84). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Monotonic stack (Stacks &amp; Queues)</td></tr><tr><td>Input format</td><td>List heights.</td></tr><tr><td>Output format</td><td>Integer area.</td></tr><tr><td>Constraints</td><td>len &lt;= 10^5</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>[2,1,5,6,2,3]</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>10</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> Bars 5 and 6 form a rectangle of height 5 and width 2.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Add a 0 bar at the end to flush the stack.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Keep a stack of bar indices with increasing heights. When a lower bar arrives, pop taller bars: each popped bar is the height of a rectangle that extends from the previous stack item to the current index.</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/largest_rectangle.py">def largest_rectangle(heights):
+    stack, best = [], 0                    # stack holds indices, heights increasing
+    for i, h in enumerate(heights + [0]):  # extra 0 empties the stack
+        while stack and heights[stack[-1]] &gt;= h:
+            height = heights[stack.pop()]
+            left = stack[-1] if stack else -1
+            best = max(best, height * (i - left - 1))
+        stack.append(i)
+    return best</code></pre>
+      <p><strong>Complexity:</strong> Time O(n); Space O(n).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Single bar</li><li>Increasing / decreasing bars</li><li>Empty list</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>largest_rectangle([2,1,5,6,2,3])</code></td><td><code>10</code></td><td>pass</td></tr><tr><td><code>largest_rectangle([2,4])</code></td><td><code>4</code></td><td>pass</td></tr><tr><td><code>largest_rectangle([5])</code></td><td><code>5</code></td><td>pass</td></tr><tr><td><code>largest_rectangle([])</code></td><td><code>0</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="m10-stacks-queues.html"><span class="dir">Previous</span><span>M10 Stacks & Queues</span></a>
+      <a class="next" href="m09-linked-lists.html"><span class="dir">Next</span><span>M9 Linked Lists</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

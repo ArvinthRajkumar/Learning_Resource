@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="PS2">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Python and SQL projects: migrations, repositories, data quality, reports and an API | Python + SQL</title>
+<meta name="description" content="Six small, complete projects that combine Python and SQL: a migration runner, an expense tracker with a repository, a data quality framework, a safe query builder, a reporting job and a test suite.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part PS2</p>
+      <h1>Python and SQL projects: migrations, repositories, data quality, reports and an API</h1>
+      <p class="lede">Reading is not enough; build things. Each project here is small enough to type in an afternoon, uses only the standard library and SQLite, and includes tests, so you can run it, break it and extend it.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~6 hours</span></div>
+    </div>
+
+    <section id="migrations" data-track>
+      <h2>Project 1: a migration runner</h2>
+<p>Schemas change. A <strong>migration runner</strong> applies numbered scripts exactly once, in order, and records them, so every environment reaches the same schema. Real tools (Alembic, Flyway, Django migrations) do the same.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps2-01.py">import sqlite3
+MIGRATIONS = [
+    (1, "create users",       "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE)"),
+    (2, "add display name",   "ALTER TABLE users ADD COLUMN display_name TEXT"),
+    (3, "create orders",      "CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), total_cents INTEGER NOT NULL)"),
+    (4, "index orders.user",  "CREATE INDEX idx_orders_user ON orders(user_id)"),
+]
+def migrate(db, migrations):
+    db.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT, applied_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+    done = {v for (v,) in db.execute("SELECT version FROM schema_migrations")}
+    applied = []
+    for version, name, sql in sorted(migrations):
+        if version in done: continue
+        db.execute("BEGIN")
+        try:
+            db.execute(sql)
+            db.execute("INSERT INTO schema_migrations(version, name) VALUES (?, ?)", (version, name))
+            db.execute("COMMIT"); applied.append(version)
+        except sqlite3.Error:
+            db.execute("ROLLBACK"); raise
+    return applied
+db = sqlite3.connect(":memory:", isolation_level=None)
+print("first run applies:", migrate(db, MIGRATIONS))
+print("second run applies:", migrate(db, MIGRATIONS))
+print("columns of users:", [r[1] for r in db.execute("PRAGMA table_info(users)")])
+print("recorded versions:", [r[0] for r in db.execute("SELECT version FROM schema_migrations ORDER BY version")])
+MIGRATIONS.append((5, "bad migration", "ALTER TABLE nonexistent ADD COLUMN x INT"))
+try: migrate(db, MIGRATIONS)
+except sqlite3.Error as e: print("migration 5 failed and was rolled back:", e)
+print("versions after failure:", [r[0] for r in db.execute("SELECT version FROM schema_migrations ORDER BY version")])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>first run applies: [1, 2, 3, 4]
+second run applies: []
+columns of users: ['id', 'email', 'display_name']
+recorded versions: [1, 2, 3, 4]
+migration 5 failed and was rolled back: no such table: nonexistent
+versions after failure: [1, 2, 3, 4]</code></pre>
+<p>Principles: migrations are <strong>append-only</strong> (never edit one that has run), each runs in a <strong>transaction</strong> where the database supports transactional DDL (PostgreSQL does; MySQL mostly does not), changes are <strong>backward compatible</strong> with the running code (expand then contract), and large data backfills run in batches.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-ps2-q01" data-topic="Python and SQL projects" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why must applied migrations never be edited?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Style <span class="q-why">No.</span></li>
+          <li data-key="B">Other environments already ran the old version, so schemas would diverge <span class="q-why">Correct.</span></li>
+          <li data-key="C">SQLite forbids it <span class="q-why">No.</span></li>
+          <li data-key="D">Speed <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Add a new migration to change things further.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-ps2-q02" data-topic="Python and SQL projects" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why record applied versions in a table?</p></div>
+        <ul class="q-options">
+          <li data-key="A">For fun <span class="q-why">No.</span></li>
+          <li data-key="B">So each migration runs exactly once per database <span class="q-why">Correct.</span></li>
+          <li data-key="C">To speed queries <span class="q-why">No.</span></li>
+          <li data-key="D">To encrypt data <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The runner compares scripts against the table.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Expand and contract?</summary><div class="answer"><p>Add the new structure, run both, migrate data, switch reads, then remove the old structure.</p></div></details>
+      </div>
+    </section>
+
+    <section id="expenses" data-track>
+      <h2>Project 2: expense tracker with a repository</h2>
+<p>A small domain, three layers: SQL in a repository, rules in a service, and a thin command interface.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps2-02.py">import sqlite3
+from dataclasses import dataclass
+from datetime import date
+from decimal import Decimal
+
+@dataclass(frozen=True)
+class Expense:
+    id: int | None
+    day: str
+    category: str
+    cents: int
+    note: str = ""
+
+class ExpenseRepo:
+    def __init__(self, db):
+        self.db = db
+        db.execute("""CREATE TABLE IF NOT EXISTS expense (
+            id INTEGER PRIMARY KEY, day TEXT NOT NULL, category TEXT NOT NULL, cents INTEGER NOT NULL CHECK (cents &gt; 0), note TEXT NOT NULL DEFAULT '')""")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_expense_day ON expense(day)")
+    def add(self, e):
+        cur = self.db.execute("INSERT INTO expense(day, category, cents, note) VALUES (?,?,?,?)", (e.day, e.category, e.cents, e.note))
+        return cur.lastrowid
+    def between(self, start, end):
+        rows = self.db.execute("SELECT id, day, category, cents, note FROM expense WHERE day &gt;= ? AND day &lt; ? ORDER BY day, id", (start, end))
+        return [Expense(*r) for r in rows]
+    def totals_by_category(self, start, end):
+        return self.db.execute("SELECT category, SUM(cents), COUNT(*) FROM expense WHERE day &gt;= ? AND day &lt; ? GROUP BY category ORDER BY SUM(cents) DESC", (start, end)).fetchall()
+
+class ExpenseService:
+    CATEGORIES = {"food", "transport", "rent", "fun"}
+    def __init__(self, repo): self.repo = repo
+    def record(self, day, category, amount, note=""):
+        date.fromisoformat(day)                                             # raises ValueError on bad dates
+        if category not in self.CATEGORIES: raise ValueError(f"unknown category {category!r}")
+        cents = int((Decimal(str(amount)) * 100).to_integral_value())       # exact money handling
+        return self.repo.add(Expense(None, day, category, cents, note))
+    def month_report(self, year, month):
+        start = f"{year:04d}-{month:02d}-01"
+        end = f"{year + (month == 12):04d}-{month % 12 + 1:02d}-01"
+        rows = self.repo.totals_by_category(start, end)
+        total = sum(r[1] for r in rows)
+        lines = [f"{c:&lt;10} {cents / 100:&gt;8.2f}  {100 * cents / total:5.1f}%  ({n} items)" for c, cents, n in rows]
+        return "\n".join(lines + [f"{'TOTAL':&lt;10} {total / 100:&gt;8.2f}"])
+
+db = sqlite3.connect(":memory:", isolation_level=None)
+svc = ExpenseService(ExpenseRepo(db))
+for d, c, a, n in [("2024-03-02", "food", 12.50, "lunch"), ("2024-03-05", "transport", 40, "pass"), ("2024-03-09", "food", 8.25, "coffee"),
+                   ("2024-03-15", "rent", 900, ""), ("2024-03-20", "fun", 30.10, "cinema"), ("2024-04-01", "food", 5, "outside the month")]:
+    svc.record(d, c, a, n)
+print(svc.month_report(2024, 3))
+for bad in [("2024-13-01", "food", 5), ("2024-03-01", "gold", 5), ("2024-03-01", "food", -5)]:
+    try: svc.record(*bad)
+    except (ValueError, sqlite3.IntegrityError) as e: print("rejected", bad[:2], "-&gt;", type(e).__name__)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>rent         900.00   90.8%  (1 items)
+transport     40.00    4.0%  (1 items)
+fun           30.10    3.0%  (1 items)
+food          20.75    2.1%  (2 items)
+TOTAL        990.85
+rejected ('2024-13-01', 'food') -&gt; ValueError
+rejected ('2024-03-01', 'gold') -&gt; ValueError
+rejected ('2024-03-01', 'food') -&gt; IntegrityError</code></pre>
+<p>Design notes: money stored as <strong>integer cents</strong>; the <code>CHECK</code> constraint backs up validation; dates are ISO text so range queries use the index; the report window is half open (<code>&gt;= start AND &lt; next month</code>) so no row is counted twice.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-ps2-q03" data-topic="Python and SQL projects" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why store money as integer cents?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It uses less disk <span class="q-why">No.</span></li>
+          <li data-key="B">Integers are exact; floats introduce rounding errors <span class="q-why">Correct.</span></li>
+          <li data-key="C">SQLite lacks decimals <span class="q-why">Not the reason.</span></li>
+          <li data-key="D">Sorting <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Convert to display units only at the edge.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-ps2-q04" data-topic="Python and SQL projects" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why use a half-open date range (&gt;= start AND &lt; next month)?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is shorter <span class="q-why">No.</span></li>
+          <li data-key="B">Every row falls in exactly one period, with no end-of-day or end-of-month edge cases <span class="q-why">Correct.</span></li>
+          <li data-key="C">It is required by SQL <span class="q-why">No.</span></li>
+          <li data-key="D">It uses no index <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>BETWEEN includes both ends and misses fractional timestamps.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Where do the validation layers live?</summary><div class="answer"><p>Constraints in the database, rules in the service, input parsing at the edge.</p></div></details>
+      </div>
+    </section>
+
+    <section id="quality" data-track>
+      <h2>Project 3: a data quality framework</h2>
+<p>Pipelines break silently when data changes. Write <strong>checks as data</strong>: each is a name and a SQL query that returns the offending rows. A runner reports failures and can stop the pipeline.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps2-03.py">import sqlite3
+db = sqlite3.connect(":memory:", isolation_level=None)
+db.executescript("""
+CREATE TABLE customer (id INTEGER PRIMARY KEY, email TEXT, country TEXT, created TEXT);
+CREATE TABLE orders (id INTEGER PRIMARY KEY, customer_id INT, total REAL, status TEXT, placed TEXT);
+INSERT INTO customer VALUES (1,'a@x.com','US','2024-01-01'),(2,'b@x.com','DE','2024-01-02'),(3,NULL,'US','2024-01-03'),(4,'a@x.com','FR','2024-01-04');
+INSERT INTO orders VALUES (1,1,50,'paid','2024-02-01'),(2,2,-5,'paid','2024-02-02'),(3,99,20,'paid','2024-02-03'),(4,1,10,'weird','2024-02-04'),(5,2,15,'paid','2099-01-01');
+""")
+CHECKS = [
+    ("customer emails not null",      "SELECT id FROM customer WHERE email IS NULL"),
+    ("customer emails unique",        "SELECT email FROM customer WHERE email IS NOT NULL GROUP BY email HAVING COUNT(*) &gt; 1"),
+    ("order totals positive",         "SELECT id FROM orders WHERE total &lt;= 0"),
+    ("orders reference customers",    "SELECT o.id FROM orders o LEFT JOIN customer c ON c.id = o.customer_id WHERE c.id IS NULL"),
+    ("order status in allowed set",   "SELECT id FROM orders WHERE status NOT IN ('paid','pending','cancelled')"),
+    ("no orders dated in the future", "SELECT id FROM orders WHERE placed &gt; date('2024-12-31')"),
+]
+def run_checks(db, checks):
+    results = []
+    for name, sql in checks:
+        bad = [r[0] for r in db.execute(sql)]
+        results.append((name, "PASS" if not bad else "FAIL", bad))
+    return results
+for name, status, bad in run_checks(db, CHECKS):
+    print(f"{status}  {name}" + (f"  -&gt; offending: {bad}" if bad else ""))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>FAIL  customer emails not null  -&gt; offending: [3]
+FAIL  customer emails unique  -&gt; offending: ['a@x.com']
+FAIL  order totals positive  -&gt; offending: [2]
+FAIL  orders reference customers  -&gt; offending: [3]
+FAIL  order status in allowed set  -&gt; offending: [4]
+FAIL  no orders dated in the future  -&gt; offending: [5]</code></pre>
+<p>Also check <strong>row counts and freshness</strong> (today's load is not 90% smaller than yesterday's), <strong>distribution shifts</strong>, <strong>referential integrity</strong> across systems, and <strong>schema drift</strong>. Tools: Great Expectations, dbt tests, Soda. Decide severity: block the pipeline, alert, or quarantine bad rows.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-ps2-q05" data-topic="Python and SQL projects" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the advantage of writing data checks as queries that return offending rows?</p></div>
+        <ul class="q-options">
+          <li data-key="A">They run faster <span class="q-why">Not the point.</span></li>
+          <li data-key="B">Failures show exactly which rows are bad, and checks are easy to add and schedule <span class="q-why">Correct.</span></li>
+          <li data-key="C">They avoid SQL <span class="q-why">No.</span></li>
+          <li data-key="D">They fix data automatically <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Actionable failures beat a boolean.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name four kinds of data quality checks.</summary><div class="answer"><p>Nulls, uniqueness, referential integrity and ranges or allowed values; also freshness and volume.</p></div></details>
+      </div>
+    </section>
+
+    <section id="builder" data-track>
+      <h2>Project 4: a safe dynamic query builder</h2>
+<p>Search screens need optional filters. Build SQL from an <strong>allow-list</strong> of columns and operators and pass values as parameters. Never put user text into the SQL string.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps2-04.py">import sqlite3
+ALLOWED_COLUMNS = {"name", "city", "age"}
+ALLOWED_OPS = {"eq": "=", "lt": "&lt;", "gt": "&gt;", "like": "LIKE"}
+ALLOWED_SORT = {"name", "age"}
+def build_query(filters, sort=None, limit=10):
+    sql, params = "SELECT id, name, city, age FROM person", []
+    clauses = []
+    for col, op, value in filters:
+        if col not in ALLOWED_COLUMNS or op not in ALLOWED_OPS: raise ValueError(f"filter not allowed: {col} {op}")
+        clauses.append(f"{col} {ALLOWED_OPS[op]} ?"); params.append(value)
+    if clauses: sql += " WHERE " + " AND ".join(clauses)
+    if sort:
+        col, _, direction = sort.partition(" ")
+        if col not in ALLOWED_SORT or direction.upper() not in ("", "ASC", "DESC"): raise ValueError("sort not allowed")
+        sql += f" ORDER BY {col} {direction.upper() or 'ASC'}"
+    sql += " LIMIT ?"; params.append(max(1, min(int(limit), 100)))
+    return sql, params
+db = sqlite3.connect(":memory:")
+db.executescript("CREATE TABLE person (id INTEGER PRIMARY KEY, name TEXT, city TEXT, age INT); INSERT INTO person VALUES (1,'Ana','Pune',30),(2,'Bo','Pune',22),(3,'Cy','Goa',41),(4,'Di','Goa',35);")
+sql, params = build_query([("city", "eq", "Goa"), ("age", "gt", 30)], sort="age desc")
+print(sql, params)
+print(db.execute(sql, params).fetchall())
+for evil in [[("name; DROP TABLE person; --", "eq", "x")], [("name", "eq or 1=1", "x")]]:
+    try: build_query(evil)
+    except ValueError as e: print("blocked:", e)
+print("injection attempt as a VALUE is just data:", db.execute(*build_query([("name", "eq", "x' OR '1'='1")])).fetchall())</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>SELECT id, name, city, age FROM person WHERE city = ? AND age &gt; ? ORDER BY age DESC LIMIT ? ['Goa', 30, 10]
+[(3, 'Cy', 'Goa', 41), (4, 'Di', 'Goa', 35)]
+blocked: filter not allowed: name; DROP TABLE person; -- eq
+blocked: filter not allowed: name eq or 1=1
+injection attempt as a VALUE is just data: []</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-ps2-q06" data-topic="Python and SQL projects" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you accept a user-chosen sort column safely?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Concatenate it <span class="q-why">Injection.</span></li>
+          <li data-key="B">Check it against an allow-list and then insert it into the SQL <span class="q-why">Correct.</span></li>
+          <li data-key="C">Pass it as a parameter <span class="q-why">Identifiers cannot be bound.</span></li>
+          <li data-key="D">Escape quotes <span class="q-why">Fragile.</span></li>
+        </ul>
+        <div class="q-explain"><p>Values are bound; identifiers are allow-listed.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Can a bound parameter replace a table or column name?</summary><div class="answer"><p>No, parameters bind values only; identifiers must be allow-listed.</p></div></details>
+      </div>
+    </section>
+
+    <section id="report" data-track>
+      <h2>Project 5: a reporting job with a small API</h2>
+<p>Combine everything: a job that aggregates data with SQL, formats a report in Python, and exposes it as JSON through a function you could mount in a web framework.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps2-05.py">import json, sqlite3
+db = sqlite3.connect(":memory:")
+db.executescript("""
+CREATE TABLE sale (id INTEGER PRIMARY KEY, region TEXT, product TEXT, qty INT, unit_cents INT, day TEXT);
+INSERT INTO sale VALUES
+ (1,'north','pen',10,150,'2024-05-01'),(2,'north','book',2,1200,'2024-05-02'),(3,'south','pen',30,140,'2024-05-02'),
+ (4,'south','book',5,1250,'2024-05-03'),(5,'north','pen',5,150,'2024-05-04'),(6,'east','lamp',1,3500,'2024-05-04');
+""")
+def sales_summary(db, group_by="region"):
+    assert group_by in {"region", "product"}                       # allow-list the identifier
+    rows = db.execute(f"SELECT {group_by}, SUM(qty * unit_cents), SUM(qty) FROM sale GROUP BY {group_by} ORDER BY SUM(qty * unit_cents) DESC").fetchall()
+    total = sum(r[1] for r in rows)
+    return {"group_by": group_by, "total": total / 100,
+            "rows": [{"key": k, "revenue": c / 100, "units": q, "share": round(c / total, 3)} for k, c, q in rows]}
+def handle(path):
+    """A framework-free 'route': returns (status, json body)."""
+    if path.startswith("/summary/"):
+        try: return 200, json.dumps(sales_summary(db, path.split("/")[-1]))
+        except AssertionError: return 400, json.dumps({"error": "group_by must be region or product"})
+    return 404, json.dumps({"error": "not found"})
+status, body = handle("/summary/region")
+payload = json.loads(body)
+print(status, payload["group_by"], payload["total"])
+for row in payload["rows"]: print(row)
+print(handle("/summary/customer")); print(handle("/nope"))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>200 region 186.0
+{'key': 'south', 'revenue': 104.5, 'units': 35, 'share': 0.562}
+{'key': 'north', 'revenue': 46.5, 'units': 17, 'share': 0.25}
+{'key': 'east', 'revenue': 35.0, 'units': 1, 'share': 0.188}
+(400, '{"error": "group_by must be region or product"}')
+(404, '{"error": "not found"}')</code></pre>
+<p>Production concerns for jobs like this: idempotent reruns (overwrite a dated partition), time zones in <code>day</code>, caching expensive summaries, pagination for big result sets, and authorisation before returning data.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-ps2-q07" data-topic="Python and SQL projects" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What makes a reporting job safe to rerun?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Random ids <span class="q-why">No.</span></li>
+          <li data-key="B">Idempotence: rerunning overwrites the same dated output instead of appending duplicates <span class="q-why">Correct.</span></li>
+          <li data-key="C">A longer timeout <span class="q-why">No.</span></li>
+          <li data-key="D">More threads <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Replace partitions, do not append blindly.</p></div>
+      </div>
+    </section>
+
+    <section id="testing" data-track>
+      <h2>Project 6: testing it all</h2>
+<p>Every project above is testable because the database is injected. Tests use an in-memory SQLite and assert on behaviour.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps2-06.py">import sqlite3, unittest
+def add_user(db, email):
+    try:
+        db.execute("INSERT INTO users(email) VALUES (?)", (email.strip().lower(),)); return True
+    except sqlite3.IntegrityError:
+        return False
+class AddUserTests(unittest.TestCase):
+    def setUp(self):
+        self.db = sqlite3.connect(":memory:")
+        self.db.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE)")
+    def test_adds_and_normalises(self):
+        self.assertTrue(add_user(self.db, "  Ada@Example.COM "))
+        self.assertEqual(self.db.execute("SELECT email FROM users").fetchall(), [("ada@example.com",)])
+    def test_rejects_duplicates_case_insensitively(self):
+        add_user(self.db, "a@x.com")
+        self.assertFalse(add_user(self.db, "A@X.com"))
+    def test_rejects_null(self):
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute("INSERT INTO users(email) VALUES (NULL)")
+suite = unittest.defaultTestLoader.loadTestsFromTestCase(AddUserTests)
+import io
+result = unittest.TextTestRunner(stream=io.StringIO(), verbosity=0).run(suite)
+print("tests run:", result.testsRun, "| failures:", len(result.failures), "| errors:", len(result.errors))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>tests run: 3 | failures: 0 | errors: 0</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-ps2-q08" data-topic="Python and SQL projects" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why inject the database connection into functions?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To use more memory <span class="q-why">No.</span></li>
+          <li data-key="B">So tests can supply an in-memory database <span class="q-why">Correct.</span></li>
+          <li data-key="C">To avoid transactions <span class="q-why">No.</span></li>
+          <li data-key="D">For caching <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Dependency injection keeps code testable.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is a fast, realistic test database for SQL code?</summary><div class="answer"><p>An in-memory SQLite for logic, with a CI run against the real engine for dialect-specific behaviour.</p></div></details>
+      </div>
+    </section>
+
+    <section id="next" data-track>
+      <h2>Where to go next</h2>
+<ul><li>Replace SQLite with PostgreSQL through the same repository interfaces and run the identical tests in CI.</li><li>Add SQLAlchemy for the query layer and Alembic for migrations (<a href="ps0-python-sql.html">PS0</a>).</li><li>Add logging, metrics and a retry policy around the database calls (<a href="py5-engineering.html">PY5</a>).</li><li>Serve the report with FastAPI or Flask, add authentication, and containerise it.</li><li>Schedule the quality checks and the report with a workflow tool.</li></ul>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Keep SQL in repositories, rules in services, configuration in data, and inject the connection so everything is testable. Use constraints as the last line of defence, parameters for every value, allow-lists for every identifier, and migrations for every schema change.</p></div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Python and SQL projects</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Python and SQL projects">
+<details class="recall iq" data-level="basic" data-topic="Python and SQL projects"><summary><span class="tag ok">Basic</span> Why store money as integer cents?</summary><div class="answer"><p>Integers are exact, avoiding floating-point rounding. Convert to a decimal for display.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Python and SQL projects"><summary><span class="tag ok">Basic</span> Why use parameter binding instead of string formatting for SQL?</summary><div class="answer"><p>It prevents injection by sending values separately from the SQL text and lets the database cache plans.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python and SQL projects"><summary><span class="tag warn">Medium</span> What does a migration runner do?</summary><div class="answer"><p>Applies ordered schema scripts once each, records applied versions in a table, and runs each in a transaction so environments converge to the same schema.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python and SQL projects"><summary><span class="tag warn">Medium</span> What are the rules for writing safe migrations?</summary><div class="answer"><p>Never edit applied ones, keep them backward compatible with running code, avoid long locks, batch big backfills, and test them on production-sized data.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python and SQL projects"><summary><span class="tag warn">Medium</span> What is the repository pattern for databases?</summary><div class="answer"><p>A class that encapsulates queries for one aggregate behind methods, letting services and tests ignore SQL details.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python and SQL projects"><summary><span class="tag warn">Medium</span> How do you let users choose a sort column safely?</summary><div class="answer"><p>Check it against an allow-list and interpolate only the verified identifier; bind values separately.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python and SQL projects"><summary><span class="tag warn">Medium</span> How do you test code that uses a database?</summary><div class="answer"><p>Inject the connection, use an in-memory or disposable database, build fixtures per test, and run key tests against the real engine in CI.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python and SQL projects"><summary><span class="tag warn">Medium</span> How do you design data quality checks?</summary><div class="answer"><p>Express each as a query returning offending rows (nulls, duplicates, referential integrity, ranges, freshness, volume), run on a schedule or in the pipeline, and define whether failures block or alert.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python and SQL projects"><summary><span class="tag bad">Advanced</span> How do you make a batch job idempotent?</summary><div class="answer"><p>Write results to a deterministic partition by overwriting or upserting on natural keys, record watermarks, and avoid appending without dedupe.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python and SQL projects"><summary><span class="tag bad">Advanced</span> Half-open date ranges: why use them?</summary><div class="answer"><p>start &lt;= ts AND ts &lt; next_start never double counts or misses boundary timestamps, unlike BETWEEN.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python and SQL projects"><summary><span class="tag bad">Advanced</span> How would you move from SQLite to PostgreSQL?</summary><div class="answer"><p>Keep access behind a repository, replace SQLite-specific SQL, fix type strictness and booleans, adopt a migration tool, run the same tests on both, and tune connection pooling.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python and SQL projects"><summary><span class="tag bad">Advanced</span> Where should validation live?</summary><div class="answer"><p>In layers: input parsing at the edge, business rules in services, and constraints in the database as the last line of defence.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python and SQL projects"><summary><span class="tag bad">Advanced</span> How do you avoid N+1 queries in a repository?</summary><div class="answer"><p>Fetch related rows in one query with a join or an IN list, or use eager loading, instead of one query per parent row.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python and SQL projects"><summary><span class="tag bad">Advanced</span> How do you expose database results as an API safely?</summary><div class="answer"><p>Allow-list filters and sort fields, bound parameters, pagination limits, authorization on every request and a stable response schema.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="ps1-python-problems.html"><span class="dir">Previous</span><span>PS1 Python interview problems and predict-the-output puzzles</span></a>
+      <a class="next" href="interview-questions.html"><span class="dir">Next</span><span>IQ Interview question bank</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="PY6">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The standard library tour: pathlib, datetime, decimal, collections and friends | Python + SQL</title>
+<meta name="description" content="The parts of the standard library worth knowing well: pathlib and files, datetime and time zones, decimal and fractions, statistics and random, heapq and bisect, string formatting, hashing, subprocess, struct, textwrap and more.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part PY6</p>
+      <h1>The standard library tour: pathlib, datetime, decimal, collections and friends</h1>
+      <p class="lede">Python's slogan is batteries included. Knowing the standard library is the fastest way to write less code. This tour covers the modules that appear in real programs and interviews, each with an executed example.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="paths" data-track>
+      <h2>Files and paths: pathlib</h2>
+<p><code>pathlib.Path</code> replaces string path juggling. It is cross-platform, readable and has the file operations built in.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py6-01.py">import tempfile
+from pathlib import Path
+root = Path(tempfile.mkdtemp())
+(root / "data").mkdir()
+f = root / "data" / "notes.txt"
+f.write_text("line one\nline two\nline three\n", encoding="utf8")
+print("name:", f.name, "| stem:", f.stem, "| suffix:", f.suffix, "| parent:", f.parent.name)
+print("exists:", f.exists(), "| is_file:", f.is_file(), "| non-empty:", f.stat().st_size &gt; 0)
+print("lines:", f.read_text(encoding="utf8").splitlines())
+(root / "data" / "b.csv").write_text("x\n1\n"); (root / "data" / "a.csv").write_text("x\n2\n")
+print("csv files:", sorted(p.name for p in (root / "data").glob("*.csv")))
+print("recursive:", sorted(str(p.relative_to(root)).replace("\\", "/") for p in root.rglob("*") if p.is_file()))
+print("with_suffix:", f.with_suffix(".md").name)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>name: notes.txt | stem: notes | suffix: .txt | parent: data
+exists: True | is_file: True | non-empty: True
+lines: ['line one', 'line two', 'line three']
+csv files: ['a.csv', 'b.csv']
+recursive: ['data/a.csv', 'data/b.csv', 'data/notes.txt']
+with_suffix: notes.md</code></pre>
+<p>Always pass <code>encoding=</code> when opening text files. Use <code>with open(...)</code> or <code>Path.read_text()</code>; never leave files open. For large files iterate line by line, do not <code>read()</code> everything. <code>shutil</code> copies and deletes trees (<code>shutil.copytree</code>, <code>shutil.rmtree</code>); <code>tempfile</code> creates safe temporary files and directories.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py6-q01" data-topic="Standard library" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the idiomatic way to join paths in modern Python?</p></div>
+        <ul class="q-options">
+          <li data-key="A">String concatenation <span class="q-why">Breaks on other OSes.</span></li>
+          <li data-key="B">pathlib.Path with the / operator <span class="q-why">Correct.</span></li>
+          <li data-key="C">os.system <span class="q-why">No.</span></li>
+          <li data-key="D">eval <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Path objects are cross-platform and readable.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Three Path methods you use daily?</summary><div class="answer"><p>read_text/write_text, glob/rglob, and mkdir(parents=True, exist_ok=True).</p></div></details>
+      </div>
+    </section>
+
+    <section id="dates" data-track>
+      <h2>Dates and times</h2>
+<p><code>datetime</code> has <code>date</code>, <code>time</code>, <code>datetime</code>, <code>timedelta</code> and (3.9+) <code>zoneinfo</code> for time zones.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py6-02.py">from datetime import date, datetime, timedelta, timezone
+d = date(2024, 1, 31)
+print("weekday (Mon=0):", d.weekday(), "| iso:", d.isoformat(), "| +30 days:", d + timedelta(days=30))
+a, b = datetime(2024, 3, 1, 9, 0), datetime(2024, 3, 3, 17, 30)
+delta = b - a
+print("difference:", delta, "| total hours:", delta.total_seconds() / 3600)
+print("parsed:", datetime.strptime("25/12/2024 18:45", "%d/%m/%Y %H:%M"), "| formatted:", a.strftime("%A, %d %B %Y"))
+utc = datetime(2024, 7, 1, 12, 0, tzinfo=timezone.utc)
+ist = utc.astimezone(timezone(timedelta(hours=5, minutes=30), "IST"))
+print("UTC:", utc.isoformat(), "| fixed-offset IST:", ist.isoformat())</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>weekday (Mon=0): 2 | iso: 2024-01-31 | +30 days: 2024-03-01
+difference: 2 days, 8:30:00 | total hours: 56.5
+parsed: 2024-12-25 18:45:00 | formatted: Friday, 01 March 2024
+UTC: 2024-07-01T12:00:00+00:00 | fixed-offset IST: 2024-07-01T17:30:00+05:30</code></pre>
+<p>Named zones come from <code>zoneinfo</code> (Python 3.9+), which reads the operating system's tz database (on Windows install the <code>tzdata</code> package):</p>
+<pre><code class="lang-py">from zoneinfo import ZoneInfo
+utc.astimezone(ZoneInfo("America/New_York")).isoformat()   # '2024-07-01T08:00:00-04:00'  (daylight saving applied)
+utc.astimezone(ZoneInfo("Asia/Kolkata")).isoformat()       # '2024-07-01T17:30:00+05:30'</code></pre>
+<p>Rules that prevent bugs: store and compute in <strong>UTC</strong>, convert to local time only for display; use <strong>timezone-aware</strong> datetimes (naive and aware cannot be compared); never add <code>timedelta(days=30)</code> to mean "one month" (use <code>dateutil.relativedelta</code> or calendar logic); <code>datetime.now()</code> is local and naive, <code>datetime.now(timezone.utc)</code> is aware.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py6-03.py">from datetime import datetime, timezone
+import calendar
+print("days in Feb 2024:", calendar.monthrange(2024, 2)[1], "| leap 2100?", calendar.isleap(2100))
+naive, aware = datetime(2024, 1, 1), datetime(2024, 1, 1, tzinfo=timezone.utc)
+try:
+    naive &lt; aware
+except TypeError as e:
+    print("mixing naive and aware fails:", e)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>days in Feb 2024: 29 | leap 2100? False
+mixing naive and aware fails: can't compare offset-naive and offset-aware datetimes</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py6-q02" data-topic="Standard library" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How should you store timestamps?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Local naive time <span class="q-why">Ambiguous around DST.</span></li>
+          <li data-key="B">UTC, timezone-aware, converting to local time for display <span class="q-why">Correct.</span></li>
+          <li data-key="C">Strings in any format <span class="q-why">Hard to compare.</span></li>
+          <li data-key="D">Two-digit years <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>UTC avoids daylight-saving and zone bugs.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why compare aware datetimes only with aware ones?</summary><div class="answer"><p>Naive and aware datetimes cannot be ordered; mixing raises TypeError.</p></div></details>
+      </div>
+    </section>
+
+    <section id="numbers" data-track>
+      <h2>Exact numbers: decimal and fractions</h2>
+<p>Binary floating point cannot represent most decimals exactly.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py6-04.py">from decimal import Decimal, ROUND_HALF_UP, getcontext
+from fractions import Fraction
+print("0.1 + 0.2 =", 0.1 + 0.2, "| equal to 0.3?", 0.1 + 0.2 == 0.3)
+print("Decimal:", Decimal("0.1") + Decimal("0.2"), "| equal to 0.3?", Decimal("0.1") + Decimal("0.2") == Decimal("0.3"))
+price = Decimal("19.995")
+print("round half up:", price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), "| built-in round (banker's):", round(2.5), round(3.5))
+print("Fraction:", Fraction(1, 3) + Fraction(1, 6), "| from float string:", Fraction("0.75"), "| limit_denominator:", Fraction(3.14159).limit_denominator(100))
+getcontext().prec = 30
+print("high precision 1/7:", Decimal(1) / Decimal(7))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>0.1 + 0.2 = 0.30000000000000004 | equal to 0.3? False
+Decimal: 0.3 | equal to 0.3? True
+round half up: 20.00 | built-in round (banker's): 2 4
+Fraction: 1/2 | from float string: 3/4 | limit_denominator: 311/99
+high precision 1/7: 0.142857142857142857142857142857</code></pre>
+<p>Use <code>Decimal</code> for <strong>money</strong> (construct from strings, never from floats), <code>Fraction</code> for exact rational arithmetic, and <code>math.isclose</code> to compare floats.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py6-q03" data-topic="Standard library" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which type should hold money in Python?</p></div>
+        <ul class="q-options">
+          <li data-key="A">float <span class="q-why">Binary rounding errors.</span></li>
+          <li data-key="B">Decimal constructed from strings <span class="q-why">Correct.</span></li>
+          <li data-key="C">complex <span class="q-why">No.</span></li>
+          <li data-key="D">bytes <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Never construct Decimal from a float.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-py6-q04" data-topic="Standard library" data-type="numeric" data-answer="2" data-tol="0">
+        <div class="q-stem"><p>What does round(2.5) return in Python 3? (banker's rounding)</p></div>
+        <div class="q-explain"><p>Round half to even: 2.5 -&gt; 2, 3.5 -&gt; 4.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why is 0.1 + 0.2 not 0.3?</summary><div class="answer"><p>Decimal fractions like 0.1 have no exact binary floating-point representation.</p></div></details>
+      </div>
+    </section>
+
+    <section id="stats" data-track>
+      <h2>Statistics and randomness</h2>
+<pre><code class="lang-py" data-embed="solutions/snippets/py6-05.py">import statistics as st, random, math, secrets
+data = [2, 4, 4, 4, 5, 5, 7, 9]
+print("mean", st.mean(data), "| median", st.median(data), "| mode", st.mode(data), "| pstdev", round(st.pstdev(data), 3), "| stdev", round(st.stdev(data), 3))
+print("quantiles:", st.quantiles(data, n=4))
+random.seed(42)
+print("seeded sample:", random.sample(range(100), 5), "| choice:", random.choice("abcdef"), "| shuffled:", random.sample([1, 2, 3, 4], 4))
+print("isclose:", math.isclose(0.1 + 0.2, 0.3), "| gcd:", math.gcd(84, 36), "| comb:", math.comb(10, 3), "| hypot:", math.hypot(3, 4))
+token = secrets.token_hex(8)
+print("secure token length:", len(token), "(use secrets, not random, for passwords and tokens)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>mean 5 | median 4.5 | mode 4 | pstdev 2.0 | stdev 2.138
+quantiles: [4.0, 4.5, 6.5]
+seeded sample: [81, 14, 3, 94, 35] | choice: b | shuffled: [2, 1, 3, 4]
+isclose: True | gcd: 12 | comb: 120 | hypot: 5.0
+secure token length: 16 (use secrets, not random, for passwords and tokens)</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py6-q05" data-topic="Standard library" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which module should generate password reset tokens?</p></div>
+        <ul class="q-options">
+          <li data-key="A">random <span class="q-why">Predictable.</span></li>
+          <li data-key="B">secrets <span class="q-why">Correct.</span></li>
+          <li data-key="C">math <span class="q-why">No.</span></li>
+          <li data-key="D">time <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>secrets uses a cryptographically secure source.</p></div>
+      </div>
+    </section>
+
+    <section id="structures" data-track>
+      <h2>Collections, heapq and bisect</h2>
+<pre><code class="lang-py" data-embed="solutions/snippets/py6-06.py">import heapq, bisect
+from collections import Counter, defaultdict, deque, OrderedDict, namedtuple, ChainMap
+words = "to be or not to be that is the question to".split()
+c = Counter(words)
+print("most common:", c.most_common(2), "| total:", sum(c.values()), "| c['be']:", c["be"], "| missing:", c["xyz"])
+groups = defaultdict(list)
+for w in words: groups[len(w)].append(w)
+print("by length:", dict(groups))
+dq = deque(maxlen=3)
+for i in range(6): dq.append(i)
+print("bounded deque keeps last three:", list(dq))
+heap = [5, 1, 8, 3, 2]
+heapq.heapify(heap)
+print("heap pops in order:", [heapq.heappop(heap) for _ in range(3)], "| nlargest:", heapq.nlargest(2, [5, 1, 8, 3, 2]))
+scores = [10, 20, 30, 40]
+print("bisect insertion index for 25:", bisect.bisect(scores, 25), "| keeps list sorted:", (bisect.insort(scores, 25), scores)[1])
+Point = namedtuple("Point", "x y")
+p = Point(3, 4)
+print(p, p.x, p._asdict(), "| ChainMap lookup:", ChainMap({"a": 1}, {"a": 2, "b": 3})["b"])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>most common: [('to', 3), ('be', 2)] | total: 11 | c['be']: 2 | missing: 0
+by length: {2: ['to', 'be', 'or', 'to', 'be', 'is', 'to'], 3: ['not', 'the'], 4: ['that'], 8: ['question']}
+bounded deque keeps last three: [3, 4, 5]
+heap pops in order: [1, 2, 3] | nlargest: [8, 5]
+bisect insertion index for 25: 2 | keeps list sorted: [10, 20, 25, 30, 40]
+Point(x=3, y=4) 3 {'x': 3, 'y': 4} | ChainMap lookup: 3</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py6-q06" data-topic="Standard library" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does Counter.most_common(2) return?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The two smallest counts <span class="q-why">No.</span></li>
+          <li data-key="B">The two most frequent items with their counts <span class="q-why">Correct.</span></li>
+          <li data-key="C">Random items <span class="q-why">No.</span></li>
+          <li data-key="D">A set <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>A list of (item, count) pairs.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>When do you use deque instead of list?</summary><div class="answer"><p>For fast appends and pops at both ends, e.g. queues and sliding windows.</p></div></details>
+      </div>
+    </section>
+
+    <section id="text" data-track>
+      <h2>String formatting and text tools</h2>
+<pre><code class="lang-py" data-embed="solutions/snippets/py6-07.py">import textwrap, string
+name, score, ratio = "Ada", 93.456, 0.8725
+print(f"{name:&gt;8}|{name:&lt;8}|{name:^8}|")
+print(f"{score:.1f} | {score:10.2f} | {ratio:.1%} | {1234567.891:,.2f} | {255:#x} {255:08b} | {42:+d}")
+width = 10
+print(f"{'dynamic':&gt;{width}} | {3.14159:.{2}f} | {name!r} | {name=}")
+long = "Python's standard library gives you batteries for almost every common task, from files to dates to hashing."
+print(textwrap.fill(long, width=40))
+print(textwrap.shorten(long, width=40, placeholder="..."))
+print(string.ascii_lowercase[:5], string.digits, "| Template:", string.Template("Hi $who, you owe $$${amt}").substitute(who="Bo", amt=5))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>     Ada|Ada     |  Ada   |
+93.5 |      93.46 | 87.2% | 1,234,567.89 | 0xff 11111111 | +42
+   dynamic | 3.14 | 'Ada' | name='Ada'
+Python's standard library gives you
+batteries for almost every common task,
+from files to dates to hashing.
+Python's standard library gives you...
+abcde 0123456789 | Template: Hi Bo, you owe $5</code></pre>
+    </section>
+
+    <section id="binary" data-track>
+      <h2>Hashing, encoding and binary data</h2>
+<pre><code class="lang-py" data-embed="solutions/snippets/py6-08.py">import hashlib, base64, struct, zlib, uuid, binascii
+msg = "hello".encode("utf8")
+print("sha256:", hashlib.sha256(msg).hexdigest()[:16], "... | md5 (non-security):", hashlib.md5(msg).hexdigest()[:16], "...")
+print("base64:", base64.b64encode(msg).decode(), "| decoded:", base64.b64decode("aGVsbG8=").decode(), "| hex:", msg.hex())
+packed = struct.pack("&lt;IHf", 1_000_000, 7, 2.5)
+print("struct bytes:", len(packed), "| unpacked:", struct.unpack("&lt;IHf", packed))
+data = b"abc" * 1000
+print("zlib: ", len(data), "-&gt;", len(zlib.compress(data)), "bytes | crc32:", zlib.crc32(b"hello"))
+print("uuid5 is deterministic:", uuid.uuid5(uuid.NAMESPACE_DNS, "example.com") == uuid.uuid5(uuid.NAMESPACE_DNS, "example.com"), "| uuid4 length:", len(str(uuid.uuid4())))
+text = "héllo wörld"
+print("utf-8 bytes:", len(text.encode("utf8")), "for", len(text), "characters |", text.encode("ascii", errors="replace"))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>sha256: 2cf24dba5fb0a30e ... | md5 (non-security): 5d41402abc4b2a76 ...
+base64: aGVsbG8= | decoded: hello | hex: 68656c6c6f
+struct bytes: 10 | unpacked: (1000000, 7, 2.5)
+zlib:  3000 -&gt; 30 bytes | crc32: 907060870
+uuid5 is deterministic: True | uuid4 length: 36
+utf-8 bytes: 13 for 11 characters | b'h?llo w?rld'</code></pre>
+<p>Hashes are one way and not encryption; for passwords use a slow salted function (<code>hashlib.scrypt</code>, <code>pbkdf2_hmac</code>); <code>base64</code> is encoding, not secrecy. Always decode bytes to text with a stated encoding.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py6-q07" data-topic="Standard library" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Is base64 a form of encryption?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Yes <span class="q-why">No.</span></li>
+          <li data-key="B">No, it is a reversible encoding with no secrecy <span class="q-why">Correct.</span></li>
+          <li data-key="C">Only for short text <span class="q-why">No.</span></li>
+          <li data-key="D">Only with a key <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Anyone can decode it.</p></div>
+      </div>
+    </section>
+
+    <section id="subprocess" data-track>
+      <h2>Running other programs: subprocess</h2>
+<pre><code class="lang-py" data-embed="solutions/snippets/py6-09.py">import subprocess, sys
+r = subprocess.run([sys.executable, "-c", "print('child says hi'); import sys; sys.exit(3)"], capture_output=True, text=True)
+print("stdout:", r.stdout.strip(), "| return code:", r.returncode)
+try:
+    subprocess.run([sys.executable, "-c", "raise SystemExit(1)"], check=True)
+except subprocess.CalledProcessError as e:
+    print("check=True raised: exit status", e.returncode)
+try:
+    subprocess.run([sys.executable, "-c", "import time; time.sleep(5)"], timeout=0.3)
+except subprocess.TimeoutExpired:
+    print("timeout enforced")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>stdout: child says hi | return code: 3
+check=True raised: exit status 1
+timeout enforced</code></pre>
+<p>Pass <strong>a list</strong>, not a string with <code>shell=True</code> (shell injection risk). Always set <code>timeout</code>, capture output deliberately, and check return codes. Prefer library APIs over shelling out.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py6-q08" data-topic="Standard library" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why avoid subprocess.run('cmd ' + user_input, shell=True)?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is slower <span class="q-why">Minor.</span></li>
+          <li data-key="B">Shell injection: user input can run arbitrary commands <span class="q-why">Correct.</span></li>
+          <li data-key="C">It prints too much <span class="q-why">No.</span></li>
+          <li data-key="D">It needs root <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Pass an argument list without a shell.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What three arguments make subprocess.run safe and reliable?</summary><div class="answer"><p>An argument list (not shell=True), a timeout, and checking the return code or check=True.</p></div></details>
+      </div>
+    </section>
+
+    <section id="more" data-track>
+      <h2>More modules worth knowing</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Module</th><th>Use</th></tr></thead>
+<tbody>
+<tr><td><code>itertools</code>, <code>functools</code>, <code>operator</code></td><td>Iteration building blocks (see PY3)</td></tr><tr><td><code>argparse</code></td><td>Command-line interfaces</td></tr><tr><td><code>logging</code></td><td>Structured logs (see PY5)</td></tr><tr><td><code>json</code>, <code>csv</code>, <code>sqlite3</code>, <code>pickle</code></td><td>Data formats and storage</td></tr><tr><td><code>re</code></td><td>Regular expressions</td></tr><tr><td><code>collections.abc</code>, <code>typing</code>, <code>dataclasses</code>, <code>enum</code></td><td>Types and data classes</td></tr><tr><td><code>threading</code>, <code>multiprocessing</code>, <code>concurrent.futures</code>, <code>asyncio</code></td><td>Concurrency</td></tr><tr><td><code>urllib</code>, <code>http.client</code>, <code>http.server</code>, <code>socket</code></td><td>Networking</td></tr><tr><td><code>unittest</code>, <code>doctest</code>, <code>timeit</code>, <code>cProfile</code>, <code>tracemalloc</code></td><td>Testing and measuring</td></tr><tr><td><code>contextlib</code>, <code>weakref</code>, <code>gc</code>, <code>sys</code>, <code>os</code>, <code>platform</code></td><td>Runtime and environment</td></tr><tr><td><code>zipfile</code>, <code>tarfile</code>, <code>gzip</code>, <code>shutil</code></td><td>Archives and file operations</td></tr><tr><td><code>heapq</code>, <code>bisect</code>, <code>array</code></td><td>Efficient structures</td></tr><tr><td><code>secrets</code>, <code>hmac</code>, <code>ssl</code></td><td>Security</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/py6-10.py">import timeit, sys, os, platform
+t_list = timeit.timeit("x in data", setup="data = list(range(1000)); x = 999", number=2000)
+t_set = timeit.timeit("x in data", setup="data = set(range(1000)); x = 999", number=2000)
+print("set membership is faster than list membership:", t_set &lt; t_list)
+print("python major version:", sys.version_info.major, "| separator is a slash:", os.sep in ("\\", "/"), "| system known:", platform.system() != "")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>set membership is faster than list membership: True
+python major version: 3 | separator is a slash: True | system known: True</code></pre>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Before writing a helper, check the standard library: <code>pathlib</code> for paths, <code>datetime</code> and <code>zoneinfo</code> for time, <code>decimal</code> for money, <code>collections</code> for counting and queues, <code>heapq</code> and <code>bisect</code> for ordered data, <code>subprocess</code> with a list and timeout, and <code>secrets</code> for anything security related.</p></div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Standard library</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Standard library">
+<details class="recall iq" data-level="basic" data-topic="Standard library"><summary><span class="tag ok">Basic</span> Why prefer pathlib over os.path string handling?</summary><div class="answer"><p>Path objects are cross-platform, support the / operator, and bundle operations such as read_text, glob, exists and mkdir, producing more readable code.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Standard library"><summary><span class="tag ok">Basic</span> How do you read a large file without loading it all?</summary><div class="answer"><p>Iterate over the file object line by line (or in chunks) inside a with block, so memory stays constant.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Standard library"><summary><span class="tag ok">Basic</span> What does Counter do?</summary><div class="answer"><p>A dict subclass for counting hashable items, with most_common, arithmetic between counters, and zero for missing keys.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Standard library"><summary><span class="tag warn">Medium</span> Why use Decimal for money and how do you create one?</summary><div class="answer"><p>Binary floats cannot represent most decimal fractions exactly. Create Decimals from strings (Decimal(&#x27;19.99&#x27;)), never from floats, and quantize with an explicit rounding mode.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Standard library"><summary><span class="tag warn">Medium</span> How should you handle time zones?</summary><div class="answer"><p>Store and compute in timezone-aware UTC, convert to local zones only for display with zoneinfo, and never mix naive and aware datetimes.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Standard library"><summary><span class="tag warn">Medium</span> Why is round(2.5) equal to 2 in Python 3?</summary><div class="answer"><p>round uses banker&#x27;s rounding (round half to even) to avoid statistical bias; use Decimal with ROUND_HALF_UP when a business rule needs conventional rounding.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Standard library"><summary><span class="tag warn">Medium</span> random versus secrets?</summary><div class="answer"><p>random is a deterministic pseudo-random generator for simulations; secrets uses the operating system&#x27;s cryptographic source for tokens, passwords and keys.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Standard library"><summary><span class="tag warn">Medium</span> When would you use deque, heapq and bisect?</summary><div class="answer"><p>deque for O(1) operations at both ends and bounded windows; heapq for priority queues and top-k; bisect for binary search and keeping a list sorted.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Standard library"><summary><span class="tag warn">Medium</span> How do you run an external command safely?</summary><div class="answer"><p>subprocess.run with an argument list (no shell=True), a timeout, capture_output and check or an explicit return-code test.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Standard library"><summary><span class="tag warn">Medium</span> What is the difference between hashing, encoding and encryption?</summary><div class="answer"><p>Hashing is one-way and fixed length, encoding (base64) is reversible with no secret, encryption is reversible only with a key.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Standard library"><summary><span class="tag bad">Advanced</span> How do you format numbers in f-strings?</summary><div class="answer"><p>Use format specs: {x:.2f}, {x:,}, {x:&gt;10}, {x:08.3f}, {x:.1%}, {n:#x}, and {name=} for debugging output.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Standard library"><summary><span class="tag bad">Advanced</span> How would you time two implementations fairly?</summary><div class="answer"><p>timeit with the same setup and enough repetitions, taking the minimum of several runs, avoiding one-time effects such as imports and warm-up.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Standard library"><summary><span class="tag bad">Advanced</span> Why add encoding= when opening text files?</summary><div class="answer"><p>The default depends on the platform and locale, so behaviour differs between machines. Specify encoding=&#x27;utf-8&#x27; (or utf-8-sig for Excel files).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Standard library"><summary><span class="tag bad">Advanced</span> What does struct do?</summary><div class="answer"><p>Packs and unpacks Python values to fixed binary layouts with explicit byte order, used for binary file formats and network protocols.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sql5-interview-problems.html"><span class="dir">Previous</span><span>SQL5 SQL interview problems with tested solutions</span></a>
+      <a class="next" href="py7-data-web.html"><span class="dir">Next</span><span>PY7 Working with data formats and the web: CSV, XML, URLs, HTTP clients and servers</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD25">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Case studies 6: ID generator, distributed lock, job scheduler, order book, code judge, distributed file system | System Design</title>
+<meta name="description" content="Six infrastructure-flavoured designs with working models: a Snowflake-style unique ID generator, a distributed lock with fencing tokens, a job scheduler, a stock exchange order book, an online code judge, and a GFS/HDFS-style distributed file system.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD25</p>
+      <h1>Case studies 6: ID generator, distributed lock, job scheduler, order book, code judge, distributed file system</h1>
+      <p class="lede">These cases are the building blocks other systems depend on. They are shorter to describe but full of subtle correctness points: clocks, leases, ordering and failure of coordinators. Each has a small program that demonstrates the key mechanism.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="ids" data-track>
+      <h2>Case 1: Unique ID generator</h2>
+<h3>Requirements</h3>
+<p>Generate 64-bit ids, <strong>unique</strong> across many machines without coordination on each call, <strong>roughly time-sortable</strong> (useful for database indexes), at 10,000+ ids/s per node, with no single point of failure.</p>
+<h3>Options</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Approach</th><th>Pros</th><th>Cons</th></tr></thead>
+<tbody>
+<tr><td>Auto-increment in one database</td><td>Simple, ordered</td><td>Single point of failure and bottleneck</td></tr><tr><td>UUID v4 (128-bit random)</td><td>No coordination</td><td>Big, random order wrecks B-tree locality</td></tr><tr><td>UUID v7 / ULID (time prefix + random)</td><td>Sortable, no coordination</td><td>128-bit</td></tr><tr><td>Ticket server with ranges</td><td>Fewer round trips</td><td>Gaps, coordinator dependency</td></tr><tr><td><strong>Snowflake</strong></td><td>64-bit, sortable, no coordination</td><td>Needs unique worker ids and a sane clock</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Snowflake layout</h3>
+<p><code>1 sign bit | 41 bits timestamp (ms since a custom epoch) | 10 bits worker id | 12 bits sequence</code>. 41 bits of milliseconds is about 69 years. 12 bits allow 4096 ids per millisecond per worker, so 4 million ids/s per worker, 1024 workers.</p>
+<p>Hard parts: assigning <strong>unique worker ids</strong> (via ZooKeeper/etcd or config) and <strong>clock going backwards</strong> (NTP step): refuse to generate until time catches up, or use the last timestamp.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd25-01.py">import threading
+EPOCH = 1_600_000_000_000
+class Snowflake:
+    def __init__(self, worker, clock):
+        self.worker, self.clock, self.last, self.seq = worker, clock, -1, 0
+    def next(self):
+        now = self.clock() - EPOCH
+        if now &lt; self.last: raise RuntimeError(f"clock moved backwards by {self.last - now} ms")
+        if now == self.last:
+            self.seq = (self.seq + 1) &amp; 0xFFF
+            if self.seq == 0:                         # sequence exhausted: wait for next millisecond
+                now = self.last + 1
+        else:
+            self.seq = 0
+        self.last = now
+        return (now &lt;&lt; 22) | (self.worker &lt;&lt; 12) | self.seq
+    @staticmethod
+    def decode(i): return {"ms_since_epoch": i &gt;&gt; 22, "worker": (i &gt;&gt; 12) &amp; 0x3FF, "seq": i &amp; 0xFFF}
+t = [EPOCH + 5000]
+a, b = Snowflake(1, lambda: t[0]), Snowflake(2, lambda: t[0])
+ids = [a.next() for _ in range(3)] + [b.next() for _ in range(2)]
+t[0] += 1
+ids += [a.next()]
+print("ids:", ids)
+print("decoded last:", Snowflake.decode(ids[-1]))
+print("unique:", len(set(ids)) == len(ids), "| sorted by time within a worker:", ids[:3] == sorted(ids[:3]))
+t[0] -= 10
+try: a.next()
+except RuntimeError as e: print("clock rollback handled:", e)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>ids: [20971524096, 20971524097, 20971524098, 20971528192, 20971528193, 20975718400]
+decoded last: {'ms_since_epoch': 5001, 'worker': 1, 'seq': 0}
+unique: True | sorted by time within a worker: True
+clock rollback handled: clock moved backwards by 10 ms</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd25-q01" data-topic="Case studies 6" data-type="numeric" data-answer="4096" data-tol="0">
+        <div class="q-stem"><p>How many ids per millisecond can one Snowflake worker generate with a 12-bit sequence?</p></div>
+        <div class="q-explain"><p>2^12 = 4096.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd25-q02" data-topic="Case studies 6" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the main risk of Snowflake ids?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Too long <span class="q-why">They are 64-bit.</span></li>
+          <li data-key="B">The system clock moving backwards, or two workers sharing a worker id <span class="q-why">Correct.</span></li>
+          <li data-key="C">They are random <span class="q-why">They are time ordered.</span></li>
+          <li data-key="D">They need a database call <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Duplicates are possible if either assumption is broken.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Snowflake bit layout?</summary><div class="answer"><p>1 sign bit, 41 bits of timestamp, 10 bits of worker id and 12 bits of sequence.</p></div></details>
+      </div>
+    </section>
+
+    <section id="lock" data-track>
+      <h2>Case 2: Distributed lock</h2>
+<h3>Requirements</h3>
+<p>Mutual exclusion across processes on different machines (leader duty, singleton jobs), safe under crashes, pauses and network partitions.</p>
+<h3>The naive lock and its flaw</h3>
+<p><code>SET key owner NX PX 30000</code> in Redis acquires a lock with a <strong>lease</strong> (expiry), so a crashed holder cannot block everyone forever. But a client may <strong>pause</strong> (GC, VM freeze) beyond the lease, wake up and write, while another client has taken the lock: two writers at once.</p>
+<h3>Fencing tokens</h3>
+<p>The lock service returns a <strong>monotonically increasing token</strong> with each grant. The protected resource (database, storage) remembers the highest token it has seen and <strong>rejects older ones</strong>. Now a zombie holder's write is refused.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd25-02.py">class LockService:
+    def __init__(self): self.token, self.holder, self.expires = 0, None, 0
+    def acquire(self, client, now, lease):
+        if self.holder is None or now &gt;= self.expires:
+            self.token += 1
+            self.holder, self.expires = client, now + lease
+            return self.token
+        return None
+class Storage:
+    def __init__(self): self.max_token, self.value = 0, None
+    def write(self, token, value):
+        if token &lt; self.max_token: return f"REJECTED stale token {token} (seen {self.max_token})"
+        self.max_token, self.value = token, value
+        return f"accepted token {token}"
+lock, store = LockService(), Storage()
+t1 = lock.acquire("A", now=0, lease=10)
+print("A acquires, token", t1)
+print("A pauses (GC) past its lease; B acquires at t=15:", lock.acquire("B", now=15, lease=10))
+t2 = lock.token
+print("B writes:", store.write(t2, "from B"))
+print("A wakes up and writes with its old token:", store.write(t1, "from A (zombie)"))
+print("final value:", store.value)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>A acquires, token 1
+A pauses (GC) past its lease; B acquires at t=15: 2
+B writes: accepted token 2
+A wakes up and writes with its old token: REJECTED stale token 1 (seen 2)
+final value: from B</code></pre>
+<h3>Production options</h3>
+<ul><li><strong>ZooKeeper / etcd</strong>: lock via ephemeral nodes or leases built on consensus (Raft/Zab); tokens are the revision numbers. Strongest guarantees.</li><li><strong>Redis</strong>: fast but not consensus-based; failover can lose a lock. Redlock is debated; for correctness-critical work use a consensus service plus fencing.</li><li><strong>Database row lock</strong> or a unique-key insert: simplest when you already have a database.</li><li>Prefer <strong>designs that avoid locks</strong>: idempotent operations, partition ownership, or compare-and-set.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd25-q03" data-topic="Case studies 6" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What do fencing tokens protect against?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Slow networks <span class="q-why">No.</span></li>
+          <li data-key="B">A paused client that wakes after its lease expired and writes as if it still held the lock <span class="q-why">Correct.</span></li>
+          <li data-key="C">Weak passwords <span class="q-why">No.</span></li>
+          <li data-key="D">Clock skew only <span class="q-why">Partly, but not their purpose.</span></li>
+        </ul>
+        <div class="q-explain"><p>The resource rejects tokens older than the newest seen.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd25-q04" data-topic="Case studies 6" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why give locks a lease (expiry)?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To save memory <span class="q-why">No.</span></li>
+          <li data-key="B">So a crashed holder cannot block everyone forever <span class="q-why">Correct.</span></li>
+          <li data-key="C">To speed up writes <span class="q-why">No.</span></li>
+          <li data-key="D">For logging <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>At the cost of needing fencing for safety.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why is a leased lock alone unsafe?</summary><div class="answer"><p>A paused holder can still write after expiry; fencing tokens let the resource reject it.</p></div></details>
+      </div>
+    </section>
+
+    <section id="scheduler" data-track>
+      <h2>Case 3: Job scheduler</h2>
+<h3>Requirements</h3>
+<p>Run jobs at a time or on a cron schedule, at scale (millions of jobs), <strong>at least once</strong>, with retries, priorities, and no missed or duplicate runs after failures.</p>
+<h3>Design</h3>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 1066 98" role="img" aria-label="A distributed scheduler: durable job store, a time-ordered queue, and a pool of workers." style="min-width:760px"><defs><marker id="ah51" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah51a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah51b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah51d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah51)"/><text x="212.0" y="44.0" text-anchor="middle" class="d-sm d-muted">create job</text><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah51)"/><text x="426.0" y="44.0" text-anchor="middle" class="d-sm d-muted">due jobs</text><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah51)"/><text x="640.0" y="44.0" text-anchor="middle" class="d-sm d-muted">enqueue</text><line x1="832.0" y1="49.0" x2="876.0" y2="49.0" class="d-line" marker-end="url(#ah51)"/><text x="854.0" y="44.0" text-anchor="middle" class="d-sm d-muted">pull</text><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-e"/><text x="105.0" y="53.5" text-anchor="middle">API / UI</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="319.0" y="53.5" text-anchor="middle">Job store (database)</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="53.5" text-anchor="middle" class="d-sm">Scheduler (partitioned, leader per shard)</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-d"/><text x="747.0" y="53.5" text-anchor="middle">Ready queue</text><rect x="876.0" y="20.0" width="170" height="58" rx="8" class="d-c"/><text x="961.0" y="53.5" text-anchor="middle">Worker pool</text></svg>
+</div>
+<figcaption>A distributed scheduler: durable job store, a time-ordered queue, and a pool of workers.</figcaption></figure>
+<ul><li><strong>Job table</strong>: <code>id, schedule, next_run_at, payload, status, attempts, lease_until</code>. Index on <code>(next_run_at)</code> for the due scan.</li><li><strong>Polling scan</strong> each second for jobs with <code>next_run_at &lt;= now</code>; mark them with a lease using a conditional update so only one scheduler instance claims each job. Partition by job id hash so several schedulers share the load without overlap.</li><li><strong>Workers</strong> pull from the queue, run the job, then update the status. If a worker dies, its <strong>lease expires</strong> and the job becomes claimable again (at-least-once, so jobs must be idempotent).</li><li><strong>Retries</strong> with exponential backoff and jitter, then a dead letter state. <strong>Cron</strong> jobs compute the next run after each execution.</li><li><strong>Precision at scale</strong>: a min-heap or timing wheel in memory for the next few seconds, with the database as the durable truth.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd25-03.py">import heapq
+class Scheduler:
+    def __init__(self): self.heap, self.log = [], []
+    def add(self, run_at, name, every=None): heapq.heappush(self.heap, (run_at, name, every))
+    def run_until(self, now):
+        while self.heap and self.heap[0][0] &lt;= now:
+            t, name, every = heapq.heappop(self.heap)
+            self.log.append((t, name))
+            if every: heapq.heappush(self.heap, (t + every, name, every))      # reschedule cron-like job
+s = Scheduler()
+s.add(5, "report", every=10); s.add(7, "email"); s.add(12, "cleanup")
+s.run_until(30)
+print(s.log)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[(5, 'report'), (7, 'email'), (12, 'cleanup'), (15, 'report'), (25, 'report')]</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd25-q05" data-topic="Case studies 6" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How are due jobs claimed safely by multiple scheduler instances?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Everyone runs all jobs <span class="q-why">Duplicates.</span></li>
+          <li data-key="B">A conditional update that sets a lease and succeeds for only one instance <span class="q-why">Correct.</span></li>
+          <li data-key="C">Random sleep <span class="q-why">Unreliable.</span></li>
+          <li data-key="D">Manual assignment <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Compare-and-set on job state.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why must scheduled jobs be idempotent?</summary><div class="answer"><p>Delivery is at least once: leases expire and jobs may run twice.</p></div></details>
+      </div>
+    </section>
+
+    <section id="orderbook" data-track>
+      <h2>Case 4: Stock exchange order book</h2>
+<h3>Requirements</h3>
+<p>Match buy and sell orders with <strong>price-time priority</strong> and deterministic results, at very low latency (microseconds) and high throughput (hundreds of thousands of orders/s), with strict fairness and audit.</p>
+<h3>Core model</h3>
+<p>For one symbol: a <strong>bid book</strong> (buyers, highest price first) and an <strong>ask book</strong> (sellers, lowest price first). Within a price level, the earliest order goes first. An incoming order is matched against the opposite side while prices cross; any remainder rests in the book (limit order). Matching is <strong>single-threaded per symbol</strong> to be deterministic and avoid locks; scale by sharding symbols across engines.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd25-04.py">import heapq, itertools
+class OrderBook:
+    def __init__(self): self.bids, self.asks, self.seq, self.trades = [], [], itertools.count(), []
+    def add(self, side, price, qty, oid):
+        order = [qty, oid]
+        if side == "buy":
+            while order[0] and self.asks and self.asks[0][0] &lt;= price:
+                ap, _, ao = self.asks[0]
+                fill = min(order[0], ao[0]); order[0] -= fill; ao[0] -= fill
+                self.trades.append((oid, ao[1], ap, fill))
+                if ao[0] == 0: heapq.heappop(self.asks)
+            if order[0]: heapq.heappush(self.bids, (-price, next(self.seq), order))
+        else:
+            while order[0] and self.bids and -self.bids[0][0] &gt;= price:
+                bp, _, bo = self.bids[0]
+                fill = min(order[0], bo[0]); order[0] -= fill; bo[0] -= fill
+                self.trades.append((bo[1], oid, -bp, fill))
+                if bo[0] == 0: heapq.heappop(self.bids)
+            if order[0]: heapq.heappush(self.asks, (price, next(self.seq), order))
+book = OrderBook()
+book.add("sell", 101, 50, "S1"); book.add("sell", 100, 30, "S2"); book.add("sell", 100, 20, "S3")
+book.add("buy", 99, 40, "B1")                # does not cross: rests in the book
+book.add("buy", 101, 70, "B2")               # crosses: takes S2 (30) and S3 (20) at 100 (time priority), then 20 of S1 at 101
+print("trades (buyer, seller, price, qty):", book.trades)
+print("resting asks:", [(p, o[1], o[0]) for p, _, o in sorted(book.asks)], "| resting bids:", [(-p, o[1], o[0]) for p, _, o in sorted(book.bids)])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>trades (buyer, seller, price, qty): [('B2', 'S2', 100, 30), ('B2', 'S3', 100, 20), ('B2', 'S1', 101, 20)]
+resting asks: [(101, 'S1', 30)] | resting bids: [(99, 'B1', 40)]</code></pre>
+<h3>Deep dives</h3>
+<ul><li><strong>Latency</strong>: in-memory book, no database in the hot path, kernel bypass networking, pinned CPU cores, preallocated memory, a single writer.</li><li><strong>Durability</strong>: an input <strong>event journal</strong> (sequenced, replicated) is the truth; the book is rebuilt by replaying it (event sourcing). Hot standby engines process the same sequence and take over on failure.</li><li><strong>Gateways</strong> validate and risk-check orders; a <strong>sequencer</strong> assigns global order; <strong>market data</strong> is multicast to subscribers; the <strong>settlement</strong> system consumes trades asynchronously.</li><li><strong>Fairness and audit</strong>: deterministic replay must reproduce every trade exactly.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd25-q06" data-topic="Case studies 6" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does price-time priority mean?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Oldest orders first regardless of price <span class="q-why">Ignores price.</span></li>
+          <li data-key="B">Best price first, and earlier orders first within the same price <span class="q-why">Correct.</span></li>
+          <li data-key="C">Largest orders first <span class="q-why">No.</span></li>
+          <li data-key="D">Random <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It is the standard fairness rule.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why is matching single-threaded per symbol?</summary><div class="answer"><p>Determinism and no locking; scale by sharding symbols.</p></div></details>
+      </div>
+    </section>
+
+    <section id="judge" data-track>
+      <h2>Case 5: Online code judge</h2>
+<h3>Requirements</h3>
+<p>Users submit code; run it against hidden tests under limits (time, memory, no network, no file access) and report a verdict within seconds. Contest bursts: thousands of submissions in a minute.</p>
+<h3>Design</h3>
+<ol><li><strong>API</strong> stores the submission and enqueues a job; the client polls or subscribes for the verdict.</li><li><strong>Queue</strong> decouples bursts from capacity; autoscale workers on queue depth; prioritise contest traffic.</li><li><strong>Sandboxed workers</strong>: a fresh container or microVM (gVisor, Firecracker) per run, with cgroups limiting CPU and memory, seccomp syscall filters, no network, read-only filesystem, a temporary writable directory, and wall-clock and CPU timeouts. <strong>Never</strong> run untrusted code on the application host.</li><li><strong>Compile once, run many</strong>: compile in the sandbox, cache binaries by hash, run each test case with the limits.</li><li><strong>Verdicts</strong>: accepted, wrong answer, time limit exceeded, memory limit exceeded, runtime error, compile error. Compare outputs with a checker (exact, token-based or special judge).</li><li><strong>Storage</strong>: test data in object storage, cached on workers; results in a database; leaderboard in Redis for contests.</li><li><strong>Fairness</strong>: run on identical hardware class, measure CPU time not wall time, repeat borderline timings.</li></ol>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd25-05.py">import subprocess, sys, tempfile, os
+def judge(code, stdin, expected, timeout=2):
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "sol.py")
+        open(path, "w").write(code)
+        try:
+            r = subprocess.run([sys.executable, "-I", path], input=stdin, capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            return "Time Limit Exceeded"
+        if r.returncode != 0: return "Runtime Error"
+        return "Accepted" if r.stdout.split() == expected.split() else "Wrong Answer"
+good = "a, b = map(int, input().split())" + chr(10) + "print(a + b)"
+print(judge(good, "3 4", "7"))
+print(judge("print(1)", "", "2"))
+print(judge("while True: pass", "", "", timeout=1))
+print(judge("raise SystemExit(3)", "", ""))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>Accepted
+Wrong Answer
+Time Limit Exceeded
+Runtime Error</code></pre>
+<p>(This toy only demonstrates verdict logic and timeouts. A real judge adds the sandbox layers above.)</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd25-q07" data-topic="Case studies 6" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why must a code judge sandbox untrusted code?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To save disk <span class="q-why">No.</span></li>
+          <li data-key="B">To prevent it from attacking the host, using the network or exhausting resources <span class="q-why">Correct.</span></li>
+          <li data-key="C">To format code <span class="q-why">No.</span></li>
+          <li data-key="D">To speed up compiles <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Containers/microVMs with syscall filters and cgroup limits.</p></div>
+      </div>
+    </section>
+
+    <section id="dfs" data-track>
+      <h2>Case 6: Distributed file system (GFS / HDFS)</h2>
+<h3>Requirements</h3>
+<p>Store huge files (GB to TB) across thousands of commodity machines that fail daily; optimised for large sequential reads and appends rather than small random writes.</p>
+<h3>Architecture</h3>
+<ul><li><strong>Files are split into large blocks/chunks</strong> (64 to 256 MB), each <strong>replicated</strong> (default 3) on different machines and racks.</li><li>A <strong>metadata server</strong> (NameNode / GFS master) keeps the namespace and the map file to block to locations <strong>in memory</strong>, persisted via an edit log plus checkpoints. It is a single point of failure, so use a standby with shared journal (HDFS HA with ZooKeeper).</li><li><strong>DataNodes / chunkservers</strong> store blocks and send <strong>heartbeats</strong> and block reports. Missing heartbeats mark a node dead and trigger <strong>re-replication</strong> to restore the replica count.</li><li><strong>Read</strong>: client asks the metadata server for block locations, then reads directly from the nearest DataNode (data never flows through the master).</li><li><strong>Write</strong>: the client gets a list of nodes for each block and streams data through a <strong>replication pipeline</strong> (A to B to C); acknowledgements flow back.</li><li><strong>Rack awareness</strong>: put replicas on at least two racks, so a rack failure loses at most one replica.</li><li><strong>Integrity</strong>: checksums per block, verified on read and by background scrubbing.</li><li>Small files are a problem (the metadata is in memory): pack them into larger containers (sequence files, Parquet).</li><li><strong>Erasure coding</strong> (for example 6 data + 3 parity blocks) cuts storage overhead from 3x to 1.5x for cold data at the price of reconstruction cost.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd25-06.py">import random
+random.seed(5)
+nodes = [f"n{i}" for i in range(9)]
+racks = {n: f"rack{i // 3}" for i, n in enumerate(nodes)}                  # 3 racks of 3 nodes
+def place(replicas=3):
+    first = random.choice(nodes)
+    second = random.choice([n for n in nodes if racks[n] != racks[first]])
+    third = random.choice([n for n in nodes if racks[n] == racks[second] and n != second])
+    return [first, second, third]
+blocks = {f"blk{i}": place() for i in range(6)}
+print({b: [f"{n}/{racks[n]}" for n in ns] for b, ns in list(blocks.items())[:2]})
+dead = "n4"
+under = [b for b, ns in blocks.items() if dead in ns]
+for b in under:                                                           # re-replicate to restore 3 copies
+    live = [n for n in blocks[b] if n != dead]
+    new = random.choice([n for n in nodes if n not in blocks[b]])
+    blocks[b] = live + [new]
+print(f"node {dead} died: re-replicated {len(under)} block(s); every block still has 3 copies on &gt;= 2 racks:",
+      all(len(set(ns)) == 3 and len({racks[n] for n in ns}) &gt;= 2 for ns in blocks.values()))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>{'blk0': ['n4/rack1', 'n8/rack2', 'n7/rack2'], 'blk1': ['n8/rack2', 'n0/rack0', 'n2/rack0']}
+node n4 died: re-replicated 1 block(s); every block still has 3 copies on &gt;= 2 racks: True</code></pre>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Infrastructure cases are won on correctness details: Snowflake needs unique workers and a monotonic clock, locks need fencing tokens, schedulers need leases and idempotent jobs, exchanges need a deterministic single-threaded matcher with a journal, judges need a real sandbox, and file systems need replication placement and re-replication.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd25-q08" data-topic="Case studies 6" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In HDFS, how does a client read a file?</p></div>
+        <ul class="q-options">
+          <li data-key="A">All data flows through the NameNode <span class="q-why">Only metadata does.</span></li>
+          <li data-key="B">It gets block locations from the metadata server and reads blocks directly from DataNodes <span class="q-why">Correct.</span></li>
+          <li data-key="C">From a single machine <span class="q-why">No.</span></li>
+          <li data-key="D">From the database <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>This keeps the master off the data path.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What triggers re-replication?</summary><div class="answer"><p>Missed heartbeats mark a DataNode dead, and the metadata server copies its blocks to restore the target replica count.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Case studies 6</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Case studies 6">
+<details class="recall iq" data-level="basic" data-topic="Case studies 6"><summary><span class="tag ok">Basic</span> Why are UUIDs sometimes a poor primary key?</summary><div class="answer"><p>Random 128-bit values are large and scatter inserts across a B-tree. Time-ordered ids such as ULID, UUIDv7 or Snowflake give locality.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 6"><summary><span class="tag warn">Medium</span> Describe the Snowflake id layout.</summary><div class="answer"><p>1 sign bit, 41 bits of milliseconds since a custom epoch, 10 bits of worker id and 12 bits of sequence, giving 4096 ids per millisecond per worker.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 6"><summary><span class="tag warn">Medium</span> What goes wrong if the clock moves backwards in a Snowflake generator?</summary><div class="answer"><p>It could repeat timestamps and produce duplicate ids. Detect it, wait or refuse, and keep the last timestamp.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 6"><summary><span class="tag warn">Medium</span> Why does a lease-based distributed lock need fencing tokens?</summary><div class="answer"><p>A paused holder can wake after its lease expired and write while another holds the lock. The resource rejects tokens older than the newest seen.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 6"><summary><span class="tag warn">Medium</span> How do multiple scheduler instances avoid running the same job twice?</summary><div class="answer"><p>Partition jobs by hash and claim jobs with a conditional update that sets a lease, so only one instance wins; jobs are still idempotent for lease expiry.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 6"><summary><span class="tag warn">Medium</span> How are retries handled in a job scheduler?</summary><div class="answer"><p>Exponential backoff with jitter, an attempt counter and a dead letter state after the limit.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 6"><summary><span class="tag warn">Medium</span> How does a code judge keep untrusted code safe?</summary><div class="answer"><p>Containers or microVMs with cgroup CPU and memory limits, seccomp filters, no network, read-only filesystems and wall-clock timeouts, with fresh sandboxes per run.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 6"><summary><span class="tag warn">Medium</span> How does a client read a file in HDFS?</summary><div class="answer"><p>It asks the NameNode for block locations, then reads blocks directly from the nearest DataNodes; data does not flow through the NameNode.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 6"><summary><span class="tag bad">Advanced</span> Redis lock versus ZooKeeper or etcd lock?</summary><div class="answer"><p>Redis is fast but not consensus-based, so failover can lose a lock. ZooKeeper and etcd use consensus and provide stronger guarantees and revision numbers usable as fencing tokens.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 6"><summary><span class="tag bad">Advanced</span> Why is an exchange matching engine single-threaded per symbol?</summary><div class="answer"><p>Price-time priority needs strict deterministic ordering, and avoiding locks gives microsecond latency. Throughput scales by sharding symbols.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 6"><summary><span class="tag bad">Advanced</span> How does a matching engine recover from a crash?</summary><div class="answer"><p>Replay the sequenced input journal into a fresh book (event sourcing), or fail over to a hot standby that processed the same sequence.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 6"><summary><span class="tag bad">Advanced</span> How does HDFS stay available when nodes die?</summary><div class="answer"><p>Blocks are replicated (3 by default) across racks; missed heartbeats trigger re-replication; the NameNode has a standby with a shared edit log.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 6"><summary><span class="tag bad">Advanced</span> Why does HDFS struggle with many small files?</summary><div class="answer"><p>The NameNode keeps all metadata in memory, so millions of small files exhaust it; pack them into larger containers.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 6"><summary><span class="tag bad">Advanced</span> Replication versus erasure coding?</summary><div class="answer"><p>Replication (3x) is simple and fast to read; erasure coding (for example 6+3) cuts overhead to 1.5x for cold data but makes reconstruction costlier.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd24-case-5.html"><span class="dir">Previous</span><span>SD24 Case studies 5: nearby search, maps routing, e-commerce checkout, flash sale, hotel booking</span></a>
+      <a class="next" href="sd26-tradeoffs-mock.html"><span class="dir">Next</span><span>SD26 Trade-offs, decision tables and mock interview walkthroughs</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

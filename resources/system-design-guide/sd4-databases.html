@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD4">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Databases: SQL, NoSQL and how to choose | System Design</title>
+<meta name="description" content="Relational and NoSQL families, ACID, indexes (B-tree and LSM), data modeling, access patterns and a decision guide for choosing storage.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD4</p>
+      <h1>Databases: SQL, NoSQL and how to choose</h1>
+      <p class="lede">The database is usually the hardest thing to change later, so the choice deserves care. This part explains what each kind of database is good at and why, from how it stores bytes up to how you choose.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag">~3 hours</span></div>
+    </div>
+
+    <section id="why" data-track>
+      <h2>Why there are so many databases</h2>
+<h3>Intuition</h3>
+<p>A database promises to store data durably and give it back quickly. Different workloads need different promises. A bank needs every transfer to be exact. A social feed needs to write millions of posts per second. A search box needs to find words inside text. No single design is best at all of these, so we have families of databases, each tuned for a different trade-off.</p>
+<h3>The families in one table</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Family</th><th>Data model</th><th>Strength</th><th>Typical examples</th></tr></thead>
+<tbody>
+<tr><td>Relational (SQL)</td><td>Tables of rows with a schema, joined by keys</td><td>Transactions, joins, flexible queries</td><td>PostgreSQL, MySQL, SQL Server, Oracle</td></tr><tr><td>Key-value</td><td>Key to opaque value</td><td>Very fast point lookups, simple scaling</td><td>Redis, DynamoDB, Riak, etcd</td></tr><tr><td>Document</td><td>Key to JSON-like document</td><td>Flexible schema, nested data</td><td>MongoDB, Couchbase, Firestore</td></tr><tr><td>Wide-column</td><td>Rows with sparse, grouped columns</td><td>Huge write volume, time-ordered data</td><td>Cassandra, HBase, Bigtable, ScyllaDB</td></tr><tr><td>Graph</td><td>Nodes and edges</td><td>Relationship traversal</td><td>Neo4j, Neptune, JanusGraph</td></tr><tr><td>Time-series</td><td>Timestamp plus values</td><td>Metrics, compression, rollups</td><td>InfluxDB, TimescaleDB, Prometheus</td></tr><tr><td>Search</td><td>Inverted index over text</td><td>Full-text and faceted search</td><td>Elasticsearch, OpenSearch, Solr</td></tr><tr><td>Object / blob</td><td>Large files by key</td><td>Cheap, durable bulk storage</td><td>S3, GCS, Azure Blob</td></tr><tr><td>In-memory</td><td>Data in RAM</td><td>Microsecond access</td><td>Redis, Memcached</td></tr><tr><td>NewSQL</td><td>SQL with horizontal scale</td><td>Distributed transactions</td><td>CockroachDB, Spanner, TiDB, YugabyteDB</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout note"><span class="callout-title">Terms</span><p><strong>SQL</strong> is the query language. <strong>Relational</strong> is the data model. <strong>NoSQL</strong> loosely means "not only relational". Many NoSQL systems now support SQL-like queries, and many SQL systems store JSON. Judge a database by its guarantees and access patterns, not by the label.</p></div>
+    </section>
+
+    <section id="relational" data-track>
+      <h2>Relational databases and ACID</h2>
+<h3>The model</h3>
+<p>Data is stored in <strong>tables</strong>. A row is one record, a column is one field with a type. A <strong>primary key</strong> uniquely identifies a row. A <strong>foreign key</strong> points at another table's primary key. Queries combine tables with <strong>joins</strong>. The schema enforces structure and constraints (NOT NULL, UNIQUE, CHECK, FOREIGN KEY), so bad data is rejected at the door.</p>
+<h3>ACID</h3>
+<p>A <strong>transaction</strong> groups several operations into one all-or-nothing unit. ACID describes the guarantees.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Letter</th><th>Meaning</th><th>Plain language</th><th>How it is built</th></tr></thead>
+<tbody>
+<tr><td>Atomicity</td><td>All or nothing</td><td>A transfer debits and credits, or does neither</td><td>Write-ahead log, undo</td></tr><tr><td>Consistency</td><td>Valid state to valid state</td><td>Constraints always hold after commit</td><td>Constraints, triggers, application rules</td></tr><tr><td>Isolation</td><td>Concurrent transactions do not interfere</td><td>Two transfers on one account do not corrupt it</td><td>Locks, multi-version concurrency control (MVCC)</td></tr><tr><td>Durability</td><td>Committed data survives crashes</td><td>Power loss does not lose a committed payment</td><td>Write-ahead log flushed to disk, replication</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Write-ahead logging</h3>
+<p>Before changing data pages, the database appends the intended change to a sequential <strong>write-ahead log (WAL)</strong> and flushes it. After a crash it replays the log to restore committed work and undo unfinished work. Sequential appends are fast, which is why durability costs less than you would think. The same log is shipped to replicas for replication (<a href="sd5-replication-sharding.html">SD5</a>).</p>
+<h3>Normalisation and its cost</h3>
+<p>Normalising splits data into tables so each fact is stored once, avoiding update anomalies. The cost is joins. At large scale, selective <strong>denormalisation</strong> (copying a field into another table) trades extra storage and update work for faster reads. Decide per access pattern.</p>
+<h3>When relational is the right default</h3>
+<ul><li>Data has relationships and you need joins and constraints.</li><li>You need multi-row transactions (payments, inventory, bookings).</li><li>The access patterns are not fully known yet, so ad hoc queries matter.</li><li>Data fits one machine, or one machine plus replicas (this covers most products for a long time).</li></ul>
+<div class="callout tip"><span class="callout-title">Boring is good</span><p>For most new systems, start with PostgreSQL or MySQL. Move a specific workload to another store only when you can name the numbers that justify it.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd4-q01" data-topic="Databases" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In ACID, which property is typically implemented with a write-ahead log?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Isolation <span class="q-why">Isolation uses locks or MVCC.</span></li>
+          <li data-key="B">Durability and atomicity <span class="q-why">Correct: the log lets the database redo committed work and undo unfinished work.</span></li>
+          <li data-key="C">Consistency only <span class="q-why">Consistency also depends on constraints.</span></li>
+          <li data-key="D">None of them <span class="q-why">The WAL is central to durability.</span></li>
+        </ul>
+        <div class="q-explain"><p>The WAL records the change before it is applied, enabling crash recovery.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Define ACID.</summary><div class="answer"><p>Atomicity, consistency, isolation, durability: all-or-nothing, valid state, no interference between concurrent transactions, committed data survives crashes.</p></div></details>
+      </div>
+    </section>
+
+    <section id="indexes" data-track>
+      <h2>How a database finds data: indexes</h2>
+<h3>Intuition</h3>
+<p>Without an index, a query scans every row (a <strong>full table scan</strong>). An index is a separate sorted structure that lets the database jump to matching rows, like the index at the back of a book.</p>
+<h3>B-tree indexes</h3>
+<p>The default in relational databases. A balanced tree of pages with high fan-out (hundreds of keys per page), so even a billion rows need only 3 to 4 page reads to find a key. B-trees keep keys sorted, so they support equality, range queries, <code>ORDER BY</code> and prefix matches. Updates modify pages <strong>in place</strong>, so random writes can be costly, and the tree needs rebalancing.</p>
+<div class="formula"><div class="f-title">B-tree depth</div><div class="f-body">depth = ceil( log_f (N) )</div><dl class="f-defs"><dt>N</dt><dd>number of keys</dd><dt>f</dt><dd>fan-out, keys per page, often 100 to 500</dd></dl></div>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd4-01.py">import math
+for n in (10**6, 10**9, 10**12):
+    print(n, "keys, fan-out 200 -&gt; depth", math.ceil(math.log(n, 200)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>1000000 keys, fan-out 200 -&gt; depth 3
+1000000000 keys, fan-out 200 -&gt; depth 4
+1000000000000 keys, fan-out 200 -&gt; depth 6</code></pre>
+<h3>LSM trees</h3>
+<p>Used by Cassandra, RocksDB, LevelDB and HBase. Writes go to an in-memory sorted table (<strong>memtable</strong>) plus a log. When the memtable fills it is flushed as an immutable sorted file (<strong>SSTable</strong>). Background <strong>compaction</strong> merges files. Reads check the memtable and several SSTables, aided by <strong>Bloom filters</strong> that skip files that definitely lack the key.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>B-tree</th><th>LSM tree</th></tr></thead>
+<tbody>
+<tr><td>Writes</td><td>In-place, random I/O, slower under heavy writes</td><td>Sequential appends, very fast</td></tr><tr><td>Reads</td><td>One tree walk, predictable</td><td>May touch several files, tuned by Bloom filters and compaction</td></tr><tr><td>Space</td><td>Some fragmentation</td><td>Space amplification until compaction</td></tr><tr><td>Write amplification</td><td>Lower to moderate</td><td>Higher (data rewritten by compaction)</td></tr><tr><td>Best for</td><td>Read-heavy and mixed OLTP</td><td>Write-heavy ingestion, time-ordered data</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Index design rules</h3>
+<ul><li>Index columns used in <code>WHERE</code>, <code>JOIN</code> and <code>ORDER BY</code>.</li><li>A <strong>composite index</strong> on <code>(a, b)</code> helps queries on <code>a</code> or on <code>a</code> and <code>b</code>, but not on <code>b</code> alone (leftmost prefix rule).</li><li>Put equality columns first, then the range column.</li><li>A <strong>covering index</strong> contains every column the query needs, so the table is never touched.</li><li>Every index speeds reads and slows writes and uses space. Do not index everything.</li><li>Low-selectivity columns (a boolean) are poor index candidates.</li><li>Read the query plan (<code>EXPLAIN</code>) to confirm the database really uses the index. The Python and SQL guide covers plans in depth.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd4-q02" data-topic="Databases" data-type="numeric" data-answer="3" data-tol="0">
+        <div class="q-stem"><p>A B-tree has fan-out 100. About how many levels does it need for 10^6 keys?</p></div>
+        <div class="q-explain"><p>log base 100 of 10^6 = 3 levels.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd4-q03" data-topic="Databases" data-type="single" data-answer="B">
+        <div class="q-stem"><p>You have a composite index on (country, city). Which query can use it efficiently?</p></div>
+        <ul class="q-options">
+          <li data-key="A">WHERE city = 'Paris' <span class="q-why">Skips the leftmost column.</span></li>
+          <li data-key="B">WHERE country = 'FR' <span class="q-why">Correct: leftmost prefix.</span></li>
+          <li data-key="C">WHERE city LIKE '%ar%' <span class="q-why">A leading wildcard cannot use an index.</span></li>
+          <li data-key="D">None <span class="q-why">Query B works.</span></li>
+        </ul>
+        <div class="q-explain"><p>Composite indexes support queries on a leftmost prefix of their columns.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd4-q04" data-topic="Databases" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which structure is best for a very write-heavy workload with sequential appends?</p></div>
+        <ul class="q-options">
+          <li data-key="A">B-tree <span class="q-why">In-place updates cause random I/O.</span></li>
+          <li data-key="B">LSM tree <span class="q-why">Correct.</span></li>
+          <li data-key="C">Hash index on disk <span class="q-why">Not designed for this.</span></li>
+          <li data-key="D">No index <span class="q-why">Reads would suffer.</span></li>
+        </ul>
+        <div class="q-explain"><p>LSM trees turn random writes into sequential flushes and compaction.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>B-tree versus LSM tree?</summary><div class="answer"><p>B-trees update in place and read predictably; LSM trees append sequentially and compact later, favouring writes.</p></div></details>
+        <details class="recall"><summary>What is the leftmost prefix rule?</summary><div class="answer"><p>A composite index on (a, b, c) serves queries on a, (a, b) and (a, b, c) but not on b or c alone.</p></div></details>
+      </div>
+    </section>
+
+    <section id="nosql" data-track>
+      <h2>Choosing a NoSQL model</h2>
+<h3>Key-value stores</h3>
+<p><code>get(key)</code>, <code>put(key, value)</code>, <code>delete(key)</code>. The value is opaque, so no queries on contents. This simplicity gives extreme speed and trivial partitioning. Use for sessions, caches, feature flags, shopping carts, rate limit counters, user profiles read by id. DynamoDB adds secondary indexes and conditional writes.</p>
+<h3>Document stores</h3>
+<p>Store a self-contained JSON document per key, with a flexible schema and the ability to query inside documents. Good when an entity is read and written as a whole and has nested structure (a product with variants, a user profile, a blog post with comments). Weakness: joins across documents are weak or manual, and transactions across documents are limited or newer.</p>
+<h3>Wide-column stores</h3>
+<p>Data is addressed by <strong>row key</strong>, then column family and column, sorted by key. Designed for massive write throughput and horizontal scale, with queries planned around the <strong>partition key</strong> and a <strong>clustering order</strong>. In Cassandra you design <strong>one table per query</strong>, denormalising heavily.</p>
+<pre><code>-- Cassandra: tweets by user, newest first (query-first modelling)
+CREATE TABLE tweets_by_user (
+  user_id uuid,
+  created_at timeuuid,
+  tweet_id uuid,
+  body text,
+  PRIMARY KEY ((user_id), created_at)
+) WITH CLUSTERING ORDER BY (created_at DESC);</code></pre>
+<h3>Graph databases</h3>
+<p>Nodes, edges and properties, with traversal queries ("friends of friends who like X") that would be many self-joins in SQL. Choose when relationships are the point (social graphs, fraud rings, recommendation, knowledge graphs, network topology).</p>
+<h3>Time-series databases</h3>
+<p>Optimised for append-only timestamped data: columnar compression, downsampling, retention policies and fast range aggregations. Use for metrics, IoT, finance ticks.</p>
+<h3>Search engines</h3>
+<p>An <strong>inverted index</strong> maps each term to the list of documents containing it, enabling fast full-text search, ranking (TF-IDF, BM25), fuzzy matching and facets. They are secondary stores: keep the source of truth elsewhere and index into the search engine (<a href="sd12-data-systems.html">SD12</a>).</p>
+<h3>Object storage</h3>
+<p>Stores immutable blobs addressed by key with eleven nines of durability, very low cost and huge scale, accessed over HTTP. Use for images, video, backups, logs, data lake files. Not for small random updates or low-latency queries.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd4-q05" data-topic="Databases" data-type="multi" data-answer="A,C,D">
+        <div class="q-stem"><p>Which are good fits for a key-value store? Select all.</p></div>
+        <ul class="q-options">
+          <li data-key="A">User sessions</li>
+          <li data-key="B">Complex multi-table joins</li>
+          <li data-key="C">Rate limit counters</li>
+          <li data-key="D">Shopping cart by user id</li>
+        </ul>
+        <div class="q-explain"><p>Key-value stores excel at point lookups and counters; joins are the relational strength.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>In Cassandra how do you model data?</summary><div class="answer"><p>Query first: one table per query, partition key chosen for the hottest lookup, with deliberate duplication.</p></div></details>
+      </div>
+    </section>
+
+    <section id="modeling" data-track>
+      <h2>Data modeling for access patterns</h2>
+<h3>The approach</h3>
+<ol><li>List the queries first: what do we read, by what key, how often, how fast?</li><li>Design the <strong>key</strong> (partition key and sort key) to serve the hottest query with one lookup.</li><li>Add secondary indexes or duplicate data for other queries.</li><li>Check for <strong>hot partitions</strong>: one key receiving a disproportionate share of traffic.</li><li>Estimate size per partition and growth.</li></ol>
+<h3>Example: chat messages</h3>
+<p>Queries: "latest 50 messages in a conversation" and "all conversations of a user".</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Query</th><th>Table</th><th>Partition key</th><th>Sort key</th></tr></thead>
+<tbody>
+<tr><td>Messages of a conversation</td><td>messages</td><td>conversation_id</td><td>message_time descending</td></tr><tr><td>Conversations of a user</td><td>user_conversations</td><td>user_id</td><td>last_message_time descending</td></tr>
+</tbody>
+</table>
+</div>
+<p>Writing one message updates both tables. That duplication is deliberate: reads become single-partition lookups.</p>
+<h3>Hot keys</h3>
+<p>If one celebrity account or one popular product gets enormous traffic, its partition becomes a bottleneck. Remedies: add a random suffix to spread writes, cache aggressively, or split the key by time bucket.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd4-q06" data-topic="Databases" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A single celebrity partition key is overloaded. Which is a valid mitigation?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Make the key longer <span class="q-why">Does not spread load.</span></li>
+          <li data-key="B">Add a random suffix or time bucket to spread writes, and cache reads <span class="q-why">Correct.</span></li>
+          <li data-key="C">Turn off replication <span class="q-why">Makes it worse.</span></li>
+          <li data-key="D">Use fewer servers <span class="q-why">Makes it worse.</span></li>
+        </ul>
+        <div class="q-explain"><p>Spread hot keys across partitions and shield them with caching.</p></div>
+      </div>
+    </section>
+
+    <section id="choosing" data-track>
+      <h2>Choosing a database</h2>
+<h3>A decision guide</h3>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="Start with the access pattern and the consistency requirement, then pick the simplest store that fits." style="min-width:760px"><defs><marker id="ah8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah8a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah8b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah8d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah8)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah8)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah8)"/><line x1="747.0" y1="78.0" x2="747.0" y2="118.0" class="d-line" marker-end="url(#ah8)"/><line x1="662.0" y1="147.0" x2="618.0" y2="147.0" class="d-line" marker-end="url(#ah8)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle" class="d-sm">Need transactions and joins?</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle">Yes: relational</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle">No: access pattern?</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle">Key lookup: key-value</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="151.5" text-anchor="middle" class="d-sm">Text search: search engine</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="151.5" text-anchor="middle" class="d-sm">Huge writes: wide-column</text></svg>
+</div>
+<figcaption>Start with the access pattern and the consistency requirement, then pick the simplest store that fits.</figcaption></figure>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Requirement</th><th>Pick</th></tr></thead>
+<tbody>
+<tr><td>Money, orders, inventory, multi-row invariants</td><td>Relational (or NewSQL for scale)</td></tr><tr><td>Fast lookups by id, caching, sessions</td><td>Key-value or in-memory</td></tr><tr><td>Flexible documents read as a whole</td><td>Document</td></tr><tr><td>Millions of writes per second, time-ordered</td><td>Wide-column or time-series</td></tr><tr><td>Rich relationship queries</td><td>Graph</td></tr><tr><td>Free-text and faceted search</td><td>Search engine (as a secondary index)</td></tr><tr><td>Images, video, backups</td><td>Object storage</td></tr><tr><td>Analytics over huge history</td><td>Columnar warehouse (<a href="sd12-data-systems.html">SD12</a>)</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Polyglot persistence</h3>
+<p>Real systems use several stores, each doing what it is best at, linked by events or change data capture: a relational source of truth, a cache in front, a search index for queries, object storage for media, a warehouse for analytics. The price is that you must keep them in sync and reason about which is authoritative.</p>
+<div class="callout trap"><span class="callout-title">Trap</span><p>Do not choose MongoDB or Cassandra because "it scales" and then rebuild joins and transactions in application code. Do not choose a relational database for a 1 million writes per second ingest without partitioning. Name the access pattern and the number first.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd4-q07" data-topic="Databases" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which store should be the source of truth for payments with invariants across rows?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Key-value cache <span class="q-why">No transactional guarantees.</span></li>
+          <li data-key="B">Relational database with transactions <span class="q-why">Correct.</span></li>
+          <li data-key="C">Search engine <span class="q-why">A secondary index, not a source of truth.</span></li>
+          <li data-key="D">Object storage <span class="q-why">Not suitable for updates.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use ACID transactions where correctness across rows matters.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is polyglot persistence?</summary><div class="answer"><p>Using several specialised stores in one system, each for the job it is best at, with one declared source of truth.</p></div></details>
+      </div>
+    </section>
+
+    <section id="oltp" data-track>
+      <h2>OLTP and OLAP</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>OLTP (transactions)</th><th>OLAP (analytics)</th></tr></thead>
+<tbody>
+<tr><td>Queries</td><td>Many small reads and writes touching few rows</td><td>Few large scans and aggregations over many rows</td></tr><tr><td>Storage layout</td><td>Row-oriented</td><td>Column-oriented</td></tr><tr><td>Latency goal</td><td>Milliseconds</td><td>Seconds to minutes</td></tr><tr><td>Examples</td><td>PostgreSQL, MySQL, DynamoDB</td><td>BigQuery, Snowflake, Redshift, ClickHouse</td></tr>
+</tbody>
+</table>
+</div>
+<p>Row stores keep all fields of a row together (fast to fetch a record). Column stores keep each column together, which compresses well and lets an aggregate read only the columns it needs. Run analytics on a separate warehouse so heavy scans do not slow the live product.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd4-q08" data-topic="Databases" data-type="fill" data-answer="column|columns">
+        <div class="q-stem"><p>Analytics databases usually store data by <input class="q-input" aria-label="blank 1"> rather than by row.</p></div>
+        <div class="q-explain"><p>Column-oriented storage compresses well and reads only the needed columns.</p></div>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Databases</h2>
+      <p class="muted">10 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Databases">
+<details class="recall iq" data-level="basic" data-topic="Databases"><summary><span class="tag ok">Basic</span> SQL versus NoSQL: how do you choose?</summary><div class="answer"><p>From access patterns and consistency needs. Relational for joins, transactions and flexible queries. Key-value for fast lookups, document for nested entities, wide-column for massive writes, graph for relationships, search engines for text.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Databases"><summary><span class="tag ok">Basic</span> What does ACID mean?</summary><div class="answer"><p>Atomicity (all or nothing), consistency (valid state to valid state), isolation (concurrent transactions do not interfere), durability (committed data survives crashes).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Databases"><summary><span class="tag ok">Basic</span> What is an index and what does it cost?</summary><div class="answer"><p>A sorted structure (usually B-tree) that lets the database find rows without scanning the table. It speeds reads but uses space and slows writes.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Databases"><summary><span class="tag warn">Medium</span> B-tree versus LSM tree?</summary><div class="answer"><p>B-trees update in place, with predictable reads and more random write I/O. LSM trees buffer writes in memory, flush sorted files and compact later, giving very fast writes and heavier read paths.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Databases"><summary><span class="tag warn">Medium</span> What is the leftmost prefix rule for composite indexes?</summary><div class="answer"><p>An index on (a, b, c) supports queries filtering on a, on a and b, or on a, b and c, but not on b or c alone.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Databases"><summary><span class="tag warn">Medium</span> When would you denormalise?</summary><div class="answer"><p>When read performance and simplicity for known queries outweigh the cost of duplicate data and more complex updates, typically at large scale or in NoSQL designs.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Databases"><summary><span class="tag warn">Medium</span> OLTP versus OLAP?</summary><div class="answer"><p>OLTP handles many small transactions on row stores with millisecond latency. OLAP runs large scans and aggregations on column stores in warehouses. Keep analytics off the transactional database.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Databases"><summary><span class="tag bad">Advanced</span> How does a write-ahead log provide durability?</summary><div class="answer"><p>The change is appended and flushed to a sequential log before data pages are modified. After a crash the database replays the log to redo committed work and undo uncommitted work. The log also feeds replication.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Databases"><summary><span class="tag bad">Advanced</span> Why would you pick Cassandra and how do you model data in it?</summary><div class="answer"><p>For huge write throughput, linear scale and high availability. Model by query: one table per query with a partition key for the lookup and clustering columns for ordering, accepting duplication and no joins.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Databases"><summary><span class="tag bad">Advanced</span> What is polyglot persistence and its risk?</summary><div class="answer"><p>Using different stores for different workloads. The risk is keeping them consistent, so declare one source of truth and propagate changes through events or change data capture.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd3-load-balancing.html"><span class="dir">Previous</span><span>SD3 Scaling, load balancing and proxies</span></a>
+      <a class="next" href="sd5-replication-sharding.html"><span class="dir">Next</span><span>SD5 Replication, partitioning and consistent hashing</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

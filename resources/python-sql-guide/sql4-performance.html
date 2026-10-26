@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="SQL4">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Query performance, indexing and choosing a database engine | Python + SQL</title>
+<meta name="description" content="How the optimiser works, reading execution plans, designing indexes that are actually used, common slow-query patterns and fixes, partitioning, statistics, and differences between database engines.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SQL4</p>
+      <h1>Query performance, indexing and choosing a database engine</h1>
+      <p class="lede">A query can return the right answer and still be unusable. This part teaches how to see what the database is doing, how to design indexes, and which patterns make queries slow. Execution plans below were produced by a real database.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~4 hours</span></div>
+    </div>
+
+    <section id="optimiser" data-track>
+      <h2>How the database runs your query</h2>
+<h3>Parse, plan, execute</h3>
+<ol><li><strong>Parse</strong> the text and check names and permissions.</li><li>The <strong>optimiser</strong> enumerates possible plans (access paths, join order, join algorithms) and picks the cheapest using <strong>statistics</strong> (row counts, value distributions).</li><li>The <strong>executor</strong> runs the chosen plan.</li></ol>
+<p>Because SQL is declarative, two queries that mean the same can have very different plans; you tune by giving the optimiser good indexes and fresh statistics, and by writing queries it can reason about.</p>
+<h3>Access paths</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Method</th><th>Meaning</th><th>Good when</th></tr></thead>
+<tbody>
+<tr><td>Full table scan</td><td>Read every row</td><td>Small tables, or you need most rows</td></tr><tr><td>Index seek (lookup)</td><td>Walk the B-tree to matching rows</td><td>Selective filters (a few rows)</td></tr><tr><td>Index range scan</td><td>Walk a range in an index</td><td>Ranges, sorted output</td></tr><tr><td>Index-only (covering) scan</td><td>Answer from the index alone</td><td>All needed columns are in the index</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Join algorithms</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Algorithm</th><th>How</th><th>Best when</th></tr></thead>
+<tbody>
+<tr><td>Nested loop</td><td>For each outer row, look up matches in the inner (ideally by index)</td><td>Small outer side, indexed inner side</td></tr><tr><td>Hash join</td><td>Build a hash table on the smaller input, probe with the other</td><td>Large unsorted inputs, equality joins</td></tr><tr><td>Merge join</td><td>Merge two sorted inputs</td><td>Both inputs already sorted (indexes)</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql4-q01" data-topic="SQL performance" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does the query optimiser use to choose a plan?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The order you wrote the tables <span class="q-why">Mostly irrelevant.</span></li>
+          <li data-key="B">Statistics about the data plus the available indexes <span class="q-why">Correct.</span></li>
+          <li data-key="C">Random choice <span class="q-why">No.</span></li>
+          <li data-key="D">Table names <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It estimates costs from row counts and value distributions.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name three join algorithms.</summary><div class="answer"><p>Nested loop, hash join and merge join.</p></div></details>
+      </div>
+    </section>
+
+    <section id="plans" data-track>
+      <h2>Reading execution plans</h2>
+<h3>EXPLAIN</h3>
+<p>Every database has an <code>EXPLAIN</code> command: PostgreSQL <code>EXPLAIN (ANALYZE, BUFFERS)</code>, MySQL <code>EXPLAIN</code> and <code>EXPLAIN ANALYZE</code>, SQL Server graphical plans, SQLite <code>EXPLAIN QUERY PLAN</code>. <code>ANALYZE</code> actually runs the query and shows real times and row counts versus estimates. Look for: scans on big tables, large gaps between <strong>estimated and actual</strong> rows, sorts spilling to disk, nested loops with huge outer sides.</p>
+<h3>An index changes the plan</h3>
+<p>Here is a table with 5,000 rows. First without an index:</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql4-01.sql">CREATE TABLE t (id INTEGER PRIMARY KEY, email TEXT, country TEXT, score INTEGER);
+WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i &lt; 5000)
+INSERT INTO t SELECT i, 'user' || i || '@x.com', CASE i % 4 WHEN 0 THEN 'US' WHEN 1 THEN 'UK' WHEN 2 THEN 'FR' ELSE 'DE' END, i % 100 FROM n;
+EXPLAIN QUERY PLAN SELECT * FROM t WHERE email = 'user4242@x.com';</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>plan</th></tr></thead>
+<tbody><tr><td>SCAN t</td></tr></tbody>
+</table>
+</div>
+<p>Now add an index and look again:</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql4-02.sql">CREATE TABLE t (id INTEGER PRIMARY KEY, email TEXT, country TEXT, score INTEGER);
+WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i &lt; 5000)
+INSERT INTO t SELECT i, 'user' || i || '@x.com', CASE i % 4 WHEN 0 THEN 'US' WHEN 1 THEN 'UK' WHEN 2 THEN 'FR' ELSE 'DE' END, i % 100 FROM n;
+CREATE INDEX idx_t_email ON t(email);
+EXPLAIN QUERY PLAN SELECT * FROM t WHERE email = 'user4242@x.com';</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>plan</th></tr></thead>
+<tbody><tr><td>SEARCH t USING INDEX idx_t_email (email=?)</td></tr></tbody>
+</table>
+</div>
+<p><code>SCAN</code> reads every row (O(n)); <code>SEARCH ... USING INDEX</code> walks the index (O(log n)). Same query, different cost, no change to the SQL.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql4-q02" data-topic="SQL performance" data-type="single" data-answer="B">
+        <div class="q-stem"><p>An EXPLAIN shows SCAN on a 100 million row table for a single-row lookup. What is the likely fix?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Add more RAM only <span class="q-why">Treats the symptom.</span></li>
+          <li data-key="B">Create an index on the filtered column <span class="q-why">Correct.</span></li>
+          <li data-key="C">Use SELECT * <span class="q-why">No.</span></li>
+          <li data-key="D">Restart the database <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>An index turns the O(n) scan into an O(log n) seek.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What do you look for in an execution plan?</summary><div class="answer"><p>Full scans on big tables, estimate versus actual row gaps, expensive sorts, and nested loops with large outer inputs.</p></div></details>
+      </div>
+    </section>
+
+    <section id="indexes" data-track>
+      <h2>Designing indexes</h2>
+<h3>Which index helps</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql4-03.sql">CREATE TABLE t (id INTEGER PRIMARY KEY, email TEXT, country TEXT, score INTEGER, created TEXT);
+WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i &lt; 5000)
+INSERT INTO t SELECT i, 'user' || i || '@x.com', CASE i % 4 WHEN 0 THEN 'US' WHEN 1 THEN 'UK' WHEN 2 THEN 'FR' ELSE 'DE' END, i % 100, date('2024-01-01', '+' || (i % 365) || ' days') FROM n;
+CREATE INDEX idx_country_score ON t(country, score);
+EXPLAIN QUERY PLAN SELECT id FROM t WHERE country = 'FR' AND score &gt; 90;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>plan</th></tr></thead>
+<tbody><tr><td>SEARCH t USING COVERING INDEX idx_country_score (country=? AND score&gt;?)</td></tr></tbody>
+</table>
+</div>
+<p>The composite index <code>(country, score)</code> serves an equality on <code>country</code> <strong>and</strong> a range on <code>score</code>.</p>
+<h3>Composite index rules</h3>
+<ul><li><strong>Equality columns first, range column last.</strong> An index on <code>(country, score)</code> helps <code>country = 'FR' AND score &gt; 90</code>; <code>(score, country)</code> would not use <code>country</code> after a range.</li><li><strong>Leftmost prefix</strong>: <code>(a, b, c)</code> supports filters on <code>a</code>, <code>a, b</code>, <code>a, b, c</code>, not <code>b</code> alone.</li><li>Add <code>ORDER BY</code> columns after the filter columns so the index also provides ordering and avoids a sort.</li><li><strong>Covering index</strong>: include every selected column (<code>INCLUDE (...)</code> in PostgreSQL and SQL Server) so the table is never read.</li></ul>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql4-04.sql">CREATE TABLE t (id INTEGER PRIMARY KEY, email TEXT, country TEXT, score INTEGER);
+WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i &lt; 2000)
+INSERT INTO t SELECT i, 'u' || i, CASE i % 4 WHEN 0 THEN 'US' ELSE 'UK' END, i % 100 FROM n;
+CREATE INDEX idx_cover ON t(country, score, email);
+EXPLAIN QUERY PLAN SELECT email FROM t WHERE country = 'US' AND score = 5;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>plan</th></tr></thead>
+<tbody><tr><td>SEARCH t USING COVERING INDEX idx_cover (country=? AND score=?)</td></tr></tbody>
+</table>
+</div>
+<p>The plan says <code>COVERING INDEX</code>: the answer comes from the index alone.</p>
+<h3>Partial and unique indexes, expression indexes</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql4-05.sql">CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT, deleted INTEGER DEFAULT 0);
+CREATE UNIQUE INDEX uq_email_live ON users(lower(email)) WHERE deleted = 0;   -- partial + expression
+INSERT INTO users (email) VALUES ('Ada@x.com');
+SELECT name FROM sqlite_master WHERE type = 'index' ORDER BY name;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th></tr></thead>
+<tbody><tr><td>uq_email_live</td></tr></tbody>
+</table>
+</div>
+<p>A <strong>partial index</strong> indexes only some rows (small and fast); an <strong>expression index</strong> supports queries on <code>lower(email)</code>. A unique partial index enforces "unique among non-deleted users".</p>
+<h3>Index costs and rules of thumb</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Cost</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>Writes</td><td>Each index must be updated on insert, update, delete</td></tr><tr><td>Space</td><td>Indexes can be as large as the table</td></tr><tr><td>Maintenance</td><td>Bloat and fragmentation, rebuild occasionally</td></tr><tr><td>Wrong choices</td><td>Low-selectivity columns (a boolean) rarely help</td></tr>
+</tbody>
+</table>
+</div>
+<p>Create indexes for <strong>real queries</strong> (found through slow query logs and plans), not speculatively. Remove unused indexes. Foreign key columns usually deserve an index (joins and cascading deletes).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql4-q03" data-topic="SQL performance" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which index best serves <code>WHERE country = 'FR' AND score &gt; 90</code>?</p></div>
+        <ul class="q-options">
+          <li data-key="A">(score, country) <span class="q-why">Range column first wastes the second column.</span></li>
+          <li data-key="B">(country, score) <span class="q-why">Correct.</span></li>
+          <li data-key="C">(id) <span class="q-why">No.</span></li>
+          <li data-key="D">None needed <span class="q-why">A scan would be slow.</span></li>
+        </ul>
+        <div class="q-explain"><p>Equality columns first, then the range column.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-sql4-q04" data-topic="SQL performance" data-type="multi" data-answer="A,B,D">
+        <div class="q-stem"><p>Which are downsides of adding many indexes? Select all.</p></div>
+        <ul class="q-options">
+          <li data-key="A">Slower inserts and updates</li>
+          <li data-key="B">More disk space</li>
+          <li data-key="C">Queries always become slower</li>
+          <li data-key="D">Maintenance such as bloat</li>
+        </ul>
+        <div class="q-explain"><p>Indexes usually speed reads; the cost is on writes, space and upkeep.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is a covering index?</summary><div class="answer"><p>An index containing every column a query needs so the table is never read.</p></div></details>
+      </div>
+    </section>
+
+    <section id="patterns" data-track>
+      <h2>Common slow patterns and fixes</h2>
+<h3>Non-sargable predicates</h3>
+<p>A <strong>sargable</strong> predicate lets the database use an index. Wrapping the column in a function defeats it.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Slow (index not used)</th><th>Better</th></tr></thead>
+<tbody>
+<tr><td><code>WHERE LOWER(email) = 'a@x.com'</code></td><td>Expression index on <code>lower(email)</code>, or store normalised email</td></tr><tr><td><code>WHERE YEAR(created) = 2024</code></td><td><code>WHERE created &gt;= '2024-01-01' AND created &lt; '2025-01-01'</code></td></tr><tr><td><code>WHERE col + 1 = 10</code></td><td><code>WHERE col = 9</code></td></tr><tr><td><code>WHERE name LIKE '%son'</code></td><td>Full-text index, trigram index, or reverse column</td></tr><tr><td><code>WHERE CAST(id AS TEXT) = '5'</code></td><td>Compare with the right type</td></tr><tr><td><code>WHERE a = 1 OR b = 2</code></td><td><code>UNION</code> of two indexed queries (sometimes)</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql4-06.sql">CREATE TABLE t (id INTEGER PRIMARY KEY, created TEXT);
+WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i &lt; 3000)
+INSERT INTO t SELECT i, date('2023-01-01', '+' || i || ' days') FROM n;
+CREATE INDEX idx_created ON t(created);
+EXPLAIN QUERY PLAN SELECT * FROM t WHERE strftime('%Y', created) = '2024';</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>plan</th></tr></thead>
+<tbody><tr><td>SCAN t</td></tr></tbody>
+</table>
+</div>
+<p>That plan <strong>scans</strong> because the function wraps the column. A range comparison on the raw column uses the index:</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql4-07.sql">CREATE TABLE t (id INTEGER PRIMARY KEY, created TEXT);
+WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i &lt; 3000)
+INSERT INTO t SELECT i, date('2023-01-01', '+' || i || ' days') FROM n;
+CREATE INDEX idx_created ON t(created);
+EXPLAIN QUERY PLAN SELECT * FROM t WHERE created &gt;= '2024-01-01' AND created &lt; '2025-01-01';</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>plan</th></tr></thead>
+<tbody><tr><td>SEARCH t USING COVERING INDEX idx_created (created&gt;? AND created&lt;?)</td></tr></tbody>
+</table>
+</div>
+<h3>Other frequent problems</h3>
+<ul><li><strong>SELECT \</strong>* reads unneeded columns and blocks covering indexes. Select what you need.</li><li><strong>N+1 queries</strong>: one query for a list, then one per item. Replace with a join or an <code>IN</code> batch (<a href="ps0-python-sql.html">PS0</a>).</li><li><strong>Large OFFSET pagination</strong>: the database reads and discards rows. Use keyset pagination (<code>WHERE id &gt; :last ORDER BY id LIMIT 20</code>) (<a href="../system-design-guide/sd9-apis.html">SD9</a>).</li><li><strong>Row-by-row processing</strong> in application code: use set-based SQL.</li><li><strong>Missing join conditions</strong> or joining on unindexed columns.</li><li><strong>Implicit type conversion</strong> (comparing a string column to a number) disables indexes.</li><li><strong>DISTINCT or GROUP BY to hide join duplicates</strong>: fix the join instead.</li><li><strong>COUNT(*) on huge tables</strong>: maintain a counter, use approximate counts, or index-only scans.</li><li><strong>Long transactions</strong> hold locks and block vacuum or purge.</li><li><strong>Stale statistics</strong>: run <code>ANALYZE</code> so estimates are accurate.</li><li><strong>Functions in the join or filter</strong> (<code>ON a.x = LOWER(b.y)</code>).</li></ul>
+<h3>Measure, change one thing, measure again</h3>
+<p>Workflow: find slow queries (slow query log, <code>pg_stat_statements</code>, performance schema), read the plan, add or fix an index or rewrite, re-run the plan, check that writes did not slow down, and keep the before and after numbers.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql4-q05" data-topic="SQL performance" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is <code>WHERE YEAR(created) = 2024</code> slow on an indexed <code>created</code> column?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Dates cannot be indexed <span class="q-why">They can.</span></li>
+          <li data-key="B">The function on the column prevents the index being used (non-sargable) <span class="q-why">Correct.</span></li>
+          <li data-key="C">YEAR is deprecated <span class="q-why">No.</span></li>
+          <li data-key="D">Because of ORDER BY <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Rewrite as created &gt;= '2024-01-01' AND created &lt; '2025-01-01'.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-sql4-q06" data-topic="SQL performance" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which is the best fix for deep OFFSET pagination being slow?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Bigger OFFSET <span class="q-why">Slower.</span></li>
+          <li data-key="B">Keyset pagination (WHERE id &gt; last_id ORDER BY id LIMIT n) <span class="q-why">Correct.</span></li>
+          <li data-key="C">COUNT(*) first <span class="q-why">No.</span></li>
+          <li data-key="D">DISTINCT <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Keyset pagination seeks with an index instead of skipping rows.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does sargable mean?</summary><div class="answer"><p>A predicate that lets the database use an index, which functions on the column usually break.</p></div></details>
+      </div>
+    </section>
+
+    <section id="scaling" data-track>
+      <h2>Scaling beyond one table</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Technique</th><th>Idea</th><th>Cost</th></tr></thead>
+<tbody>
+<tr><td><strong>Partitioning</strong></td><td>Split one large table into pieces by range (date), list or hash; queries on the key touch few partitions; drop old data by dropping a partition</td><td>Key must appear in queries; operational complexity</td></tr><tr><td><strong>Read replicas</strong></td><td>Offload reads to copies (<a href="../system-design-guide/sd5-replication-sharding.html">SD5</a>)</td><td>Replication lag</td></tr><tr><td><strong>Caching</strong></td><td>Redis in front of hot queries (<a href="../system-design-guide/sd7-caching.html">SD7</a>)</td><td>Invalidation</td></tr><tr><td><strong>Summary tables, materialised views</strong></td><td>Precompute aggregates</td><td>Staleness</td></tr><tr><td><strong>Archiving</strong></td><td>Move cold rows to cheaper storage</td><td>Two places to query</td></tr><tr><td><strong>Sharding</strong></td><td>Split data across servers</td><td>Cross-shard queries and transactions</td></tr><tr><td><strong>Connection pooling</strong></td><td>Reuse connections (PgBouncer)</td><td>Session state caveats</td></tr>
+</tbody>
+</table>
+</div>
+<p>Typical order: indexes and query fixes first, then caching and replicas, then partitioning, and sharding last.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql4-q07" data-topic="SQL performance" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is a sensible order for scaling a relational database?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Shard first <span class="q-why">Most complex step, do last.</span></li>
+          <li data-key="B">Fix queries and indexes, add cache and replicas, then partition, then shard <span class="q-why">Correct.</span></li>
+          <li data-key="C">Move to NoSQL immediately <span class="q-why">Not necessarily.</span></li>
+          <li data-key="D">Add triggers <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Cheapest and least risky steps come first.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is partitioning for?</summary><div class="answer"><p>Splitting a big table by key so queries touch fewer pieces and old data can be dropped cheaply.</p></div></details>
+      </div>
+    </section>
+
+    <section id="engines" data-track>
+      <h2>Choosing a database engine</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>SQLite</th><th>PostgreSQL</th><th>MySQL / MariaDB</th><th>SQL Server</th><th>Oracle</th></tr></thead>
+<tbody>
+<tr><td>Model</td><td>Embedded file</td><td>Server</td><td>Server</td><td>Server</td><td>Server</td></tr><tr><td>Strengths</td><td>Zero setup, tests, mobile, small apps</td><td>Standards, extensions, JSONB, rich types, window functions, strong correctness</td><td>Simple, widely hosted, fast reads</td><td>Tooling, T-SQL, Windows ecosystem</td><td>Enterprise features, PL/SQL</td></tr><tr><td>Concurrency</td><td>One writer at a time</td><td>MVCC, many writers</td><td>MVCC (InnoDB)</td><td>Locks or snapshot</td><td>MVCC</td></tr><tr><td>Typical use</td><td>Local data, prototypes</td><td>General purpose, analytics-capable</td><td>Web apps</td><td>Enterprise .NET</td><td>Large enterprises</td></tr>
+</tbody>
+</table>
+</div>
+<p>Dialect traps when moving code between engines: string concatenation (<code>||</code> vs <code>CONCAT</code>), limiting rows (<code>LIMIT</code> vs <code>TOP</code> vs <code>FETCH FIRST</code>), date functions, auto-increment (<code>SERIAL</code>/<code>IDENTITY</code>/<code>AUTO_INCREMENT</code>), case sensitivity of comparisons, identifier quoting, boolean types, and upsert syntax (<a href="sql2-advanced.html">SQL2</a>).</p>
+<h3>SQL versus NoSQL</h3>
+<p>Choose by access patterns, consistency needs and scale (<a href="../system-design-guide/sd4-databases.html">SD4</a>). A relational database is the right default; add specialised stores for caching, search, graphs, time series or huge write volumes when the numbers demand it.</p>
+<h3>OLTP versus OLAP, row versus column</h3>
+<p>Transactional databases are row-oriented; analytical warehouses (BigQuery, Snowflake, ClickHouse, DuckDB) are column-oriented and excel at scans and aggregations. Move heavy reporting off the transactional database.</p>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: SQL performance</h2>
+      <p class="muted">10 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="SQL performance">
+<details class="recall iq" data-level="basic" data-topic="SQL performance"><summary><span class="tag ok">Basic</span> What is an index and what does it cost?</summary><div class="answer"><p>A sorted structure that speeds lookups and sorting. It uses space and slows inserts, updates and deletes.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="SQL performance"><summary><span class="tag ok">Basic</span> How do you find why a query is slow?</summary><div class="answer"><p>Read its execution plan with EXPLAIN (ANALYZE), look for full scans, bad estimates and sorts, and check indexes and statistics.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL performance"><summary><span class="tag warn">Medium</span> What is a composite index and the leftmost prefix rule?</summary><div class="answer"><p>An index on several columns. It serves filters on a leftmost prefix of its columns, with equality columns first and the range column last.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL performance"><summary><span class="tag warn">Medium</span> What is a covering index?</summary><div class="answer"><p>An index containing every column the query needs, so the table is not read.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL performance"><summary><span class="tag warn">Medium</span> What makes a predicate non-sargable?</summary><div class="answer"><p>Applying a function or expression to the indexed column (YEAR(col), LOWER(col), col + 1) or a leading wildcard prevents index use. Rewrite or use an expression index.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL performance"><summary><span class="tag warn">Medium</span> Why is deep OFFSET pagination slow and what is the alternative?</summary><div class="answer"><p>The database reads and discards the skipped rows. Use keyset pagination: WHERE id &gt; :last ORDER BY id LIMIT n.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SQL performance"><summary><span class="tag bad">Advanced</span> Nested loop, hash and merge joins?</summary><div class="answer"><p>Nested loop probes the inner side per outer row (good with indexes and small outer sets); hash join builds a hash table (large unsorted equality joins); merge join merges sorted inputs.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SQL performance"><summary><span class="tag bad">Advanced</span> What is partitioning and when does it help?</summary><div class="answer"><p>Splitting a large table by range, list or hash so queries on the key touch fewer partitions and old data can be dropped quickly.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SQL performance"><summary><span class="tag bad">Advanced</span> Order of scaling a database?</summary><div class="answer"><p>Fix queries and indexes, add caching and read replicas, partition, then shard. Each later step adds complexity.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SQL performance"><summary><span class="tag bad">Advanced</span> Stale statistics?</summary><div class="answer"><p>The optimiser relies on row counts and distributions; outdated ones lead to bad plans. Run ANALYZE or autovacuum regularly.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sql3-design.html"><span class="dir">Previous</span><span>SQL3 Database design: normalisation, keys, views, transactions and programmability</span></a>
+      <a class="next" href="sql5-interview-problems.html"><span class="dir">Next</span><span>SQL5 SQL interview problems with tested solutions</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

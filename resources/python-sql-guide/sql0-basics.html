@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="SQL0">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SQL from scratch: tables, queries, filtering and aggregation | Python + SQL</title>
+<meta name="description" content="Relational ideas, creating tables, inserting and changing data, SELECT, WHERE, ORDER BY, LIMIT, NULL, DISTINCT, aggregate functions, GROUP BY and HAVING, with a sample shop database.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SQL0</p>
+      <h1>SQL from scratch: tables, queries, filtering and aggregation</h1>
+      <p class="lede">SQL is the language for asking questions of data stored in tables. This part starts from what a table is and builds up to grouped reports. Every query on this page was run against a real database (SQLite) and its result is shown.</p>
+      <div class="meta"><span class="tag ok">Basic</span><span class="tag">~4 hours</span></div>
+    </div>
+
+    <section id="concepts" data-track>
+      <h2>What a relational database is</h2>
+<h3>Intuition</h3>
+<p>A <strong>relational database</strong> stores data in <strong>tables</strong>, like spreadsheets with rules. A <strong>row</strong> is one record, a <strong>column</strong> is one attribute with a fixed type. Tables are linked by <strong>keys</strong>: an order row stores the id of its customer instead of copying the customer's details, so each fact lives in one place.</p>
+<p><strong>SQL</strong> (Structured Query Language) is <strong>declarative</strong>: you describe <em>what</em> result you want, and the database decides <em>how</em> to get it. The same ideas work in PostgreSQL, MySQL, SQL Server, Oracle and SQLite, with small dialect differences noted in <a href="sql4-performance.html">SQL4</a>.</p>
+<h3>The sample shop database</h3>
+<p>All examples use this small database (run on SQLite, which ships with Python).</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Table</th><th>Columns</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>customers</code></td><td>id, name, city, signup_date</td><td>8 customers (Eli has no city)</td></tr><tr><td><code>products</code></td><td>id, name, category, price</td><td>7 products</td></tr><tr><td><code>orders</code></td><td>id, customer_id, order_date, status</td><td>10 orders, status paid, pending or cancelled</td></tr><tr><td><code>order_items</code></td><td>order_id, product_id, qty</td><td>the lines of each order</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql0-01.sql">SELECT * FROM customers;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>id</th><th>name</th><th>city</th><th>signup_date</th></tr></thead>
+<tbody><tr><td>1</td><td>Ada</td><td>London</td><td>2023-01-05</td></tr><tr><td>2</td><td>Ben</td><td>Paris</td><td>2023-02-11</td></tr><tr><td>3</td><td>Chloe</td><td>London</td><td>2023-03-02</td></tr><tr><td>4</td><td>Dev</td><td>Mumbai</td><td>2023-03-20</td></tr><tr><td>5</td><td>Eli</td><td>NULL</td><td>2023-04-08</td></tr><tr><td>6</td><td>Fay</td><td>Paris</td><td>2023-05-17</td></tr><tr><td>7</td><td>Gus</td><td>Berlin</td><td>2023-06-01</td></tr><tr><td>8</td><td>Hana</td><td>Mumbai</td><td>2023-06-21</td></tr></tbody>
+</table>
+</div>
+<h3>Categories of SQL statements</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Group</th><th>Purpose</th><th>Statements</th></tr></thead>
+<tbody>
+<tr><td>DQL (query)</td><td>Read data</td><td><code>SELECT</code></td></tr><tr><td>DML (manipulation)</td><td>Change data</td><td><code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code></td></tr><tr><td>DDL (definition)</td><td>Define structure</td><td><code>CREATE</code>, <code>ALTER</code>, <code>DROP</code></td></tr><tr><td>DCL (control)</td><td>Permissions</td><td><code>GRANT</code>, <code>REVOKE</code></td></tr><tr><td>TCL (transaction)</td><td>Group changes</td><td><code>BEGIN</code>, <code>COMMIT</code>, <code>ROLLBACK</code></td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql0-q01" data-topic="SQL basics" data-type="single" data-answer="B">
+        <div class="q-stem"><p>SQL is called declarative. What does that mean?</p></div>
+        <ul class="q-options">
+          <li data-key="A">You write loops to scan rows <span class="q-why">That is imperative.</span></li>
+          <li data-key="B">You state the result you want and the database decides how to compute it <span class="q-why">Correct.</span></li>
+          <li data-key="C">It cannot filter <span class="q-why">It can.</span></li>
+          <li data-key="D">It has no types <span class="q-why">It does.</span></li>
+        </ul>
+        <div class="q-explain"><p>The optimiser picks the access path (indexes, join order).</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Row, column, key?</summary><div class="answer"><p>A row is a record, a column is a typed attribute, and a key identifies rows (primary key) or links tables (foreign key).</p></div></details>
+      </div>
+    </section>
+
+    <section id="select" data-track>
+      <h2>SELECT, WHERE and ORDER BY</h2>
+<h3>Choosing columns</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql0-02.sql">SELECT name, price FROM products;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>price</th></tr></thead>
+<tbody><tr><td>Laptop</td><td>1200.0</td></tr><tr><td>Phone</td><td>800.0</td></tr><tr><td>Headphones</td><td>150.0</td></tr><tr><td>Desk</td><td>300.0</td></tr><tr><td>Chair</td><td>180.0</td></tr><tr><td>Notebook</td><td>5.0</td></tr><tr><td>Pen</td><td>2.0</td></tr></tbody>
+</table>
+</div>
+<p><code>SELECT *</code> returns every column: fine for exploring, avoid in production code (it breaks when columns change and reads unneeded data).</p>
+<h3>Expressions and aliases</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql0-03.sql">SELECT name,
+       price,
+       price * 1.2 AS price_with_tax,
+       UPPER(category) AS category_uc
+FROM products;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>price</th><th>price_with_tax</th><th>category_uc</th></tr></thead>
+<tbody><tr><td>Laptop</td><td>1200.0</td><td>1440.0</td><td>ELECTRONICS</td></tr><tr><td>Phone</td><td>800.0</td><td>960.0</td><td>ELECTRONICS</td></tr><tr><td>Headphones</td><td>150.0</td><td>180.0</td><td>ELECTRONICS</td></tr><tr><td>Desk</td><td>300.0</td><td>360.0</td><td>FURNITURE</td></tr><tr><td>Chair</td><td>180.0</td><td>216.0</td><td>FURNITURE</td></tr><tr><td>Notebook</td><td>5.0</td><td>6.0</td><td>STATIONERY</td></tr><tr><td>Pen</td><td>2.0</td><td>2.4</td><td>STATIONERY</td></tr></tbody>
+</table>
+</div>
+<p><code>AS</code> gives a column an <strong>alias</strong>. SQL strings use single quotes; double quotes are for identifiers.</p>
+<h3>Filtering rows with WHERE</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql0-04.sql">SELECT name, price FROM products
+WHERE category = 'electronics' AND price &lt; 1000;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>price</th></tr></thead>
+<tbody><tr><td>Phone</td><td>800.0</td></tr><tr><td>Headphones</td><td>150.0</td></tr></tbody>
+</table>
+</div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Operator</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>=</code>, <code>&lt;&gt;</code> or <code>!=</code>, <code>&lt;</code>, <code>&lt;=</code>, <code>&gt;</code>, <code>&gt;=</code></td><td>Comparison</td></tr><tr><td><code>AND</code>, <code>OR</code>, <code>NOT</code></td><td>Logic (use parentheses to be clear)</td></tr><tr><td><code>BETWEEN a AND b</code></td><td>Inclusive range</td></tr><tr><td><code>IN (a, b, c)</code></td><td>Matches any in the list</td></tr><tr><td><code>LIKE 'pat'</code></td><td>Pattern: <code>%</code> any characters, <code>_</code> one character</td></tr><tr><td><code>IS NULL</code>, <code>IS NOT NULL</code></td><td>Test for missing values</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql0-05.sql">SELECT name, price FROM products
+WHERE price BETWEEN 100 AND 500
+   OR name LIKE 'P%'
+ORDER BY price DESC;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>price</th></tr></thead>
+<tbody><tr><td>Phone</td><td>800.0</td></tr><tr><td>Desk</td><td>300.0</td></tr><tr><td>Chair</td><td>180.0</td></tr><tr><td>Headphones</td><td>150.0</td></tr><tr><td>Pen</td><td>2.0</td></tr></tbody>
+</table>
+</div>
+<h3>Sorting and limiting</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql0-06.sql">SELECT name, price FROM products
+ORDER BY category ASC, price DESC
+LIMIT 4 OFFSET 1;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>price</th></tr></thead>
+<tbody><tr><td>Phone</td><td>800.0</td></tr><tr><td>Headphones</td><td>150.0</td></tr><tr><td>Desk</td><td>300.0</td></tr><tr><td>Chair</td><td>180.0</td></tr></tbody>
+</table>
+</div>
+<p>Without <code>ORDER BY</code> the row order is <strong>not guaranteed</strong>. <code>LIMIT n OFFSET m</code> skips <code>m</code> rows and returns <code>n</code> (SQL Server uses <code>TOP</code> or <code>OFFSET ... FETCH</code>; the standard form is <code>FETCH FIRST n ROWS ONLY</code>).</p>
+<h3>DISTINCT</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql0-07.sql">SELECT DISTINCT city FROM customers ORDER BY city;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>city</th></tr></thead>
+<tbody><tr><td>NULL</td></tr><tr><td>Berlin</td></tr><tr><td>London</td></tr><tr><td>Mumbai</td></tr><tr><td>Paris</td></tr></tbody>
+</table>
+</div>
+<h3>The logical order of a query</h3>
+<p>SQL is written <code>SELECT ... FROM ... WHERE ... GROUP BY ... HAVING ... ORDER BY ... LIMIT</code>, but it is <strong>evaluated</strong> in this order:</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="Logical evaluation order. This is why you cannot use a SELECT alias in WHERE, but you can in ORDER BY." style="min-width:760px"><defs><marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah2a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah2b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah2d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah2)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah2)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah2)"/><line x1="747.0" y1="78.0" x2="747.0" y2="118.0" class="d-line" marker-end="url(#ah2)"/><line x1="662.0" y1="147.0" x2="618.0" y2="147.0" class="d-line" marker-end="url(#ah2)"/><line x1="448.0" y1="147.0" x2="404.0" y2="147.0" class="d-line" marker-end="url(#ah2)"/><line x1="234.0" y1="147.0" x2="190.0" y2="147.0" class="d-line" marker-end="url(#ah2)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">FROM / JOIN</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle">WHERE</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle">GROUP BY</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle">HAVING</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="151.5" text-anchor="middle">SELECT</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="151.5" text-anchor="middle">DISTINCT</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="151.5" text-anchor="middle">ORDER BY</text><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="105.0" y="151.5" text-anchor="middle">LIMIT</text></svg>
+</div>
+<figcaption>Logical evaluation order. This is why you cannot use a SELECT alias in WHERE, but you can in ORDER BY.</figcaption></figure>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql0-q02" data-topic="SQL basics" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In which order does a database logically evaluate a query?</p></div>
+        <ul class="q-options">
+          <li data-key="A">SELECT, FROM, WHERE <span class="q-why">SELECT comes later.</span></li>
+          <li data-key="B">FROM, WHERE, GROUP BY, HAVING, SELECT, ORDER BY <span class="q-why">Correct.</span></li>
+          <li data-key="C">WHERE, FROM, SELECT <span class="q-why">No.</span></li>
+          <li data-key="D">ORDER BY first <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>That is why a SELECT alias cannot be used in WHERE.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why use ORDER BY?</summary><div class="answer"><p>Row order is not guaranteed without it.</p></div></details>
+      </div>
+    </section>
+
+    <section id="null" data-track>
+      <h2>NULL and three-valued logic</h2>
+<h3>What NULL means</h3>
+<p><code>NULL</code> means <strong>unknown or missing</strong>, not zero and not an empty string. Any comparison with <code>NULL</code> is <strong>unknown</strong> (neither true nor false), and <code>WHERE</code> keeps only rows where the condition is <strong>true</strong>.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql0-08.sql">SELECT name, city FROM customers WHERE city = NULL;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>city</th></tr></thead>
+<tbody><tr><td colspan="2" class="muted">(no rows)</td></tr></tbody>
+</table>
+</div>
+<p>That returns nothing: <code>city = NULL</code> is never true. Use <code>IS NULL</code>.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql0-09.sql">SELECT name, city FROM customers WHERE city IS NULL;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>city</th></tr></thead>
+<tbody><tr><td>Eli</td><td>NULL</td></tr></tbody>
+</table>
+</div>
+<h3>Handling NULL</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql0-10.sql">SELECT name,
+       COALESCE(city, 'unknown') AS city,
+       city IS NULL AS missing
+FROM customers
+WHERE id IN (4, 5);</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>city</th><th>missing</th></tr></thead>
+<tbody><tr><td>Dev</td><td>Mumbai</td><td>0</td></tr><tr><td>Eli</td><td>unknown</td><td>1</td></tr></tbody>
+</table>
+</div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Expression</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><code>NULL = NULL</code></td><td>NULL (unknown)</td></tr><tr><td><code>NULL AND false</code></td><td>false</td></tr><tr><td><code>NULL OR true</code></td><td>true</td></tr><tr><td><code>1 + NULL</code></td><td>NULL</td></tr><tr><td><code>COALESCE(a, b, c)</code></td><td>first non-NULL</td></tr><tr><td><code>NULLIF(a, b)</code></td><td>NULL when a equals b (avoids divide by zero)</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout trap"><span class="callout-title">Trap</span><p><code>NOT IN (subquery)</code> returns <strong>no rows</strong> if the subquery produces any NULL, because <code>x &lt;&gt; NULL</code> is unknown. Use <code>NOT EXISTS</code> instead (<a href="sql1-joins.html">SQL1</a>).</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql0-q03" data-topic="SQL basics" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does <code>SELECT * FROM t WHERE x = NULL</code> return?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Rows where x is null <span class="q-why">That needs IS NULL.</span></li>
+          <li data-key="B">No rows <span class="q-why">Correct: the comparison is unknown.</span></li>
+          <li data-key="C">All rows <span class="q-why">No.</span></li>
+          <li data-key="D">An error <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Any comparison with NULL is unknown, so the row is not selected.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is three-valued logic?</summary><div class="answer"><p>Conditions can be true, false or unknown (when NULL is involved); WHERE keeps only true.</p></div></details>
+      </div>
+    </section>
+
+    <section id="aggregates" data-track>
+      <h2>Aggregation: COUNT, SUM, GROUP BY, HAVING</h2>
+<h3>Aggregate functions</h3>
+<p>An <strong>aggregate</strong> collapses many rows into one value.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql0-11.sql">SELECT COUNT(*) AS products,
+       MIN(price) AS cheapest,
+       MAX(price) AS dearest,
+       SUM(price) AS total,
+       ROUND(AVG(price), 2) AS average
+FROM products;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>products</th><th>cheapest</th><th>dearest</th><th>total</th><th>average</th></tr></thead>
+<tbody><tr><td>7</td><td>2.0</td><td>1200.0</td><td>2637.0</td><td>376.71</td></tr></tbody>
+</table>
+</div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Function</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><code>COUNT(*)</code></td><td>All rows</td></tr><tr><td><code>COUNT(col)</code></td><td>Rows where col is not NULL</td></tr><tr><td><code>COUNT(DISTINCT col)</code></td><td>Distinct non-NULL values</td></tr><tr><td><code>SUM</code>, <code>AVG</code>, <code>MIN</code>, <code>MAX</code></td><td>Ignore NULLs</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql0-12.sql">SELECT COUNT(*) AS all_rows, COUNT(city) AS with_city, COUNT(DISTINCT city) AS cities
+FROM customers;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>all_rows</th><th>with_city</th><th>cities</th></tr></thead>
+<tbody><tr><td>8</td><td>7</td><td>4</td></tr></tbody>
+</table>
+</div>
+<h3>GROUP BY</h3>
+<p><code>GROUP BY</code> splits rows into groups and computes aggregates per group.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql0-13.sql">SELECT category, COUNT(*) AS n, ROUND(AVG(price), 1) AS avg_price
+FROM products
+GROUP BY category
+ORDER BY n DESC, category;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>category</th><th>n</th><th>avg_price</th></tr></thead>
+<tbody><tr><td>electronics</td><td>3</td><td>716.7</td></tr><tr><td>furniture</td><td>2</td><td>240.0</td></tr><tr><td>stationery</td><td>2</td><td>3.5</td></tr></tbody>
+</table>
+</div>
+<p>Rule: every column in <code>SELECT</code> must either be in <code>GROUP BY</code> or be inside an aggregate.</p>
+<h3>WHERE versus HAVING</h3>
+<p><code>WHERE</code> filters <strong>rows before</strong> grouping. <code>HAVING</code> filters <strong>groups after</strong> aggregation.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql0-14.sql">SELECT customer_id, COUNT(*) AS orders
+FROM orders
+WHERE status = 'paid'
+GROUP BY customer_id
+HAVING COUNT(*) &gt;= 2
+ORDER BY orders DESC;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>customer_id</th><th>orders</th></tr></thead>
+<tbody><tr><td>2</td><td>2</td></tr><tr><td>1</td><td>2</td></tr></tbody>
+</table>
+</div>
+<h3>Conditional aggregation</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql0-15.sql">SELECT customer_id,
+       COUNT(*) AS total,
+       SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) AS paid,
+       SUM(status = 'cancelled') AS cancelled
+FROM orders
+GROUP BY customer_id
+ORDER BY customer_id;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>customer_id</th><th>total</th><th>paid</th><th>cancelled</th></tr></thead>
+<tbody><tr><td>1</td><td>3</td><td>2</td><td>0</td></tr><tr><td>2</td><td>2</td><td>2</td><td>0</td></tr><tr><td>3</td><td>2</td><td>1</td><td>1</td></tr><tr><td>4</td><td>1</td><td>1</td><td>0</td></tr><tr><td>5</td><td>1</td><td>1</td><td>0</td></tr><tr><td>6</td><td>1</td><td>1</td><td>0</td></tr></tbody>
+</table>
+</div>
+<p><code>CASE WHEN ... THEN ... ELSE ... END</code> is SQL's if-else; combining it with <code>SUM</code> gives conditional counts ("pivoting").</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql0-q04" data-topic="SQL basics" data-type="numeric" data-answer="20" data-tol="0">
+        <div class="q-stem"><p>If a column has values 10, 20, NULL, 30, what is AVG(column)?</p></div>
+        <div class="q-explain"><p>AVG ignores NULL: (10 + 20 + 30) / 3 = 20.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-sql0-q05" data-topic="SQL basics" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which clause filters groups after aggregation?</p></div>
+        <ul class="q-options">
+          <li data-key="A">WHERE <span class="q-why">Filters rows before grouping.</span></li>
+          <li data-key="B">HAVING <span class="q-why">Correct.</span></li>
+          <li data-key="C">ORDER BY <span class="q-why">Sorts.</span></li>
+          <li data-key="D">LIMIT <span class="q-why">Restricts count.</span></li>
+        </ul>
+        <div class="q-explain"><p>HAVING can use aggregates; WHERE cannot.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-sql0-q06" data-topic="SQL basics" data-type="single" data-answer="B">
+        <div class="q-stem"><p><code>COUNT(col)</code> counts:</p></div>
+        <ul class="q-options">
+          <li data-key="A">All rows <span class="q-why">That is COUNT(*).</span></li>
+          <li data-key="B">Rows where col is not NULL <span class="q-why">Correct.</span></li>
+          <li data-key="C">Distinct values <span class="q-why">That needs DISTINCT.</span></li>
+          <li data-key="D">Rows where col is NULL <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>COUNT(col) skips NULLs.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>WHERE versus HAVING?</summary><div class="answer"><p>WHERE filters rows before grouping; HAVING filters groups after aggregates are computed.</p></div></details>
+      </div>
+    </section>
+
+    <section id="ddl" data-track>
+      <h2>Creating and changing data</h2>
+<h3>Data types</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Kind</th><th>Standard types</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>Integers</td><td><code>INTEGER</code>, <code>BIGINT</code>, <code>SMALLINT</code></td><td></td></tr><tr><td>Exact decimals</td><td><code>DECIMAL(p, s)</code>, <code>NUMERIC</code></td><td>Use for money</td></tr><tr><td>Floating point</td><td><code>REAL</code>, <code>DOUBLE PRECISION</code></td><td>Approximate</td></tr><tr><td>Text</td><td><code>VARCHAR(n)</code>, <code>TEXT</code>, <code>CHAR(n)</code></td><td></td></tr><tr><td>Dates and times</td><td><code>DATE</code>, <code>TIME</code>, <code>TIMESTAMP</code></td><td>SQLite stores them as text or numbers</td></tr><tr><td>Boolean</td><td><code>BOOLEAN</code></td><td></td></tr><tr><td>Binary and JSON</td><td><code>BLOB</code>, <code>JSON</code>/<code>JSONB</code></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h3>CREATE TABLE with constraints</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql0-16.sql">CREATE TABLE accounts (
+    id        INTEGER PRIMARY KEY,
+    email     TEXT    NOT NULL UNIQUE,
+    balance   INTEGER NOT NULL DEFAULT 0 CHECK (balance &gt;= 0),
+    owner_id  INTEGER REFERENCES accounts(id),
+    created   TEXT    DEFAULT CURRENT_DATE
+);
+INSERT INTO accounts (email, balance) VALUES ('a@x.com', 50), ('b@x.com', 0);
+SELECT id, email, balance FROM accounts;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>id</th><th>email</th><th>balance</th></tr></thead>
+<tbody><tr><td>1</td><td>a@x.com</td><td>50</td></tr><tr><td>2</td><td>b@x.com</td><td>0</td></tr></tbody>
+</table>
+</div>
+<p>Constraints: <code>PRIMARY KEY</code> (unique and not null, identifies the row), <code>NOT NULL</code>, <code>UNIQUE</code>, <code>CHECK</code>, <code>DEFAULT</code>, <code>FOREIGN KEY</code> (<code>REFERENCES</code>), which the database enforces for you.</p>
+<h3>INSERT, UPDATE, DELETE</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql0-17.sql">UPDATE products SET price = price * 1.10 WHERE category = 'stationery';
+DELETE FROM order_items WHERE qty &gt; 40;
+INSERT INTO products (id, name, category, price) VALUES (8, 'Marker', 'stationery', 3);
+SELECT name, category, price FROM products WHERE category = 'stationery' ORDER BY id;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>category</th><th>price</th></tr></thead>
+<tbody><tr><td>Notebook</td><td>stationery</td><td>5.5</td></tr><tr><td>Pen</td><td>stationery</td><td>2.2</td></tr><tr><td>Marker</td><td>stationery</td><td>3.0</td></tr></tbody>
+</table>
+</div>
+<div class="callout warn"><span class="callout-title">Always check your WHERE</span><p><code>UPDATE</code> or <code>DELETE</code> without <code>WHERE</code> changes every row. In real work run the same condition as a <code>SELECT</code> first, and use a transaction (<a href="sql3-design.html">SQL3</a>) so you can roll back.</p></div>
+<h3>ALTER and DROP</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql0-18.sql">ALTER TABLE customers ADD COLUMN vip INTEGER DEFAULT 0;
+UPDATE customers SET vip = 1 WHERE id IN (1, 3);
+SELECT name, vip FROM customers WHERE vip = 1;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>vip</th></tr></thead>
+<tbody><tr><td>Ada</td><td>1</td></tr><tr><td>Chloe</td><td>1</td></tr></tbody>
+</table>
+</div>
+<p><code>DROP TABLE t</code> removes a table and its data; <code>TRUNCATE</code> (not in SQLite) empties it quickly.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql0-q07" data-topic="SQL basics" data-type="multi" data-answer="A,B,C,D">
+        <div class="q-stem"><p>Which constraints can you declare on a column? Select all.</p></div>
+        <ul class="q-options">
+          <li data-key="A">NOT NULL</li>
+          <li data-key="B">UNIQUE</li>
+          <li data-key="C">CHECK (balance &gt;= 0)</li>
+          <li data-key="D">FOREIGN KEY ... REFERENCES</li>
+        </ul>
+        <div class="q-explain"><p>All are standard column or table constraints enforced by the database.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-sql0-q08" data-topic="SQL basics" data-type="fill" data-answer="where|WHERE">
+        <div class="q-stem"><p>An UPDATE without a <input class="q-input" aria-label="blank 1"> clause changes every row.</p></div>
+        <div class="q-explain"><p>Always include a WHERE clause, and test it with SELECT first.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name four constraints.</summary><div class="answer"><p>PRIMARY KEY, NOT NULL, UNIQUE, CHECK, FOREIGN KEY, DEFAULT.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: SQL basics</h2>
+      <p class="muted">10 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="SQL basics">
+<details class="recall iq" data-level="basic" data-topic="SQL basics"><summary><span class="tag ok">Basic</span> What is the difference between WHERE and HAVING?</summary><div class="answer"><p>WHERE filters rows before grouping; HAVING filters groups after aggregates are computed.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="SQL basics"><summary><span class="tag ok">Basic</span> Difference between DELETE, TRUNCATE and DROP?</summary><div class="answer"><p>DELETE removes selected rows (logged, can be rolled back, fires triggers). TRUNCATE removes all rows quickly (resets state, limited rollback in some engines). DROP removes the table itself.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="SQL basics"><summary><span class="tag ok">Basic</span> What are primary and foreign keys?</summary><div class="answer"><p>A primary key uniquely identifies a row. A foreign key references another table&#x27;s key and lets the database enforce referential integrity.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="SQL basics"><summary><span class="tag ok">Basic</span> What is NULL and how do you test for it?</summary><div class="answer"><p>NULL means unknown or missing. Comparisons with it are unknown, so use IS NULL and IS NOT NULL, and COALESCE to supply defaults.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL basics"><summary><span class="tag warn">Medium</span> COUNT(*) versus COUNT(column) versus COUNT(DISTINCT column)?</summary><div class="answer"><p>COUNT(*) counts rows, COUNT(column) counts non-NULL values, COUNT(DISTINCT column) counts distinct non-NULL values.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL basics"><summary><span class="tag warn">Medium</span> What is the logical order of query evaluation?</summary><div class="answer"><p>FROM and JOIN, WHERE, GROUP BY, HAVING, SELECT, DISTINCT, ORDER BY, LIMIT.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL basics"><summary><span class="tag warn">Medium</span> What are the SQL constraint types?</summary><div class="answer"><p>PRIMARY KEY, FOREIGN KEY, UNIQUE, NOT NULL, CHECK and DEFAULT.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL basics"><summary><span class="tag warn">Medium</span> What is the difference between CHAR and VARCHAR, and why use DECIMAL for money?</summary><div class="answer"><p>CHAR is fixed length and VARCHAR variable length. DECIMAL is exact, while floating point types are approximate and cause rounding errors.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SQL basics"><summary><span class="tag bad">Advanced</span> Why can SELECT without ORDER BY return rows in different orders?</summary><div class="answer"><p>SQL tables are unordered sets; the order depends on the plan, indexes and storage. Always specify ORDER BY (with a unique tiebreaker) when order matters.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SQL basics"><summary><span class="tag bad">Advanced</span> Explain three-valued logic.</summary><div class="answer"><p>A condition can be true, false or unknown. Comparisons with NULL are unknown; AND, OR and NOT follow truth tables for three values, and WHERE keeps only true rows.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="py5-engineering.html"><span class="dir">Previous</span><span>PY5 Professional Python: testing, logging, packaging and performance</span></a>
+      <a class="next" href="sql1-joins.html"><span class="dir">Next</span><span>SQL1 Joins, subqueries, set operations and expressions</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

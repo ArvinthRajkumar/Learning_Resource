@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="X1">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Advanced data structures: Fenwick tree, segment tree, sparse table, AVL, LFU and more | DSA Master Guide</title>
+<meta name="description" content="Range queries with prefix sums, Fenwick trees, segment trees with lazy propagation and sparse tables; balanced trees with an AVL implementation; O(1) LRU and LFU caches; skip lists, Bloom filters and monotonic structures, each tested against a brute-force version.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part X1</p>
+      <h1>Advanced data structures: Fenwick tree, segment tree, sparse table, AVL, LFU and more</h1>
+      <p class="lede">The core modules cover arrays, hashing, heaps and trees. These structures answer harder questions fast: range sums with updates, range minimums, ordered sets, caches with eviction rules. Every implementation here is checked against a slow, obviously-correct version on random data.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~6 hours</span></div>
+    </div>
+
+    <section id="range" data-track>
+      <h2>Range queries: choosing the structure</h2>
+<h3>The problem family</h3>
+<p>Given an array, answer many <strong>range queries</strong> (sum, minimum, maximum, count) and possibly <strong>updates</strong>. The right structure depends on whether the array changes.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Need</th><th>Structure</th><th>Build</th><th>Query</th><th>Update</th></tr></thead>
+<tbody>
+<tr><td>Range sum, array never changes</td><td>Prefix sums</td><td>O(n)</td><td>O(1)</td><td>not supported</td></tr><tr><td>Range min or max, never changes</td><td>Sparse table</td><td>O(n log n)</td><td>O(1)</td><td>not supported</td></tr><tr><td>Range sum, point updates</td><td>Fenwick tree (BIT)</td><td>O(n)</td><td>O(log n)</td><td>O(log n)</td></tr><tr><td>Any associative operation, point updates</td><td>Segment tree</td><td>O(n)</td><td>O(log n)</td><td>O(log n)</td></tr><tr><td>Range updates and range queries</td><td>Segment tree with lazy propagation</td><td>O(n)</td><td>O(log n)</td><td>O(log n)</td></tr><tr><td>Offline many queries on a static array</td><td>Mo's algorithm, sorting queries</td><td></td><td>O((n + q) sqrt n)</td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h3>Prefix sums (the baseline)</h3>
+<p><code>prefix[i] = a[0] + ... + a[i-1]</code>; the sum over <code>[l, r)</code> is <code>prefix[r] - prefix[l]</code>. The same idea in 2D uses inclusion-exclusion.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x1-01.py">import random
+random.seed(0)
+a = [random.randint(-9, 9) for _ in range(20)]
+prefix = [0]
+for x in a:
+    prefix.append(prefix[-1] + x)
+def range_sum(l, r): return prefix[r] - prefix[l]
+assert all(range_sum(l, r) == sum(a[l:r]) for l in range(21) for r in range(l, 21))
+print("prefix sums verified on all", 21 * 22 // 2, "ranges")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>prefix sums verified on all 231 ranges</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x1-q01" data-topic="Advanced data structures" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Array never changes; you need many range minimum queries answered in O(1). Best choice?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Fenwick tree <span class="q-why">Sums only, O(log n).</span></li>
+          <li data-key="B">Sparse table <span class="q-why">Correct.</span></li>
+          <li data-key="C">Segment tree <span class="q-why">O(log n) per query.</span></li>
+          <li data-key="D">Linked list <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Min is idempotent, so two overlapping blocks cover any range.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Prefix sums versus Fenwick versus segment tree?</summary><div class="answer"><p>Prefix sums for static data, Fenwick for sums with point updates, segment tree for any associative operation and lazy range updates.</p></div></details>
+      </div>
+    </section>
+
+    <section id="fenwick" data-track>
+      <h2>Fenwick tree (binary indexed tree)</h2>
+<h3>Idea</h3>
+<p>Store partial sums so that both prefix sums and point updates take <code>O(log n)</code> using a clever index trick: the lowest set bit of an index, <code>i &amp; -i</code>, tells how many elements that cell covers. To update position <code>i</code>, walk <strong>up</strong> with <code>i += i &amp; -i</code>; to query a prefix, walk <strong>down</strong> with <code>i -= i &amp; -i</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x1-02.py">import random
+random.seed(1)
+
+class Fenwick:
+    def __init__(self, n):
+        self.n, self.t = n, [0] * (n + 1)
+    def add(self, i, delta):              # 1-based index
+        while i &lt;= self.n:
+            self.t[i] += delta
+            i += i &amp; -i
+    def prefix(self, i):                  # sum of a[1..i]
+        s = 0
+        while i &gt; 0:
+            s += self.t[i]
+            i -= i &amp; -i
+        return s
+    def range_sum(self, l, r):            # inclusive, 1-based
+        return self.prefix(r) - self.prefix(l - 1)
+
+n = 50
+a = [0] * (n + 1)
+f = Fenwick(n)
+for _ in range(2000):
+    if random.random() &lt; 0.5:
+        i, d = random.randint(1, n), random.randint(-5, 5)
+        a[i] += d; f.add(i, d)
+    else:
+        l = random.randint(1, n); r = random.randint(l, n)
+        assert f.range_sum(l, r) == sum(a[l:r + 1])
+print("2000 random operations match brute force")
+print("lowest set bits:", [(i, i &amp; -i) for i in (1, 2, 3, 4, 6, 8, 12)])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>2000 random operations match brute force
+lowest set bits: [(1, 1), (2, 2), (3, 1), (4, 4), (6, 2), (8, 8), (12, 4)]</code></pre>
+<p>Uses: counting inversions (add 1 at each value as you scan), order statistics (find the k-th smallest via binary descent), 2D Fenwick for matrices, offline range counting. A Fenwick tree is shorter and faster than a segment tree but supports only invertible operations (sum, xor), not min or max.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x1-q02" data-topic="Advanced data structures" data-type="numeric" data-answer="4" data-tol="0">
+        <div class="q-stem"><p>In a Fenwick tree, what is i &amp; -i for i = 12?</p></div>
+        <div class="q-explain"><p>12 is 1100 in binary; the lowest set bit is 100 = 4.</p></div>
+      </div>
+      <div class="quiz" data-qid="xd-x1-q03" data-topic="Advanced data structures" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why can a Fenwick tree not directly support range minimum?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is too slow <span class="q-why">No.</span></li>
+          <li data-key="B">Its prefix subtraction trick needs an invertible operation, and min has no inverse <span class="q-why">Correct.</span></li>
+          <li data-key="C">It needs a power-of-two size <span class="q-why">No.</span></li>
+          <li data-key="D">It stores no values <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Range sum is prefix(r) - prefix(l - 1); min cannot be subtracted.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Walk through a Fenwick update.</summary><div class="answer"><p>Add the delta at index i, then i += i &amp; -i until past n; queries go down with i -= i &amp; -i.</p></div></details>
+      </div>
+    </section>
+
+    <section id="segment" data-track>
+      <h2>Segment tree</h2>
+<h3>Structure</h3>
+<p>A binary tree where each node stores the answer (sum, min, max, gcd) for a segment of the array. A query decomposes the range into <code>O(log n)</code> whole nodes; a point update recomputes <code>O(log n)</code> ancestors. The iterative bottom-up version below uses an array of size <code>2n</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x1-03.py">import random
+random.seed(2)
+
+class SegTree:
+    """Iterative segment tree for any associative operation with an identity element."""
+    def __init__(self, data, op, identity):
+        self.n, self.op, self.id = len(data), op, identity
+        self.t = [identity] * self.n + list(data)
+        for i in range(self.n - 1, 0, -1):
+            self.t[i] = op(self.t[2 * i], self.t[2 * i + 1])
+    def update(self, i, v):
+        i += self.n
+        self.t[i] = v
+        while i &gt; 1:
+            i //= 2
+            self.t[i] = self.op(self.t[2 * i], self.t[2 * i + 1])
+    def query(self, l, r):               # half-open [l, r)
+        res_l, res_r = self.id, self.id
+        l += self.n; r += self.n
+        while l &lt; r:
+            if l &amp; 1:
+                res_l = self.op(res_l, self.t[l]); l += 1
+            if r &amp; 1:
+                r -= 1; res_r = self.op(self.t[r], res_r)
+            l //= 2; r //= 2
+        return self.op(res_l, res_r)
+
+data = [random.randint(-50, 50) for _ in range(37)]
+mn = SegTree(data, min, float("inf"))
+sm = SegTree(data, lambda x, y: x + y, 0)
+for _ in range(3000):
+    if random.random() &lt; 0.4:
+        i, v = random.randrange(37), random.randint(-50, 50)
+        data[i] = v; mn.update(i, v); sm.update(i, v)
+    else:
+        l = random.randrange(37); r = random.randint(l + 1, 37)
+        assert mn.query(l, r) == min(data[l:r]) and sm.query(l, r) == sum(data[l:r])
+print("min and sum segment trees match brute force on 3000 operations")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>min and sum segment trees match brute force on 3000 operations</code></pre>
+<h3>Lazy propagation: range updates</h3>
+<p>To add a value to a whole range, updating every leaf costs <code>O(n)</code>. <strong>Lazy propagation</strong> stores a pending update at a node and pushes it down only when a query or update needs the children. Below, <code>range add</code> and <code>range sum</code> in <code>O(log n)</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x1-04.py">import random
+random.seed(3)
+
+class LazySum:
+    def __init__(self, n):
+        self.n = n
+        self.sum = [0] * (4 * n)
+        self.lazy = [0] * (4 * n)
+    def _push(self, node, lo, hi):
+        if self.lazy[node]:
+            mid = (lo + hi) // 2
+            for child, clo, chi in ((2 * node, lo, mid), (2 * node + 1, mid + 1, hi)):
+                self.sum[child] += self.lazy[node] * (chi - clo + 1)
+                self.lazy[child] += self.lazy[node]
+            self.lazy[node] = 0
+    def add(self, l, r, v, node=1, lo=0, hi=None):
+        hi = self.n - 1 if hi is None else hi
+        if r &lt; lo or hi &lt; l: return
+        if l &lt;= lo and hi &lt;= r:
+            self.sum[node] += v * (hi - lo + 1)
+            self.lazy[node] += v
+            return
+        self._push(node, lo, hi)
+        mid = (lo + hi) // 2
+        self.add(l, r, v, 2 * node, lo, mid)
+        self.add(l, r, v, 2 * node + 1, mid + 1, hi)
+        self.sum[node] = self.sum[2 * node] + self.sum[2 * node + 1]
+    def query(self, l, r, node=1, lo=0, hi=None):
+        hi = self.n - 1 if hi is None else hi
+        if r &lt; lo or hi &lt; l: return 0
+        if l &lt;= lo and hi &lt;= r: return self.sum[node]
+        self._push(node, lo, hi)
+        mid = (lo + hi) // 2
+        return self.query(l, r, 2 * node, lo, mid) + self.query(l, r, 2 * node + 1, mid + 1, hi)
+
+n = 40
+arr = [0] * n
+t = LazySum(n)
+for _ in range(2000):
+    l = random.randrange(n); r = random.randint(l, n - 1)
+    if random.random() &lt; 0.5:
+        v = random.randint(-4, 4)
+        for i in range(l, r + 1): arr[i] += v
+        t.add(l, r, v)
+    else:
+        assert t.query(l, r) == sum(arr[l:r + 1])
+print("lazy segment tree matches brute force")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>lazy segment tree matches brute force</code></pre>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>Fenwick</th><th>Segment tree</th></tr></thead>
+<tbody>
+<tr><td>Code size</td><td>Tiny</td><td>Moderate</td></tr><tr><td>Operations</td><td>Invertible (sum, xor)</td><td>Any associative (min, max, gcd, matrix product)</td></tr><tr><td>Range update</td><td>Possible with two trees</td><td>Lazy propagation</td></tr><tr><td>Memory</td><td><code>n</code></td><td><code>2n</code> to <code>4n</code></td></tr><tr><td>Speed</td><td>Fastest</td><td>Fast</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x1-q04" data-topic="Advanced data structures" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does lazy propagation avoid?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Recursion <span class="q-why">No.</span></li>
+          <li data-key="B">Updating every leaf of a range immediately: pending updates are stored at nodes and pushed down only when needed <span class="q-why">Correct.</span></li>
+          <li data-key="C">Memory <span class="q-why">No.</span></li>
+          <li data-key="D">Sorting <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It makes range updates O(log n).</p></div>
+      </div>
+    </section>
+
+    <section id="sparse" data-track>
+      <h2>Sparse table</h2>
+<p>For a <strong>static</strong> array and an <strong>idempotent</strong> operation (min, max, gcd, where overlapping is harmless), precompute <code>table[k][i] = min(a[i .. i + 2^k - 1])</code>. A query on <code>[l, r]</code> uses two overlapping power-of-two blocks, so it is <code>O(1)</code> after <code>O(n log n)</code> preprocessing.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x1-05.py">import random
+random.seed(4)
+a = [random.randint(0, 99) for _ in range(40)]
+n = len(a)
+LOG = [0] * (n + 1)
+for i in range(2, n + 1):
+    LOG[i] = LOG[i // 2] + 1
+table = [a[:]]
+k = 1
+while (1 &lt;&lt; k) &lt;= n:
+    prev = table[-1]
+    table.append([min(prev[i], prev[i + (1 &lt;&lt; (k - 1))]) for i in range(n - (1 &lt;&lt; k) + 1)])
+    k += 1
+def rmq(l, r):                              # inclusive
+    k = LOG[r - l + 1]
+    return min(table[k][l], table[k][r - (1 &lt;&lt; k) + 1])
+assert all(rmq(l, r) == min(a[l:r + 1]) for l in range(n) for r in range(l, n))
+print("sparse table verified on all", n * (n + 1) // 2, "ranges; levels:", len(table))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>sparse table verified on all 820 ranges; levels: 6</code></pre>
+<p>It also yields the <strong>lowest common ancestor</strong> of a tree (via an Euler tour and range minimum) in <code>O(1)</code> per query.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x1-q05" data-topic="Advanced data structures" data-type="numeric" data-answer="20" data-tol="0">
+        <div class="q-stem"><p>A sparse table over 1,000,000 elements has about how many levels? (ceil of log2)</p></div>
+        <div class="q-explain"><p>2^20 = 1,048,576 &gt;= 1,000,000, so 20 levels.</p></div>
+      </div>
+    </section>
+
+    <section id="avl" data-track>
+      <h2>Balanced search trees: AVL</h2>
+<p>An ordinary binary search tree degrades to a list on sorted input. A <strong>self-balancing</strong> tree keeps height <code>O(log n)</code>. An <strong>AVL tree</strong> requires every node's two subtree heights to differ by at most 1, restoring balance with <strong>rotations</strong> after inserts and deletes.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Imbalance</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td>Left-left</td><td>Rotate right at the node</td></tr><tr><td>Right-right</td><td>Rotate left at the node</td></tr><tr><td>Left-right</td><td>Rotate left at the child, then right at the node</td></tr><tr><td>Right-left</td><td>Rotate right at the child, then left at the node</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/x1-06.py">import random
+random.seed(5)
+
+class Node:
+    def __init__(self, key):
+        self.key, self.left, self.right, self.h = key, None, None, 1
+h = lambda n: n.h if n else 0
+def upd(n): n.h = 1 + max(h(n.left), h(n.right))
+def balance(n): return h(n.left) - h(n.right)
+def rot_right(y):
+    x = y.left; y.left, x.right = x.right, y
+    upd(y); upd(x); return x
+def rot_left(x):
+    y = x.right; x.right, y.left = y.left, x
+    upd(x); upd(y); return y
+def insert(n, key):
+    if not n: return Node(key)
+    if key &lt; n.key: n.left = insert(n.left, key)
+    elif key &gt; n.key: n.right = insert(n.right, key)
+    else: return n
+    upd(n)
+    b = balance(n)
+    if b &gt; 1 and key &lt; n.left.key: return rot_right(n)
+    if b &lt; -1 and key &gt; n.right.key: return rot_left(n)
+    if b &gt; 1: n.left = rot_left(n.left); return rot_right(n)
+    if b &lt; -1: n.right = rot_right(n.right); return rot_left(n)
+    return n
+def inorder(n): return inorder(n.left) + [n.key] + inorder(n.right) if n else []
+def valid(n):
+    return True if not n else abs(balance(n)) &lt;= 1 and valid(n.left) and valid(n.right)
+
+root = None
+for k in range(1, 1025):                    # sorted insertion: the worst case for a plain BST
+    root = insert(root, k)
+print("height after inserting 1..1024 in order:", root.h, "(a plain BST would be 1024)")
+root2 = None
+keys = random.sample(range(10000), 500)
+for k in keys: root2 = insert(root2, k)
+print("random keys sorted correctly:", inorder(root2) == sorted(keys), "| balanced everywhere:", valid(root2), "| height", root2.h)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>height after inserting 1..1024 in order: 11 (a plain BST would be 1024)
+random keys sorted correctly: True | balanced everywhere: True | height 11</code></pre>
+<p>Height is at most <code>1.44 log2(n)</code>. <strong>Red-black trees</strong> relax the rule (height at most <code>2 log2 n</code>) for cheaper updates; they back <code>std::map</code> in C++ and Java's <code>TreeMap</code>. <strong>B-trees</strong> store many keys per node to minimise disk reads and underlie databases (<a href="../system-design-guide/sd4-databases.html">SD4</a>). Python has no built-in balanced tree: use <code>bisect</code> on a sorted list (O(n) insert but fast in practice) or the <code>sortedcontainers</code> package.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x1-q06" data-topic="Advanced data structures" data-type="single" data-answer="B">
+        <div class="q-stem"><p>After inserting a key into the left subtree of the left child makes a node's balance factor +2, the fix is:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Rotate left <span class="q-why">That fixes right-right.</span></li>
+          <li data-key="B">Rotate right at that node <span class="q-why">Correct.</span></li>
+          <li data-key="C">Do nothing <span class="q-why">The tree stays unbalanced.</span></li>
+          <li data-key="D">Delete the node <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Left-left imbalance needs a single right rotation.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>AVL versus red-black tree?</summary><div class="answer"><p>AVL is stricter (faster lookups, more rotations on updates); red-black allows a looser balance for cheaper updates.</p></div></details>
+      </div>
+    </section>
+
+    <section id="cache" data-track>
+      <h2>Caches: LRU and LFU in O(1)</h2>
+<h3>LRU</h3>
+<p>Hash map plus doubly linked list, as in <a href="m10-stacks-queues.html">M10</a> and <a href="../system-design-guide/sd7-caching.html">SD7</a>; <code>OrderedDict</code> implements it directly.</p>
+<h3>LFU</h3>
+<p><strong>Least frequently used</strong> evicts the key with the lowest access count (ties broken by least recently used). The O(1) design keeps a map from key to <code>(value, count)</code> and a map from <code>count</code> to an ordered set of keys, plus the current minimum count.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x1-07.py">from collections import defaultdict, OrderedDict
+
+class LFU:
+    def __init__(self, capacity):
+        self.cap, self.min_count = capacity, 0
+        self.kv = {}                                        # key -&gt; (value, count)
+        self.buckets = defaultdict(OrderedDict)             # count -&gt; ordered keys (oldest first)
+    def _touch(self, key):
+        value, c = self.kv[key]
+        del self.buckets[c][key]
+        if not self.buckets[c]:
+            del self.buckets[c]
+            if self.min_count == c:
+                self.min_count += 1
+        self.kv[key] = (value, c + 1)
+        self.buckets[c + 1][key] = None
+    def get(self, key):
+        if key not in self.kv: return -1
+        self._touch(key)
+        return self.kv[key][0]
+    def put(self, key, value):
+        if self.cap == 0: return
+        if key in self.kv:
+            self.kv[key] = (value, self.kv[key][1])
+            self._touch(key)
+            return
+        if len(self.kv) &gt;= self.cap:
+            victim, _ = self.buckets[self.min_count].popitem(last=False)
+            if not self.buckets[self.min_count]:
+                del self.buckets[self.min_count]
+            del self.kv[victim]
+        self.kv[key] = (value, 1)
+        self.buckets[1][key] = None
+        self.min_count = 1
+
+c = LFU(2)
+c.put(1, 1); c.put(2, 2)
+print(c.get(1))        # 1, key 1 now used twice
+c.put(3, 3)            # evicts key 2 (least frequently used)
+print(c.get(2), c.get(3))
+c.put(4, 4)            # keys 1 and 3 both have count 2, so the less recently used key 1 is evicted
+print(c.get(1), c.get(3), c.get(4))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>1
+-1 3
+-1 3 4</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x1-q07" data-topic="Advanced data structures" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What makes the LFU design O(1)?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Sorting by frequency each time <span class="q-why">O(n log n).</span></li>
+          <li data-key="B">A map from count to an ordered set of keys, plus tracking the minimum count <span class="q-why">Correct.</span></li>
+          <li data-key="C">A heap of frequencies <span class="q-why">O(log n).</span></li>
+          <li data-key="D">A linked list scan <span class="q-why">O(n).</span></li>
+        </ul>
+        <div class="q-explain"><p>Every operation moves a key between adjacent count buckets.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>LRU versus LFU?</summary><div class="answer"><p>LRU evicts the least recently used; LFU evicts the least frequently used, breaking ties by recency.</p></div></details>
+      </div>
+    </section>
+
+    <section id="special" data-track>
+      <h2>Probabilistic and specialised structures</h2>
+<h3>Skip list</h3>
+<p>Layered linked lists: the bottom list holds all keys in order; each higher layer is a random sample (each element promoted with probability 1/2), acting as express lanes. Search, insert and delete are <code>O(log n)</code> expected, with simpler code than balanced trees and easy concurrency. Used in Redis sorted sets and LevelDB memtables.</p>
+<h3>Bloom filter and count-min sketch</h3>
+<p>Bloom filter (membership with no false negatives) and count-min sketch (approximate counts) trade accuracy for tiny memory (<a href="../system-design-guide/sd12-data-systems.html">SD12</a>).</p>
+<h3>Monotonic deque</h3>
+<p>Keeps candidates in decreasing order so the maximum of a sliding window is at the front in amortised <code>O(1)</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x1-08.py">from collections import deque
+import random
+random.seed(6)
+def sliding_max(a, k):
+    dq, out = deque(), []                      # dq holds indices with decreasing values
+    for i, x in enumerate(a):
+        while dq and a[dq[-1]] &lt;= x: dq.pop()
+        dq.append(i)
+        if dq[0] &lt;= i - k: dq.popleft()
+        if i &gt;= k - 1: out.append(a[dq[0]])
+    return out
+a = [random.randint(0, 50) for _ in range(30)]
+assert sliding_max(a, 5) == [max(a[i:i + 5]) for i in range(len(a) - 4)]
+print("sliding window maximum verified; example:", sliding_max([1, 3, -1, -3, 5, 3, 6, 7], 3))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>sliding window maximum verified; example: [3, 3, 5, 5, 6, 7]</code></pre>
+<h3>Other structures worth knowing</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Structure</th><th>Use</th></tr></thead>
+<tbody>
+<tr><td><strong>Union-Find with rank and compression</strong></td><td>Connectivity, Kruskal (<a href="m18-additional-topics.html">M18</a>)</td></tr><tr><td><strong>Trie and radix tree</strong></td><td>Prefix search, autocomplete, IP routing</td></tr><tr><td><strong>Suffix array and suffix automaton</strong></td><td>Substring queries (<a href="x4-strings.html">X4</a>)</td></tr><tr><td><strong>k-d tree, quadtree, R-tree</strong></td><td>Nearest neighbours and spatial range queries</td></tr><tr><td><strong>Interval tree</strong></td><td>Find intervals overlapping a point or interval</td></tr><tr><td><strong>Rope</strong></td><td>Efficient text editing with split and concatenate</td></tr><tr><td><strong>Persistent structures</strong></td><td>Keep old versions after updates (functional programming, undo)</td></tr><tr><td><strong>Treap</strong></td><td>BST plus heap on random priorities: simple balanced tree with split and merge</td></tr><tr><td><strong>Order-statistic tree</strong></td><td>k-th smallest and rank of a key in <code>O(log n)</code></td></tr><tr><td><strong>Indexed (addressable) heap</strong></td><td>Heap supporting decrease-key, used for Dijkstra and schedulers</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Pick the structure from three facts: <strong>does the data change</strong>, <strong>which operation</strong> (invertible sum versus min or max), and <strong>what is queried</strong> (point, prefix, range). Always test against a brute-force implementation on random inputs.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x1-q08" data-topic="Advanced data structures" data-type="single" data-answer="A">
+        <div class="q-stem"><p>Why is the monotonic deque sliding-window maximum amortised O(n)?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Each element is pushed and popped at most once <span class="q-why">Correct.</span></li>
+          <li data-key="B">It sorts once <span class="q-why">No.</span></li>
+          <li data-key="C">It skips elements <span class="q-why">No.</span></li>
+          <li data-key="D">It uses hashing <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Total pushes and pops are at most 2n.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is a skip list?</summary><div class="answer"><p>A probabilistic layered linked list giving O(log n) search, insert and delete in expectation.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Advanced data structures</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Advanced data structures">
+<details class="recall iq" data-level="basic" data-topic="Advanced data structures"><summary><span class="tag ok">Basic</span> What problem does a Fenwick tree (BIT) solve?</summary><div class="answer"><p>Point updates and prefix-sum queries in O(log n) with O(n) memory and a very small constant, using lowbit (i &amp; -i) to jump between nodes.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Advanced data structures"><summary><span class="tag ok">Basic</span> When would you choose a segment tree over a Fenwick tree?</summary><div class="answer"><p>When the operation is not invertible (min, max, gcd) or you need range updates with lazy propagation. A Fenwick tree needs an invertible operation for range queries.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Advanced data structures"><summary><span class="tag ok">Basic</span> What is a sparse table and what are its limits?</summary><div class="answer"><p>A table of answers for ranges of length 2^k, built in O(n log n), giving O(1) queries for idempotent operations like min and max. It does not support updates.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Advanced data structures"><summary><span class="tag warn">Medium</span> Explain lazy propagation.</summary><div class="answer"><p>Store pending updates on internal nodes and push them to children only when a later operation needs to descend, so range updates and range queries both stay O(log n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Advanced data structures"><summary><span class="tag warn">Medium</span> How do AVL trees stay balanced?</summary><div class="answer"><p>Each node&#x27;s subtree heights differ by at most one; insertions and deletions fix violations with single or double rotations, giving O(log n) operations.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Advanced data structures"><summary><span class="tag warn">Medium</span> How do you implement an LFU cache in O(1)?</summary><div class="answer"><p>A hash map from key to node plus a map from frequency to an ordered list of keys, with a tracked minimum frequency that is updated on every access and eviction.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Advanced data structures"><summary><span class="tag warn">Medium</span> What is a monotonic deque used for?</summary><div class="answer"><p>Sliding window maximum or minimum in O(n): keep indexes whose values are monotonic, pop dominated elements from the back and expired ones from the front.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Advanced data structures"><summary><span class="tag warn">Medium</span> Compare a hash table with a balanced BST.</summary><div class="answer"><p>Hash tables give O(1) average lookups but no ordering. Balanced BSTs give O(log n) with ordered traversal, predecessor/successor and range queries.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Advanced data structures"><summary><span class="tag bad">Advanced</span> How do you answer &#x27;number of elements less than x in a range&#x27; with updates?</summary><div class="answer"><p>Offline with a Fenwick tree and coordinate compression, a merge sort tree, a persistent segment tree, or sqrt decomposition depending on constraints.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Advanced data structures"><summary><span class="tag bad">Advanced</span> What is a persistent data structure?</summary><div class="answer"><p>One that preserves earlier versions after updates, usually by path copying so each update adds O(log n) new nodes while old roots remain valid.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Advanced data structures"><summary><span class="tag bad">Advanced</span> Why do skip lists appear in practice?</summary><div class="answer"><p>They give expected O(log n) ordered operations with simple code and good concurrency properties; Redis sorted sets use them.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Advanced data structures"><summary><span class="tag bad">Advanced</span> What is amortised O(1) for union-find and what makes it so fast?</summary><div class="answer"><p>With union by rank (or size) and path compression, any sequence of m operations costs O(m alpha(n)), where alpha is the inverse Ackermann function, below 5 for practical n.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Advanced data structures"><summary><span class="tag bad">Advanced</span> What is a B-tree and why do databases use it?</summary><div class="answer"><p>A balanced multiway tree with large nodes sized to disk pages; the high fan-out keeps the tree very shallow, minimising disk reads.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Advanced data structures"><summary><span class="tag bad">Advanced</span> How does a bloom filter work and what are its error properties?</summary><div class="answer"><p>k hash functions set bits in a bit array; a query reports present only if all k bits are set. It has false positives but no false negatives and cannot delete (without counting variants).</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="index.html"><span class="dir">Previous</span><span>Hub</span></a>
+      <a class="next" href="x2-advanced-graphs.html"><span class="dir">Next</span><span>X2 Advanced graph algorithms: shortest paths, MST, SCC, bridges and flow</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="A9">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Recommender systems, ranking and bandits | AI/ML Prep</title>
+<meta name="description" content="Collaborative filtering and matrix factorisation, content-based and two-tower retrieval, ranking models, cold start, exploration with bandits, ranking metrics, biases, feedback loops and the architecture of a production recommender.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part A9</p>
+      <h1>Recommender systems, ranking and bandits</h1>
+      <p class="lede">Recommenders decide what billions of people see. They combine retrieval, ranking and exploration, and they are shaped by feedback loops. This part covers the core algorithms with runnable examples, the metrics, and the system design.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="problem" data-track>
+      <h2>The recommendation problem</h2>
+<p>Given users, items and past interactions (clicks, purchases, ratings, watch time), predict what each user will like next. Signals: <strong>explicit</strong> feedback (ratings, likes), which is sparse, and <strong>implicit</strong> feedback (views, clicks, dwell time, purchases), which is abundant but noisy and biased (absence of a click does not mean dislike).</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Family</th><th>Idea</th><th>Needs</th><th>Strength</th><th>Weakness</th></tr></thead>
+<tbody>
+<tr><td>Popularity</td><td>Recommend what is popular</td><td>Counts</td><td>Strong baseline, solves cold start</td><td>No personalisation</td></tr><tr><td><strong>Content-based</strong></td><td>Match item features to the user's profile</td><td>Item features</td><td>Works for new items, explainable</td><td>Limited novelty, needs good features</td></tr><tr><td><strong>Collaborative filtering</strong></td><td>Users with similar behaviour like similar items</td><td>Interactions</td><td>Finds surprising items</td><td>Cold start, sparsity</td></tr><tr><td><strong>Hybrid and deep models</strong></td><td>Combine both with neural networks</td><td>Both</td><td>Best accuracy</td><td>Complexity</td></tr><tr><td>Sequence models</td><td>Predict the next item from the history</td><td>Ordered interactions</td><td>Captures intent and recency</td><td>Heavier</td></tr>
+</tbody>
+</table>
+</div>
+    </section>
+
+    <section id="cf" data-track>
+      <h2>Collaborative filtering</h2>
+<h3>Neighbourhood methods</h3>
+<p><strong>User-based</strong>: find users similar to you, recommend what they liked. <strong>Item-based</strong>: for items you liked, recommend similar items (similarity from co-ratings). Item-based is more stable and precomputable at scale.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a9-01.py">import math
+ratings = {"ann": {"A": 5, "B": 4, "C": 1}, "bob": {"A": 4, "B": 5, "D": 2},
+           "cy": {"A": 1, "C": 5, "D": 4}, "dee": {"B": 5, "C": 2, "D": 1}}
+def cosine(u, v):
+    common = set(u) &amp; set(v)
+    if not common: return 0.0
+    num = sum(u[i] * v[i] for i in common)
+    return num / (math.sqrt(sum(x * x for x in u.values())) * math.sqrt(sum(x * x for x in v.values())))
+target = "ann"
+sims = {u: cosine(ratings[target], ratings[u]) for u in ratings if u != target}
+print({u: round(s, 2) for u, s in sims.items()})
+unseen = {"D"}
+for item in unseen:
+    num = sum(sims[u] * ratings[u][item] for u in sims if item in ratings[u])
+    den = sum(abs(sims[u]) for u in sims if item in ratings[u])
+    print("predicted rating of", item, "for", target, "=", round(num / den, 2))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>{'bob': 0.92, 'cy': 0.24, 'dee': 0.62}
+predicted rating of D for ann = 1.92</code></pre>
+<h3>Matrix factorisation</h3>
+<p>Represent each user <code>u</code> and item <code>i</code> by a vector of <code>k</code> <strong>latent factors</strong> (<code>k</code> about 16 to 256), and predict the rating as their dot product: <code>r_hat = p_u . q_i</code> (plus biases). Learn the vectors by minimising squared error on <strong>observed</strong> ratings with L2 regularisation, using SGD or <strong>alternating least squares (ALS)</strong>. Latent factors often correspond to interpretable tastes (action versus romance).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a9-02.py">import random
+random.seed(0)
+# observed (user, item, rating) triples from a small matrix with two tastes
+data = [(0, 0, 5), (0, 1, 4), (0, 2, 1), (1, 0, 4), (1, 2, 1), (1, 3, 2), (2, 1, 1), (2, 2, 5), (2, 3, 4), (3, 0, 1), (3, 2, 4), (3, 3, 5)]
+k, n_users, n_items = 2, 4, 4
+P = [[random.gauss(0, 0.3) for _ in range(k)] for _ in range(n_users)]
+Q = [[random.gauss(0, 0.3) for _ in range(k)] for _ in range(n_items)]
+lr, reg = 0.02, 0.02
+for epoch in range(3000):
+    for u, i, r in data:
+        pred = sum(P[u][f] * Q[i][f] for f in range(k))
+        e = r - pred
+        for f in range(k):
+            pu, qi = P[u][f], Q[i][f]
+            P[u][f] += lr * (e * qi - reg * pu)
+            Q[i][f] += lr * (e * pu - reg * qi)
+rmse = (sum((r - sum(P[u][f] * Q[i][f] for f in range(k))) ** 2 for u, i, r in data) / len(data)) ** 0.5
+print("training RMSE %.3f" % rmse)
+print("predicted rating user 1 for item 1 (unobserved): %.2f" % sum(P[1][f] * Q[1][f] for f in range(k)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>training RMSE 0.104
+predicted rating user 1 for item 1 (unobserved): 3.15</code></pre>
+<p>For <strong>implicit</strong> data use losses on interactions, not ratings: <strong>BPR</strong> (rank an observed item above a random unobserved one), weighted ALS with confidence, or sampled softmax.</p>
+<h3>Cold start</h3>
+<p>New users or items have no interactions. Remedies: popularity or trending lists, <strong>onboarding</strong> questions, <strong>content features</strong> (item metadata, text and image embeddings) feeding a hybrid model, contextual signals (location, device, time), and <strong>exploration</strong> to gather data quickly.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a9-q01" data-topic="Recommender systems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does matrix factorisation learn?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A decision tree <span class="q-why">No.</span></li>
+          <li data-key="B">Latent vectors for users and items whose dot product predicts ratings <span class="q-why">Correct.</span></li>
+          <li data-key="C">A tokenizer <span class="q-why">No.</span></li>
+          <li data-key="D">Only popularity <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The factors capture hidden tastes and item attributes.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a9-q02" data-topic="Recommender systems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which approach helps with the item cold-start problem?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Pure collaborative filtering <span class="q-why">Needs interactions.</span></li>
+          <li data-key="B">Content features such as text and image embeddings in a hybrid model <span class="q-why">Correct.</span></li>
+          <li data-key="C">Increasing k <span class="q-why">No.</span></li>
+          <li data-key="D">Removing regularisation <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Metadata lets the model score items before any clicks.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>User-based versus item-based CF?</summary><div class="answer"><p>User-based finds similar users; item-based finds items similar to those a user liked, which is more stable and precomputable.</p></div></details>
+      </div>
+    </section>
+
+    <section id="twostage" data-track>
+      <h2>Retrieval and ranking at scale</h2>
+<h3>The funnel</h3>
+<p>Catalogues of millions cannot be scored by a heavy model per request. Use stages:</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="A typical recommendation funnel." style="min-width:760px"><defs><marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah3a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah3b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah3d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah3)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah3)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah3)"/><line x1="747.0" y1="78.0" x2="747.0" y2="118.0" class="d-line" marker-end="url(#ah3)"/><line x1="662.0" y1="147.0" x2="618.0" y2="147.0" class="d-line" marker-end="url(#ah3)"/><line x1="448.0" y1="147.0" x2="404.0" y2="147.0" class="d-line" marker-end="url(#ah3)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">Millions of items</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle" class="d-sm">Candidate generation (retrieval)</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle" class="d-sm">Hundreds of candidates</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle">Ranking model</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="151.5" text-anchor="middle">Dozens</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="151.5" text-anchor="middle" class="d-sm">Re-ranking (diversity, business rules)</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="151.5" text-anchor="middle">Final slate</text></svg>
+</div>
+<figcaption>A typical recommendation funnel.</figcaption></figure>
+<ol><li><strong>Retrieval</strong>: fast, recall-oriented, from many sources (two-tower ANN search, co-visitation, popular in region, recent items) producing hundreds to a few thousand candidates.</li><li><strong>Ranking</strong>: a richer model predicts engagement (click, watch, purchase probabilities) using many features (user, item, context, cross features).</li><li><strong>Re-ranking</strong>: enforce <strong>diversity</strong>, freshness, fairness, deduplication, ad and business constraints, then slate optimisation.</li></ol>
+<h3>Two-tower models</h3>
+<p>A <strong>user tower</strong> and an <strong>item tower</strong> (neural networks) each map to a vector; the score is their dot product. Train with a contrastive loss using in-batch negatives (<a href="a4-nlp-embeddings.html">A4</a>). Item vectors are precomputed and indexed for <strong>approximate nearest neighbour</strong> search; the user vector is computed online. Correct the sampling bias of in-batch negatives (popular items are over-sampled) with a logQ correction.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a9-03.py">import math
+users = {"u1": [1.0, 0.0], "u2": [0.0, 1.0]}
+items = {"i1": [0.9, 0.1], "i2": [0.1, 0.9], "i3": [0.7, 0.7]}
+def top(user_vec, k=2):
+    scored = sorted(items, key=lambda i: -sum(a * b for a, b in zip(user_vec, items[i])))
+    return scored[:k]
+for u, v in users.items():
+    print(u, "-&gt;", top(v))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>u1 -&gt; ['i1', 'i3']
+u2 -&gt; ['i2', 'i3']</code></pre>
+<h3>Ranking models</h3>
+<p>Feature crosses matter (a user's category preference times the item category). Architectures: gradient-boosted trees (strong baseline), <strong>Wide and Deep</strong>, <strong>DeepFM</strong>, <strong>DCN</strong> (deep and cross), and <strong>multi-task</strong> networks that predict several outcomes (click, like, purchase, watch time) combined into a final score. Transformers over user histories (SASRec, BERT4Rec, generative retrieval) model sequences. Optimise the <strong>objective that matches value</strong>: clicks can reward clickbait; long-term satisfaction, retention and watch time with quality filters are better, though harder to measure.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a9-q03" data-topic="Recommender systems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why separate retrieval from ranking?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To make code longer <span class="q-why">No.</span></li>
+          <li data-key="B">A heavy ranker cannot score millions of items per request, so a fast retrieval stage narrows the candidates first <span class="q-why">Correct.</span></li>
+          <li data-key="C">Ranking is not needed <span class="q-why">No.</span></li>
+          <li data-key="D">Retrieval is more accurate <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The funnel balances recall and latency.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Describe the two-tower model.</summary><div class="answer"><p>A user network and an item network produce vectors scored by a dot product; item vectors are indexed for ANN retrieval.</p></div></details>
+      </div>
+    </section>
+
+    <section id="metrics" data-track>
+      <h2>Evaluation</h2>
+<h3>Offline metrics</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Metric</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>Precision@k, Recall@k</td><td>Fraction of the top k that are relevant; fraction of relevant items found</td></tr><tr><td>MAP, MRR</td><td>Average precision over ranks; reciprocal rank of the first relevant item</td></tr><tr><td><strong>nDCG@k</strong></td><td>Rewards relevant items at high ranks with graded relevance</td></tr><tr><td>Hit rate@k</td><td>Whether any held-out item appears in the top k</td></tr><tr><td>AUC, log loss</td><td>Quality of predicted engagement probabilities</td></tr><tr><td>Coverage, diversity, novelty, serendipity</td><td>Beyond-accuracy qualities</td></tr><tr><td>Calibration</td><td>Predicted probabilities match observed rates (important for ads)</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/a9-04.py">import math
+def dcg(rels, k): return sum((2 ** r - 1) / math.log2(i + 2) for i, r in enumerate(rels[:k]))
+def ndcg(rels, k):
+    ideal = sorted(rels, reverse=True)
+    return dcg(rels, k) / dcg(ideal, k)
+print("relevant item first : %.3f" % ndcg([3, 2, 0, 0], 4))
+print("relevant item last  : %.3f" % ndcg([0, 0, 2, 3], 4))
+rank_of_first_hit = [1, 3, 2]
+print("MRR = %.3f" % (sum(1 / r for r in rank_of_first_hit) / len(rank_of_first_hit)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>relevant item first : 1.000
+relevant item last  : 0.508
+MRR = 0.611</code></pre>
+<h3>Pitfalls in evaluation</h3>
+<ul><li><strong>Split by time</strong>, not randomly: predicting the past from the future leaks information.</li><li>Offline metrics rely on <strong>logged data</strong> shaped by the old system (<strong>selection bias</strong>): items never shown have no feedback. Use <strong>inverse propensity scoring</strong> and counterfactual evaluation, or randomised exploration traffic.</li><li>Offline gains often fail online, so confirm with <strong>A/B tests</strong> on business metrics and guardrails (<a href="a7-mlops.html">A7</a>).</li><li><strong>Position bias</strong>: users click the top slot regardless of relevance; model it (position as a feature at training, removed at serving) or use interleaving.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a9-q04" data-topic="Recommender systems" data-type="numeric" data-answer="0.667" data-tol="0.001">
+        <div class="q-stem"><p>Ranked list with relevance [1, 0, 1]. What is precision@3?</p></div>
+        <div class="q-explain"><p>2 relevant of 3 = 0.667.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a9-q05" data-topic="Recommender systems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why must you split recommender data by time?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Random splits are slower <span class="q-why">No.</span></li>
+          <li data-key="B">Random splits leak future behaviour into training and overstate performance <span class="q-why">Correct.</span></li>
+          <li data-key="C">Time is a feature <span class="q-why">No.</span></li>
+          <li data-key="D">It balances classes <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>In production you only know the past.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why not trust offline metrics alone?</summary><div class="answer"><p>Logged data is biased by the previous system and offline gains often do not transfer; confirm with an A/B test.</p></div></details>
+      </div>
+    </section>
+
+    <section id="bandits" data-track>
+      <h2>Exploration and bandits</h2>
+<h3>Explore versus exploit</h3>
+<p>A recommender that only shows what it believes best never learns about other items and can lock into a rut. A <strong>multi-armed bandit</strong> balances <strong>exploiting</strong> the best known option and <strong>exploring</strong> uncertain ones.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Strategy</th><th>How</th></tr></thead>
+<tbody>
+<tr><td>epsilon-greedy</td><td>With probability <code>epsilon</code> pick a random arm, otherwise the best so far</td></tr><tr><td>UCB</td><td>Pick the arm with the highest mean plus an uncertainty bonus (optimism under uncertainty)</td></tr><tr><td>Thompson sampling</td><td>Sample from each arm's posterior and pick the best sample</td></tr><tr><td>Contextual bandits (LinUCB, neural)</td><td>Use features of user and item to generalise across arms</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/a9-05.py">import random
+random.seed(1)
+true_ctr = [0.04, 0.05, 0.08]            # click rates of 3 items, unknown to the algorithm
+def run(strategy, steps=20000):
+    wins, plays, reward = [0, 0, 0], [0, 0, 0], 0
+    for _ in range(steps):
+        if strategy == "random":
+            a = random.randrange(3)
+        elif strategy == "thompson":
+            a = max(range(3), key=lambda i: random.betavariate(1 + wins[i], 1 + plays[i] - wins[i]))
+        else:                            # epsilon greedy
+            a = random.randrange(3) if random.random() &lt; 0.1 or 0 in plays else max(range(3), key=lambda i: wins[i] / plays[i])
+        click = random.random() &lt; true_ctr[a]
+        plays[a] += 1; wins[a] += click; reward += click
+    return reward, plays
+for s in ("random", "epsilon", "thompson"):
+    r, p = run(s)
+    print("%-9s total clicks %4d, plays per item %s" % (s, r, p))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>random    total clicks 1183, plays per item [6715, 6619, 6666]
+epsilon   total clicks 1545, plays per item [685, 666, 18649]
+thompson  total clicks 1625, plays per item [264, 586, 19150]</code></pre>
+<p>Thompson sampling and epsilon-greedy concentrate plays on the best item (the third) and collect more clicks than random assignment, while still testing the others. The cost of exploration is called <strong>regret</strong>.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a9-q06" data-topic="Recommender systems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does Thompson sampling do?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Always picks the best mean <span class="q-why">That is greedy.</span></li>
+          <li data-key="B">Samples from each arm's posterior and plays the arm with the best sample <span class="q-why">Correct.</span></li>
+          <li data-key="C">Plays uniformly at random <span class="q-why">No.</span></li>
+          <li data-key="D">Never explores <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Uncertain arms have wide posteriors and are sometimes sampled high, which drives exploration.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Explore versus exploit?</summary><div class="answer"><p>Exploiting uses the best known option; exploring tests uncertain ones to learn; bandit algorithms balance them to minimise regret.</p></div></details>
+      </div>
+    </section>
+
+    <section id="issues" data-track>
+      <h2>Problems of recommender systems</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Description</th><th>Mitigation</th></tr></thead>
+<tbody>
+<tr><td><strong>Feedback loops</strong></td><td>The system shows what it predicts people like, so future data reflects its own choices (popularity bias, filter bubbles)</td><td>Exploration, randomised slices, debiasing, diversity</td></tr><tr><td><strong>Popularity bias</strong></td><td>Popular items dominate and the long tail starves</td><td>Re-weighting, long-tail objectives, coverage metrics</td></tr><tr><td><strong>Position and presentation bias</strong></td><td>Clicks depend on where an item appears</td><td>Position-aware models, interleaving</td></tr><tr><td><strong>Cold start</strong></td><td>New users and items</td><td>Content features, onboarding, exploration</td></tr><tr><td><strong>Metric gaming</strong></td><td>Optimising clicks promotes clickbait</td><td>Multi-objective optimisation, quality signals, user surveys</td></tr><tr><td><strong>Fairness</strong></td><td>Exposure for creators and groups</td><td>Exposure constraints, auditing</td></tr><tr><td><strong>Privacy</strong></td><td>Behavioural data is sensitive</td><td>Minimisation, on-device models, federated learning, differential privacy</td></tr><tr><td><strong>Latency</strong></td><td>Tens of milliseconds budget</td><td>Precompute, cache, ANN, distil rankers</td></tr><tr><td><strong>Explainability</strong></td><td>Users and regulators want reasons</td><td>Simple explanations ("because you watched ..."), controls</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a9-q07" data-topic="Recommender systems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A recommender trained on its own logs keeps showing already popular items. This is a:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Cold start <span class="q-why">No.</span></li>
+          <li data-key="B">Feedback loop with popularity bias <span class="q-why">Correct.</span></li>
+          <li data-key="C">Memory leak <span class="q-why">No.</span></li>
+          <li data-key="D">Tokenization bug <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Its exposure decisions shape the data it learns from.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a9-q08" data-topic="Recommender systems" data-type="fill" data-answer="position">
+        <div class="q-stem"><p>Users click the top slot more regardless of relevance: this is <input class="q-input" aria-label="blank 1"> bias.</p></div>
+        <div class="q-explain"><p>Model or correct for it, for example with position features or interleaving.</p></div>
+      </div>
+    </section>
+
+    <section id="system" data-track>
+      <h2>System design view</h2>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 294" role="img" aria-label="A production recommender: offline training and an online serving path with feature store and logging." style="min-width:760px"><defs><marker id="ah4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah4a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah4b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah4d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="147.0" x2="234.0" y2="147.0" class="d-line" marker-end="url(#ah4)"/><line x1="382.3" y1="118.0" x2="469.7" y2="78.0" class="d-line" marker-end="url(#ah4)"/><line x1="404.0" y1="147.0" x2="448.0" y2="147.0" class="d-line" marker-end="url(#ah4)"/><line x1="382.3" y1="176.0" x2="469.7" y2="216.0" class="d-line" marker-end="url(#ah4)"/><line x1="618.0" y1="147.0" x2="662.0" y2="147.0" class="d-line" marker-end="url(#ah4)"/><text x="640.0" y="142.0" text-anchor="middle" class="d-sm d-muted">features</text><line x1="319.0" y1="176.0" x2="319.0" y2="216.0" class="d-line" marker-end="url(#ah4)"/><text x="319.0" y="191.0" text-anchor="middle" class="d-sm d-muted">impressions, clicks</text><line x1="234.0" y1="245.0" x2="190.0" y2="245.0" class="d-line" marker-end="url(#ah4)"/><line x1="168.3" y1="216.0" x2="469.7" y2="78.0" class="d-line" marker-end="url(#ah4)"/><text x="319.0" y="142.0" text-anchor="middle" class="d-sm d-muted">new embeddings</text><line x1="190.0" y1="225.5" x2="448.0" y2="166.5" class="d-line" marker-end="url(#ah4)"/><text x="319.0" y="191.0" text-anchor="middle" class="d-sm d-muted">new model</text><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="151.5" text-anchor="middle">User request</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-c"/><text x="319.0" y="151.5" text-anchor="middle" class="d-sm">Recommendation service</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="46.0" text-anchor="middle" class="d-sm">Candidate retrieval</text><text x="533.0" y="61.0" text-anchor="middle" class="d-sm">(ANN, co-visit, trending)</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="144.0" text-anchor="middle">Ranking model</text><text x="533.0" y="159.0" text-anchor="middle">(features from store)</text><rect x="448.0" y="216.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="242.0" text-anchor="middle">Re-ranking</text><text x="533.0" y="257.0" text-anchor="middle">(diversity, rules)</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-d"/><text x="747.0" y="144.0" text-anchor="middle">Feature store</text><text x="747.0" y="159.0" text-anchor="middle">(online)</text><rect x="234.0" y="216.0" width="170" height="58" rx="8" class="d-e"/><text x="319.0" y="249.5" text-anchor="middle">Event logging</text><rect x="20.0" y="216.0" width="170" height="58" rx="8" class="d-e"/><text x="105.0" y="242.0" text-anchor="middle">Training pipeline</text><text x="105.0" y="257.0" text-anchor="middle">(offline)</text></svg>
+</div>
+<figcaption>A production recommender: offline training and an online serving path with feature store and logging.</figcaption></figure>
+<p>Log what was <strong>shown</strong> (impressions) as well as clicks, with the model version and position, so future models and evaluation can correct bias. See the system-design guide's feed and notification cases (<a href="../system-design-guide/sd14-case-2.html">news feed</a>).</p>
+<div class="callout key"><span class="callout-title">Key idea</span><p>A recommender is a funnel (retrieve, rank, re-rank) trained on its own logged behaviour. The hard parts are not the model but the <strong>biases of that data</strong>: popularity, position, selection and feedback loops, which you manage with exploration, careful evaluation and online experiments.</p></div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What should you log in a recommender?</summary><div class="answer"><p>Impressions with position, model version and context, plus clicks and outcomes, to support training and bias correction.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Recommender systems</h2>
+      <p class="muted">12 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Recommender systems">
+<details class="recall iq" data-level="basic" data-topic="Recommender systems"><summary><span class="tag ok">Basic</span> Collaborative versus content-based filtering?</summary><div class="answer"><p>Collaborative filtering uses behaviour of similar users or items; content-based matches item attributes to a user profile and works for new items.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Recommender systems"><summary><span class="tag ok">Basic</span> What is the cold-start problem?</summary><div class="answer"><p>New users or items lack interaction data. Use popularity, content features, onboarding questions and exploration.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recommender systems"><summary><span class="tag warn">Medium</span> Explain matrix factorisation.</summary><div class="answer"><p>Users and items get latent vectors whose dot product predicts the rating; learn them by minimising error on observed entries with regularisation using SGD or ALS.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recommender systems"><summary><span class="tag warn">Medium</span> Why a two-stage architecture?</summary><div class="answer"><p>Retrieval narrows millions of items to hundreds quickly with high recall; a heavier ranker scores those, and re-ranking applies diversity and business rules.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recommender systems"><summary><span class="tag warn">Medium</span> What is a two-tower model?</summary><div class="answer"><p>Separate user and item networks produce vectors scored by a dot product; item vectors are precomputed and searched with ANN.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recommender systems"><summary><span class="tag warn">Medium</span> Which metrics evaluate recommenders?</summary><div class="answer"><p>Precision and recall at k, MAP, MRR, nDCG, hit rate, AUC and log loss, plus coverage, diversity and calibration, confirmed by online A/B tests.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recommender systems"><summary><span class="tag warn">Medium</span> What is position bias and how do you handle it?</summary><div class="answer"><p>Items at the top get more clicks regardless of relevance. Model position as a feature during training and fix it at serving, or use interleaving and propensity weighting.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Recommender systems"><summary><span class="tag bad">Advanced</span> How do bandits help recommenders?</summary><div class="answer"><p>They balance exploration and exploitation (epsilon-greedy, UCB, Thompson sampling), learning item quality faster and reducing regret; contextual bandits generalise across users and items.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Recommender systems"><summary><span class="tag bad">Advanced</span> What is a feedback loop in recommendation?</summary><div class="answer"><p>The system&#x27;s exposure shapes future training data, reinforcing popular items and narrow tastes; counter with exploration, debiasing, diversity and randomised traffic.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Recommender systems"><summary><span class="tag bad">Advanced</span> How do you evaluate offline given biased logs?</summary><div class="answer"><p>Split by time, use inverse propensity scoring or doubly robust estimators, log exploration traffic, and validate with A/B tests.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Recommender systems"><summary><span class="tag bad">Advanced</span> How do you optimise for long-term value rather than clicks?</summary><div class="answer"><p>Use multi-task models with satisfaction, retention and quality signals, add counter-clickbait constraints, and measure long-horizon outcomes in experiments with holdouts.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Recommender systems"><summary><span class="tag bad">Advanced</span> Explicit versus implicit feedback losses?</summary><div class="answer"><p>Explicit ratings use squared error on observed entries. Implicit data uses ranking losses such as BPR, weighted ALS with confidence or sampled softmax because missing entries are not negatives.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="a8-vision.html"><span class="dir">Previous</span><span>A8 Computer vision and multimodal models</span></a>
+      <a class="next" href="a10-reinforcement-learning.html"><span class="dir">Next</span><span>A10 Reinforcement learning from scratch</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

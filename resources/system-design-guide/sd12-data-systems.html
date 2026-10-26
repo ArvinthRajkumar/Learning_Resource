@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD12">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Search, big data and specialised data structures | System Design</title>
+<meta name="description" content="Inverted indexes, batch and stream architectures, warehouses and lakes, Bloom filters, HyperLogLog, count-min sketch, geospatial indexing, unique ID generation, distributed locks and blob storage.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD12</p>
+      <h1>Search, big data and specialised data structures</h1>
+      <p class="lede">Some problems keep appearing in system designs: searching text, counting unique things cheaply, finding nearby places, generating unique ids, handling mountains of data. Each has a standard solution worth knowing in detail.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~4 hours</span></div>
+    </div>
+
+    <section id="search" data-track>
+      <h2>Search</h2>
+<h3>The inverted index</h3>
+<p>A search engine does not scan documents. It builds an <strong>inverted index</strong>: for every term, the list of documents containing it (a <strong>postings list</strong>), often with positions and counts.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Term</th><th>Postings (doc ids)</th></tr></thead>
+<tbody>
+<tr><td>cache</td><td>1, 4, 7</td></tr><tr><td>database</td><td>1, 2, 7</td></tr><tr><td>queue</td><td>3, 4</td></tr>
+</tbody>
+</table>
+</div>
+<p>A query for <code>cache AND database</code> <strong>intersects</strong> the postings: documents 1 and 7. Postings are kept sorted so intersection is a fast merge.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd12-01.py">import re
+docs = {
+    1: "cache the database reads",
+    2: "database replication and sharding",
+    3: "a queue decouples workers",
+    4: "queue and cache for speed",
+    7: "database cache design",
+}
+index = {}
+for doc_id, text in docs.items():
+    for term in set(re.findall(r"[a-z]+", text.lower())):
+        index.setdefault(term, []).append(doc_id)
+for t in index:
+    index[t].sort()
+
+def search_and(*terms):
+    sets = [set(index.get(t, [])) for t in terms]
+    return sorted(set.intersection(*sets))
+
+print(index["cache"], index["database"])
+print(search_and("cache", "database"))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[1, 4, 7] [1, 2, 7]
+[1, 7]</code></pre>
+<h3>From text to terms</h3>
+<p><strong>Analysis</strong>: lowercase, split into tokens, remove stop words ("the", "a"), <strong>stem</strong> or <strong>lemmatise</strong> (running to run), handle synonyms and n-grams. The same analysis must be applied to queries.</p>
+<h3>Ranking</h3>
+<p>Relevance scoring combines how often a term appears in a document (<strong>term frequency</strong>), how rare it is across all documents (<strong>inverse document frequency</strong>), and document length. <strong>TF-IDF</strong> and <strong>BM25</strong> are classic. Modern search blends in freshness, popularity, personalization and learned ranking, plus <strong>vector similarity</strong> for semantic search.</p>
+<h3>Scaling search</h3>
+<p>Split the index into <strong>shards</strong> by document id, replicate each shard. A query is sent to every shard, each returns its top results, and a coordinator merges them. Elasticsearch and OpenSearch work this way. New documents go to a small in-memory segment first, which is why newly indexed items appear after a <strong>refresh interval</strong> (near real time, not instant).</p>
+<h3>Keep the source of truth elsewhere</h3>
+<p>Treat the search index as a <strong>derived view</strong>. Write to the primary database, then update the index through a queue or change data capture. Rebuilding the index from the source must always be possible.</p>
+<h3>Typeahead (autocomplete)</h3>
+<p>A <strong>trie</strong> (prefix tree) maps prefixes to top suggestions. Precompute the top K completions at each node, refresh periodically from query logs, and cache heavily (<a href="sd14-case-2.html">SD14</a>).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd12-q01" data-topic="Data systems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which structure makes full-text search fast?</p></div>
+        <ul class="q-options">
+          <li data-key="A">B-tree on the full text column <span class="q-why">Cannot find words inside text.</span></li>
+          <li data-key="B">Inverted index mapping terms to documents <span class="q-why">Correct.</span></li>
+          <li data-key="C">Hash map on document id <span class="q-why">Only exact id lookups.</span></li>
+          <li data-key="D">Linked list of documents <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The inverted index maps each term to its postings list so queries intersect lists instead of scanning documents.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is an inverted index?</summary><div class="answer"><p>A map from each term to the sorted list of documents containing it.</p></div></details>
+      </div>
+    </section>
+
+    <section id="pipelines" data-track>
+      <h2>Batch and stream architectures</h2>
+<h3>Batch</h3>
+<p>Process large bounded datasets periodically. <strong>MapReduce</strong> idea: <strong>map</strong> transforms records in parallel, a <strong>shuffle</strong> groups by key, <strong>reduce</strong> aggregates per key. Modern engines (Spark) keep data in memory and use DAGs of operations.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd12-02.py">from collections import Counter
+lines = ["to be or not to be", "to see or not to see"]
+# map: emit (word, 1); shuffle+reduce: sum per word
+pairs = [(w, 1) for line in lines for w in line.split()]
+counts = Counter()
+for w, n in pairs:
+    counts[w] += n
+print(sorted(counts.items()))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[('be', 2), ('not', 2), ('or', 2), ('see', 2), ('to', 4)]</code></pre>
+<h3>Stream</h3>
+<p>Process an unbounded flow of events continuously (Flink, Kafka Streams, Spark Structured Streaming). Key ideas: <strong>windows</strong>, <strong>event time with watermarks</strong> (to handle late events), <strong>state</strong> with <strong>checkpoints</strong>, and <strong>exactly-once</strong> state updates.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Window</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>Tumbling</td><td>Fixed, non-overlapping (every minute)</td></tr><tr><td>Sliding</td><td>Fixed length, moves by a smaller step (last 5 min, every 1 min)</td></tr><tr><td>Session</td><td>Grouped by activity with a gap of inactivity</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Lambda and Kappa</h3>
+<ul><li><strong>Lambda architecture</strong>: a batch layer (accurate, slow) and a speed layer (approximate, fast), merged at query time. Two code paths to maintain.</li><li><strong>Kappa architecture</strong>: one stream-processing path; reprocess history by replaying the log. Simpler if the stream engine is good enough.</li></ul>
+<h3>Change data capture</h3>
+<p>Read a database's transaction log and publish each change as an event (Debezium). It feeds search indexes, caches, warehouses and other services without dual writes (<a href="sd8-messaging.html">SD8</a>).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd12-q02" data-topic="Data systems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does a watermark do in stream processing?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Encrypts events <span class="q-why">No.</span></li>
+          <li data-key="B">Tracks event-time progress so the system knows when to close a window despite late events <span class="q-why">Correct.</span></li>
+          <li data-key="C">Deletes old data <span class="q-why">No.</span></li>
+          <li data-key="D">Balances partitions <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Watermarks estimate how late events can be and let windows fire.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Lambda versus Kappa?</summary><div class="answer"><p>Lambda has separate batch and speed layers; Kappa uses one stream path and replays the log for reprocessing.</p></div></details>
+      </div>
+    </section>
+
+    <section id="warehouse" data-track>
+      <h2>Warehouses, lakes and analytics</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>Data warehouse</th><th>Data lake</th><th>Lakehouse</th></tr></thead>
+<tbody>
+<tr><td>Data</td><td>Structured, modelled tables</td><td>Raw files of any kind (Parquet, JSON, images)</td><td>Open table formats (Iceberg, Delta, Hudi) over the lake</td></tr><tr><td>Schema</td><td>On write</td><td>On read</td><td>Both, with transactions</td></tr><tr><td>Engines</td><td>BigQuery, Snowflake, Redshift</td><td>S3 plus Spark, Presto, Athena</td><td>Spark, Trino, Databricks</td></tr><tr><td>Cost</td><td>Higher per GB</td><td>Cheap storage</td><td>Cheap storage, warehouse-like features</td></tr>
+</tbody>
+</table>
+</div>
+<ul><li><strong>ETL</strong> transforms before loading; <strong>ELT</strong> loads raw data then transforms inside the warehouse.</li><li><strong>Columnar formats</strong> (Parquet, ORC) store each column together: great compression and fast scans of few columns.</li><li><strong>Partition</strong> files by date so queries skip irrelevant data. <strong>Star schema</strong>: a central fact table (events) joined to dimension tables (users, products, time).</li><li>Orchestrate pipelines with Airflow, Dagster or similar, with retries and data quality checks.</li></ul>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>ETL versus ELT?</summary><div class="answer"><p>ETL transforms before loading; ELT loads raw data and transforms inside the warehouse.</p></div></details>
+      </div>
+    </section>
+
+    <section id="probabilistic" data-track>
+      <h2>Probabilistic data structures</h2>
+<p>These trade a small, controlled error for huge savings in memory.</p>
+<h3>Bloom filter: "have I seen this?"</h3>
+<p>A bit array plus several hash functions. To add an item, set the bits at its hash positions. To test, check those bits: if any is 0 the item is <strong>definitely not</strong> present; if all are 1 it is <strong>probably</strong> present (false positives possible, no false negatives). Used to avoid disk lookups for missing keys (LSM trees, caches), check usernames, spot malicious URLs.</p>
+<div class="formula"><div class="f-title">False positive rate</div><div class="f-body">p = (1 - e^(-k n / m))^k</div><dl class="f-defs"><dt>m</dt><dd>bits in the array</dd><dt>n</dt><dd>items inserted</dd><dt>k</dt><dd>number of hash functions (best k is about (m / n) x ln 2)</dd></dl></div>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd12-03.py">import hashlib, math
+class Bloom:
+    def __init__(self, m, k):
+        self.m, self.k, self.bits = m, k, bytearray(m)
+    def _pos(self, item):
+        for i in range(self.k):
+            h = hashlib.sha256(("%d:%s" % (i, item)).encode()).digest()
+            yield int.from_bytes(h[:8], "big") % self.m
+    def add(self, item):
+        for p in self._pos(item): self.bits[p] = 1
+    def __contains__(self, item):
+        return all(self.bits[p] for p in self._pos(item))
+
+n, m = 1000, 10000
+k = round(m / n * math.log(2))
+b = Bloom(m, k)
+for i in range(n): b.add("key%d" % i)
+fp = sum(("other%d" % i) in b for i in range(10000)) / 10000
+print("k =", k, "no false negatives:", all(("key%d" % i) in b for i in range(n)))
+print("measured false positive rate: %.3f, theory: %.3f" % (fp, (1 - math.exp(-k * n / m)) ** k))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>k = 7 no false negatives: True
+measured false positive rate: 0.009, theory: 0.008</code></pre>
+<h3>HyperLogLog: "how many distinct?"</h3>
+<p>Estimates the number of <strong>unique</strong> items with a standard error of about 1 percent using only a few kilobytes (Redis <code>PFADD</code> / <code>PFCOUNT</code>). Idea: hash items to bits and track the longest run of leading zeros; rare long runs imply many distinct items. Sketches from different shards can be <strong>merged</strong>.</p>
+<h3>Count-min sketch: "how often?"</h3>
+<p>A small grid of counters with several hash rows. Increment one counter per row; the estimate is the <strong>minimum</strong> across rows (it can only overestimate). Used to find <strong>heavy hitters</strong> (top trending items) in streams.</p>
+<h3>Others</h3>
+<p><strong>Reservoir sampling</strong> keeps a uniform random sample of a stream of unknown length. <strong>Merkle trees</strong> hash data in a tree so replicas can find differences quickly (anti-entropy in Dynamo, Git).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd12-q03" data-topic="Data systems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A Bloom filter says an item is NOT present. This answer is:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Possibly wrong <span class="q-why">No false negatives.</span></li>
+          <li data-key="B">Definitely correct <span class="q-why">Correct.</span></li>
+          <li data-key="C">Correct only half the time <span class="q-why">No.</span></li>
+          <li data-key="D">Meaningless <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Bloom filters have no false negatives; a positive answer may be a false positive.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd12-q04" data-topic="Data systems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>You must count distinct visitors of a huge site using a few KB of memory per counter. Use:</p></div>
+        <ul class="q-options">
+          <li data-key="A">A hash set <span class="q-why">Memory grows with the count.</span></li>
+          <li data-key="B">HyperLogLog <span class="q-why">Correct.</span></li>
+          <li data-key="C">A sorted list <span class="q-why">Memory grows.</span></li>
+          <li data-key="D">A queue <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>HyperLogLog estimates cardinality with about 1 percent error in kilobytes.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Bloom filter guarantee?</summary><div class="answer"><p>No false negatives; possible false positives, controlled by size and number of hashes.</p></div></details>
+      </div>
+    </section>
+
+    <section id="geo" data-track>
+      <h2>Geospatial indexing</h2>
+<p>How to answer "restaurants within 2 km?" without checking every place.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Method</th><th>Idea</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>Geohash</td><td>Interleave latitude and longitude bits into a string; shared prefix means nearby</td><td>Simple, works in any key-value or SQL store; edge cases at cell borders (query neighbours)</td></tr><tr><td>Quadtree</td><td>Recursively split the map into 4 cells until each has at most K points</td><td>In-memory, adapts to density</td></tr><tr><td>S2 (Google) and H3 (Uber)</td><td>Hierarchical cells on a sphere or hexagons</td><td>Uniform cells, good for ride matching</td></tr><tr><td>R-tree</td><td>Bounding boxes in a balanced tree</td><td>Used by PostGIS and spatial databases</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd12-04.py">def geohash_encode(lat, lon, bits=20):
+    lat_lo, lat_hi, lon_lo, lon_hi = -90.0, 90.0, -180.0, 180.0
+    out, even = 0, True
+    for _ in range(bits):
+        if even:
+            mid = (lon_lo + lon_hi) / 2
+            bit = lon &gt;= mid
+            lon_lo, lon_hi = (mid, lon_hi) if bit else (lon_lo, mid)
+        else:
+            mid = (lat_lo + lat_hi) / 2
+            bit = lat &gt;= mid
+            lat_lo, lat_hi = (mid, lat_hi) if bit else (lat_lo, mid)
+        out = (out &lt;&lt; 1) | int(bit)
+        even = not even
+    return format(out, "0%db" % bits)
+
+print(geohash_encode(48.8566, 2.3522))    # Paris
+print(geohash_encode(48.8606, 2.3376))    # nearby, shares a long prefix
+print(geohash_encode(40.7128, -74.0060))  # New York, very different prefix</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>11010000000100111001
+11010000000100111001
+01100101110010110111</code></pre>
+<p>Always search the cell and its <strong>neighbouring cells</strong>, then filter by exact distance (haversine).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd12-q05" data-topic="Data systems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Two nearby points on different sides of a geohash cell boundary can have very different prefixes. What do you do?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Ignore it <span class="q-why">You will miss neighbours.</span></li>
+          <li data-key="B">Query the cell and its 8 neighbouring cells, then filter by distance <span class="q-why">Correct.</span></li>
+          <li data-key="C">Use a longer hash <span class="q-why">Does not remove boundaries.</span></li>
+          <li data-key="D">Use random sampling <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Prefix proximity is not guaranteed across boundaries, so search neighbours and verify exact distance.</p></div>
+      </div>
+    </section>
+
+    <section id="ids" data-track>
+      <h2>Unique ID generation</h2>
+<p>In a sharded system you cannot use a single database auto-increment. Requirements: unique, roughly time-ordered (helps indexes), generated without coordination, fast.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Method</th><th>Pros</th><th>Cons</th></tr></thead>
+<tbody>
+<tr><td>UUID v4</td><td>No coordination, trivial</td><td>128 bits, random so poor index locality</td></tr><tr><td>UUID v7 / ULID</td><td>Time-ordered plus random</td><td>128 bits</td></tr><tr><td>Database ticket server</td><td>Simple, ordered</td><td>Single point of failure, bottleneck</td></tr><tr><td>Snowflake (Twitter)</td><td>64 bits, time-ordered, no coordination</td><td>Needs unique machine ids, depends on clocks</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Snowflake layout</strong> (64 bits): 1 sign bit, 41 bits timestamp in milliseconds (about 69 years), 10 bits machine id (1,024 machines), 12 bits sequence (4,096 ids per millisecond per machine).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd12-05.py">import time
+EPOCH = 1_700_000_000_000
+class Snowflake:
+    def __init__(self, machine):
+        self.machine, self.last, self.seq = machine, -1, 0
+    def next(self, now_ms=None):
+        now = now_ms if now_ms is not None else int(time.time() * 1000)
+        if now == self.last:
+            self.seq = (self.seq + 1) &amp; 0xFFF
+            if self.seq == 0:
+                raise RuntimeError("sequence exhausted this millisecond")
+        else:
+            self.seq, self.last = 0, now
+        return ((now - EPOCH) &lt;&lt; 22) | (self.machine &lt;&lt; 12) | self.seq
+
+g = Snowflake(machine=5)
+ids = [g.next(EPOCH + 1000) for _ in range(3)] + [g.next(EPOCH + 1001)]
+print(ids, ids == sorted(ids))
+print("timestamp bits:", ids[0] &gt;&gt; 22, "machine:", (ids[0] &gt;&gt; 12) &amp; 0x3FF, "seq:", ids[0] &amp; 0xFFF)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[4194324480, 4194324481, 4194324482, 4198518784] True
+timestamp bits: 1000 machine: 5 seq: 0</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd12-q06" data-topic="Data systems" data-type="numeric" data-answer="4096" data-tol="0">
+        <div class="q-stem"><p>A Snowflake style id uses a 12 bit sequence. How many ids can one machine create in one millisecond?</p></div>
+        <div class="q-explain"><p>2^12 = 4,096.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Snowflake id layout?</summary><div class="answer"><p>41 bit timestamp, 10 bit machine id, 12 bit sequence in a 64 bit id.</p></div></details>
+      </div>
+    </section>
+
+    <section id="locks" data-track>
+      <h2>Distributed locks and coordination</h2>
+<h3>Why locks are hard</h3>
+<p>A lock held by a process that pauses, crashes or is partitioned can be taken by another while the first still believes it holds it. Use a <strong>lease</strong> (lock with expiry) and <strong>fencing tokens</strong> (<a href="sd6-consistency.html">SD6</a>).</p>
+<h3>Options</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Tool</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>Database row lock or advisory lock</td><td>Simple if you already have one database</td></tr><tr><td>Redis <code>SET key id NX PX 30000</code></td><td>Fast, single node; not safe under failover without care (Redlock debated)</td></tr><tr><td>ZooKeeper, etcd, Consul</td><td>Consensus-based, strong guarantees, ephemeral nodes, watches</td></tr>
+</tbody>
+</table>
+</div>
+<p>Prefer designs that <strong>avoid</strong> locks: idempotent operations, partitioning so one owner handles a key, optimistic concurrency with versions, or a single-threaded queue consumer per key.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd12-q07" data-topic="Data systems" data-type="multi" data-answer="A,B,C">
+        <div class="q-stem"><p>Which are good ways to avoid distributed locks? Select all.</p></div>
+        <ul class="q-options">
+          <li data-key="A">Idempotent operations</li>
+          <li data-key="B">Partition so a single owner handles each key</li>
+          <li data-key="C">Optimistic concurrency with versions</li>
+          <li data-key="D">Hold the lock forever</li>
+        </ul>
+        <div class="q-explain"><p>Locks held without leases or fencing are dangerous; prefer designs that do not need them.</p></div>
+      </div>
+    </section>
+
+    <section id="blob" data-track>
+      <h2>Blob and file storage</h2>
+<p>Store large objects in <strong>object storage</strong> (S3 style): flat namespace of buckets and keys, objects immutable, replicated across zones with very high durability (eleven nines), served over HTTP. Keep <strong>metadata</strong> (owner, name, size, checksum, location) in a database and the bytes in object storage.</p>
+<p>Techniques: <strong>multipart upload</strong> (parallel chunks, resumable), <strong>presigned URLs</strong> (clients upload and download directly from storage, bypassing your servers), <strong>chunking and deduplication</strong> by content hash, <strong>erasure coding</strong> (store data plus parity pieces for durability at lower cost than 3 full copies), <strong>lifecycle rules</strong> to move cold data to cheaper tiers.</p>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Data systems</h2>
+      <p class="muted">10 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Data systems">
+<details class="recall iq" data-level="basic" data-topic="Data systems"><summary><span class="tag ok">Basic</span> What is an inverted index?</summary><div class="answer"><p>A map from each term to the list of documents containing it, enabling fast full-text search.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Data systems"><summary><span class="tag ok">Basic</span> What is a Bloom filter and where is it used?</summary><div class="answer"><p>A compact probabilistic set with no false negatives and tunable false positives. Used to skip disk lookups for missing keys, check URLs and prevent cache penetration.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data systems"><summary><span class="tag warn">Medium</span> How would you generate unique ids across shards?</summary><div class="answer"><p>UUIDs, time-ordered ids like Snowflake (timestamp, machine id, sequence), or a ticket server. Snowflake is compact, sortable and coordination free but depends on clocks and unique machine ids.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data systems"><summary><span class="tag warn">Medium</span> How do you count unique visitors at scale?</summary><div class="answer"><p>HyperLogLog gives about 1 percent error in kilobytes and sketches merge across shards; exact counts need large sets or sampling.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data systems"><summary><span class="tag warn">Medium</span> How does geospatial search work?</summary><div class="answer"><p>Cells such as geohash, quadtree, S2 or H3 index locations. Query the target cell and its neighbours, then filter by exact distance.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data systems"><summary><span class="tag warn">Medium</span> Data warehouse versus data lake?</summary><div class="answer"><p>A warehouse holds modelled, structured data with schema on write. A lake stores raw files cheaply with schema on read. Lakehouses add table formats and transactions to lakes.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Data systems"><summary><span class="tag bad">Advanced</span> How do you scale search?</summary><div class="answer"><p>Shard the index by document, replicate shards, query all shards and merge top results, and keep the index as a derived view updated via queue or CDC.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Data systems"><summary><span class="tag bad">Advanced</span> What is change data capture?</summary><div class="answer"><p>Reading a database&#x27;s transaction log and publishing each change as an event, feeding caches, search indexes and warehouses without dual writes.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Data systems"><summary><span class="tag bad">Advanced</span> How do you build a distributed lock safely?</summary><div class="answer"><p>Use a lease with expiry and fencing tokens on a consensus-backed store, or avoid locks with idempotency, ownership by partition or optimistic versioning.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Data systems"><summary><span class="tag bad">Advanced</span> Why use erasure coding for object storage?</summary><div class="answer"><p>It stores data plus parity pieces and survives multiple losses at lower overhead than keeping three full copies.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd11-observability-security.html"><span class="dir">Previous</span><span>SD11 Observability, security and deployment</span></a>
+      <a class="next" href="sd13-case-1.html"><span class="dir">Next</span><span>SD13 Case studies 1: URL shortener, Pastebin, rate limiter, key-value store, distributed cache</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

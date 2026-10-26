@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="A2">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Math for machine learning: linear algebra, calculus, probability and information theory | AI/ML Prep</title>
+<meta name="description" content="The mathematics behind ML in working code: vectors and matrices, eigenvalues and SVD, gradients and the chain rule, probability and Bayes, maximum likelihood, entropy and KL divergence, and optimisation.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part A2</p>
+      <h1>Math for machine learning: linear algebra, calculus, probability and information theory</h1>
+      <p class="lede">You do not need a maths degree for machine learning, but you do need a handful of ideas used everywhere: dot products, gradients, probability, entropy and optimisation. Each is explained from scratch and verified with a short program.</p>
+      <div class="meta"><span class="tag ok">Basic</span><span class="tag warn">Medium</span><span class="tag">~6 hours</span></div>
+    </div>
+
+    <section id="linalg" data-track>
+      <h2>Vectors and matrices</h2>
+<h3>Vectors and the dot product</h3>
+<p>A <strong>vector</strong> is a list of numbers, a point or direction in space. The <strong>dot product</strong> <code>a . b = sum(a_i b_i)</code> measures alignment: large and positive when the vectors point the same way, zero when perpendicular. The <strong>length</strong> (norm) is <code>||a|| = sqrt(a . a)</code>. <strong>Cosine similarity</strong> <code>a . b / (||a|| ||b||)</code> compares direction only, which is why it is used for embeddings.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a2-01.py">import math
+a, b = [1.0, 2.0, 3.0], [4.0, 0.0, -1.0]
+dot = sum(x * y for x, y in zip(a, b))
+norm = lambda v: math.sqrt(sum(x * x for x in v))
+print("dot", dot, "norms", round(norm(a), 3), round(norm(b), 3))
+print("cosine", round(dot / (norm(a) * norm(b)), 3))
+print("cosine of a with 2a:", round(sum(x * 2 * x for x in a) / (norm(a) * norm([2 * x for x in a])), 3))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>dot 1.0 norms 3.742 4.123
+cosine 0.065
+cosine of a with 2a: 1.0</code></pre>
+<h3>Matrices as transformations</h3>
+<p>A <strong>matrix</strong> <code>W</code> (with <code>m</code> rows and <code>n</code> columns) maps an <code>n</code>-dimensional vector to an <code>m</code>-dimensional one: <code>y = W x</code>. A neural-network layer is exactly this plus a bias and a non-linearity. <strong>Matrix multiplication</strong> <code>C = A B</code> has <code>C_ij = sum_k A_ik B_kj</code>, takes <code>m x n</code> times <code>n x p</code> to <code>m x p</code>, costs about <code>2 m n p</code> floating point operations, and is <strong>not commutative</strong>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a2-02.py">def matmul(A, B):
+    return [[sum(A[i][k] * B[k][j] for k in range(len(B))) for j in range(len(B[0]))] for i in range(len(A))]
+A = [[1, 2], [3, 4]]
+B = [[0, 1], [1, 0]]
+print("AB =", matmul(A, B))
+print("BA =", matmul(B, A))
+rot = [[0, -1], [1, 0]]            # rotate by 90 degrees
+print("rotate (1, 0):", [sum(rot[i][j] * [1, 0][j] for j in range(2)) for i in range(2)])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>AB = [[2, 1], [4, 3]]
+BA = [[3, 4], [1, 2]]
+rotate (1, 0): [0, 1]</code></pre>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Idea</th><th>Why it matters in ML</th></tr></thead>
+<tbody>
+<tr><td>Matrix shapes</td><td>Most bugs are shape mismatches; track <code>(batch, features)</code></td></tr><tr><td>Transpose</td><td>Gradients of <code>W x</code> involve <code>W^T</code></td></tr><tr><td>Identity and inverse</td><td>Normal equation <code>(X^T X)^(-1) X^T y</code></td></tr><tr><td>Rank</td><td>A rank-deficient matrix loses information; LoRA uses low-rank updates</td></tr><tr><td>Orthogonal matrix</td><td>Preserves lengths: rotations, good initialisation</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Eigenvalues, eigenvectors and SVD</h3>
+<p>An <strong>eigenvector</strong> <code>v</code> of a matrix <code>A</code> satisfies <code>A v = lambda v</code>: it is only stretched by <code>lambda</code>, not turned. For a <strong>covariance matrix</strong> the eigenvectors are the principal directions and the eigenvalues the variances along them (PCA, <a href="a1-classical-ml.html">A1</a>). The <strong>singular value decomposition</strong> <code>A = U S V^T</code> exists for any matrix; truncating to the largest singular values gives the best low-rank approximation (compression, LoRA, latent semantic analysis).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a2-03.py">import math
+A = [[2.0, 1.0], [1.0, 2.0]]       # eigenvalues 3 and 1, eigenvectors (1,1) and (1,-1)
+v = [1.0, 0.0]
+for _ in range(60):                 # power iteration converges to the dominant eigenvector
+    w = [A[0][0] * v[0] + A[0][1] * v[1], A[1][0] * v[0] + A[1][1] * v[1]]
+    n = math.hypot(*w); v = [w[0] / n, w[1] / n]
+lam = v[0] * (A[0][0] * v[0] + A[0][1] * v[1]) + v[1] * (A[1][0] * v[0] + A[1][1] * v[1])
+print("eigenvector", [round(x, 3) for x in v], "eigenvalue", round(lam, 3))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>eigenvector [0.707, 0.707] eigenvalue 3.0</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a2-q01" data-topic="Math for ML" data-type="numeric" data-answer="1" data-tol="0">
+        <div class="q-stem"><p>What is the dot product of (1, 2, 3) and (4, 0, -1)?</p></div>
+        <div class="q-explain"><p>1x4 + 2x0 + 3x(-1) = 4 + 0 - 3 = 1.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a2-q02" data-topic="Math for ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why use cosine similarity for embeddings?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is faster <span class="q-why">Not the reason.</span></li>
+          <li data-key="B">It compares direction and ignores vector length <span class="q-why">Correct.</span></li>
+          <li data-key="C">It needs no normalisation <span class="q-why">No.</span></li>
+          <li data-key="D">It always equals the dot product <span class="q-why">Only for unit vectors.</span></li>
+        </ul>
+        <div class="q-explain"><p>Two vectors pointing the same way are similar regardless of magnitude.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is a layer of a neural network mathematically?</summary><div class="answer"><p>An affine map W x + b followed by a non-linearity.</p></div></details>
+      </div>
+    </section>
+
+    <section id="calculus" data-track>
+      <h2>Calculus and gradients</h2>
+<h3>Derivatives and gradients</h3>
+<p>The <strong>derivative</strong> <code>f'(x)</code> is the slope of <code>f</code> at <code>x</code>: how fast the output changes per unit input. For a function of many inputs the <strong>gradient</strong> is the vector of partial derivatives; it points in the direction of steepest increase. Training moves parameters <strong>against</strong> the gradient of the loss.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a2-04.py">f = lambda x: x ** 3 - 2 * x
+fprime = lambda x: 3 * x ** 2 - 2
+x, h = 1.5, 1e-6
+numeric = (f(x + h) - f(x - h)) / (2 * h)       # central difference
+print("analytic", fprime(x), "numeric", round(numeric, 6))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>analytic 4.75 numeric 4.75</code></pre>
+<p>A <strong>numerical gradient check</strong> like this is the standard way to test a hand-written backward pass.</p>
+<h3>The chain rule is backpropagation</h3>
+<p>If <code>y = f(g(x))</code> then <code>dy/dx = f'(g(x)) g'(x)</code>. A neural network is a long composition of functions, and <strong>backpropagation</strong> applies the chain rule layer by layer from the loss back to each weight, reusing intermediate results.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a2-05.py">import math
+# y = sigmoid(w * x + b), loss = (y - t)^2 for one example
+x, t = 2.0, 1.0
+w, b = 0.3, -0.1
+z = w * x + b
+y = 1 / (1 + math.exp(-z))
+loss = (y - t) ** 2
+# chain rule: dL/dw = dL/dy * dy/dz * dz/dw
+dL_dy = 2 * (y - t)
+dy_dz = y * (1 - y)
+dz_dw = x
+grad_w = dL_dy * dy_dz * dz_dw
+def L(w_):
+    return (1 / (1 + math.exp(-(w_ * x + b))) - t) ** 2
+numeric = (L(w + 1e-6) - L(w - 1e-6)) / 2e-6
+print("chain rule", round(grad_w, 6), "numeric", round(numeric, 6))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>chain rule -0.354894 numeric -0.354894</code></pre>
+<h3>Useful derivatives</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Function</th><th>Derivative</th></tr></thead>
+<tbody>
+<tr><td><code>x^n</code></td><td><code>n x^(n-1)</code></td></tr><tr><td><code>e^x</code></td><td><code>e^x</code></td></tr><tr><td><code>log x</code></td><td><code>1 / x</code></td></tr><tr><td>sigmoid <code>s(x)</code></td><td><code>s(x) (1 - s(x))</code></td></tr><tr><td><code>tanh(x)</code></td><td><code>1 - tanh(x)^2</code></td></tr><tr><td>ReLU</td><td>1 for <code>x &gt; 0</code>, else 0</td></tr><tr><td>Softmax with cross-entropy</td><td><code>p - y</code> (probabilities minus one-hot target)</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Convexity</h3>
+<p>A function is <strong>convex</strong> if the line between any two points lies above the graph; a convex function has a single global minimum, so gradient descent cannot get stuck (linear and logistic regression losses). Neural-network losses are non-convex, with many local minima and saddle points, yet gradient descent still finds good solutions in practice.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a2-q03" data-topic="Math for ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Backpropagation is an application of which rule?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Product rule <span class="q-why">No.</span></li>
+          <li data-key="B">Chain rule <span class="q-why">Correct.</span></li>
+          <li data-key="C">L'Hopital's rule <span class="q-why">No.</span></li>
+          <li data-key="D">Bayes' rule <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The loss is a composition of layer functions and gradients are chained backwards.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you check a gradient implementation?</summary><div class="answer"><p>Compare it with a central finite difference (f(x + h) - f(x - h)) / 2h.</p></div></details>
+      </div>
+    </section>
+
+    <section id="prob" data-track>
+      <h2>Probability and statistics</h2>
+<h3>Basics</h3>
+<p>A <strong>random variable</strong> takes values with given probabilities. <strong>Expectation</strong> <code>E[X] = sum(x p(x))</code>, <strong>variance</strong> <code>Var(X) = E[(X - E[X])^2]</code>. <strong>Conditional probability</strong> <code>P(A|B) = P(A and B) / P(B)</code>. <strong>Independence</strong>: <code>P(A and B) = P(A) P(B)</code>.</p>
+<h3>Bayes' rule</h3>
+<div class="formula"><div class="f-title">Bayes' rule</div><div class="f-body">P(H | D) = P(D | H) P(H) / P(D)</div><dl class="f-defs"><dt>P(H)</dt><dd>prior belief</dd><dt>P(D | H)</dt><dd>likelihood of the data under H</dd><dt>P(H | D)</dt><dd>posterior</dd></dl></div>
+<p>Classic example: a disease affects 1 percent of people; a test is 95 percent sensitive and 90 percent specific. A positive result means far less than 95 percent chance of disease:</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a2-06.py">prior, sens, spec = 0.01, 0.95, 0.90
+p_pos = sens * prior + (1 - spec) * (1 - prior)
+posterior = sens * prior / p_pos
+print("P(disease | positive) = %.3f" % posterior)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>P(disease | positive) = 0.088</code></pre>
+<p>Only about 9 percent: the rare condition dominates. This base-rate reasoning appears in fraud, spam and medical models, and explains why precision falls when the positive class is rare.</p>
+<h3>Common distributions</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Distribution</th><th>Models</th><th>Parameters</th></tr></thead>
+<tbody>
+<tr><td>Bernoulli, Binomial</td><td>A coin flip; number of successes</td><td><code>p</code>, <code>n</code></td></tr><tr><td>Categorical, Multinomial</td><td>One of K classes; counts</td><td>probabilities</td></tr><tr><td>Normal (Gaussian)</td><td>Measurement noise, sums of many effects</td><td>mean, variance</td></tr><tr><td>Uniform</td><td>No preference</td><td>range</td></tr><tr><td>Poisson</td><td>Event counts per interval</td><td>rate</td></tr><tr><td>Exponential</td><td>Waiting time</td><td>rate</td></tr><tr><td>Beta</td><td>A probability between 0 and 1</td><td><code>alpha</code>, <code>beta</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>The <strong>central limit theorem</strong>: the average of many independent samples is approximately normal, whatever the original distribution (with finite variance).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a2-07.py">import random
+random.seed(0)
+means = [sum(random.random() for _ in range(30)) / 30 for _ in range(5000)]   # averages of uniform draws
+m = sum(means) / len(means)
+sd = (sum((x - m) ** 2 for x in means) / len(means)) ** 0.5
+inside = sum(abs(x - m) &lt; sd for x in means) / len(means)
+print("mean %.3f, std %.3f (theory %.3f), within 1 std: %.2f (normal: 0.68)" % (m, sd, (1 / 12 / 30) ** 0.5, inside))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>mean 0.500, std 0.052 (theory 0.053), within 1 std: 0.68 (normal: 0.68)</code></pre>
+<h3>Maximum likelihood and MAP</h3>
+<p><strong>Maximum likelihood estimation (MLE)</strong> picks the parameters that make the observed data most probable. It is the origin of most losses: Gaussian noise gives mean squared error, Bernoulli gives binary cross-entropy, categorical gives cross-entropy. <strong>MAP</strong> adds a prior: a Gaussian prior on weights equals L2 regularisation; a Laplace prior equals L1.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a2-08.py">import math
+data = [1, 0, 1, 1, 0, 1, 1, 1]          # coin flips
+def loglik(p): return sum(math.log(p if x else 1 - p) for x in data)
+best = max((i / 100 for i in range(1, 100)), key=loglik)
+print("MLE of p: %.2f (sample mean %.2f)" % (best, sum(data) / len(data)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>MLE of p: 0.75 (sample mean 0.75)</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a2-q04" data-topic="Math for ML" data-type="numeric" data-answer="9" data-tol="1">
+        <div class="q-stem"><p>A test has 95 percent sensitivity and 90 percent specificity for a condition with 1 percent prevalence. What is P(disease | positive)? (answer as a percent, nearest whole number)</p></div>
+        <div class="q-explain"><p>0.0095 / (0.0095 + 0.099) = 0.088, about 9 percent.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a2-q05" data-topic="Math for ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which loss corresponds to maximum likelihood with Gaussian noise?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Cross-entropy <span class="q-why">That is for categorical outputs.</span></li>
+          <li data-key="B">Mean squared error <span class="q-why">Correct.</span></li>
+          <li data-key="C">Hinge loss <span class="q-why">No.</span></li>
+          <li data-key="D">L1 regularisation <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Maximising the Gaussian log likelihood minimises squared error.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>State Bayes' rule and say why base rates matter.</summary><div class="answer"><p>Posterior = likelihood x prior / evidence; a rare class keeps the posterior low even for an accurate test.</p></div></details>
+      </div>
+    </section>
+
+    <section id="info" data-track>
+      <h2>Information theory</h2>
+<h3>Entropy, cross-entropy and KL divergence</h3>
+<ul><li><strong>Entropy</strong> <code>H(p) = -sum p log p</code>: the average surprise; how unpredictable a distribution is. A fair coin has 1 bit; a certain outcome has 0.</li><li><strong>Cross-entropy</strong> <code>H(p, q) = -sum p log q</code>: the average cost of coding events from <code>p</code> using a code built for <code>q</code>. This is the classification loss with <code>p</code> the true labels.</li><li><strong>KL divergence</strong> <code>KL(p || q) = H(p, q) - H(p) &gt;= 0</code>: the extra cost of using <code>q</code> instead of <code>p</code>; zero only when they are equal; <strong>not symmetric</strong>.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/a2-09.py">import math
+def H(p): return -sum(x * math.log2(x) for x in p if x &gt; 0)
+def CE(p, q): return -sum(a * math.log2(b) for a, b in zip(p, q) if a &gt; 0)
+def KL(p, q): return CE(p, q) - H(p)
+fair, biased = [0.5, 0.5], [0.9, 0.1]
+print("H(fair)=%.3f H(biased)=%.3f" % (H(fair), H(biased)))
+print("CE(fair, biased)=%.3f KL(fair||biased)=%.3f KL(biased||fair)=%.3f" % (CE(fair, biased), KL(fair, biased), KL(biased, fair)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>H(fair)=1.000 H(biased)=0.469
+CE(fair, biased)=1.737 KL(fair||biased)=0.737 KL(biased||fair)=0.531</code></pre>
+<p>The asymmetry (<code>0.737</code> versus <code>0.531</code>) matters: <strong>forward KL</strong> <code>KL(data || model)</code> punishes the model for missing modes; <strong>reverse KL</strong> punishes it for putting mass where there is no data. <strong>Perplexity</strong> is <code>2^H</code> (or <code>e^H</code> with natural logs): the effective number of equally likely choices (<a href="f3-llm-training-scaling.html">F3</a>). <strong>Mutual information</strong> measures how much knowing one variable tells about another.</p>
+<h3>Softmax and temperature</h3>
+<p><code>softmax(z)_i = e^(z_i) / sum_j e^(z_j)</code> turns scores into probabilities. Dividing the scores by a <strong>temperature</strong> <code>T</code> changes sharpness: low <code>T</code> approaches argmax, high <code>T</code> approaches uniform (<a href="06-decoding-and-sampling.html">06</a>). Subtract the maximum before exponentiating for numerical stability.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a2-q06" data-topic="Math for ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>KL divergence KL(p || q) is:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Symmetric <span class="q-why">It is not.</span></li>
+          <li data-key="B">Always non-negative and zero only when p = q <span class="q-why">Correct.</span></li>
+          <li data-key="C">Equal to entropy <span class="q-why">No.</span></li>
+          <li data-key="D">Negative for similar distributions <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Gibbs' inequality guarantees non-negativity.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a2-q07" data-topic="Math for ML" data-type="fill" data-answer="kl|kullback-leibler|KL">
+        <div class="q-stem"><p>Cross-entropy minus entropy equals the <input class="q-input" aria-label="blank 1"> divergence.</p></div>
+        <div class="q-explain"><p>H(p, q) - H(p) = KL(p || q).</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Entropy, cross-entropy and KL relation?</summary><div class="answer"><p>Cross-entropy = entropy + KL divergence.</p></div></details>
+      </div>
+    </section>
+
+    <section id="optim" data-track>
+      <h2>Optimisation</h2>
+<h3>Gradient descent and its relatives</h3>
+<p><code>theta &lt;- theta - lr x gradient</code>. Variants:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Method</th><th>Update idea</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>SGD</td><td>Gradient on a mini-batch</td><td>Noisy but cheap</td></tr><tr><td>Momentum</td><td>Keep a running average of gradients</td><td>Smooths noise, speeds along valleys</td></tr><tr><td>RMSProp</td><td>Divide by a running average of squared gradients</td><td>Per-parameter step sizes</td></tr><tr><td>Adam</td><td>Momentum plus RMSProp with bias correction</td><td>The default for deep learning</td></tr><tr><td>AdamW</td><td>Adam with decoupled weight decay</td><td>Standard for transformers</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/a2-10.py">import math
+# Minimise f(x, y) = x^2 + 10 y^2 (a narrow valley) with plain GD, momentum and Adam.
+grad = lambda x, y: (2 * x, 20 * y)
+def run(update, steps=60):
+    x, y, state = 1.0, 1.0, {}
+    for t in range(1, steps + 1):
+        gx, gy = grad(x, y)
+        x, y = update(x, y, gx, gy, state, t)
+    return x * x + 10 * y * y
+def gd(x, y, gx, gy, s, t, lr=0.05): return x - lr * gx, y - lr * gy
+def momentum(x, y, gx, gy, s, t, lr=0.05, b=0.9):
+    vx, vy = s.get("v", (0, 0)); vx, vy = b * vx + gx, b * vy + gy; s["v"] = (vx, vy)
+    return x - lr * vx, y - lr * vy
+def adam(x, y, gx, gy, s, t, lr=0.1, b1=0.9, b2=0.999):
+    m = s.get("m", (0, 0)); v = s.get("v", (0, 0))
+    m = (b1 * m[0] + (1 - b1) * gx, b1 * m[1] + (1 - b1) * gy)
+    v = (b2 * v[0] + (1 - b2) * gx * gx, b2 * v[1] + (1 - b2) * gy * gy)
+    s["m"], s["v"] = m, v
+    mh = (m[0] / (1 - b1 ** t), m[1] / (1 - b1 ** t)); vh = (v[0] / (1 - b2 ** t), v[1] / (1 - b2 ** t))
+    return x - lr * mh[0] / (math.sqrt(vh[0]) + 1e-8), y - lr * mh[1] / (math.sqrt(vh[1]) + 1e-8)
+for name, u in (("gradient descent", gd), ("momentum", momentum), ("adam", adam)):
+    print("%-16s final loss %.6f" % (name, run(u)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>gradient descent final loss 0.000003
+momentum         final loss 0.010762
+adam             final loss 0.013212</code></pre>
+<h3>Learning rate</h3>
+<p>Too small: slow. Too large: oscillation or divergence. Common practice: <strong>warm-up</strong> (ramp up the rate), then <strong>decay</strong> (cosine or linear). Tune the learning rate first, since it matters more than almost any other hyperparameter.</p>
+<h3>Local minima, saddles, generalisation</h3>
+<p>In high dimensions most critical points are <strong>saddle points</strong>, not bad minima. Flat minima tend to generalise better; SGD noise, large learning rates and regularisation bias solutions toward them.</p>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Almost all of ML is: write a <strong>loss</strong> from a probabilistic assumption (MLE), compute its <strong>gradient</strong> with the chain rule, and <strong>descend</strong> it with a good optimiser while watching a held-out set.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a2-q08" data-topic="Math for ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does Adam combine?</p></div>
+        <ul class="q-options">
+          <li data-key="A">SGD and dropout <span class="q-why">No.</span></li>
+          <li data-key="B">Momentum and per-parameter scaling by running squared gradients <span class="q-why">Correct.</span></li>
+          <li data-key="C">L1 and L2 <span class="q-why">No.</span></li>
+          <li data-key="D">Batch norm and ReLU <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It keeps first and second moment estimates with bias correction.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why warm-up and decay the learning rate?</summary><div class="answer"><p>Warm-up avoids early instability while statistics settle; decay refines the solution late in training.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Math for ML</h2>
+      <p class="muted">13 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Math for ML">
+<details class="recall iq" data-level="basic" data-topic="Math for ML"><summary><span class="tag ok">Basic</span> What is a dot product and what does it measure?</summary><div class="answer"><p>The sum of element-wise products; it measures alignment, large and positive when vectors point the same way, zero when perpendicular.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Math for ML"><summary><span class="tag ok">Basic</span> What is a gradient?</summary><div class="answer"><p>The vector of partial derivatives of a function; it points in the direction of steepest increase, so gradient descent moves against it.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Math for ML"><summary><span class="tag ok">Basic</span> State Bayes&#x27; rule.</summary><div class="answer"><p>P(H | D) = P(D | H) P(H) / P(D): the posterior equals likelihood times prior divided by evidence.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Math for ML"><summary><span class="tag ok">Basic</span> What is the chain rule and why is it central to deep learning?</summary><div class="answer"><p>The derivative of a composition is the product of derivatives. Backpropagation applies it layer by layer from the loss back to each weight.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Math for ML"><summary><span class="tag warn">Medium</span> Why does a rare disease test with high accuracy often give a low positive predictive value?</summary><div class="answer"><p>Base rates dominate: with 1 percent prevalence, 95 percent sensitivity and 90 percent specificity, false positives from the large healthy group outnumber true positives, giving about 9 percent.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Math for ML"><summary><span class="tag warn">Medium</span> What are eigenvalues and eigenvectors and where do they appear in ML?</summary><div class="answer"><p>A v = lambda v: directions only scaled by the matrix. Covariance eigenvectors are principal components; eigenvalues are variances along them. Also used in spectral methods and stability analysis.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Math for ML"><summary><span class="tag warn">Medium</span> Entropy, cross-entropy and KL divergence?</summary><div class="answer"><p>Entropy is average surprise; cross-entropy is the cost of coding p with a code for q; KL(p||q) equals cross-entropy minus entropy, is non-negative and asymmetric.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Math for ML"><summary><span class="tag warn">Medium</span> Why does MLE with Gaussian noise give squared error?</summary><div class="answer"><p>The Gaussian log likelihood is a constant minus the squared residual over twice the variance, so maximising it minimises squared error.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Math for ML"><summary><span class="tag warn">Medium</span> What does a Gaussian prior on weights correspond to?</summary><div class="answer"><p>L2 regularisation (MAP estimation); a Laplace prior corresponds to L1.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Math for ML"><summary><span class="tag bad">Advanced</span> Why is the SVD important?</summary><div class="answer"><p>Every matrix factors as U S V^T; truncating to the largest singular values gives the best low-rank approximation, used in compression, PCA, recommender systems and LoRA.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Math for ML"><summary><span class="tag bad">Advanced</span> Compare SGD, momentum, RMSProp and Adam.</summary><div class="answer"><p>SGD follows noisy gradients; momentum averages gradients to smooth them; RMSProp scales steps by running squared gradients; Adam combines both with bias correction.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Math for ML"><summary><span class="tag bad">Advanced</span> What is convexity and why does it matter?</summary><div class="answer"><p>A convex loss has a single global minimum, so gradient descent converges to it. Neural network losses are non-convex, yet SGD still finds good solutions in practice.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Math for ML"><summary><span class="tag bad">Advanced</span> Why subtract the maximum before computing softmax?</summary><div class="answer"><p>It prevents overflow in exp without changing the result, since softmax is invariant to adding a constant to all logits.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="a1-classical-ml.html"><span class="dir">Previous</span><span>A1 Classical machine learning algorithms from scratch</span></a>
+      <a class="next" href="a3-deep-learning.html"><span class="dir">Next</span><span>A3 Deep learning training in depth: backprop, initialisation, normalisation, CNNs and RNNs</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

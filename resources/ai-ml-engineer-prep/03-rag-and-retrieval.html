@@ -1,0 +1,688 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="03">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>03 RAG and retrieval | AI/ML Engineer Prep</title>
+<meta name="description" content="RAG diagnosis by stage, rerankers, embedding migrations, BM25 from scratch, RRF, ranking metrics, chunking, dedup, ANN indexes.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part 03</p>
+      <h1>RAG and retrieval</h1>
+      <p class="lede">You know RAG from projects. This page adds precision: diagnose failures by stage with numbers, derive BM25 term by term, and compute every ranking metric by hand. Coding problems (a) and (b) build directly on this page.</p>
+      <div class="meta"><span class="tag accent">Feeds coding problems a and b</span><span class="tag">~2.5 hours</span></div>
+    </div>
+
+    <!-- ============================================================ basics -->
+    <section id="rag-basics" data-track>
+      <h2>Basics first: what RAG is and why it works</h2>
+
+      <h3>Intuition</h3>
+      <p>An LLM only knows what was in its training data, frozen at a cutoff date, and it has never seen your private documents. Retrieval-augmented generation (RAG) is an open-book exam: before answering, look up the relevant pages and put them in the prompt. The model then reads and answers from them, and can cite them.</p>
+
+      <h3>The mechanism</h3>
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 210" role="img" aria-label="Offline: documents are chunked, embedded and stored in a vector index. Online: the question is embedded, similar chunks are retrieved, and the prompt with chunks goes to the LLM, which answers with citations">
+          <defs><marker id="rb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker></defs>
+          <text x="20" y="20" class="d-bold">offline (indexing)</text>
+          <rect x="20" y="30" width="110" height="40" rx="6" class="d-box"/><text x="75" y="55" text-anchor="middle" class="d-sm">documents</text>
+          <line x1="130" y1="50" x2="158" y2="50" class="d-line" marker-end="url(#rb)"/>
+          <rect x="160" y="30" width="110" height="40" rx="6" class="d-box"/><text x="215" y="55" text-anchor="middle" class="d-sm">chunk</text>
+          <line x1="270" y1="50" x2="298" y2="50" class="d-line" marker-end="url(#rb)"/>
+          <rect x="300" y="30" width="110" height="40" rx="6" class="d-c"/><text x="355" y="55" text-anchor="middle" class="d-sm">embed</text>
+          <line x1="410" y1="50" x2="438" y2="50" class="d-line" marker-end="url(#rb)"/>
+          <rect x="440" y="30" width="140" height="40" rx="6" class="d-b"/><text x="510" y="55" text-anchor="middle" class="d-sm">vector index</text>
+          <text x="20" y="110" class="d-bold">online (query)</text>
+          <rect x="20" y="120" width="110" height="40" rx="6" class="d-a"/><text x="75" y="145" text-anchor="middle" class="d-sm">question</text>
+          <line x1="130" y1="140" x2="298" y2="140" class="d-line" marker-end="url(#rb)"/><text x="215" y="132" text-anchor="middle" class="d-sm">embed</text>
+          <rect x="300" y="120" width="110" height="40" rx="6" class="d-c"/><text x="355" y="145" text-anchor="middle" class="d-sm">search top k</text>
+          <line x1="410" y1="140" x2="438" y2="140" class="d-line" marker-end="url(#rb)"/>
+          <line x1="510" y1="70" x2="510" y2="118" class="d-line d-dash" marker-end="url(#rb)"/>
+          <rect x="440" y="120" width="140" height="40" rx="6" class="d-b"/><text x="510" y="145" text-anchor="middle" class="d-sm">prompt + chunks</text>
+          <line x1="580" y1="140" x2="608" y2="140" class="d-line" marker-end="url(#rb)"/>
+          <rect x="610" y="120" width="100" height="40" rx="6" class="d-e"/><text x="660" y="145" text-anchor="middle" class="d-sm">LLM answer</text>
+          <text x="20" y="196" class="d-sm d-muted">The rest of this page sharpens each box: hybrid search, reranking, metrics, chunking, ANN indexes.</text>
+        </svg>
+        </div>
+        <figcaption>The minimal RAG pipeline: index once, retrieve per query, generate with context.</figcaption>
+      </figure>
+      <ul>
+        <li><strong>Why not just a long context?</strong> Cost and latency scale with prompt tokens, the lost-in-the-middle effect hurts recall, and corpora are far larger than any context window. Retrieval selects what matters.</li>
+        <li><strong>Why not fine-tune the facts in?</strong> Retraining for each update is slow, there are no citations, and fact injection through fine-tuning is unreliable (part 02).</li>
+        <li><strong>Common RAG eval metrics</strong> (as popularized by the RAGAS framework): <em>context precision and recall</em> (are the retrieved chunks relevant, and do they cover the answer?), <em>faithfulness</em> (are the answer's claims supported by the context?), <em>answer relevancy</em> (does it address the question?). Plus classic retrieval metrics (recall@k, MRR, nDCG) and answer correctness against references.</li>
+        <li><strong>Variants</strong>: query rewriting, HyDE (embed a hypothetical answer), parent-document retrieval, agentic RAG (the model calls search as a tool, possibly several times), GraphRAG (retrieval over an entity graph).</li>
+      </ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p03-basic-1" data-topic="RAG" data-type="multi" data-answer="A,B,D">
+        <div class="q-stem"><p>Why use RAG instead of stuffing every document into a long context? Select all.</p></div>
+        <ul class="q-options">
+          <li data-key="A">Lower cost and latency per request <span class="q-why">Yes: fewer prompt tokens.</span></li>
+          <li data-key="B">Corpora are larger than context windows <span class="q-why">Yes.</span></li>
+          <li data-key="C">RAG removes the need for evals <span class="q-why">No.</span></li>
+          <li data-key="D">Models use the middle of very long contexts less reliably <span class="q-why">Yes: lost in the middle.</span></li>
+        </ul>
+        <div class="q-explain"><p>Selective retrieval keeps prompts small, relevant and citable.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Offline vs online steps of RAG?</summary><div class="answer"><p>Offline: parse, chunk, embed, index. Online: embed the query, retrieve (and rerank), build the prompt, generate.</p></div></details>
+        <details class="recall"><summary>What is faithfulness?</summary><div class="answer"><p>Whether every claim in the answer is supported by the retrieved context.</p></div></details>
+        <details class="recall"><summary>What is HyDE?</summary><div class="answer"><p>Generate a hypothetical answer, embed it, and retrieve with that vector instead of the raw question.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 1 -->
+    <section id="diagnosis" data-track>
+      <h2>Diagnose a RAG system by stage</h2>
+
+      <h3>Intuition</h3>
+      <p>A RAG answer passes through a pipeline. When the final answer is wrong, the fix depends on <em>which stage</em> failed. Measure each stage separately. Retrieval metrics tell you whether the right chunk was found. Answer metrics tell you whether the generator used it. If retrieval finds the right chunk but the answer is still wrong, retrieval changes will not help.</p>
+
+      <h3>The mechanism</h3>
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 200" role="img" aria-label="RAG pipeline: ingest and chunk, embed and index, retrieve top k, rerank to top n, pack context, generate, each with its own metric">
+          <defs><marker id="r1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker></defs>
+          <rect x="10" y="40" width="100" height="50" rx="6" class="d-box"/><text x="60" y="62" text-anchor="middle" class="d-sm">ingest +</text><text x="60" y="78" text-anchor="middle" class="d-sm">chunk</text>
+          <line x1="112" y1="65" x2="126" y2="65" class="d-line" marker-end="url(#r1)"/>
+          <rect x="128" y="40" width="100" height="50" rx="6" class="d-box"/><text x="178" y="62" text-anchor="middle" class="d-sm">embed +</text><text x="178" y="78" text-anchor="middle" class="d-sm">index</text>
+          <line x1="230" y1="65" x2="244" y2="65" class="d-line" marker-end="url(#r1)"/>
+          <rect x="246" y="40" width="100" height="50" rx="6" class="d-a"/><text x="296" y="62" text-anchor="middle" class="d-sm">retrieve</text><text x="296" y="78" text-anchor="middle" class="d-sm">top 20</text>
+          <line x1="348" y1="65" x2="362" y2="65" class="d-line" marker-end="url(#r1)"/>
+          <rect x="364" y="40" width="100" height="50" rx="6" class="d-c"/><text x="414" y="62" text-anchor="middle" class="d-sm">rerank</text><text x="414" y="78" text-anchor="middle" class="d-sm">top 3 to 5</text>
+          <line x1="466" y1="65" x2="480" y2="65" class="d-line" marker-end="url(#r1)"/>
+          <rect x="482" y="40" width="100" height="50" rx="6" class="d-box"/><text x="532" y="62" text-anchor="middle" class="d-sm">pack</text><text x="532" y="78" text-anchor="middle" class="d-sm">context</text>
+          <line x1="584" y1="65" x2="598" y2="65" class="d-line" marker-end="url(#r1)"/>
+          <rect x="600" y="40" width="110" height="50" rx="6" class="d-b"/><text x="655" y="70" text-anchor="middle" class="d-sm">generate</text>
+          <text x="60" y="118" text-anchor="middle" class="d-sm d-muted">chunk quality</text>
+          <text x="178" y="118" text-anchor="middle" class="d-sm d-muted">embedding fit</text>
+          <text x="296" y="118" text-anchor="middle" class="d-sm d-ta">recall@k</text>
+          <text x="414" y="118" text-anchor="middle" class="d-sm d-tc">nDCG / MRR</text>
+          <text x="532" y="118" text-anchor="middle" class="d-sm d-muted">token budget</text>
+          <text x="655" y="118" text-anchor="middle" class="d-sm d-tb">faithfulness,</text>
+          <text x="655" y="134" text-anchor="middle" class="d-sm d-tb">answer accuracy</text>
+          <text x="10" y="180" class="d-sm">recall@20 = 0.93 says the right chunk is usually in the top 20. Accuracy = 0.61 says the generator often fails to use it.</text>
+        </svg>
+        </div>
+        <figcaption>Each stage has its own metric. Compare them to locate the failure.</figcaption>
+      </figure>
+
+      <h3>Decision table</h3>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Symptom</th><th>Likely stage</th><th>Fix</th></tr></thead>
+        <tbody>
+          <tr><td>Low recall@k: the right chunk is not in the top k</td><td>Retrieval</td><td>Hybrid search (BM25 + dense with RRF), a better or domain-tuned embedding model, query rewriting, better chunking, metadata filters</td></tr>
+          <tr><td>High recall@k, low answer accuracy, wrong chunk quoted</td><td>Ranking or generation</td><td><strong>Cross-encoder reranker, then pass only the top 3 to 5</strong></td></tr>
+          <tr><td>Right chunk in context, answer contradicts it</td><td>Generation</td><td>Prompt for grounding ("answer only from the context, cite the chunk id"), a stronger model, put the most relevant chunk first or last</td></tr>
+          <tr><td>Answer correct but unsupported or hallucinated details</td><td>Faithfulness</td><td>Citation requirements, an abstain option, a faithfulness eval (claim-level checks)</td></tr>
+          <tr><td>Chunks cut mid-table or mid-sentence</td><td>Chunking</td><td>Structure-aware splitting (headings, tables), overlap, parent-document retrieval</td></tr>
+          <tr><td>Exact codes or names (SKU-123, error E1042) missed</td><td>Dense retrieval weakness</td><td>Add BM25 (lexical) and fuse with RRF</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>Worked case: recall@20 = 0.93, accuracy = 0.61, wrong chunk quoted</h3>
+      <div class="worked">
+        <ol class="steps">
+          <li>Recall@20 = 0.93: in 93% of questions the correct chunk is somewhere in the 20 passed to the model. Retrieval is not the bottleneck.</li>
+          <li>Accuracy 0.61, and errors quote a <em>different</em> chunk: the generator is distracted by 19 similar-looking but wrong chunks.</li>
+          <li>Fix: a cross-encoder reranker scores each (question, chunk) pair jointly and is much more precise than the bi-encoder that did the first-pass retrieval. Keep only the top 3 to 5. Fewer, better chunks mean less distraction.</li>
+          <li>Measure: after reranking, check recall@5 (is the right chunk still in the top 5?) and answer accuracy.</li>
+        </ol>
+        <span class="result">Add a cross-encoder reranker and pass only the top 3 to 5</span>
+      </div>
+
+      <h3>Why the other options are wrong</h3>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Option</th><th>Why it fails</th></tr></thead>
+        <tbody>
+          <tr><td>Raise temperature</td><td>Adds randomness. It cannot make the model pick the right chunk. If anything, factual accuracy drops.</td></tr>
+          <tr><td>Retrieve 50 chunks</td><td>Recall is already 0.93. More chunks mean more distractors and a higher token cost. The "lost in the middle" effect (Liu et al., 2023: models use information at the start and end of a long context better than in the middle) gets worse.</td></tr>
+          <tr><td>Bigger embedding dimensions</td><td>Improves first-stage retrieval at best, which is not the failing stage. It also requires re-embedding everything.</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p03-diag-1" data-topic="RAG" data-type="single" data-answer="A">
+        <div class="q-stem"><p>Your RAG eval shows recall@20 = 0.93 but answer accuracy = 0.61, and wrong answers usually quote the wrong chunk. Best next change?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Add a cross-encoder reranker and pass only the top 3 to 5 chunks <span class="q-why">Retrieval finds the chunk. Precision at the top and less distraction fix generation.</span></li>
+          <li data-key="B">Raise the temperature <span class="q-why">Randomness does not select the right evidence.</span></li>
+          <li data-key="C">Retrieve 50 chunks instead of 20 <span class="q-why">Recall is already high. This adds distractors and cost.</span></li>
+          <li data-key="D">Switch to an embedding model with more dimensions <span class="q-why">This targets retrieval recall, which is not the bottleneck.</span></li>
+        </ul>
+        <div class="q-explain"><p>High recall with low accuracy points past retrieval. Reranking improves the ordering at the top, and trimming reduces noise in the prompt.</p></div>
+      </div>
+      <div class="quiz" data-qid="p03-diag-2" data-topic="RAG" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Recall@20 is 0.45 on queries that contain product codes like "ZX-4410". Accuracy is low. Best first fix?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Add a reranker <span class="q-why">A reranker cannot surface what retrieval never returned.</span></li>
+          <li data-key="B">Lower the temperature <span class="q-why">Retrieval is the failing stage.</span></li>
+          <li data-key="C">Add BM25 and fuse it with dense results (hybrid search with RRF) <span class="q-why">Lexical matching handles exact codes that embeddings blur.</span></li>
+          <li data-key="D">Use longer chunks <span class="q-why">This does not address exact-term matching.</span></li>
+        </ul>
+        <div class="q-explain"><p>Low recall means fix retrieval. Exact identifiers are the classic weakness of dense embeddings and the classic strength of BM25.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does high recall@k with low accuracy tell you?</summary><div class="answer"><p>Retrieval is fine. Ranking at the top or generation is the problem.</p></div></details>
+        <details class="recall"><summary>What is "lost in the middle"?</summary><div class="answer"><p>LLMs use information at the beginning and end of a long context more reliably than information in the middle.</p></div></details>
+        <details class="recall"><summary>Name a stage-level metric for retrieval and one for generation.</summary><div class="answer"><p>Retrieval: recall@k. Generation: faithfulness or answer accuracy.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 2 -->
+    <section id="rerankers" data-track>
+      <h2>Bi-encoder vs cross-encoder vs ColBERT</h2>
+
+      <h3>Intuition</h3>
+      <p>A bi-encoder is like summarizing every book on an index card ahead of time and comparing your question's card to them: fast, but coarse. A cross-encoder reads your question and one candidate book together, carefully: accurate, but you can only afford to do it for a handful. ColBERT keeps a card per <em>word</em>, a middle ground.</p>
+
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 220" role="img" aria-label="Bi-encoder encodes query and document separately and compares vectors; cross-encoder encodes them together and outputs a score; ColBERT compares per-token vectors with MaxSim">
+          <text x="20" y="20" class="d-lg">Bi-encoder</text>
+          <rect x="20" y="34" width="80" height="30" rx="4" class="d-a"/><text x="60" y="54" text-anchor="middle" class="d-sm">query</text>
+          <rect x="120" y="34" width="80" height="30" rx="4" class="d-b"/><text x="160" y="54" text-anchor="middle" class="d-sm">doc</text>
+          <rect x="20" y="78" width="80" height="30" rx="4" class="d-box"/><text x="60" y="98" text-anchor="middle" class="d-sm">encoder</text>
+          <rect x="120" y="78" width="80" height="30" rx="4" class="d-box"/><text x="160" y="98" text-anchor="middle" class="d-sm">encoder</text>
+          <text x="110" y="134" text-anchor="middle" class="d-sm">cos(q_vec, d_vec)</text>
+          <text x="20" y="160" class="d-sm d-muted">docs precomputed: ms over millions</text>
+          <text x="260" y="20" class="d-lg">Cross-encoder</text>
+          <rect x="260" y="34" width="180" height="30" rx="4" class="d-c"/><text x="350" y="54" text-anchor="middle" class="d-sm">[CLS] query [SEP] doc</text>
+          <rect x="260" y="78" width="180" height="30" rx="4" class="d-box"/><text x="350" y="98" text-anchor="middle" class="d-sm">one transformer, full attention</text>
+          <text x="350" y="134" text-anchor="middle" class="d-sm">relevance score</text>
+          <text x="260" y="160" class="d-sm d-muted">1 forward pass per pair: rerank top 20 to 100</text>
+          <text x="500" y="20" class="d-lg">ColBERT</text>
+          <rect x="500" y="34" width="24" height="24" class="d-a"/><rect x="528" y="34" width="24" height="24" class="d-a"/><rect x="556" y="34" width="24" height="24" class="d-a"/>
+          <rect x="500" y="78" width="24" height="24" class="d-b"/><rect x="528" y="78" width="24" height="24" class="d-b"/><rect x="556" y="78" width="24" height="24" class="d-b"/><rect x="584" y="78" width="24" height="24" class="d-b"/><rect x="612" y="78" width="24" height="24" class="d-b"/>
+          <text x="500" y="134" class="d-sm">score = sum over query tokens</text>
+          <text x="500" y="152" class="d-sm">of max sim to any doc token</text>
+          <text x="500" y="178" class="d-sm d-muted">token vectors precomputed; more storage</text>
+        </svg>
+        </div>
+        <figcaption>Bi-encoders scale to first-stage retrieval. Cross-encoders are the precise second stage. ColBERT's late interaction sits in between.</figcaption>
+      </figure>
+
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th></th><th>Bi-encoder</th><th>Cross-encoder</th><th>ColBERT (late interaction)</th></tr></thead>
+        <tbody>
+          <tr><td>Interaction</td><td>none until the final dot product</td><td>full attention between query and doc tokens</td><td>token-level MaxSim after encoding</td></tr>
+          <tr><td>Precompute docs?</td><td>yes, one vector each</td><td>no</td><td>yes, one vector per token</td></tr>
+          <tr><td>Cost per query</td><td>one encode + ANN search</td><td>one forward pass per candidate</td><td>encode + MaxSim over candidates</td></tr>
+          <tr><td>Accuracy</td><td>good</td><td>best</td><td>near cross-encoder on many benchmarks</td></tr>
+          <tr><td>Role</td><td>first stage over millions</td><td>rerank 20 to 100 candidates</td><td>first stage or rerank, with a storage cost</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <div class="callout trap"><ul class="mb-0">
+        <li>"Use a cross-encoder for first-stage search over 10M docs." That means 10M forward passes per query. Far too slow.</li>
+        <li>"A reranker improves recall@20." It reorders the given candidates, so recall@20 of that set does not change. It improves precision at the top (recall@3, nDCG@5).</li>
+      </ul></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p03-ce-1" data-topic="RAG" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why are cross-encoders used only for reranking a small candidate set?</p></div>
+        <ul class="q-options">
+          <li data-key="A">They are less accurate than bi-encoders <span class="q-why">They are more accurate.</span></li>
+          <li data-key="B">They need a forward pass per (query, doc) pair, and doc representations cannot be precomputed <span class="q-why">Correct: the cost scales with the number of candidates per query.</span></li>
+          <li data-key="C">They only work with BM25 <span class="q-why">No such requirement.</span></li>
+          <li data-key="D">They output vectors that are too large <span class="q-why">They output a score, not a vector.</span></li>
+        </ul>
+        <div class="q-explain"><p>Joint encoding is why they are accurate, and also why they cannot be indexed ahead of time.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does MaxSim compute in ColBERT?</summary><div class="answer"><p>For each query token, the maximum similarity to any document token. These maxima are summed.</p></div></details>
+        <details class="recall"><summary>Does reranking the top 20 change recall@20?</summary><div class="answer"><p>No. It reorders within the set, which changes recall@k for k &lt; 20 and nDCG.</p></div></details>
+        <details class="recall"><summary>Typical two-stage setup?</summary><div class="answer"><p>Bi-encoder (or hybrid) retrieves about 50 to 100, a cross-encoder reranks, and the top 3 to 5 go to the LLM.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 3 -->
+    <section id="embeddings-migration" data-track>
+      <h2>Embedding models, similarity and migrations</h2>
+
+      <h3>Intuition</h3>
+      <p>An embedding model defines its own coordinate system. Two models, even from the same provider and with the same 1,536 dimensions, put meanings in completely different directions. Dimension 37 in model A has nothing to do with dimension 37 in model B. Comparing a query embedded by the new model against documents embedded by the old one is like comparing GPS coordinates with street addresses.</p>
+
+      <h3>The rule</h3>
+      <div class="callout key"><p class="mb-0">Changing the embedding model means re-embedding the <strong>entire corpus</strong> and the queries with the new model. There are no shortcuts: neither normalization nor equal dimensions make old vectors compatible.</p></div>
+
+      <h3>Migration without downtime (blue/green)</h3>
+      <ol>
+        <li>Create a new index (green) next to the live one (blue).</li>
+        <li><strong>Dual-write</strong>: every new or updated document is embedded with both models and written to both indexes.</li>
+        <li><strong>Backfill</strong>: re-embed the existing corpus into green in batches (watch rate limits and cost).</li>
+        <li>Evaluate green on your retrieval eval set (recall@k, nDCG) and shadow-test on real traffic.</li>
+        <li>Switch reads to green (feature flag, so you can roll back), keep blue for a while, then delete it.</li>
+      </ol>
+
+      <h3>Cosine, dot product and normalization</h3>
+      <div class="formula">
+        <div class="f-title">Similarity</div>
+        <div class="f-body">cos(a, b) = (a · b) / (|a| |b|)
+if |a| = |b| = 1:  cos(a, b) = a · b,  and  |a - b|^2 = 2 - 2 cos(a, b)</div>
+        <dl class="f-defs"><dt>a · b</dt><dd>dot product, sum of a_i b_i</dd><dt>|a|</dt><dd>Euclidean length</dd></dl>
+      </div>
+      <ul>
+        <li>After L2 normalization, cosine, dot product and Euclidean distance all give the <em>same ranking</em>. Many vector DBs use inner product on normalized vectors for speed.</li>
+        <li>Unnormalized dot product lets vector length leak into the score: (3,4) and (6,8) have cosine 1 but dot product 50. Some models are trained for dot product, so use the metric the model card specifies.</li>
+        <li>Storage: 1M vectors x 1,536 dims x 4 bytes = 6.1 GB (3.1 GB in fp16). Matryoshka-trained models can be truncated to fewer dimensions with modest loss. That only applies if the model was trained for it.</li>
+      </ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p03-emb-1" data-topic="RAG" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Your provider releases a new 1,536-dim embedding model (same dimension as your current one). What do you do with the existing index?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Nothing, the dimensions match <span class="q-why">Matching shape does not mean matching meaning. The vector spaces differ.</span></li>
+          <li data-key="B">Embed only new documents with the new model <span class="q-why">This mixes two incompatible spaces in one index.</span></li>
+          <li data-key="C">Re-embed the whole corpus with the new model (and embed queries with it too) <span class="q-why">Correct. Use a blue/green migration with dual writes to avoid downtime.</span></li>
+          <li data-key="D">Normalize the old vectors <span class="q-why">Normalization fixes length, not orientation in a different space.</span></li>
+        </ul>
+        <div class="q-explain"><p>Vectors are only comparable within the model that produced them.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>When do cosine and dot product give identical rankings?</summary><div class="answer"><p>When all vectors are L2-normalized.</p></div></details>
+        <details class="recall"><summary>What is dual-write in an index migration?</summary><div class="answer"><p>Writing every new or updated document to both the old and new index during the migration, so neither falls behind.</p></div></details>
+        <details class="recall"><summary>Storage for 1M x 1,536 float32 vectors?</summary><div class="answer"><p>About 6.1 GB.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 4 -->
+    <section id="bm25" data-track>
+      <h2>BM25 from first principles</h2>
+
+      <h3>Intuition</h3>
+      <p>BM25 scores a document for a query by adding up, for each query word: <strong>how rare the word is</strong> (rare words are informative) times <strong>how often it appears in the document</strong>. Two corrections apply. Repetition has diminishing returns (the 10th "cats" adds little), and long documents get discounted (they contain more words by chance).</p>
+
+      <h3>The formula</h3>
+      <div class="formula">
+        <div class="f-title">Okapi BM25 (with the +1 idf used by Lucene and by coding problem b)</div>
+        <div class="f-body">score(D, Q) = sum over distinct t in Q of  idf(t) * f(t,D) * (k1 + 1) / ( f(t,D) + k1 * (1 - b + b * |D| / avgdl) )
+
+idf(t) = ln( 1 + (N - n(t) + 0.5) / (n(t) + 0.5) )</div>
+        <dl class="f-defs">
+          <dt>N</dt><dd>number of documents</dd>
+          <dt>n(t)</dt><dd>number of documents containing t (document frequency)</dd>
+          <dt>f(t,D)</dt><dd>count of t in D (term frequency)</dd>
+          <dt>|D|</dt><dd>length of D in tokens</dd>
+          <dt>avgdl</dt><dd>average document length over all docs</dd>
+          <dt>k1</dt><dd>saturation, typically 1.2 (0 means term frequency is ignored, large means nearly linear)</dd>
+          <dt>b</dt><dd>length normalization, typically 0.75 (0 means none, 1 means full)</dd>
+        </dl>
+      </div>
+
+      <h3>Each piece, derived</h3>
+      <ul>
+        <li><strong>idf</strong>: the base form ln((N - n + 0.5)/(n + 0.5)) is the log-odds that a random document does NOT contain t (with 0.5 smoothing). That form goes <em>negative</em> when n &gt; N/2, so matching a very common word would lower the score. Adding 1 inside the log keeps idf positive. Example: N = 3, n = 2: classic idf is ln(1.5/2.5) = -0.511, while the +1 form gives ln(1 + 0.6) = 0.470.</li>
+        <li><strong>Saturation</strong>: f(k1+1)/(f + K) equals 1 at f = 1 when K = k1 (an average-length doc) and approaches k1 + 1 = 2.2 as f grows. The first occurrence matters most.</li>
+        <li><strong>Length normalization</strong>: K = k1(1 - b + b|D|/avgdl). A doc twice the average length has a bigger K, so the same f counts less.</li>
+      </ul>
+
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 300" role="img" aria-label="BM25 term-frequency contribution vs raw count for short, average and long documents; all curves saturate toward k1 plus 1 equals 2.2, while raw tf grows linearly">
+          <line x1="60" y1="250" x2="680" y2="250" class="d-line"/>
+          <line x1="60" y1="250" x2="60" y2="20" class="d-line"/>
+          <line x1="60" y1="30" x2="680" y2="30" class="d-grid d-dash"/>
+          <text x="684" y="34" class="d-sm d-muted">2.2 = k1+1</text>
+          <line x1="60" y1="150" x2="680" y2="150" class="d-grid d-dash"/>
+          <text x="40" y="154" text-anchor="end" class="d-sm d-muted">1</text>
+          <text x="40" y="254" text-anchor="end" class="d-sm d-muted">0</text>
+          <text x="120" y="268" text-anchor="middle" class="d-sm d-muted">1</text>
+          <text x="180" y="268" text-anchor="middle" class="d-sm d-muted">2</text>
+          <text x="360" y="268" text-anchor="middle" class="d-sm d-muted">5</text>
+          <text x="660" y="268" text-anchor="middle" class="d-sm d-muted">10</text>
+          <text x="370" y="292" text-anchor="middle" class="d-sm">term frequency f(t, D)</text>
+          <polyline points="60,250 192,30" class="d-line d-dash"/>
+          <text x="196" y="44" class="d-sm d-muted">raw tf (linear)</text>
+          <polyline points="60,250 84,173.5 108,136.5 132,114.6 156,100.2 180,90 204,82.4 228,76.5 252,71.8 276,67.9 300,64.7 348,59.7 396,56 444,53.1 492,50.8 540,48.9 588,47.3 636,45.9 660,45.3" class="d-line-b"/>
+          <polyline points="60,250 84,195 108,162 132,140 156,124.3 180,112.5 204,103.3 228,96 252,90 276,85 300,80.8 348,74 396,68.8 444,64.7 492,61.4 540,58.7 588,56.4 636,54.4 660,53.6" class="d-line-a"/>
+          <polyline points="60,250 84,214.8 108,189.3 132,170 156,154.9 180,142.7 204,132.7 228,124.3 252,117.2 276,111.1 300,105.7 348,97 396,90 444,84.4 492,79.7 540,75.7 588,72.4 636,69.5 660,68.2" class="d-line-d"/>
+          <text x="560" y="40" class="d-sm d-tb">short doc (|D| = 0.5 avgdl)</text>
+          <text x="560" y="98" class="d-sm d-ta">average doc</text>
+          <text x="560" y="116" class="d-sm d-td">long doc (|D| = 2 avgdl)</text>
+        </svg>
+        </div>
+        <figcaption>Contribution of one term versus its count (k1 = 1.2, b = 0.75, before multiplying by idf). For an average-length doc: f = 1 gives 1.0, f = 2 gives 1.375, f = 5 gives 1.774, f = 10 gives 1.964. Longer docs get lower curves.</figcaption>
+      </figure>
+
+      <h3>Worked example on a tiny corpus</h3>
+      <div class="worked">
+        <span class="w-title">Docs: D1 "Cats chase mice." D2 "Dogs chase cats, and cats run." D3 "Mice eat cheese." Query: "cats mice"</span>
+        <ol class="steps">
+          <li>Tokens (lowercase, runs of [a-z0-9]): D1 = [cats, chase, mice] (3), D2 = [dogs, chase, cats, and, cats, run] (6), D3 = [mice, eat, cheese] (3). N = 3, avgdl = 12/3 = 4.</li>
+          <li>Document frequencies: cats is in D1 and D2 (n = 2), mice is in D1 and D3 (n = 2). idf = ln(1 + (3 - 2 + 0.5)/(2 + 0.5)) = ln(1.6) = 0.470 for both.</li>
+          <li>Length factor K = 1.2 x (0.25 + 0.75 x |D|/4): D1 and D3 (|D| = 3): K = 0.975. D2 (|D| = 6): K = 1.65.</li>
+          <li>D1: cats f = 1: 1 x 2.2 / (1 + 0.975) = 1.1139. mice gives the same. Score = 0.470 x 1.1139 x 2 = <strong>1.0471</strong>.</li>
+          <li>D2: cats f = 2: 2 x 2.2 / (2 + 1.65) = 1.2055. No mice. Score = 0.470 x 1.2055 = <strong>0.5666</strong>.</li>
+          <li>D3: mice f = 1: 1.1139. Score = 0.470 x 1.1139 = <strong>0.5235</strong>.</li>
+        </ol>
+        <span class="result">Ranking: D1 (1.0471), D2 (0.5666), D3 (0.5235)</span>
+      </div>
+      <p>Look at D2: "cats" twice in a 6-token doc only barely beats "mice" once in a 3-token doc. Saturation plus length normalization at work. Matching two different query terms (D1) roughly doubles the score.</p>
+      <pre><code class="lang-py">import math
+idf = math.log(1 + (3 - 2 + 0.5) / (2 + 0.5))          # 0.4700
+K = lambda dl: 1.2 * (1 - 0.75 + 0.75 * dl / 4)
+tf = lambda f, dl: f * 2.2 / (f + K(dl))
+print(2 * idf * tf(1, 3), idf * tf(2, 6), idf * tf(1, 3))  # 1.0471 0.5666 0.5235</code></pre>
+
+      <h3>Common traps</h3>
+      <div class="callout trap"><ul class="mb-0">
+        <li>Counting a repeated query term twice. In the coding problem's spec each distinct term counts once.</li>
+        <li>Computing avgdl only over matching docs. It is the mean over ALL docs.</li>
+        <li>Expecting stemming: "retrieved" does not match "retrieval" unless you add a stemmer.</li>
+        <li>Using n = number of occurrences across the corpus. It is the number of documents containing the term.</li>
+        <li>Forgetting that idf with +1 is always positive, so any match gives a score above 0.</li>
+      </ul></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p03-bm25-1" data-topic="RAG" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In BM25, what does the parameter b control?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Term frequency saturation <span class="q-why">That is k1.</span></li>
+          <li data-key="B">How strongly document length is normalized <span class="q-why">Correct: b = 0 means none, b = 1 means full normalization by |D|/avgdl.</span></li>
+          <li data-key="C">The idf smoothing constant <span class="q-why">That is the 0.5.</span></li>
+          <li data-key="D">The number of results returned <span class="q-why">Unrelated.</span></li>
+        </ul>
+        <div class="q-explain"><p>k1 controls saturation and b controls length normalization. Defaults are k1 = 1.2 to 2.0 and b = 0.75.</p></div>
+      </div>
+      <div class="quiz" data-qid="p03-bm25-2" data-topic="RAG" data-type="numeric" data-answer="1.375" data-tol="0.002">
+        <div class="q-stem"><p>k1 = 1.2, b = 0.75, a doc of exactly average length, term count f = 2. What is the term-frequency part f(k1+1)/(f + k1(1 - b + b|D|/avgdl)), before idf?</p></div>
+        <div class="q-explain"><p>|D| = avgdl gives K = 1.2. So 2 x 2.2 / (2 + 1.2) = 4.4 / 3.2 = 1.375.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Write the BM25 idf with +1.</summary><div class="answer"><p>ln(1 + (N - n + 0.5)/(n + 0.5)).</p></div></details>
+        <details class="recall"><summary>What value does the tf part approach as f grows?</summary><div class="answer"><p>k1 + 1 (2.2 for k1 = 1.2).</p></div></details>
+        <details class="recall"><summary>Why can the classic idf be negative, and why is that bad?</summary><div class="answer"><p>When n &gt; N/2 the ratio is below 1, so the log is negative. Matching a common word would then decrease the score.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 5 -->
+    <section id="rrf-hybrid" data-track>
+      <h2>Reciprocal Rank Fusion and hybrid search</h2>
+
+      <h3>Intuition</h3>
+      <p>You have two ranked lists, BM25 and dense, whose scores are on incompatible scales (BM25 is unbounded, cosine runs from -1 to 1). Instead of calibrating scores, RRF uses only ranks: being near the top of any list earns points, and appearing in several lists adds up. k = 60 dampens the gap between rank 1 and rank 2, so agreement between lists beats one list's strong opinion.</p>
+
+      <h3>The formula</h3>
+      <div class="formula">
+        <div class="f-title">RRF (Cormack, Clarke and Buettcher, 2009)</div>
+        <div class="f-body">RRF(d) = sum over lists L containing d of  1 / (k + rank_L(d))</div>
+        <dl class="f-defs"><dt>rank_L(d)</dt><dd>1-based position of d in list L (top result has rank 1)</dd><dt>k</dt><dd>constant, 60 by convention (from the original paper)</dd></dl>
+      </div>
+
+      <h3>Worked example</h3>
+      <div class="worked">
+        <span class="w-title">BM25: [D3, D1, D7]. Dense: [D1, D9, D3]. k = 60</span>
+        <ol class="steps">
+          <li>D1: rank 2 in BM25, rank 1 in dense: 1/62 + 1/61 = 0.03252.</li>
+          <li>D3: rank 1 in BM25, rank 3 in dense: 1/61 + 1/63 = 0.03227.</li>
+          <li>D9: dense rank 2 only: 1/62 = 0.01613.</li>
+          <li>D7: BM25 rank 3 only: 1/63 = 0.01587.</li>
+        </ol>
+        <span class="result">Fused: D1, D3, D9, D7</span>
+      </div>
+      <p>Why k matters: with k = 0, rank 1 is worth twice rank 2 (1/1 vs 1/2). With k = 60 the ratio is (1/61) / (1/62) = 62/61 = 1.0164, almost flat. Documents found by both retrievers dominate.</p>
+
+      <h3>Hybrid search in practice</h3>
+      <ul>
+        <li>Run BM25 and dense retrieval in parallel (each top 50 to 100), fuse with RRF, then rerank the top 20 to 50 with a cross-encoder.</li>
+        <li>Alternatives: weighted score fusion (alpha x normalized dense + (1 - alpha) x normalized BM25), which needs score normalization and tuning. RRF is the robust default.</li>
+        <li>Implementation: the code is in <a href="08-extra-coding-patterns.html#rrf">part 08</a>.</li>
+      </ul>
+
+      <h3>Common traps</h3>
+      <div class="callout trap"><ul class="mb-0">
+        <li>Using 0-based ranks (1/(60 + 0) for the top). The convention is 1-based.</li>
+        <li>Summing raw scores from different retrievers. That is not RRF.</li>
+        <li>Penalizing a doc missing from a list. It simply gets no contribution from that list.</li>
+      </ul></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p03-rrf-1" data-topic="RAG" data-type="fill" data-answer="rank|rank of the document|position|rank(d)||60">
+        <div class="q-stem"><p>RRF score = sum over ranked lists of 1 / (k + <input class="q-input" aria-label="blank 1">), with k conventionally <input class="q-input" aria-label="blank 2">.</p></div>
+        <div class="q-explain"><p>The document's 1-based rank in each list, and k = 60.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why does RRF not need score normalization?</summary><div class="answer"><p>It uses only ranks, never raw scores.</p></div></details>
+        <details class="recall"><summary>RRF contribution of a top-ranked doc with k = 60?</summary><div class="answer"><p>1/61, about 0.0164.</p></div></details>
+        <details class="recall"><summary>Effect of increasing k?</summary><div class="answer"><p>It flattens the difference between top ranks, giving more weight to appearing in multiple lists.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 6 -->
+    <section id="metrics" data-track>
+      <h2>Ranking metrics with worked numbers</h2>
+
+      <h3>Intuition</h3>
+      <p>Different metrics answer different questions. Did we find the relevant docs at all (recall)? How much junk came with them (precision)? How quickly does the first good one appear (MRR)? Are the best ones at the very top, with graded relevance (nDCG)?</p>
+
+      <h3>Running example</h3>
+      <p>One query. The system returns <code>[d1, d2, d3, d4, d5]</code>. Judgments (graded): d1 = 3, d3 = 2, d5 = 1, and <strong>d8 = 2, which was not retrieved</strong>. Everything else is 0. So 4 docs are relevant in total.</p>
+
+      <div class="formula">
+        <div class="f-title">Definitions</div>
+        <div class="f-body">precision@k = (# relevant in top k) / k
+recall@k    = (# relevant in top k) / (total # relevant)
+hit@k       = 1 if any relevant in top k else 0          (hit rate = mean over queries)
+RR          = 1 / (rank of first relevant)               (MRR = mean over queries)
+AP          = (1 / total relevant) * sum over relevant hits of precision@(their rank)
+DCG@k       = sum_{i=1..k} gain_i / log2(i + 1)
+nDCG@k      = DCG@k / IDCG@k     (IDCG = DCG of the ideal ordering of ALL judged docs)</div>
+      </div>
+
+      <div class="worked">
+        <span class="w-title">Computed step by step</span>
+        <ol class="steps">
+          <li>Relevant in top 5: d1, d3, d5 = 3. precision@5 = 3/5 = 0.6. recall@5 = 3/4 = 0.75 (d8 missed).</li>
+          <li>Top 3: d1, d3 relevant. precision@3 = 2/3. recall@3 = 2/4 = 0.5.</li>
+          <li>hit@1 = 1 (d1 is relevant). RR = 1/1 = 1.</li>
+          <li>AP: relevant hits at ranks 1, 3, 5 with precision 1/1, 2/3, 3/5. Sum = 2.2667. Divide by 4 (all relevant, including the missed d8): AP = 0.5667.</li>
+          <li>DCG@5 with gain = relevance: 3/log2(2) + 0 + 2/log2(4) + 0 + 1/log2(6) = 3 + 1 + 0.3869 = 4.3869.</li>
+          <li>Ideal order of all judged docs: 3, 2, 2, 1. IDCG@5 = 3/1 + 2/log2(3) + 2/log2(4) + 1/log2(5) = 3 + 1.2619 + 1 + 0.4307 = 5.6925.</li>
+          <li>nDCG@5 = 4.3869 / 5.6925 = 0.7706.</li>
+        </ol>
+        <span class="result">P@5 0.6, R@5 0.75, RR 1, AP 0.5667, nDCG@5 0.7706</span>
+      </div>
+      <p>Add a second query whose only relevant doc is at rank 3: RR = 1/3 and AP = 1/3. Then MRR = (1 + 1/3)/2 = 0.6667 and MAP = (0.5667 + 0.3333)/2 = 0.45.</p>
+      <pre><code class="lang-py">import math
+dcg  = 3/math.log2(2) + 2/math.log2(4) + 1/math.log2(6)
+idcg = 3/math.log2(2) + 2/math.log2(3) + 2/math.log2(4) + 1/math.log2(5)
+print(round(dcg / idcg, 4))   # 0.7706</code></pre>
+
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Metric</th><th>Order-aware?</th><th>Graded?</th><th>Use when</th></tr></thead>
+        <tbody>
+          <tr><td>recall@k</td><td>no (within k)</td><td>no</td><td>first-stage retrieval: did we fetch the evidence?</td></tr>
+          <tr><td>precision@k</td><td>no</td><td>no</td><td>how much noise goes into the prompt</td></tr>
+          <tr><td>hit rate@k</td><td>no</td><td>no</td><td>single-answer QA ("is the right chunk anywhere in the top k?")</td></tr>
+          <tr><td>MRR</td><td>first hit only</td><td>no</td><td>one right answer, and position matters</td></tr>
+          <tr><td>MAP</td><td>yes</td><td>no</td><td>several relevant docs, binary labels</td></tr>
+          <tr><td>nDCG@k</td><td>yes (log discount)</td><td><strong>yes</strong></td><td>graded relevance, reranker evaluation</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <div class="callout trap"><ul class="mb-0">
+        <li>The discount is log2(1 + position) with 1-based positions. Position 1 is divided by log2(2) = 1, so it is undiscounted.</li>
+        <li>IDCG must come from all judged relevant docs, not only the retrieved ones. Otherwise missing d8 would not be penalized.</li>
+        <li>AP divides by the total number of relevant docs, not by the number retrieved.</li>
+        <li>Two gain conventions exist: rel (linear) and 2^rel - 1 (exponential). State which one you use.</li>
+      </ul></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p03-m-1" data-topic="RAG" data-type="fill" data-answer="ndcg|ndcg@k|normalized discounted cumulative gain|normalised discounted cumulative gain">
+        <div class="q-stem"><p>The ranking metric that discounts gain by log2(1 + position) and normalizes by the ideal ordering is <input class="q-input" aria-label="answer">.</p></div>
+        <div class="q-explain"><p>nDCG (normalized discounted cumulative gain).</p></div>
+      </div>
+      <div class="quiz" data-qid="p03-m-2" data-topic="RAG" data-type="numeric" data-answer="0.5" data-tol="0.001">
+        <div class="q-stem"><p>Three queries have their first relevant result at ranks 1, 2 and "none in the top 10". What is MRR@10?</p></div>
+        <div class="q-explain"><p>(1 + 1/2 + 0)/3 = 0.5.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Write the nDCG discount.</summary><div class="answer"><p>gain_i / log2(i + 1) with i starting at 1.</p></div></details>
+        <details class="recall"><summary>Recall@k vs precision@k denominators?</summary><div class="answer"><p>Recall divides by the total number relevant. Precision divides by k.</p></div></details>
+        <details class="recall"><summary>Which metric would you use for a reranker with graded labels?</summary><div class="answer"><p>nDCG@k.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 7 -->
+    <section id="chunking-dedup" data-track>
+      <h2>Chunking, near-duplicates and context packing</h2>
+
+      <h3>Chunking</h3>
+      <ul>
+        <li><strong>Fixed-size with overlap</strong>: windows of size tokens, step = size - overlap. Number of chunks for n tokens is 1 + ceil((n - size)/step). For example, 10,000 tokens with size 512 and overlap 64 gives 23 chunks. Overlap keeps a sentence that straddles a boundary intact in at least one chunk.</li>
+        <li><strong>Structure-aware</strong>: split on headings, paragraphs and tables first, then enforce a size limit. This usually beats blind fixed windows on documents with structure.</li>
+        <li><strong>Small-to-big / parent document</strong>: index small chunks for precise matching, but return their parent section to the LLM for context.</li>
+        <li><strong>Size tradeoff</strong>: small chunks give precise retrieval but little context. Large chunks give more context but diluted embeddings and more tokens.</li>
+        <li><strong>Metadata</strong>: store the source, section title, date and access-control tags with each chunk for filtering and citation.</li>
+      </ul>
+
+      <h3>Near-duplicate removal</h3>
+      <div class="formula">
+        <div class="f-title">Jaccard similarity of word sets</div>
+        <div class="f-body">J(A, B) = |A ∩ B| / |A ∪ B|
+integer test for J >= 0.8:   5 * |A ∩ B| >= 4 * |A ∪ B|</div>
+        <dl class="f-defs"><dt>A, B</dt><dd>word (or shingle) sets of two chunks</dd></dl>
+      </div>
+      <p>"the cat sat on the mat" vs "the cat sat on a mat": sets {the, cat, sat, on, mat} and {the, cat, sat, on, a, mat}. Intersection 5, union 6, J = 0.833, so they are near-duplicates at a threshold of 0.8. The integer form avoids floating-point edge cases right at the threshold. Coding problem (a) uses exactly this test.</p>
+      <p><strong>MinHash</strong> scales this to millions of docs. Apply a random hash to every element and keep the minimum. P(two sets share the min) = J. With 128 hash functions, the estimate's standard error at J = 0.8 is sqrt(0.8 x 0.2 / 128) = 0.035. <strong>LSH banding</strong> groups the signatures into bands so only likely pairs get compared, avoiding O(n^2) comparisons.</p>
+
+      <h3>Context packing under a token budget</h3>
+      <p>Given scored chunks and a budget: take chunks greedily by score, skip one that does not fit (but keep scanning, since a smaller chunk later might fit), and skip near-duplicates of chunks already taken. That is exactly <a href="07-coding-problems.html#pack-context">coding problem (a)</a>. Greedy is not optimal for total score (that is a knapsack problem), but it is predictable and fast.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p03-ch-1" data-topic="RAG" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Two chunks share 8 distinct words and their union has 11 distinct words. With a near-duplicate threshold of Jaccard 0.8, are they duplicates?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Yes, 8/11 rounds to 0.8 <span class="q-why">Never round at a threshold: 8/11 = 0.727.</span></li>
+          <li data-key="B">No: 5 x 8 = 40 &lt; 4 x 11 = 44 <span class="q-why">Correct. The integer test fails.</span></li>
+          <li data-key="C">Yes, because more than half the words overlap <span class="q-why">The threshold is 0.8, not 0.5.</span></li>
+          <li data-key="D">Cannot tell without embeddings <span class="q-why">Jaccard needs only the sets.</span></li>
+        </ul>
+        <div class="q-explain"><p>J = 0.727 &lt; 0.8. With 10 shared out of 11 (the coding example), 50 &gt;= 44 holds.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why use the integer test 5|A∩B| &gt;= 4|A∪B|?</summary><div class="answer"><p>It is exact. Floating-point division can land a hair below 0.8 at the boundary.</p></div></details>
+        <details class="recall"><summary>What probability does MinHash estimate?</summary><div class="answer"><p>P(min-hashes equal) = Jaccard similarity.</p></div></details>
+        <details class="recall"><summary>What is parent-document retrieval?</summary><div class="answer"><p>Match on small chunks, but give the LLM the larger section they belong to.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 8 -->
+    <section id="ann-indexes" data-track>
+      <h2>ANN indexes and metadata filtering</h2>
+
+      <h3>Intuition</h3>
+      <p>Exact nearest-neighbor search compares the query with every vector. That is fine for 100k vectors, slow for 100M. Approximate nearest neighbor (ANN) indexes trade a little recall for big speedups by only looking where the answer probably is.</p>
+
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Index</th><th>How it works</th><th>Knobs</th><th>Tradeoffs</th></tr></thead>
+        <tbody>
+          <tr><td>Flat (brute force)</td><td>compare with all vectors</td><td>none</td><td>100% recall, O(n) per query. Best for small sets and as ground truth.</td></tr>
+          <tr><td>HNSW</td><td>multi-layer proximity graph. Greedy walk from coarse to fine layers.</td><td>M (links per node), efConstruction, <strong>efSearch</strong> (higher means more recall and more latency)</td><td>excellent recall and latency, high memory (graph + full vectors), slow to build, deletes are awkward</td></tr>
+          <tr><td>IVF</td><td>k-means clusters (nlist). Search only the nprobe nearest clusters.</td><td>nlist, <strong>nprobe</strong></td><td>less memory, fast to build, recall depends on nprobe. Often combined with PQ.</td></tr>
+          <tr><td>IVF-PQ / PQ</td><td>product quantization compresses vectors into short codes</td><td>number of subvectors, bits</td><td>huge memory savings, lower recall. Rerank with full vectors.</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>Metadata filtering</h3>
+      <ul>
+        <li><strong>Post-filtering</strong> (ANN first, then filter) can return fewer than k results when the filter is selective. Example: top 10 retrieved, 9 belong to another tenant, 1 result left.</li>
+        <li><strong>Pre-filtering</strong> (filter, then search within the subset) is correct, but may fall back to brute force or need index support. Modern vector DBs integrate filters into the graph or cluster traversal.</li>
+        <li>Access control belongs in the filter (tenant_id, ACL tags), never in the prompt.</li>
+      </ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p03-ann-1" data-topic="RAG" data-type="single" data-answer="C">
+        <div class="q-stem"><p>HNSW recall is too low at the current latency budget. Which knob trades latency for recall at query time without rebuilding?</p></div>
+        <ul class="q-options">
+          <li data-key="A">nlist <span class="q-why">nlist is an IVF build-time parameter.</span></li>
+          <li data-key="B">M <span class="q-why">M is fixed at build time.</span></li>
+          <li data-key="C">efSearch <span class="q-why">Correct: the size of the candidate list during search.</span></li>
+          <li data-key="D">Embedding dimension <span class="q-why">That would need a new model and a re-embed.</span></li>
+        </ul>
+        <div class="q-explain"><p>efSearch (and nprobe for IVF) are the query-time recall and latency dials.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>HNSW vs IVF memory?</summary><div class="answer"><p>HNSW stores a graph plus full vectors, so it uses more memory. IVF (especially with PQ) is more compact.</p></div></details>
+        <details class="recall"><summary>Danger of post-filtering?</summary><div class="answer"><p>Selective filters leave fewer than k results.</p></div></details>
+        <details class="recall"><summary>When is flat search the right choice?</summary><div class="answer"><p>Small collections, and as ground truth when measuring ANN recall.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ interview -->
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: RAG</h2>
+      <p class="muted">Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="13-interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="RAG">
+<details class="recall iq" data-level="basic" data-topic="RAG"><summary><span class="tag ok">Basic</span> What is RAG and why use it?</summary><div class="answer"><p>Retrieval-augmented generation: retrieve relevant documents for a query and include them in the prompt, so the model answers from current, private or citable knowledge instead of only its weights.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="RAG"><summary><span class="tag ok">Basic</span> What are the main components of a RAG pipeline?</summary><div class="answer"><p>Ingestion (parse, chunk, embed, index), retrieval (vector and/or keyword search), optional reranking, prompt construction with context, generation, and evaluation and monitoring.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="RAG"><summary><span class="tag ok">Basic</span> What is a vector database?</summary><div class="answer"><p>A store with approximate nearest-neighbor indexes (HNSW, IVF) for fast similarity search over embeddings, usually with metadata filtering.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="RAG"><summary><span class="tag ok">Basic</span> Why chunk documents, and what size?</summary><div class="answer"><p>Embeddings and context windows work better with focused passages. Typical chunks are a few hundred tokens with some overlap, ideally split on structure (headings, paragraphs). Tune by retrieval evals.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="RAG"><summary><span class="tag ok">Basic</span> Cosine similarity vs dot product?</summary><div class="answer"><p>Cosine normalizes by vector length. Dot product does not. After L2 normalization they rank identically. Use the metric the embedding model was trained for.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="RAG"><summary><span class="tag warn">Medium</span> Your recall@20 is 0.93 but answer accuracy is 0.61 and wrong chunks get quoted. What do you do?</summary><div class="answer"><p>Retrieval is fine and ranking or generation is the problem. Add a cross-encoder reranker and pass only the top 3 to 5 chunks. Do not raise temperature, retrieve more, or swap embeddings.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="RAG"><summary><span class="tag warn">Medium</span> Bi-encoder vs cross-encoder?</summary><div class="answer"><p>Bi-encoders embed query and document separately, so documents are precomputed and search is fast (first stage). Cross-encoders read query and document together, which is more accurate but needs one forward pass per pair (reranking).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="RAG"><summary><span class="tag warn">Medium</span> Explain BM25 and why hybrid search helps.</summary><div class="answer"><p>BM25 scores term matches with idf weighting, saturating term frequency (k1) and length normalization (b). Hybrid search fuses BM25 (exact terms, codes, names) with dense retrieval (semantics), usually via RRF.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="RAG"><summary><span class="tag warn">Medium</span> What is Reciprocal Rank Fusion?</summary><div class="answer"><p>Score = sum over ranked lists of 1/(k + rank) with 1-based rank and k = 60. It needs no score normalization, and items found by several retrievers rise to the top.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="RAG"><summary><span class="tag warn">Medium</span> What happens if you upgrade the embedding model?</summary><div class="answer"><p>Vectors from different models are incompatible even at the same dimension, so re-embed the entire corpus and the queries. Do a blue/green migration with dual writes and evaluate before switching.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="RAG"><summary><span class="tag warn">Medium</span> How do you evaluate a RAG system?</summary><div class="answer"><p>Retrieval metrics (recall@k, MRR, nDCG) on labeled query-to-document pairs, plus generation metrics: answer correctness, faithfulness or groundedness, citation precision, abstention. Measure each stage separately to localize failures.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="RAG"><summary><span class="tag warn">Medium</span> What is &#x27;lost in the middle&#x27;?</summary><div class="answer"><p>LLMs use information at the start and end of a long context better than in the middle. Put the most relevant chunks first or last, and pass fewer, better chunks.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="RAG"><summary><span class="tag bad">Advanced</span> How do you enforce document-level permissions in RAG?</summary><div class="answer"><p>Store ACL metadata with each chunk and pre-filter retrieval by the user&#x27;s groups (filter-aware ANN). Never rely on the prompt to hide content. Test with cross-permission probes.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="RAG"><summary><span class="tag bad">Advanced</span> HNSW vs IVF-PQ: when would you choose each?</summary><div class="answer"><p>HNSW: high recall and low latency, but memory-heavy and slower to build. Good up to tens of millions of vectors in RAM. IVF-PQ: compressed and memory-efficient for very large corpora, with lower recall, reranked with full vectors.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="RAG"><summary><span class="tag bad">Advanced</span> How would you handle multi-hop questions in RAG?</summary><div class="answer"><p>Query decomposition into sub-questions, iterative retrieval (retrieve, read, retrieve again), agentic RAG with a search tool, or graph-based retrieval over linked entities. Evaluate with multi-hop test sets.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="RAG"><summary><span class="tag bad">Advanced</span> What is the difference between post-filtering and pre-filtering in vector search?</summary><div class="answer"><p>Post-filtering runs ANN then applies metadata filters, which can return fewer than k results for selective filters. Pre-filtering restricts the candidate set first, which is correct but needs index support (filtered HNSW or partitioned indexes).</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="02-fine-tuning.html"><span class="dir">Previous</span><span>02 Fine-tuning</span></a>
+      <a class="next" href="04-evaluation-and-statistics.html"><span class="dir">Next</span><span>04 Evaluation and statistics</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="F1">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>F1 ML foundations | AI/ML Engineer Prep</title>
+<meta name="description" content="Machine learning basics from first principles: learning types, data splits, bias-variance, losses, gradient descent and Adam, classification metrics, classic models, feature engineering.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Foundations F1</p>
+      <h1>Machine learning foundations</h1>
+      <p class="lede">The vocabulary every interviewer assumes: what "learning" means, how to split data honestly, why models overfit, what a loss and a gradient are, and how to measure a classifier without fooling yourself. LLM questions build on all of it.</p>
+      <div class="meta"><span class="tag ok">Basic</span><span class="tag">~2.5 hours</span><span class="tag">Numbers verified in <code>solutions/verify_numbers.py</code></span></div>
+    </div>
+
+    <!-- ============================================================ 1 -->
+    <section id="ml-landscape" data-track>
+      <h2>What machine learning is: the landscape</h2>
+
+      <h3>Intuition</h3>
+      <p>Normal programming: you write the rules, the computer applies them. Machine learning: you show the computer examples, and it finds the rules (the parameters of a model) that best explain them. A model is a function with adjustable knobs. Training turns the knobs to make its outputs match the data.</p>
+
+      <h3>The mechanism: kinds of learning</h3>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Type</th><th>Data</th><th>Goal</th><th>Examples</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Supervised</strong></td><td>inputs x with labels y</td><td>learn x to y</td><td>spam detection (classification), house prices (regression)</td></tr>
+          <tr><td><strong>Unsupervised</strong></td><td>inputs only</td><td>find structure</td><td>clustering (k-means), dimensionality reduction (PCA), anomaly detection</td></tr>
+          <tr><td><strong>Self-supervised</strong></td><td>raw data. Labels are created from the data itself.</td><td>predict a hidden part of the input</td><td><strong>LLM pretraining</strong>: predict the next token. BERT: predict masked tokens.</td></tr>
+          <tr><td><strong>Reinforcement learning</strong></td><td>actions and rewards from an environment</td><td>maximize long-term reward</td><td>game playing, RLHF for LLM alignment</td></tr>
+          <tr><td>Semi-supervised</td><td>a few labels, many unlabeled examples</td><td>use both</td><td>pseudo-labeling</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <ul>
+        <li><strong>Classification</strong> predicts a category (spam or not). <strong>Regression</strong> predicts a number (price).</li>
+        <li><strong>Features</strong> are the inputs (x). <strong>Label or target</strong> is the answer (y). <strong>Parameters</strong> are learned (weights). <strong>Hyperparameters</strong> are chosen by you (learning rate, depth, k).</li>
+        <li><strong>Generalization</strong> is the real goal: doing well on data the model has never seen, not memorizing the training set.</li>
+        <li><strong>Discriminative</strong> models learn P(y | x) (logistic regression, classifiers). <strong>Generative</strong> models learn P(x) or P(x, y) and can sample new data (LLMs, diffusion models).</li>
+      </ul>
+
+      <h3>Common traps</h3>
+      <div class="callout trap"><ul class="mb-0">
+        <li>"LLM pretraining is unsupervised." The more precise term is self-supervised: there IS a target (the next token), it just comes from the text itself.</li>
+        <li>Confusing parameters (learned) with hyperparameters (set before training).</li>
+        <li>"Logistic regression is regression." It is a classification model. The name comes from regressing the log-odds.</li>
+      </ul></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="f1-land-1" data-topic="Foundations" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Next-token prediction on raw web text is best described as:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Supervised learning with human labels <span class="q-why">No human labels are involved.</span></li>
+          <li data-key="B">Reinforcement learning <span class="q-why">No environment or reward.</span></li>
+          <li data-key="C">Self-supervised learning <span class="q-why">Correct: the target (the next token) comes from the data itself.</span></li>
+          <li data-key="D">Clustering <span class="q-why">No grouping objective.</span></li>
+        </ul>
+        <div class="q-explain"><p>Self-supervised learning creates labels from structure in the data. It is technically supervised training on automatically made labels.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Parameter vs hyperparameter?</summary><div class="answer"><p>Parameters are learned from data (weights). Hyperparameters are set before training (learning rate, number of layers, k).</p></div></details>
+        <details class="recall"><summary>Classification vs regression?</summary><div class="answer"><p>A discrete category vs a continuous number.</p></div></details>
+        <details class="recall"><summary>Discriminative vs generative?</summary><div class="answer"><p>Discriminative models P(y | x). Generative models the data distribution P(x) or P(x, y) and can sample new examples.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 2 -->
+    <section id="data-splits" data-track>
+      <h2>Train, validation, test, cross-validation and leakage</h2>
+
+      <h3>Intuition</h3>
+      <p>If a student sees the exam questions while studying, a perfect score proves nothing. The test set is the exam. It must stay unseen until the very end. The validation set is the practice exam you use to choose between study strategies (hyperparameters). Use it too often and you start overfitting to it as well.</p>
+
+      <h3>The mechanism</h3>
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 190" role="img" aria-label="Dataset split into 70 percent train, 15 percent validation and 15 percent test; below, 5-fold cross-validation rotates which fold is used for validation">
+          <rect x="20" y="20" width="476" height="36" rx="4" class="d-a"/><text x="258" y="43" text-anchor="middle">train 70%: fit parameters</text>
+          <rect x="496" y="20" width="102" height="36" rx="4" class="d-c"/><text x="547" y="43" text-anchor="middle" class="d-sm">val 15%: tune</text>
+          <rect x="598" y="20" width="102" height="36" rx="4" class="d-d"/><text x="649" y="43" text-anchor="middle" class="d-sm">test 15%: once</text>
+          <text x="20" y="84" class="d-bold">5-fold cross-validation (on the train + val part)</text>
+          <g>
+            <rect x="20" y="96" width="96" height="16" class="d-c"/><rect x="116" y="96" width="384" height="16" class="d-a"/>
+            <rect x="20" y="116" width="96" height="16" class="d-a"/><rect x="116" y="116" width="96" height="16" class="d-c"/><rect x="212" y="116" width="288" height="16" class="d-a"/>
+            <rect x="20" y="136" width="192" height="16" class="d-a"/><rect x="212" y="136" width="96" height="16" class="d-c"/><rect x="308" y="136" width="192" height="16" class="d-a"/>
+            <rect x="20" y="156" width="288" height="16" class="d-a"/><rect x="308" y="156" width="96" height="16" class="d-c"/><rect x="404" y="156" width="96" height="16" class="d-a"/>
+          </g>
+          <text x="520" y="110" class="d-sm">each fold is validation once;</text>
+          <text x="520" y="128" class="d-sm">average the 5 scores;</text>
+          <text x="520" y="146" class="d-sm">each model trains on 80%</text>
+          <text x="520" y="168" class="d-sm d-muted">(5th row omitted)</text>
+        </svg>
+        </div>
+        <figcaption>Hold out a test set you touch once. Tune on validation, or with k-fold cross-validation when data is small.</figcaption>
+      </figure>
+      <ul>
+        <li><strong>k-fold CV</strong>: split into k folds, train k times, each time validating on a different fold, and average the scores. More reliable estimates with small data, at k times the cost. With 5 folds, each model trains on 4/5 = 80% of the data.</li>
+        <li><strong>Stratified</strong> splits keep class proportions equal in every split (important for imbalanced data).</li>
+        <li><strong>Group splits</strong>: all rows from the same user, patient or document go in the same split. Otherwise the model memorizes the entity and scores look inflated.</li>
+        <li><strong>Time series</strong>: split by time (train on the past, test on the future). A random split leaks the future.</li>
+      </ul>
+
+      <h3>Data leakage</h3>
+      <p>Leakage is any information in training that would not be available at prediction time, or test information sneaking into training. Classic examples:</p>
+      <ul>
+        <li>Fitting a scaler or imputer on the full dataset before splitting. Fit preprocessing on train only, then apply it to val and test.</li>
+        <li>A feature that is a proxy for the label ("refund_issued" when predicting "will complain").</li>
+        <li>Duplicates or near-duplicates across train and test. For LLMs this is benchmark <strong>contamination</strong>.</li>
+      </ul>
+
+      <h3>Distribution shift</h3>
+      <p>Production data drifts away from training data. <strong>Covariate shift</strong>: P(x) changes (new user demographics). <strong>Label or prior shift</strong>: P(y) changes (fraud rate rises). <strong>Concept drift</strong>: P(y | x) changes (what counts as spam evolves). Monitor input statistics and model metrics, and retrain on fresh data.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="f1-split-1" data-topic="Foundations" data-type="single" data-answer="B">
+        <div class="q-stem"><p>You standardize features using the mean and std of the whole dataset, then split into train and test. What is wrong?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Nothing, standardization does not use labels <span class="q-why">It still uses test-set statistics.</span></li>
+          <li data-key="B">Test statistics leak into training; fit the scaler on the training split only <span class="q-why">Correct.</span></li>
+          <li data-key="C">You should min-max scale instead <span class="q-why">The scaling method is not the problem.</span></li>
+          <li data-key="D">Standardization causes overfitting <span class="q-why">Not by itself.</span></li>
+        </ul>
+        <div class="q-explain"><p>Any statistic used for preprocessing must be computed on training data only. Pipelines (for example scikit-learn's Pipeline) enforce this inside cross-validation.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why keep a test set separate from the validation set?</summary><div class="answer"><p>Repeatedly choosing models by validation score overfits to the validation set. The test set gives one unbiased final estimate.</p></div></details>
+        <details class="recall"><summary>How should you split time-series data?</summary><div class="answer"><p>By time: train on earlier data, validate and test on later data.</p></div></details>
+        <details class="recall"><summary>Name two leakage examples.</summary><div class="answer"><p>Preprocessing fit on all data. Duplicate entities (or near-duplicates) across splits. Also: features unavailable at prediction time.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 3 -->
+    <section id="bias-variance" data-track>
+      <h2>Bias, variance, overfitting and regularization</h2>
+
+      <h3>Intuition</h3>
+      <p>A model that is too simple (a straight line through a curve) misses the pattern everywhere. That is <strong>high bias</strong>, or underfitting. A model that is too flexible (a wiggly curve through every noisy point) memorizes noise. That is <strong>high variance</strong>, or overfitting. It looks great on training data and fails on new data. The goal is the sweet spot.</p>
+
+      <h3>The mechanism</h3>
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 260" role="img" aria-label="Training error keeps falling as model complexity grows, while validation error is U-shaped; the left side is underfitting and the right side is overfitting">
+          <line x1="60" y1="220" x2="680" y2="220" class="d-line"/><line x1="60" y1="220" x2="60" y2="20" class="d-line"/>
+          <text x="370" y="250" text-anchor="middle" class="d-sm">model complexity (or training time)</text>
+          <text x="24" y="120" text-anchor="middle" class="d-sm" transform="rotate(-90 24 120)">error</text>
+          <path d="M70 60 C 200 150, 350 190, 670 205" class="d-line-a"/>
+          <path d="M70 70 C 200 160, 300 175, 360 170 S 560 110, 670 60" class="d-line-d"/>
+          <line x1="350" y1="30" x2="350" y2="220" class="d-grid d-dash"/>
+          <text x="350" y="24" text-anchor="middle" class="d-sm">sweet spot</text>
+          <text x="120" y="40" class="d-sm d-tc">underfitting: high bias</text>
+          <text x="520" y="40" class="d-sm d-td">overfitting: high variance</text>
+          <text x="560" y="200" class="d-sm d-ta">training error</text>
+          <text x="590" y="80" class="d-sm d-td">validation error</text>
+        </svg>
+        </div>
+        <figcaption>A large gap between training and validation error means overfitting. Both errors high means underfitting.</figcaption>
+      </figure>
+
+      <div class="formula">
+        <div class="f-title">Bias-variance decomposition (squared error)</div>
+        <div class="f-body">E[(y - f_hat(x))^2] = Bias[f_hat(x)]^2 + Var[f_hat(x)] + sigma^2</div>
+        <dl class="f-defs"><dt>Bias</dt><dd>error from wrong assumptions: average prediction vs truth</dd><dt>Var</dt><dd>how much predictions change with a different training sample</dd><dt>sigma^2</dt><dd>irreducible noise in the labels</dd></dl>
+      </div>
+
+      <h3>Diagnosis and fixes</h3>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Symptom</th><th>Diagnosis</th><th>Fixes</th></tr></thead>
+        <tbody>
+          <tr><td>Train error high, val error high</td><td>underfitting (bias)</td><td>bigger model, better features, train longer, less regularization</td></tr>
+          <tr><td>Train error low, val error much higher</td><td>overfitting (variance)</td><td>more data, augmentation, regularization (L2, dropout), early stopping, smaller model</td></tr>
+          <tr><td>Both low, production bad</td><td>distribution shift or leakage</td><td>check splits, monitor drift, use fresh test data</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>Regularization</h3>
+      <div class="formula">
+        <div class="f-title">Penalized loss</div>
+        <div class="f-body">L2 (ridge, weight decay):  loss + lambda * sum w_i^2      shrinks all weights smoothly
+L1 (lasso):                loss + lambda * sum |w_i|      drives some weights to exactly 0 (feature selection)</div>
+      </div>
+      <ul>
+        <li><strong>Dropout</strong>: randomly zero activations during training (for example p = 0.1), so the network cannot rely on any single unit. It is disabled at inference.</li>
+        <li><strong>Early stopping</strong>: stop when validation loss stops improving.</li>
+        <li><strong>Data augmentation</strong>: more varied training data (crops, paraphrases).</li>
+        <li><strong>Weight decay in AdamW</strong> is decoupled from the gradient update. That is the "W". It is the standard for training transformers.</li>
+        <li>Modern note: very large networks can show "double descent", where test error falls again past the interpolation point. The classic U-curve is a guide, not a law.</li>
+      </ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="f1-bv-1" data-topic="Foundations" data-type="single" data-answer="D">
+        <div class="q-stem"><p>Training accuracy 99%, validation accuracy 71%. Which action is LEAST likely to help?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Collect more training data <span class="q-why">This reduces variance.</span></li>
+          <li data-key="B">Add dropout or L2 regularization <span class="q-why">This reduces variance.</span></li>
+          <li data-key="C">Early stopping <span class="q-why">This reduces variance.</span></li>
+          <li data-key="D">Increase model size and train longer <span class="q-why">Correct choice: it increases variance and makes the overfitting worse.</span></li>
+        </ul>
+        <div class="q-explain"><p>A big train-val gap means overfitting. More capacity and more epochs go in the wrong direction.</p></div>
+      </div>
+      <div class="quiz" data-qid="f1-bv-2" data-topic="Foundations" data-type="single" data-answer="A">
+        <div class="q-stem"><p>Which regularizer tends to produce sparse weights (many exactly zero)?</p></div>
+        <ul class="q-options">
+          <li data-key="A">L1 <span class="q-why">Correct: the absolute-value penalty has a corner at 0.</span></li>
+          <li data-key="B">L2 <span class="q-why">L2 shrinks weights but rarely to exactly 0.</span></li>
+          <li data-key="C">Dropout <span class="q-why">Dropout zeros activations temporarily, not weights.</span></li>
+          <li data-key="D">Batch normalization <span class="q-why">Not a sparsity method.</span></li>
+        </ul>
+        <div class="q-explain"><p>L1's constant-magnitude gradient pushes small weights all the way to 0. L2's gradient shrinks in proportion to the weight.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Write the bias-variance decomposition.</summary><div class="answer"><p>Expected squared error = bias^2 + variance + irreducible noise.</p></div></details>
+        <details class="recall"><summary>L1 vs L2 effect?</summary><div class="answer"><p>L1 gives sparse weights (feature selection). L2 shrinks all weights smoothly.</p></div></details>
+        <details class="recall"><summary>Is dropout active at inference?</summary><div class="answer"><p>No. It is a training-time regularizer.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 4 -->
+    <section id="loss-functions" data-track>
+      <h2>Loss functions: MSE, MAE, cross-entropy</h2>
+
+      <h3>Intuition</h3>
+      <p>A loss is a single number that says how wrong the model is. Training means "make this number small". The loss you choose decides which mistakes matter most. Cross-entropy punishes confident wrong answers brutally, which is exactly what you want for classification and for LLMs.</p>
+
+      <div class="formula">
+        <div class="f-title">Common losses</div>
+        <div class="f-body">MSE  = (1/n) sum (y_i - y_hat_i)^2                 regression; big errors dominate
+MAE  = (1/n) sum |y_i - y_hat_i|                   regression; robust to outliers
+BCE  = -(1/n) sum [ y log p + (1 - y) log(1 - p) ]  binary classification
+CE   = -(1/n) sum log p(correct class)             multi-class, and LLM next-token loss
+perplexity = exp(CE)                               LLM loss in "effective choices" units</div>
+        <dl class="f-defs"><dt>p</dt><dd>predicted probability (after sigmoid or softmax)</dd><dt>log</dt><dd>natural log in most frameworks (the loss is in nats)</dd></dl>
+      </div>
+
+      <h3>Worked examples</h3>
+      <div class="worked">
+        <ol class="steps">
+          <li>Regression: y = [3, 5, 2], predictions [2.5, 5, 4]. Errors 0.5, 0, 2. MSE = (0.25 + 0 + 4)/3 = 1.4167. MAE = (0.5 + 0 + 2)/3 = 0.8333. RMSE = 1.1902. The single big error dominates MSE.</li>
+          <li>Cross-entropy, correct class probability 0.8: -ln 0.8 = 0.2231. At 0.5: 0.6931. At 0.01: 4.6052. Confident and wrong is about 20x worse than mildly unsure.</li>
+          <li>BCE with true label 0 and predicted p = 0.9: -ln(1 - 0.9) = 2.3026.</li>
+          <li>LLM loss of 2.0 nats per token means perplexity e^2 = 7.389: on average the model is as unsure as choosing among about 7.4 tokens.</li>
+        </ol>
+      </div>
+      <p><strong>Why cross-entropy?</strong> Minimizing cross-entropy is maximum likelihood estimation: it makes the observed data as probable as possible under the model. With a softmax output, its gradient with respect to the logits is simply (p - y), which is clean and well scaled. MSE with a sigmoid gives a non-convex loss and vanishing gradients when the model is confidently wrong.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="f1-loss-1" data-topic="Foundations" data-type="numeric" data-answer="0.2231" data-tol="0.001">
+        <div class="q-stem"><p>A classifier assigns probability 0.8 to the correct class. What is its cross-entropy loss on that example (natural log, 4 decimals)?</p></div>
+        <div class="q-explain"><p>-ln(0.8) = 0.2231.</p></div>
+      </div>
+      <div class="quiz" data-qid="f1-loss-2" data-topic="Foundations" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Your regression data has a few huge outliers that are measurement errors. Which loss is more robust?</p></div>
+        <ul class="q-options">
+          <li data-key="A">MSE <span class="q-why">Squaring makes outliers dominate.</span></li>
+          <li data-key="B">MAE (or Huber) <span class="q-why">Correct: linear penalty for large errors.</span></li>
+          <li data-key="C">Cross-entropy <span class="q-why">For classification.</span></li>
+          <li data-key="D">Hinge loss <span class="q-why">For SVM classification.</span></li>
+        </ul>
+        <div class="q-explain"><p>Huber loss is quadratic near 0 and linear for large errors, a common compromise.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Relationship between cross-entropy and perplexity?</summary><div class="answer"><p>Perplexity = exp(mean cross-entropy in nats).</p></div></details>
+        <details class="recall"><summary>Gradient of softmax + cross-entropy with respect to the logits?</summary><div class="answer"><p>p - y (predicted probabilities minus the one-hot label).</p></div></details>
+        <details class="recall"><summary>Why not use MSE for classification?</summary><div class="answer"><p>With a sigmoid it is non-convex and gives tiny gradients when confidently wrong. Cross-entropy is the maximum-likelihood loss.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 5 -->
+    <section id="optimization" data-track>
+      <h2>Gradient descent, SGD, Adam and learning rates</h2>
+
+      <h3>Intuition</h3>
+      <p>You are on a foggy hill and want the valley. Feel the slope under your feet (the gradient) and step downhill. Step size is the learning rate: too small and you crawl, too large and you overshoot and bounce up the other side. Backpropagation is just the chain rule, used to compute that slope for every weight at once.</p>
+
+      <h3>The mechanism</h3>
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 240" role="img" aria-label="Parabola loss curve; with learning rate 0.1 the steps move steadily toward the minimum at w equals 3; with learning rate 1.1 the steps overshoot and diverge">
+          <line x1="40" y1="210" x2="680" y2="210" class="d-line"/>
+          <path d="M60 30 Q 360 390, 660 30" class="d-line-a"/>
+          <text x="360" y="230" text-anchor="middle" class="d-sm">w (minimum at w = 3)</text>
+          <circle cx="60" cy="30.0" r="6" class="d-b"/><circle cx="120" cy="94.8" r="6" class="d-b"/><circle cx="168" cy="136.3" r="6" class="d-b"/><circle cx="206" cy="162.8" r="6" class="d-b"/>
+          <text x="220" y="150" class="d-sm d-tb">lr 0.1: 0 to 0.6 to 1.08 to 1.464 ...</text>
+          <circle cx="360" cy="210" r="4" class="d-box"/>
+          <text x="470" y="80" class="d-sm d-td">lr 1.1: 0 to 6.6 to -1.32 to 8.18</text>
+          <text x="470" y="98" class="d-sm d-td">(overshoots and diverges)</text>
+        </svg>
+        </div>
+        <figcaption>Gradient descent on f(w) = (w - 3)^2. Gradient 2(w - 3). The learning rate decides convergence or divergence.</figcaption>
+      </figure>
+
+      <div class="formula">
+        <div class="f-title">Update rules</div>
+        <div class="f-body">GD / SGD:   w = w - lr * g                         g = gradient of the loss (full batch / mini-batch)
+Momentum:   v = beta v + g;   w = w - lr * v
+Adam:       m = b1 m + (1-b1) g;   v = b2 v + (1-b2) g^2
+            m_hat = m / (1 - b1^t);  v_hat = v / (1 - b2^t)
+            w = w - lr * m_hat / (sqrt(v_hat) + eps)        (AdamW: also w -= lr * wd * w)</div>
+        <dl class="f-defs"><dt>lr</dt><dd>learning rate</dd><dt>b1, b2</dt><dd>typically 0.9 and 0.999 (LLM training often uses b2 = 0.95)</dd><dt>t</dt><dd>step number (bias correction)</dd></dl>
+      </div>
+
+      <h3>Worked example</h3>
+      <div class="worked">
+        <span class="w-title">Minimize (w - 3)^2 from w = 0</span>
+        <ol class="steps">
+          <li>lr = 0.1: gradient at 0 is -6, so w = 0 + 0.6 = 0.6. Next 1.08, then 1.464. It converges toward 3.</li>
+          <li>lr = 1.1: w goes to 6.6, then -1.32, then 8.184. Each step overshoots more, so it diverges.</li>
+          <li>Adam's first step: thanks to bias correction, the step size is about lr regardless of the gradient's scale. With g = 0.5 and lr = 0.001, the step is 0.001. Adam normalizes per-parameter step sizes.</li>
+        </ol>
+      </div>
+
+      <h3>Practical vocabulary</h3>
+      <ul>
+        <li><strong>Batch vs mini-batch vs stochastic</strong>: the gradient comes from all data, a batch (for example 32 to 4M tokens), or one example. Mini-batch noise helps escape sharp minima, and batches use GPUs efficiently.</li>
+        <li><strong>Epoch</strong>: one pass over the training data. LLM pretraining is usually about one epoch over a huge corpus. Fine-tuning runs 1 to 3 epochs.</li>
+        <li><strong>Learning-rate schedules</strong>: warmup (start small, ramp up, which stabilizes early training), then cosine or linear decay.</li>
+        <li><strong>Gradient clipping</strong>: cap the gradient norm (for example 1.0) to prevent loss spikes.</li>
+        <li><strong>Vanishing and exploding gradients</strong>: in deep nets, repeated multiplication shrinks or blows up gradients. Fixes: residual connections, normalization layers, careful initialization, ReLU-family activations.</li>
+        <li><strong>Backpropagation</strong>: forward pass computes outputs and caches activations. The backward pass applies the chain rule from the loss back to every weight. That is why training must store activations (memory) and costs about 2x the forward FLOPs.</li>
+      </ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="f1-opt-1" data-topic="Foundations" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Training loss oscillates wildly and sometimes becomes NaN early in training. Most likely first fix?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Train for more epochs <span class="q-why">This does not fix instability.</span></li>
+          <li data-key="B">Increase the learning rate <span class="q-why">Worse.</span></li>
+          <li data-key="C">Lower the learning rate, add warmup or gradient clipping <span class="q-why">Correct.</span></li>
+          <li data-key="D">Remove the validation set <span class="q-why">Unrelated.</span></li>
+        </ul>
+        <div class="q-explain"><p>Divergence usually means steps are too large for the loss curvature. Check for bad data (NaN or inf inputs) too.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What do Adam's m and v track?</summary><div class="answer"><p>Exponential moving averages of the gradient (first moment) and the squared gradient (second moment).</p></div></details>
+        <details class="recall"><summary>Why warmup?</summary><div class="answer"><p>Early gradients and Adam's statistics are unreliable. Small initial steps avoid divergence.</p></div></details>
+        <details class="recall"><summary>Why does training need more memory than inference?</summary><div class="answer"><p>It stores activations for backprop, plus gradients and optimizer states.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 6 -->
+    <section id="classification-metrics" data-track>
+      <h2>Classification metrics: precision, recall, F1, ROC-AUC</h2>
+
+      <h3>Intuition</h3>
+      <p>Accuracy hides everything when classes are imbalanced. With 6% positives, a model that always says "negative" scores 94%. Precision asks "when I flag something, am I right?". Recall asks "of everything I should have flagged, how much did I catch?". You trade one for the other by moving the decision threshold.</p>
+
+      <h3>The mechanism</h3>
+      <figure class="diagram narrow">
+        <div class="scroll-x">
+        <svg viewBox="0 0 520 220" role="img" aria-label="Confusion matrix with TP 40, FN 20, FP 10, TN 930">
+          <text x="300" y="20" text-anchor="middle" class="d-bold">predicted</text>
+          <text x="230" y="44" text-anchor="middle" class="d-sm">positive</text><text x="370" y="44" text-anchor="middle" class="d-sm">negative</text>
+          <text x="60" y="90" class="d-sm">actual pos</text><text x="60" y="160" class="d-sm">actual neg</text>
+          <rect x="160" y="54" width="140" height="64" class="d-b"/><text x="230" y="82" text-anchor="middle" class="d-bold">TP 40</text><text x="230" y="100" text-anchor="middle" class="d-sm">caught</text>
+          <rect x="300" y="54" width="140" height="64" class="d-d"/><text x="370" y="82" text-anchor="middle" class="d-bold">FN 20</text><text x="370" y="100" text-anchor="middle" class="d-sm">missed</text>
+          <rect x="160" y="118" width="140" height="64" class="d-d"/><text x="230" y="146" text-anchor="middle" class="d-bold">FP 10</text><text x="230" y="164" text-anchor="middle" class="d-sm">false alarm</text>
+          <rect x="300" y="118" width="140" height="64" class="d-box"/><text x="370" y="146" text-anchor="middle" class="d-bold">TN 930</text>
+          <text x="20" y="210" class="d-sm">precision = 40/50 = 0.80   recall = 40/60 = 0.667   accuracy = 970/1000</text>
+        </svg>
+        </div>
+        <figcaption>The confusion matrix holds every metric. Precision reads down the predicted-positive column, recall across the actual-positive row.</figcaption>
+      </figure>
+
+      <div class="formula">
+        <div class="f-title">Definitions</div>
+        <div class="f-body">precision = TP / (TP + FP)            recall (sensitivity, TPR) = TP / (TP + FN)
+specificity = TN / (TN + FP)          FPR = FP / (FP + TN) = 1 - specificity
+F1 = 2 P R / (P + R)                  F_beta = (1 + b^2) P R / (b^2 P + R)   (b > 1 favors recall)
+ROC-AUC = P(score(random positive) > score(random negative))</div>
+      </div>
+
+      <div class="worked">
+        <span class="w-title">TP 40, FP 10, FN 20, TN 930</span>
+        <ol class="steps">
+          <li>Precision 40/50 = 0.80. Recall 40/60 = 0.6667. F1 = 2(0.8)(0.6667)/(1.4667) = 0.7273. F2 = 0.6897 (it weights recall, which is the weaker one).</li>
+          <li>Accuracy 970/1000 = 0.97, but "always negative" already gets 0.94. Accuracy is nearly useless here.</li>
+          <li>Specificity 930/940 = 0.9894. FPR = 0.0106.</li>
+          <li>AUC example: positive scores [0.9, 0.8, 0.4], negative [0.7, 0.3, 0.2, 0.1]. Of 12 positive-negative pairs, positives win 11 (0.4 loses to 0.7). AUC = 11/12 = 0.9167.</li>
+        </ol>
+      </div>
+
+      <h3>Thresholds, curves, calibration</h3>
+      <ul>
+        <li>Most classifiers output a score. The threshold (default 0.5) sets the precision-recall tradeoff. Choose it by business cost: missed fraud vs annoyed customers.</li>
+        <li><strong>ROC curve</strong>: TPR vs FPR across thresholds. AUC is threshold-free and insensitive to class balance. That can look optimistic under heavy imbalance.</li>
+        <li><strong>PR curve and PR-AUC (average precision)</strong>: more informative when positives are rare.</li>
+        <li><strong>Calibration</strong>: does a score of 0.8 mean right 80% of the time? Check with a reliability diagram. Fix with Platt scaling or isotonic regression.</li>
+        <li><strong>Multi-class</strong>: macro averaging (mean over classes, every class equal) vs micro averaging (pool all decisions, frequent classes dominate) vs weighted.</li>
+        <li><strong>Imbalance remedies</strong>: class weights, resampling (over- or under-sampling, SMOTE), threshold tuning, and the right metric.</li>
+      </ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="f1-met-1" data-topic="Foundations" data-type="numeric" data-answer="0.7273" data-tol="0.001">
+        <div class="q-stem"><p>Precision 0.8 and recall 2/3. F1? (4 decimals)</p></div>
+        <div class="q-explain"><p>2 x 0.8 x 0.6667 / (0.8 + 0.6667) = 0.7273.</p></div>
+      </div>
+      <div class="quiz" data-qid="f1-met-2" data-topic="Foundations" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A cancer screening model must miss as few true cases as possible. Which metric do you prioritize?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Precision <span class="q-why">That minimizes false alarms, not misses.</span></li>
+          <li data-key="B">Recall <span class="q-why">Correct: misses are false negatives.</span></li>
+          <li data-key="C">Accuracy <span class="q-why">Misleading with rare positives.</span></li>
+          <li data-key="D">Specificity <span class="q-why">That is about true negatives.</span></li>
+        </ul>
+        <div class="q-explain"><p>High recall at an acceptable precision. Lower the threshold and confirm positives with a second test.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Define precision and recall in words.</summary><div class="answer"><p>Precision: of the predicted positives, the fraction that are right. Recall: of the actual positives, the fraction found.</p></div></details>
+        <details class="recall"><summary>What does AUC = 0.5 mean?</summary><div class="answer"><p>Random ranking: a positive outranks a negative only half the time.</p></div></details>
+        <details class="recall"><summary>Macro vs micro F1?</summary><div class="answer"><p>Macro averages per-class F1 equally. Micro pools all predictions, so frequent classes dominate.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 7 -->
+    <section id="classic-models" data-track>
+      <h2>Classic models you must be able to explain</h2>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Model</th><th>Idea in one line</th><th>Strengths</th><th>Weaknesses</th></tr></thead>
+        <tbody>
+          <tr><td>Linear regression</td><td>y = w.x + b, minimize MSE (closed form or GD)</td><td>fast, interpretable</td><td>linear only, sensitive to outliers</td></tr>
+          <tr><td>Logistic regression</td><td>p = sigmoid(w.x + b), minimize cross-entropy</td><td>calibrated-ish probabilities, a strong baseline</td><td>linear decision boundary</td></tr>
+          <tr><td>k-nearest neighbors</td><td>predict from the k closest training points</td><td>no training, simple</td><td>slow at query time, suffers in high dimensions</td></tr>
+          <tr><td>Decision tree</td><td>split on features to reduce impurity (Gini or entropy)</td><td>interpretable, handles mixed types</td><td>overfits easily</td></tr>
+          <tr><td>Random forest</td><td>many trees on bootstrapped data and random feature subsets, averaged (bagging)</td><td>robust, little tuning</td><td>larger, less interpretable</td></tr>
+          <tr><td>Gradient boosting (XGBoost, LightGBM)</td><td>add trees one by one, each fitting the previous errors</td><td>often the best on tabular data</td><td>more tuning, sequential training</td></tr>
+          <tr><td>SVM</td><td>maximum-margin boundary, kernels for non-linearity</td><td>good with medium data and clear margins</td><td>scales poorly to huge datasets</td></tr>
+          <tr><td>Naive Bayes</td><td>Bayes' rule assuming features independent given the class</td><td>very fast, a text baseline</td><td>the independence assumption is crude</td></tr>
+          <tr><td>k-means</td><td>alternate assigning to the nearest centroid and recomputing means</td><td>simple clustering</td><td>must choose k, spherical clusters, local optima</td></tr>
+          <tr><td>PCA</td><td>project onto the directions of maximum variance (eigenvectors of the covariance)</td><td>compression, visualization, denoising</td><td>linear, components are hard to interpret</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <div class="worked">
+        <span class="w-title">Decision tree impurity for a node with 8 positives, 2 negatives</span>
+        <ol class="steps">
+          <li>Gini = 1 - (0.8^2 + 0.2^2) = 1 - 0.68 = 0.32.</li>
+          <li>Entropy = -(0.8 log2 0.8 + 0.2 log2 0.2) = 0.7219 bits.</li>
+          <li>A split is chosen to maximize the impurity reduction (information gain) weighted by child sizes.</li>
+        </ol>
+      </div>
+      <p><strong>Bagging vs boosting</strong>: bagging trains models independently on resampled data and averages them, which reduces variance. Boosting trains models sequentially to fix previous errors, which reduces bias. Implementations of logistic regression and k-means from scratch are in <a href="08-extra-coding-patterns.html#logistic-regression">part 08</a>.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="f1-cls-1" data-topic="Foundations" data-type="single" data-answer="A">
+        <div class="q-stem"><p>Which ensemble method mainly reduces variance by averaging independently trained models?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Bagging (for example random forest) <span class="q-why">Correct.</span></li>
+          <li data-key="B">Boosting <span class="q-why">Sequential, and mainly reduces bias.</span></li>
+          <li data-key="C">Stacking only <span class="q-why">Combines models with a meta-learner. Not the textbook answer here.</span></li>
+          <li data-key="D">PCA <span class="q-why">Not an ensemble.</span></li>
+        </ul>
+        <div class="q-explain"><p>Averaging decorrelated models cancels their individual errors.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Gini for a 50/50 node?</summary><div class="answer"><p>1 - (0.25 + 0.25) = 0.5, the maximum for two classes.</p></div></details>
+        <details class="recall"><summary>What does PCA find?</summary><div class="answer"><p>Orthogonal directions of maximum variance (top eigenvectors of the covariance matrix).</p></div></details>
+        <details class="recall"><summary>Best default for tabular data?</summary><div class="answer"><p>Gradient-boosted trees, with logistic or linear regression as the baseline.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 8 -->
+    <section id="feature-engineering" data-track>
+      <h2>Features: scaling, encoding, missing values</h2>
+      <ul>
+        <li><strong>Scaling</strong>: standardization z = (x - mean)/std (x = 70, mean 50, std 10 gives z = 2), or min-max to [0, 1]. Needed for distance-based models (kNN, k-means, SVM) and helps gradient descent. Trees do not need it.</li>
+        <li><strong>Categorical encoding</strong>: one-hot for low cardinality. Target or frequency encoding, or learned embeddings, for high cardinality (watch for target leakage: compute it out-of-fold).</li>
+        <li><strong>Missing values</strong>: drop, impute (mean, median, model-based), and add a "was missing" indicator, since missingness itself can be informative.</li>
+        <li><strong>Text</strong>: bag of words or TF-IDF (classic), dense embeddings (modern). Embeddings are the bridge to everything in part 03.</li>
+        <li><strong>Curse of dimensionality</strong>: in high dimensions, points become far apart and distances concentrate, so nearest-neighbor contrast drops. Dimensionality reduction and good representations help.</li>
+      </ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="f1-feat-1" data-topic="Foundations" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Which model is LEAST affected by unscaled features (income in dollars next to age in years)?</p></div>
+        <ul class="q-options">
+          <li data-key="A">k-nearest neighbors <span class="q-why">Distances are dominated by income.</span></li>
+          <li data-key="B">k-means <span class="q-why">Same problem.</span></li>
+          <li data-key="C">Decision tree <span class="q-why">Correct: splits are thresholds on one feature at a time.</span></li>
+          <li data-key="D">SVM with an RBF kernel <span class="q-why">Distance based.</span></li>
+        </ul>
+        <div class="q-explain"><p>Tree splits are invariant to monotonic rescaling of a feature.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Standardize x = 70 with mean 50 and std 10.</summary><div class="answer"><p>z = 2.</p></div></details>
+        <details class="recall"><summary>Why add a missing-indicator feature?</summary><div class="answer"><p>The fact that a value is missing can carry signal that imputation would erase.</p></div></details>
+        <details class="recall"><summary>When is one-hot encoding a bad idea?</summary><div class="answer"><p>Very high cardinality (thousands of IDs). Use embeddings or target encoding computed out-of-fold.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ interview -->
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: ML foundations</h2>
+      <p class="muted">Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="ML foundations">
+<details class="recall iq" data-level="basic" data-topic="ML foundations"><summary><span class="tag ok">Basic</span> What is the difference between supervised, unsupervised and self-supervised learning?</summary><div class="answer"><p>Supervised learns from labeled pairs (x, y). Unsupervised finds structure without labels (clustering, PCA). Self-supervised creates labels from the data itself, like predicting the next token, which is how LLMs are pretrained.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="ML foundations"><summary><span class="tag ok">Basic</span> What is overfitting and how do you detect it?</summary><div class="answer"><p>The model fits noise in the training data and generalizes poorly. Detect it by a large gap between training and validation performance, or validation loss rising while training loss keeps falling.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="ML foundations"><summary><span class="tag ok">Basic</span> Why do we need separate train, validation and test sets?</summary><div class="answer"><p>Train fits parameters, validation picks hyperparameters and models, and test gives one unbiased final estimate. Tuning on the test set makes its score optimistic.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="ML foundations"><summary><span class="tag ok">Basic</span> Explain precision and recall with an example.</summary><div class="answer"><p>In spam filtering, precision is the share of emails flagged as spam that really are spam, and recall is the share of all spam that got flagged. Raising the threshold usually raises precision and lowers recall.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="ML foundations"><summary><span class="tag ok">Basic</span> Why is accuracy misleading on imbalanced data?</summary><div class="answer"><p>With 1% positives, predicting all negative gives 99% accuracy while catching nothing. Use precision, recall, F1, PR-AUC or cost-weighted metrics.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="ML foundations"><summary><span class="tag ok">Basic</span> What does a learning rate do, and what happens if it is too high or too low?</summary><div class="answer"><p>It scales each gradient step. Too high overshoots and can diverge (loss spikes or NaN). Too low converges slowly or gets stuck.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="ML foundations"><summary><span class="tag ok">Basic</span> What is the difference between a parameter and a hyperparameter?</summary><div class="answer"><p>Parameters (weights) are learned during training. Hyperparameters (learning rate, depth, batch size, k) are set before or around training and tuned on validation data.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="ML foundations"><summary><span class="tag ok">Basic</span> What is cross-entropy loss and why is it used for classification?</summary><div class="answer"><p>The negative log probability assigned to the correct class. Minimizing it is maximum likelihood, it punishes confident mistakes heavily, and with softmax its gradient is simply p - y.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="ML foundations"><summary><span class="tag warn">Medium</span> Explain the bias-variance tradeoff.</summary><div class="answer"><p>Expected error splits into bias squared (wrong assumptions, underfitting), variance (sensitivity to the training sample, overfitting) and irreducible noise. More capacity lowers bias but raises variance. Regularization and more data manage the balance.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="ML foundations"><summary><span class="tag warn">Medium</span> L1 vs L2 regularization: what is the difference in effect?</summary><div class="answer"><p>L1 adds lambda times the sum of |w| and drives some weights to exactly zero (sparse, feature selection). L2 adds lambda times the sum of w squared and shrinks all weights smoothly. AdamW applies decoupled L2-style weight decay.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="ML foundations"><summary><span class="tag warn">Medium</span> What is data leakage? Give two examples.</summary><div class="answer"><p>Information at training time that would not be available at prediction time, or test data influencing training. Examples: fitting a scaler on the full dataset before splitting, and duplicate users or documents across train and test.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="ML foundations"><summary><span class="tag warn">Medium</span> How does k-fold cross-validation work and when would you use it?</summary><div class="answer"><p>Split the data into k folds, train k times holding out a different fold each time, and average the scores. Use it when data is small, to get a more reliable estimate. Use group or time-based folds when rows are related.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="ML foundations"><summary><span class="tag warn">Medium</span> What does ROC-AUC measure? When would you prefer PR-AUC?</summary><div class="answer"><p>AUC is the probability a random positive scores higher than a random negative, so it is threshold-free. With rare positives, ROC can look optimistic because the FPR denominator is huge. PR-AUC focuses on positive-class performance.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="ML foundations"><summary><span class="tag warn">Medium</span> Explain gradient descent vs SGD vs Adam.</summary><div class="answer"><p>GD uses the full-data gradient. SGD or mini-batch uses noisy batch gradients (cheaper, can escape sharp minima). Adam keeps moving averages of the gradient and squared gradient, giving per-parameter adaptive step sizes with bias correction.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="ML foundations"><summary><span class="tag warn">Medium</span> What is the vanishing gradient problem and how is it addressed?</summary><div class="answer"><p>Gradients shrink exponentially through many layers with saturating activations, so early layers stop learning. Fixes: ReLU-family activations, residual connections, normalization layers, careful initialization.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="ML foundations"><summary><span class="tag warn">Medium</span> Bagging vs boosting?</summary><div class="answer"><p>Bagging trains models independently on bootstrap samples and averages them, which reduces variance (random forest). Boosting trains models sequentially, each fixing the previous errors, which reduces bias (XGBoost, LightGBM).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="ML foundations"><summary><span class="tag warn">Medium</span> How would you handle a heavily imbalanced classification dataset?</summary><div class="answer"><p>Use the right metric (PR-AUC, recall at fixed precision), class weights or resampling, threshold tuning for the business cost, stratified splits, and possibly anomaly-detection framing. Collect more positives if possible.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="ML foundations"><summary><span class="tag bad">Advanced</span> What is calibration and how do you fix a poorly calibrated classifier?</summary><div class="answer"><p>A model is calibrated if events predicted at 0.8 happen about 80% of the time. Check with reliability diagrams or ECE. Fix with Platt scaling (logistic on scores), isotonic regression or temperature scaling, fitted on held-out data.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="ML foundations"><summary><span class="tag bad">Advanced</span> Explain double descent.</summary><div class="answer"><p>As model capacity grows past the point where it exactly fits the training data, test error can fall again after the classic U-shaped rise. Large overparameterized networks generalize well despite interpolating, so the classic tradeoff curve is incomplete.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="ML foundations"><summary><span class="tag bad">Advanced</span> Covariate shift vs concept drift: how would you detect and handle each?</summary><div class="answer"><p>Covariate shift: P(x) changes. Detect it with input distribution tests or embedding drift, and reweight or retrain. Concept drift: P(y|x) changes. Detect it via degrading labeled metrics or delayed feedback, and retrain on recent labels or use online updates.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="index.html"><span class="dir">Previous</span><span>Hub</span></a>
+      <a class="next" href="f2-deep-learning-transformers.html"><span class="dir">Next</span><span>F2 Deep learning and transformers</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

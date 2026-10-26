@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en" data-resource="diffusion-from-scratch" data-page="DX1">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The mathematics of diffusion: DDPM derived step by step | Diffusion from scratch</title>
+<meta name="description" content="The forward process as a Gaussian chain, the closed form, the reverse posterior, why the network predicts noise, the loss from the variational bound, signal-to-noise ratio, v-prediction and the score and SDE views, each checked numerically.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Diffusion from scratch</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part DX1</p>
+      <h1>The mathematics of diffusion: DDPM derived step by step</h1>
+      <p class="lede">The main guide gave you the working recipe. This part derives why the recipe is right. Every identity is checked by a short program, so you can trust the formulas and rebuild them in an interview.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="forward" data-track>
+      <h2>The forward process as a Gaussian chain</h2>
+<h3>Definition</h3>
+<p>Pick a noise schedule <code>beta_1 ... beta_T</code> with each value between 0 and 1. The <strong>forward process</strong> is a Markov chain: each step adds a little Gaussian noise and shrinks the signal slightly.</p>
+<div class="formula"><div class="f-title">One forward step</div><div class="f-body">q(x_t | x_(t-1)) = Normal( sqrt(1 - beta_t) x_(t-1), beta_t I )</div><dl class="f-defs"><dt>beta_t</dt><dd>variance of the noise added at step t</dd><dt>sqrt(1 - beta_t)</dt><dd>how much of the previous image is kept</dd><dt>I</dt><dd>identity, so every pixel gets independent noise</dd></dl></div>
+<p>Equivalent sampling form (the <strong>reparameterisation trick</strong>): <code>x_t = sqrt(alpha_t) x_(t-1) + sqrt(beta_t) z</code>, with <code>alpha_t = 1 - beta_t</code> and <code>z</code> standard normal. The scaling by <code>sqrt(alpha_t)</code> keeps the variance from exploding: if <code>x_(t-1)</code> has variance 1, then <code>x_t</code> has variance <code>alpha_t + beta_t = 1</code>.</p>
+<h3>The closed form by induction</h3>
+<p>Write <code>alpha_bar_t = alpha_1 alpha_2 ... alpha_t</code>. Claim: <code>x_t = sqrt(alpha_bar_t) x_0 + sqrt(1 - alpha_bar_t) eps</code> for one standard normal <code>eps</code>.</p>
+<ol><li>For <code>t = 1</code> it is the definition.</li><li>Suppose it holds at <code>t - 1</code>. Then <code>x_t = sqrt(alpha_t) (sqrt(alpha_bar_(t-1)) x_0 + sqrt(1 - alpha_bar_(t-1)) e1) + sqrt(beta_t) e2</code>.</li><li>The two noise terms are independent Gaussians, so they merge into one Gaussian whose variance is the <strong>sum of variances</strong>: <code>alpha_t (1 - alpha_bar_(t-1)) + beta_t = alpha_t - alpha_bar_t + 1 - alpha_t = 1 - alpha_bar_t</code>.</li><li>The signal coefficient multiplies: <code>sqrt(alpha_t) sqrt(alpha_bar_(t-1)) = sqrt(alpha_bar_t)</code>. That completes the induction.</li></ol>
+<p>The check below simulates the chain step by step and compares with the closed form.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx1-01.py">import random, math
+random.seed(0)
+T = 50
+betas = [1e-4 + (0.05 - 1e-4) * i / (T - 1) for i in range(T)]
+alpha_bar = []
+p = 1.0
+for b in betas:
+    p *= 1 - b
+    alpha_bar.append(p)
+
+x0, n = 1.0, 20000
+final = []
+for _ in range(n):
+    x = x0
+    for b in betas:                                   # step by step through the chain
+        x = math.sqrt(1 - b) * x + math.sqrt(b) * random.gauss(0, 1)
+    final.append(x)
+mean = sum(final) / n
+var = sum((v - mean) ** 2 for v in final) / n
+print("simulated  mean %.3f  var %.3f" % (mean, var))
+print("closed form mean %.3f  var %.3f" % (math.sqrt(alpha_bar[-1]) * x0, 1 - alpha_bar[-1]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>simulated  mean 0.533  var 0.719
+closed form mean 0.529  var 0.720</code></pre>
+<h3>What the schedule must achieve</h3>
+<ul><li><code>alpha_bar_T</code> should be close to 0, so <code>x_T</code> is almost pure noise and the sampler can start from <code>Normal(0, I)</code>.</li><li>Early steps should destroy little information, so each reverse step is a small, easy correction (a reverse step of a small Gaussian step is itself approximately Gaussian, which is what makes the model's job tractable).</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx1-q01" data-topic="Diffusion math" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why does the forward step use sqrt(1 - beta_t) x_(t-1) instead of just x_(t-1)?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To make the image brighter <span class="q-why">No.</span></li>
+          <li data-key="B">To keep the variance from growing: shrinking the signal while adding noise keeps total variance near 1 <span class="q-why">Correct.</span></li>
+          <li data-key="C">To avoid needing a schedule <span class="q-why">No.</span></li>
+          <li data-key="D">Because beta_t is negative <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The variance of x_t is alpha_t + beta_t = 1 when x_(t-1) has variance 1.</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx1-q02" data-topic="Diffusion math" data-type="numeric" data-answer="0.36" data-tol="0.001">
+        <div class="q-stem"><p>alpha_1 = 0.9, alpha_2 = 0.8, alpha_3 = 0.5. What is alpha_bar_3?</p></div>
+        <div class="q-explain"><p>0.9 x 0.8 x 0.5 = 0.36.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Derive the closed form.</summary><div class="answer"><p>Merge independent Gaussians by adding variances, multiply the signal coefficients, and use induction to get sqrt(alpha_bar) x_0 + sqrt(1 - alpha_bar) eps.</p></div></details>
+      </div>
+    </section>
+
+    <section id="reverse" data-track>
+      <h2>The reverse process and its posterior</h2>
+<h3>The target of learning</h3>
+<p>We want to sample by running the chain backwards: <code>p(x_(t-1) | x_t)</code>. That distribution depends on the unknown data distribution, so we <strong>learn</strong> it. But if we also knew <code>x_0</code>, the reverse step would be exactly computable.</p>
+<h3>The posterior q(x_(t-1) | x_t, x_0)</h3>
+<p>By Bayes, it is proportional to <code>q(x_t | x_(t-1)) q(x_(t-1) | x_0)</code>, a product of two Gaussians, which is Gaussian:</p>
+<div class="formula"><div class="f-title">Posterior mean and variance</div><div class="f-body">mu_tilde(x_t, x_0) = [ sqrt(alpha_bar_(t-1)) beta_t / (1 - alpha_bar_t) ] x_0 + [ sqrt(alpha_t) (1 - alpha_bar_(t-1)) / (1 - alpha_bar_t) ] x_t ;  beta_tilde_t = (1 - alpha_bar_(t-1)) / (1 - alpha_bar_t) beta_t</div><dl class="f-defs"><dt>mu_tilde</dt><dd>the exact mean of the reverse step given the clean image</dd><dt>beta_tilde_t</dt><dd>its variance, a little smaller than beta_t</dd></dl></div>
+<p>The mean is a <strong>weighted average of the clean image and the current noisy image</strong>. The check multiplies the two Gaussians directly (adding precisions) and compares with the formula.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx1-02.py">import math
+T = 1000
+betas = [1e-4 + (0.02 - 1e-4) * i / (T - 1) for i in range(T)]
+alphas = [1 - b for b in betas]
+ab = []
+p = 1.0
+for a in alphas:
+    p *= a
+    ab.append(p)
+
+t = 400                      # index of x_t; x_(t-1) uses ab[t-1]
+x0, xt = 0.8, 0.3
+a_t, b_t, ab_t, ab_prev = alphas[t], betas[t], ab[t], ab[t - 1]
+
+# direct Bayes: prior x_(t-1) | x0 ~ N(sqrt(ab_prev) x0, 1 - ab_prev); likelihood xt | x_(t-1) ~ N(sqrt(a_t) x_(t-1), b_t)
+prior_mean, prior_var = math.sqrt(ab_prev) * x0, 1 - ab_prev
+precision = 1 / prior_var + a_t / b_t
+post_var = 1 / precision
+post_mean = post_var * (prior_mean / prior_var + math.sqrt(a_t) * xt / b_t)
+
+# closed form from the formula
+mu = (math.sqrt(ab_prev) * b_t / (1 - ab_t)) * x0 + (math.sqrt(a_t) * (1 - ab_prev) / (1 - ab_t)) * xt
+var = (1 - ab_prev) / (1 - ab_t) * b_t
+print(round(post_mean - mu, 12), round(post_var - var, 12))
+print("posterior std is %.5f vs beta std %.5f" % (math.sqrt(var), math.sqrt(b_t)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>0.0 0.0
+posterior std is 0.08973 vs beta std 0.08982</code></pre>
+<h3>From the clean image to a noise prediction</h3>
+<p>We do not know <code>x_0</code> at sampling time, but <code>x_t = sqrt(alpha_bar_t) x_0 + sqrt(1 - alpha_bar_t) eps</code> lets us <strong>eliminate</strong> it: <code>x_0 = (x_t - sqrt(1 - alpha_bar_t) eps) / sqrt(alpha_bar_t)</code>. Substituting into <code>mu_tilde</code> and simplifying gives:</p>
+<div class="formula"><div class="f-title">Mean in terms of predicted noise</div><div class="f-body">mu_theta(x_t, t) = (1 / sqrt(alpha_t)) ( x_t - [ beta_t / sqrt(1 - alpha_bar_t) ] eps_theta(x_t, t) )</div><dl class="f-defs"><dt>eps_theta</dt><dd>the network's noise prediction</dd></dl></div>
+<p>This is exactly the sampling line in <code>sample.py</code> of Phase 3, with <code>beta_t / sqrt(1 - alpha_bar_t)</code> equal to <code>(1 - alpha_t) / sqrt(1 - alpha_bar_t)</code>. So the network never needs to output an image: predicting the noise is the same as predicting the clean image, one linear equation away.</p>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Three equivalent outputs: predict the <strong>noise</strong> eps, the <strong>clean image</strong> x_0, or the <strong>posterior mean</strong> mu. Each is a fixed linear combination of the other two and <code>x_t</code>, so choosing one is a modelling and loss-scaling decision, not a change of what is learned.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx1-q03" data-topic="Diffusion math" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What kind of distribution is q(x_(t-1) | x_t, x_0)?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Uniform <span class="q-why">No.</span></li>
+          <li data-key="B">Gaussian, a product of two Gaussians <span class="q-why">Correct.</span></li>
+          <li data-key="C">Bernoulli <span class="q-why">No.</span></li>
+          <li data-key="D">Unknown <span class="q-why">It is known in closed form.</span></li>
+        </ul>
+        <div class="q-explain"><p>Its mean is a weighted average of x_0 and x_t.</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx1-q04" data-topic="Diffusion math" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which pair is exactly interchangeable given x_t and alpha_bar_t?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The learning rate and eps <span class="q-why">No.</span></li>
+          <li data-key="B">Predicting eps and predicting x_0 <span class="q-why">Correct.</span></li>
+          <li data-key="C">Batch size and v <span class="q-why">No.</span></li>
+          <li data-key="D">T and beta <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>x_0 = (x_t - sqrt(1 - alpha_bar) eps) / sqrt(alpha_bar).</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is the posterior mean?</summary><div class="answer"><p>A weighted average of x_0 and x_t, with weights from alpha_bar_(t-1), alpha_t and beta_t; substituting x_0 in terms of eps gives the sampling formula.</p></div></details>
+      </div>
+    </section>
+
+    <section id="loss" data-track>
+      <h2>The training objective from the variational bound</h2>
+<h3>The ELBO in one paragraph</h3>
+<p>Treat <code>x_1 ... x_T</code> as latent variables. Maximising the data likelihood is intractable, so we maximise the <strong>evidence lower bound (ELBO)</strong>. Because both the forward chain and the model's reverse steps are Gaussian, the bound breaks into a sum of KL divergences between <code>q(x_(t-1) | x_t, x_0)</code> and <code>p_theta(x_(t-1) | x_t)</code>. The KL between two Gaussians with the same variance is a <strong>squared difference of means</strong> scaled by the variance.</p>
+<div class="formula"><div class="f-title">Per-step term of the bound</div><div class="f-body">L_t = E [ ( beta_t^2 / ( 2 sigma_t^2 alpha_t (1 - alpha_bar_t) ) ) norm(eps - eps_theta(x_t, t))^2 ]</div><dl class="f-defs"><dt>sigma_t^2</dt><dd>variance chosen for the reverse step</dd></dl></div>
+<h3>Why the simple loss works better</h3>
+<p>Ho et al. dropped the weight and trained on the unweighted loss, <code>L_simple = E [ norm(eps - eps_theta(x_t, t))^2 ]</code> with <code>t</code> uniform. The unweighted version <strong>down-weights the easy low-noise steps</strong> relative to the true bound and emphasises harder, noisier denoising. The result was better sample quality, though a worse likelihood score. Improved DDPM later learned the variance to recover likelihood.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx1-03.py">import math
+T = 1000
+betas = [1e-4 + (0.02 - 1e-4) * i / (T - 1) for i in range(T)]
+alphas = [1 - b for b in betas]
+ab, p = [], 1.0
+for a in alphas:
+    p *= a
+    ab.append(p)
+# weight of the true ELBO term with sigma_t^2 = beta_t, relative to the simple loss (weight 1)
+for t in (1, 10, 100, 500, 999):
+    w = betas[t] ** 2 / (2 * betas[t] * alphas[t] * (1 - ab[t]))
+    print("t=%3d  ELBO weight %.4f" % (t, w))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>t=  1  ELBO weight 0.2727
+t= 10  ELBO weight 0.0682
+t=100  ELBO weight 0.0100
+t=500  ELBO weight 0.0055
+t=999  ELBO weight 0.0102</code></pre>
+<p>The true bound puts far more weight on the first, least noisy steps (0.27 at t = 1 against about 0.01 from t = 100 on), which the simple loss treats as equal to every other step. That is the reweighting the text describes.</p>
+<h3>Variance choices</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Choice</th><th>Value</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>Fixed, large</td><td><code>sigma_t^2 = beta_t</code></td><td>Used in <code>sample.py</code>; correct if the data is a point mass</td></tr><tr><td>Fixed, small</td><td><code>sigma_t^2 = beta_tilde_t</code></td><td>Correct if data is deterministic given <code>x_t</code></td></tr><tr><td>Learned (improved DDPM)</td><td>Interpolation between the two, output by the network</td><td>Better likelihood, fewer sampling steps needed</td></tr><tr><td>Zero (DDIM)</td><td><code>sigma_t = 0</code></td><td>Deterministic sampler</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx1-q05" data-topic="Diffusion math" data-type="single" data-answer="A">
+        <div class="q-stem"><p>Compared with the true variational bound, the simple loss mainly:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Weights all timesteps equally, down-weighting easy low-noise steps <span class="q-why">Correct.</span></li>
+          <li data-key="B">Uses a different network <span class="q-why">No.</span></li>
+          <li data-key="C">Ignores the noise <span class="q-why">No.</span></li>
+          <li data-key="D">Needs labels <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It drops the per-step weight, which improved sample quality.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why do we use the unweighted loss?</summary><div class="answer"><p>It emphasises harder, noisier steps and gave better samples than the true ELBO weighting.</p></div></details>
+      </div>
+    </section>
+
+    <section id="snr" data-track>
+      <h2>Signal-to-noise ratio and parameterisations</h2>
+<h3>SNR</h3>
+<p>At step <code>t</code> the signal power is <code>alpha_bar_t</code> and the noise power is <code>1 - alpha_bar_t</code>:</p>
+<div class="formula"><div class="f-title">Signal-to-noise ratio</div><div class="f-body">SNR(t) = alpha_bar_t / (1 - alpha_bar_t) ; log-SNR = log SNR(t)</div><dl class="f-defs"><dt>a monotonic quantity</dt><dd>high at t = 0, near zero at t = T</dd></dl></div>
+<p>Every schedule is really a path of log-SNR through time. The linear schedule spends many steps at very low SNR, where the image is already gone, which is why the cosine schedule helps: it spreads log-SNR more evenly. High-resolution images keep structure at the same SNR for longer than small ones, so the best schedule shifts with resolution; modern models shift the schedule.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx1-04.py">import math
+T = 1000
+betas = [1e-4 + (0.02 - 1e-4) * i / (T - 1) for i in range(T)]
+ab, p = [], 1.0
+for b in betas:
+    p *= 1 - b
+    ab.append(p)
+for t in (0, 250, 500, 750, 999):
+    snr = ab[t] / (1 - ab[t])
+    print("t=%3d  alpha_bar=%.5f  log SNR=%6.2f" % (t, ab[t], math.log(snr)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>t=  0  alpha_bar=0.99990  log SNR=  9.21
+t=250  alpha_bar=0.52142  log SNR=  0.09
+t=500  alpha_bar=0.07780  log SNR= -2.47
+t=750  alpha_bar=0.00330  log SNR= -5.71
+t=999  alpha_bar=0.00004  log SNR=-10.12</code></pre>
+<h3>Three prediction targets</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Target</th><th>Definition</th><th>Strength</th><th>Weakness</th></tr></thead>
+<tbody>
+<tr><td>eps (noise)</td><td>the added noise</td><td>Standard, stable at most t</td><td>Poor at very high noise (<code>t</code> near <code>T</code>): tiny errors in eps blow up <code>x_0</code></td></tr><tr><td>x_0 (clean image)</td><td>the original</td><td>Good at high noise</td><td>Blurry; weak at low noise</td></tr><tr><td>v (velocity)</td><td><code>v = sqrt(alpha_bar) eps - sqrt(1 - alpha_bar) x_0</code></td><td>Well scaled at all noise levels; used with zero-terminal-SNR</td><td>Slightly less intuitive</td></tr>
+</tbody>
+</table>
+</div>
+<p>The conversions are exact linear maps, verified here:</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx1-05.py">import math, random
+random.seed(1)
+ab = 0.3                                   # any value in (0, 1)
+x0, eps = random.gauss(0, 1), random.gauss(0, 1)
+xt = math.sqrt(ab) * x0 + math.sqrt(1 - ab) * eps
+v = math.sqrt(ab) * eps - math.sqrt(1 - ab) * x0
+
+x0_from_eps = (xt - math.sqrt(1 - ab) * eps) / math.sqrt(ab)
+x0_from_v = math.sqrt(ab) * xt - math.sqrt(1 - ab) * v
+eps_from_v = math.sqrt(1 - ab) * xt + math.sqrt(ab) * v
+print(round(x0 - x0_from_eps, 12), round(x0 - x0_from_v, 12), round(eps - eps_from_v, 12))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>0.0 0.0 0.0</code></pre>
+<h3>Loss weighting</h3>
+<p>Switching target changes the <strong>effective weighting over t</strong> of the loss on the image. Practical schemes: <strong>min-SNR-gamma</strong> (cap the weight at high SNR, speeds convergence), <strong>P2 weighting</strong>, and <strong>v-loss</strong>. When quality looks off at some noise range, check the weighting before the architecture.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx1-q06" data-topic="Diffusion math" data-type="numeric" data-answer="1" data-tol="0">
+        <div class="q-stem"><p>alpha_bar = 0.5. What is the SNR?</p></div>
+        <div class="q-explain"><p>SNR = 0.5 / (1 - 0.5) = 1.</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx1-q07" data-topic="Diffusion math" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why does the v target help at very high noise?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is always smaller <span class="q-why">No.</span></li>
+          <li data-key="B">Errors in eps blow up x_0 at low alpha_bar, while v stays well scaled <span class="q-why">Correct.</span></li>
+          <li data-key="C">It needs fewer steps <span class="q-why">Not the reason.</span></li>
+          <li data-key="D">It removes noise <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>At high noise x_0 = (x_t - sqrt(1 - ab) eps) / sqrt(ab) divides by a tiny number.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Define SNR and log-SNR.</summary><div class="answer"><p>alpha_bar / (1 - alpha_bar); every schedule is a path of log-SNR through time.</p></div></details>
+      </div>
+    </section>
+
+    <section id="score" data-track>
+      <h2>Score matching and the SDE view</h2>
+<h3>The score</h3>
+<p>The <strong>score</strong> of a distribution is the gradient of its log density, <code>grad_x log p(x)</code>: it points toward higher probability. If you can estimate the score of the noisy data at every noise level, you can generate by following it (plus noise), which is Langevin dynamics.</p>
+<h3>Tweedie's link to noise prediction</h3>
+<p>For <code>x_t = sqrt(alpha_bar_t) x_0 + sqrt(1 - alpha_bar_t) eps</code>, the score of the noisy marginal satisfies:</p>
+<div class="formula"><div class="f-title">Noise prediction is the score</div><div class="f-body">grad log p_t(x_t) = - eps / sqrt(1 - alpha_bar_t)</div><dl class="f-defs"></dl></div>
+<p>Check on the simplest case: data <code>Normal(0, s^2)</code>. The noisy marginal is <code>Normal(0, v)</code> with <code>v = alpha_bar s^2 + 1 - alpha_bar</code>, whose score is <code>-x / v</code>, so the optimal noise predictor is linear: <code>eps_opt(x) = sqrt(1 - alpha_bar) x / v</code>. A regression of <code>eps</code> on <code>x_t</code> from samples should recover the same coefficient.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx1-06.py">import math, random
+random.seed(2)
+s, ab = 2.0, 0.4
+v = ab * s * s + 1 - ab
+analytic = math.sqrt(1 - ab) / v
+xs, es = [], []
+for _ in range(200000):
+    x0, e = random.gauss(0, s), random.gauss(0, 1)
+    xs.append(math.sqrt(ab) * x0 + math.sqrt(1 - ab) * e)
+    es.append(e)
+coef = sum(x * e for x, e in zip(xs, es)) / sum(x * x for x in xs)    # least-squares slope of eps on x_t
+print("analytic coefficient %.4f, regression %.4f" % (analytic, coef))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>analytic coefficient 0.3521, regression 0.3527</code></pre>
+<h3>Continuous time: SDEs</h3>
+<p>Let the number of steps go to infinity. The forward chain becomes a <strong>stochastic differential equation</strong>. The variance-preserving form (DDPM's limit) is <code>dx = -1/2 beta(t) x dt + sqrt(beta(t)) dw</code>. Anderson's result says the <strong>reverse-time SDE</strong> is <code>dx = [ -1/2 beta x - beta score ] dt + sqrt(beta) dw_bar</code>: the same dynamics with the score added. There is also a deterministic <strong>probability flow ODE</strong> with the same marginals, <code>dx/dt = -1/2 beta(t) [ x + score ]</code>, which DDIM discretises. Seeing diffusion as a smooth ODE or SDE lets us borrow numerical solvers (<a href="dx2-samplers.html">DX2</a>).</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>View</th><th>Object learned</th><th>Sampling</th></tr></thead>
+<tbody>
+<tr><td>DDPM</td><td>noise eps_theta</td><td>Ancestral (stochastic) chain</td></tr><tr><td>Score matching (NCSN)</td><td>score at several noise scales</td><td>Annealed Langevin dynamics</td></tr><tr><td>SDE</td><td>continuous score</td><td>Reverse SDE or probability flow ODE</td></tr><tr><td>Flow matching</td><td>velocity field</td><td>ODE</td></tr>
+</tbody>
+</table>
+</div>
+<p>All are the same family seen from different angles.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx1-q08" data-topic="Diffusion math" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How is a trained noise predictor related to the score?</p></div>
+        <ul class="q-options">
+          <li data-key="A">score = eps_theta <span class="q-why">Needs the scale.</span></li>
+          <li data-key="B">score = - eps_theta / sqrt(1 - alpha_bar_t) <span class="q-why">Correct.</span></li>
+          <li data-key="C">score = eps_theta^2 <span class="q-why">No.</span></li>
+          <li data-key="D">They are unrelated <span class="q-why">They are linked.</span></li>
+        </ul>
+        <div class="q-explain"><p>Predicting noise equals estimating the score up to a known scale.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How are diffusion and score matching related?</summary><div class="answer"><p>The noise prediction equals the negative score scaled by sqrt(1 - alpha_bar), so they are the same model viewed differently.</p></div></details>
+      </div>
+    </section>
+
+    <section id="summary" data-track>
+      <h2>Summary table</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Idea</th><th>Formula</th></tr></thead>
+<tbody>
+<tr><td>One step</td><td><code>x_t = sqrt(alpha_t) x_(t-1) + sqrt(beta_t) z</code></td></tr><tr><td>Closed form</td><td><code>x_t = sqrt(alpha_bar_t) x_0 + sqrt(1 - alpha_bar_t) eps</code></td></tr><tr><td>Posterior variance</td><td><code>beta_tilde_t = (1 - alpha_bar_(t-1)) / (1 - alpha_bar_t) beta_t</code></td></tr><tr><td>Mean from noise</td><td><code>(1 / sqrt(alpha_t)) (x_t - beta_t / sqrt(1 - alpha_bar_t) eps_theta)</code></td></tr><tr><td>Simple loss</td><td><code>E norm(eps - eps_theta(x_t, t))^2</code></td></tr><tr><td>SNR</td><td><code>alpha_bar_t / (1 - alpha_bar_t)</code></td></tr><tr><td>v target</td><td><code>sqrt(alpha_bar) eps - sqrt(1 - alpha_bar) x_0</code></td></tr><tr><td>Score</td><td><code>- eps_theta / sqrt(1 - alpha_bar_t)</code></td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx1-q09" data-topic="Diffusion math" data-type="fill" data-answer="ode|ODE">
+        <div class="q-stem"><p>The probability flow <input class="q-input" aria-label="blank 1"> is the deterministic counterpart of the reverse SDE with the same marginals.</p></div>
+        <div class="q-explain"><p>DDIM is a discretisation of it.</p></div>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Diffusion math</h2>
+      <p class="muted">13 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Diffusion math">
+<details class="recall iq" data-level="basic" data-topic="Diffusion math"><summary><span class="tag ok">Basic</span> What does one forward diffusion step do?</summary><div class="answer"><p>It scales the previous image by sqrt(1 - beta_t) and adds Gaussian noise of variance beta_t, so signal shrinks as noise is added while the overall variance stays near 1.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Diffusion math"><summary><span class="tag ok">Basic</span> Why can you jump straight to step t?</summary><div class="answer"><p>Composing Gaussian steps gives another Gaussian: x_t = sqrt(alpha_bar_t) x_0 + sqrt(1 - alpha_bar_t) eps, because independent Gaussians add by summing variances.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Diffusion math"><summary><span class="tag ok">Basic</span> What is alpha_bar_t?</summary><div class="answer"><p>The cumulative product of alpha_s = 1 - beta_s up to t. It is the fraction of the original signal variance that survives at step t.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Diffusion math"><summary><span class="tag warn">Medium</span> Derive the closed form of the forward process by induction.</summary><div class="answer"><p>Assume x_(t-1) = sqrt(ab_(t-1)) x_0 + sqrt(1 - ab_(t-1)) e1. Then x_t = sqrt(alpha_t) x_(t-1) + sqrt(beta_t) e2. The noise terms merge with variance alpha_t (1 - ab_(t-1)) + beta_t = 1 - ab_t, and the signal coefficient is sqrt(alpha_t ab_(t-1)) = sqrt(ab_t).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Diffusion math"><summary><span class="tag warn">Medium</span> What is the posterior q(x_(t-1) | x_t, x_0) and why is it useful?</summary><div class="answer"><p>A Gaussian with mean a weighted average of x_0 and x_t and variance beta_tilde_t = (1 - ab_(t-1)) / (1 - ab_t) beta_t. It is the exact target for each reverse step if x_0 were known, so the model learns to approximate its mean.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Diffusion math"><summary><span class="tag warn">Medium</span> How does the network&#x27;s noise prediction give the reverse mean?</summary><div class="answer"><p>Replace x_0 by (x_t - sqrt(1 - ab_t) eps) / sqrt(ab_t) in the posterior mean to get mu = (x_t - beta_t / sqrt(1 - ab_t) eps_theta) / sqrt(alpha_t).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Diffusion math"><summary><span class="tag warn">Medium</span> Why is the simple loss better than the true ELBO weighting for samples?</summary><div class="answer"><p>The ELBO weights low-noise steps heavily; dropping the weights emphasises harder, noisier denoising, which improved perceptual quality at the cost of a worse likelihood.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Diffusion math"><summary><span class="tag warn">Medium</span> What is SNR in diffusion and why do schedules care?</summary><div class="answer"><p>alpha_bar / (1 - alpha_bar). A schedule is a path of log-SNR over time; a good one spreads steps over the noise range where structure is formed, which is why cosine beats linear.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Diffusion math"><summary><span class="tag bad">Advanced</span> Compare eps, x0 and v prediction.</summary><div class="answer"><p>They are linear reparameterisations of each other given x_t. eps is stable at low noise but amplifies errors at very high noise, x0 is blurry at low noise, and v = sqrt(ab) eps - sqrt(1 - ab) x0 is well scaled at all levels and works with zero terminal SNR.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Diffusion math"><summary><span class="tag bad">Advanced</span> How is a diffusion model related to score matching?</summary><div class="answer"><p>The noisy marginal&#x27;s score equals - eps / sqrt(1 - alpha_bar), so training eps_theta by regression is denoising score matching and eps_theta gives the score up to a known scale.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Diffusion math"><summary><span class="tag bad">Advanced</span> What is the probability flow ODE?</summary><div class="answer"><p>A deterministic ODE with the same marginals as the reverse SDE, dx/dt = f(x, t) - 1/2 g(t)^2 score. DDIM and most fast samplers discretise it.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Diffusion math"><summary><span class="tag bad">Advanced</span> What variance should the reverse step use?</summary><div class="answer"><p>sigma_t^2 = beta_t or beta_tilde_t are the two fixed extremes. Improved DDPM learns an interpolation between them, which improves likelihood and allows fewer steps.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Diffusion math"><summary><span class="tag bad">Advanced</span> Why must alpha_bar_T be close to zero?</summary><div class="answer"><p>Sampling starts from Normal(0, I). If the forward process leaves signal at T the start distribution mismatches the training one, causing artefacts such as washed-out images.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="index.html"><span class="dir">Previous</span><span>Hub</span></a>
+      <a class="next" href="dx2-samplers.html"><span class="dir">Next</span><span>DX2 Samplers and speed: DDIM, ODE solvers, distillation and flow matching</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

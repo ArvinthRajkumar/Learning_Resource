@@ -1,0 +1,937 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="01">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>01 Inference and memory math | AI/ML Engineer Prep</title>
+<meta name="description" content="Prefill vs decode, KV cache sizing, weight memory, roofline, quantization, batching, speculative and constrained decoding, prompt caching, tokenization.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part 01</p>
+      <h1>Inference and memory math</h1>
+      <p class="lede">One idea explains most of this page: generating a token means reading every weight from GPU memory, and memory is far slower than the math units. Once that clicks, quantization, batching, speculative decoding and the KV cache all make sense.</p>
+      <div class="meta"><span class="tag accent">Highest numeric yield</span><span class="tag">~3 hours</span><span class="tag">All numbers verified in <code>solutions/verify_numbers.py</code></span></div>
+    </div>
+
+    <!-- ============================================================ 1 -->
+    <section id="inference-recap" data-track>
+      <h2>Transformer inference: prefill vs decode</h2>
+
+      <h3>Intuition</h3>
+      <p>A language model generates one token at a time. To pick token number 101 it must "look at" tokens 1 to 100. Attention does that by comparing the new token's <strong>query</strong> with every earlier token's <strong>key</strong>, then mixing their <strong>values</strong>. Keys and values of old tokens never change, so recomputing them every step would be pure waste. The KV cache stores them once.</p>
+      <p>Analogy: you are writing an essay and keep index cards for every sentence so far. For each new sentence you scan your cards instead of re-reading and re-summarizing the whole essay. The cards are the KV cache. They take desk space (GPU memory) that grows with every sentence.</p>
+
+      <h3>The mechanism</h3>
+      <p>Inference has two phases with very different hardware behavior:</p>
+      <ul>
+        <li><strong>Prefill</strong>: the whole prompt (say 2,000 tokens) goes through the model in <em>one</em> forward pass. All tokens are processed in parallel as a big matrix multiply. Every weight read from memory is reused for 2,000 tokens, so the GPU's math units are the bottleneck (compute bound). Prefill fills the KV cache for all prompt tokens and produces the first output token. Its duration is what you feel as <strong>time to first token (TTFT)</strong>.</li>
+        <li><strong>Decode</strong>: each later token needs its own forward pass, because token t+1 depends on token t. Each pass processes a single new token per sequence, so every weight is read from memory to do just one multiply-add. Memory bandwidth is the bottleneck (memory bound). The time per pass is the <strong>inter-token latency (ITL, also TPOT)</strong>.</li>
+      </ul>
+
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 250" role="img" aria-label="Prefill processes all prompt tokens in one pass and fills the KV cache; decode processes one token per pass, appending one KV entry each step">
+          <defs><marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker></defs>
+          <text x="20" y="24" class="d-lg">Prefill (1 pass, parallel)</text>
+          <g>
+            <rect x="20" y="40" width="34" height="30" rx="4" class="d-a"/><text x="37" y="60" text-anchor="middle" class="d-sm">The</text>
+            <rect x="58" y="40" width="34" height="30" rx="4" class="d-a"/><text x="75" y="60" text-anchor="middle" class="d-sm">cat</text>
+            <rect x="96" y="40" width="34" height="30" rx="4" class="d-a"/><text x="113" y="60" text-anchor="middle" class="d-sm">sat</text>
+            <rect x="134" y="40" width="34" height="30" rx="4" class="d-a"/><text x="151" y="60" text-anchor="middle" class="d-sm">on</text>
+            <rect x="172" y="40" width="34" height="30" rx="4" class="d-a"/><text x="189" y="60" text-anchor="middle" class="d-sm">the</text>
+          </g>
+          <line x1="113" y1="72" x2="113" y2="96" class="d-line" marker-end="url(#a1)"/>
+          <rect x="20" y="100" width="186" height="40" rx="6" class="d-box"/><text x="113" y="125" text-anchor="middle">model forward x1</text>
+          <line x1="113" y1="142" x2="113" y2="166" class="d-line" marker-end="url(#a1)"/>
+          <rect x="20" y="170" width="186" height="30" rx="4" class="d-b"/><text x="113" y="190" text-anchor="middle" class="d-sm">KV cache: 5 entries</text>
+          <text x="20" y="225" class="d-sm d-muted">Compute bound: each weight reused for N tokens</text>
+
+          <text x="290" y="24" class="d-lg">Decode (1 pass per new token)</text>
+          <g>
+            <rect x="290" y="40" width="40" height="30" rx="4" class="d-c"/><text x="310" y="60" text-anchor="middle" class="d-sm">mat</text>
+            <rect x="420" y="40" width="40" height="30" rx="4" class="d-c"/><text x="440" y="60" text-anchor="middle" class="d-sm">and</text>
+            <rect x="550" y="40" width="40" height="30" rx="4" class="d-c"/><text x="570" y="60" text-anchor="middle" class="d-sm">purred</text>
+          </g>
+          <rect x="280" y="100" width="70" height="40" rx="6" class="d-box"/><text x="315" y="125" text-anchor="middle" class="d-sm">fwd #2</text>
+          <rect x="410" y="100" width="70" height="40" rx="6" class="d-box"/><text x="445" y="125" text-anchor="middle" class="d-sm">fwd #3</text>
+          <rect x="540" y="100" width="70" height="40" rx="6" class="d-box"/><text x="575" y="125" text-anchor="middle" class="d-sm">fwd #4</text>
+          <line x1="352" y1="120" x2="406" y2="120" class="d-line" marker-end="url(#a1)"/>
+          <line x1="482" y1="120" x2="536" y2="120" class="d-line" marker-end="url(#a1)"/>
+          <rect x="280" y="170" width="70" height="30" rx="4" class="d-b"/><text x="315" y="190" text-anchor="middle" class="d-sm">6 entries</text>
+          <rect x="410" y="170" width="70" height="30" rx="4" class="d-b"/><text x="445" y="190" text-anchor="middle" class="d-sm">7 entries</text>
+          <rect x="540" y="170" width="70" height="30" rx="4" class="d-b"/><text x="575" y="190" text-anchor="middle" class="d-sm">8 entries</text>
+          <text x="290" y="225" class="d-sm d-muted">Memory bound: all weights read for 1 token per sequence</text>
+          <text x="630" y="125" class="d-sm d-muted">...</text>
+        </svg>
+        </div>
+        <figcaption>Prefill turns the prompt into KV cache entries in one parallel pass. Decode adds one KV entry per step and must re-read all the weights every step.</figcaption>
+      </figure>
+
+      <h3>What the KV cache stores</h3>
+      <p>In every layer, each token's hidden vector is projected into a key vector and a value vector for each KV head. The cache keeps those K and V vectors for every past token, in every layer. A new token computes only its own Q, K, V, appends its K and V, and attends over the stored ones. Without the cache, step t would recompute K and V for all t previous tokens. That turns generation from roughly linear into quadratic work in the sequence length.</p>
+
+      <div class="formula">
+        <div class="f-title">Attention for the new token at position t (one head)</div>
+        <div class="f-body">out_t = softmax( q_t · [k_1 ... k_t]^T / sqrt(d) ) · [v_1 ... v_t]</div>
+        <dl class="f-defs"><dt>q_t</dt><dd>query of the new token (computed this step)</dd><dt>k_i, v_i</dt><dd>key and value of token i (read from the cache for i &lt; t)</dd><dt>d</dt><dd>head dimension, e.g. 128</dd></dl>
+      </div>
+
+      <h3>Common traps</h3>
+      <div class="callout trap">
+        <ul class="mb-0">
+          <li><strong>"The KV cache stores the queries."</strong> No. Queries are only needed for the current token, so they are never cached.</li>
+          <li><strong>"The KV cache stores attention scores or outputs."</strong> No. It stores K and V projections per layer and per KV head.</li>
+          <li><strong>"Decode is compute bound because the model is big."</strong> No. Size makes it slower, but the bottleneck is bytes moved per token, not FLOPs.</li>
+          <li><strong>"Disabling the KV cache saves memory, so it helps throughput."</strong> It saves memory but recomputes everything, which makes it far slower.</li>
+        </ul>
+      </div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p01-recap-1" data-topic="Inference" data-type="single" data-answer="C">
+        <div class="q-stem"><p>A chat app's time to first token is high for long prompts, but tokens stream quickly afterward. Which phase dominates the delay?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Decode, because each token needs a full pass <span class="q-why">Decode determines the streaming speed after the first token, which is fine here.</span></li>
+          <li data-key="B">Tokenization of the prompt <span class="q-why">Tokenizing even 100k characters takes milliseconds on a CPU.</span></li>
+          <li data-key="C">Prefill, which processes the whole prompt before the first token can be emitted <span class="q-why">Correct. TTFT is mostly prefill time, which grows with prompt length.</span></li>
+          <li data-key="D">KV cache eviction <span class="q-why">Eviction is not a phase. It would cause recomputation, but that is not the default story here.</span></li>
+        </ul>
+        <div class="q-explain"><p>TTFT is mostly prefill time (plus queueing). Inter-token latency is decode. Prefix caching and chunked prefill target TTFT. Quantization and speculative decoding mostly target decode.</p></div>
+      </div>
+      <div class="quiz" data-qid="p01-recap-2" data-topic="Inference" data-type="multi" data-answer="A,C">
+        <div class="q-stem"><p>Select all statements that are true about the KV cache.</p></div>
+        <ul class="q-options">
+          <li data-key="A">It grows linearly with the number of tokens in the sequence <span class="q-why">True: one K and one V vector per token, per layer, per KV head.</span></li>
+          <li data-key="B">It stores query vectors so attention can be recomputed faster <span class="q-why">False: queries are used once and discarded.</span></li>
+          <li data-key="C">Its size depends on the number of KV heads, not the number of query heads <span class="q-why">True: this is why GQA and MQA shrink it.</span></li>
+          <li data-key="D">It is only used during prefill <span class="q-why">False: prefill fills it, and decode reads it on every step.</span></li>
+        </ul>
+        <div class="q-explain"><p>The KV cache is written during prefill and appended during decode. Its size per token is 2 x layers x kv_heads x head_dim x bytes.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why is prefill compute bound and decode memory bound?</summary><div class="answer"><p>Prefill multiplies each weight with all N prompt tokens at once, so many FLOPs are done per byte read. Decode does one token per sequence, so each weight byte read supports only about one FLOP.</p></div></details>
+        <details class="recall"><summary>What would happen to generation cost without a KV cache?</summary><div class="answer"><p>Step t would recompute K and V for all t tokens, so total work over n tokens grows roughly with n squared instead of n (for the projection work).</p></div></details>
+        <details class="recall"><summary>Which latency metric does prefill drive, and which does decode drive?</summary><div class="answer"><p>Prefill drives time to first token (TTFT). Decode drives inter-token latency (time per output token).</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 2 -->
+    <section id="kv-cache" data-track>
+      <h2>KV cache size: the formula and the exam question</h2>
+
+      <h3>Intuition</h3>
+      <p>Count the numbers you store, then multiply by bytes per number. For every token you store a K vector and a V vector (the 2), in every layer, for every KV head. Each vector has head_dim numbers. Then multiply by how many tokens you hold, across all sequences in the batch.</p>
+
+      <h3>The mechanism</h3>
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 240" role="img" aria-label="KV cache layout: for each layer, K and V tensors of shape kv_heads by seq_len by head_dim, for each sequence in the batch">
+          <text x="20" y="22" class="d-lg">One sequence, one layer</text>
+          <rect x="20" y="36" width="300" height="80" rx="6" class="d-a"/>
+          <text x="170" y="62" text-anchor="middle" class="d-bold">K: kv_heads x seq_len x head_dim</text>
+          <text x="170" y="86" text-anchor="middle" class="d-sm">8 x 8192 x 128 numbers</text>
+          <text x="170" y="104" text-anchor="middle" class="d-sm d-muted">grows by 8 x 128 per new token</text>
+          <rect x="20" y="126" width="300" height="80" rx="6" class="d-b"/>
+          <text x="170" y="152" text-anchor="middle" class="d-bold">V: kv_heads x seq_len x head_dim</text>
+          <text x="170" y="176" text-anchor="middle" class="d-sm">same shape as K</text>
+          <text x="170" y="194" text-anchor="middle" class="d-sm d-muted">this is the factor of 2</text>
+          <text x="360" y="22" class="d-lg">Repeat for</text>
+          <rect x="360" y="40" width="340" height="44" rx="6" class="d-box"/><text x="530" y="67" text-anchor="middle">x layers (32)</text>
+          <rect x="360" y="96" width="340" height="44" rx="6" class="d-box"/><text x="530" y="123" text-anchor="middle">x batch (4 sequences)</text>
+          <rect x="360" y="152" width="340" height="44" rx="6" class="d-c"/><text x="530" y="179" text-anchor="middle">x bytes per number (fp16 = 2)</text>
+          <text x="20" y="232" class="d-sm d-muted">Total = 2 x 32 x 8 x 128 x 8192 x 4 x 2 bytes = 4,294,967,296 bytes = 4 GiB</text>
+        </svg>
+        </div>
+        <figcaption>The KV cache is two tensors (K and V) per layer per sequence. Every factor in the formula is one of these dimensions.</figcaption>
+      </figure>
+
+      <h3>The formula</h3>
+      <div class="formula">
+        <div class="f-title">KV cache bytes</div>
+        <div class="f-body">KV = 2 x L x H_kv x d_head x S x B x b</div>
+        <dl class="f-defs">
+          <dt>2</dt><dd>one K and one V tensor</dd>
+          <dt>L</dt><dd>number of transformer layers</dd>
+          <dt>H_kv</dt><dd>number of KEY/VALUE heads (not query heads). MHA: H_kv = H_q. GQA: a few groups (often 8). MQA: 1.</dd>
+          <dt>d_head</dt><dd>dimension per head (hidden_size / H_q, often 128)</dd>
+          <dt>S</dt><dd>tokens per sequence held in the cache (prompt + generated so far)</dd>
+          <dt>B</dt><dd>number of sequences (batch size)</dd>
+          <dt>b</dt><dd>bytes per element: fp32 4, fp16/bf16 2, fp8/int8 1</dd>
+        </dl>
+      </div>
+      <p>Per-token form: <code>2 x L x H_kv x d_head x b</code> bytes. Multiply by the total tokens in flight (S x B).</p>
+
+      <h3>Worked example: the assessment question</h3>
+      <div class="worked">
+        <span class="w-title">32 layers, 8 KV heads, head_dim 128, fp16, batch 4 x 8192 tokens. Options: 16, 1, 32, 4 GiB</span>
+        <ol class="steps">
+          <li>Per token per layer: 2 (K,V) x 8 heads x 128 dims = 2,048 numbers.</li>
+          <li>All 32 layers: 2,048 x 32 = 65,536 numbers per token.</li>
+          <li>fp16 is 2 bytes: 65,536 x 2 = 131,072 bytes = 128 KiB per token.</li>
+          <li>Tokens in flight: 4 x 8,192 = 32,768 = 2^15.</li>
+          <li>Total: 131,072 x 32,768 = 2^17 x 2^15 = 2^32 = 4,294,967,296 bytes.</li>
+          <li>2^32 / 2^30 = 4 GiB (4.295 GB in decimal units).</li>
+        </ol>
+        <span class="result">Answer: 4 GiB (option D)</span>
+      </div>
+      <p>Powers of two make this mental math: 2 x 2^5 x 2^3 x 2^7 x 2^13 x 2^2 x 2^1 = 2^(1+5+3+7+13+2+1) = 2^32.</p>
+      <pre><code class="lang-py">GiB = 1024**3
+kv = 2 * 32 * 8 * 128 * 8192 * 4 * 2
+print(kv, kv / GiB)   # 4294967296 4.0</code></pre>
+
+      <h3>Why the wrong options are tempting</h3>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Option</th><th>The mistake that produces it</th></tr></thead>
+        <tbody>
+          <tr><td>16 GiB</td><td>Using 32 heads (the usual query-head count for this shape) instead of the 8 KV heads. GQA is the whole point of the question.</td></tr>
+          <tr><td>32 GiB</td><td>32 heads and fp32 (4 bytes). Two mistakes stacked.</td></tr>
+          <tr><td>1 GiB</td><td>Forgetting the batch of 4 (that is one sequence of 8,192 tokens).</td></tr>
+          <tr><td>2 GiB (not offered)</td><td>Forgetting the factor 2 for K and V.</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>Real model configs</h3>
+      <p>From the published <code>config.json</code> files. Check the exact file for any model you use: <code>num_hidden_layers</code>, <code>num_key_value_heads</code>, <code>head_dim</code> (or hidden_size / num_attention_heads).</p>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Model</th><th class="num">Layers</th><th class="num">Q heads</th><th class="num">KV heads</th><th class="num">d_head</th><th class="num">KV per token (fp16)</th><th class="num">8k tokens, 1 seq</th></tr></thead>
+        <tbody>
+          <tr><td>Llama 2 7B (MHA)</td><td class="num">32</td><td class="num">32</td><td class="num">32</td><td class="num">128</td><td class="num">512 KiB</td><td class="num">4 GiB</td></tr>
+          <tr><td>Llama 3 8B (GQA)</td><td class="num">32</td><td class="num">32</td><td class="num">8</td><td class="num">128</td><td class="num">128 KiB</td><td class="num">1 GiB</td></tr>
+          <tr><td>Llama 2 13B (MHA)</td><td class="num">40</td><td class="num">40</td><td class="num">40</td><td class="num">128</td><td class="num">800 KiB</td><td class="num">6.25 GiB</td></tr>
+          <tr><td>Llama 2/3 70B (GQA)</td><td class="num">80</td><td class="num">64</td><td class="num">8</td><td class="num">128</td><td class="num">320 KiB</td><td class="num">2.5 GiB</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p>Notice the 70B model holds <em>less</em> KV per token than Llama 2 7B, because GQA cuts KV heads from 64 to 8. Serving 32 users at 8k context on the 70B still needs 32 x 2.5 = 80 GiB of KV cache, on top of 140 GB of bf16 weights.</p>
+
+      <h3>MHA vs MQA vs GQA</h3>
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 200" role="img" aria-label="MHA has one KV head per query head; GQA shares one KV head among a group of query heads; MQA shares a single KV head among all query heads">
+          <text x="20" y="20" class="d-lg">MHA</text>
+          <text x="260" y="20" class="d-lg">GQA (groups of 4)</text>
+          <text x="500" y="20" class="d-lg">MQA</text>
+          <g>
+            <rect x="20" y="36" width="20" height="20" class="d-a"/><rect x="46" y="36" width="20" height="20" class="d-a"/><rect x="72" y="36" width="20" height="20" class="d-a"/><rect x="98" y="36" width="20" height="20" class="d-a"/><rect x="124" y="36" width="20" height="20" class="d-a"/><rect x="150" y="36" width="20" height="20" class="d-a"/><rect x="176" y="36" width="20" height="20" class="d-a"/><rect x="202" y="36" width="20" height="20" class="d-a"/>
+            <line x1="30" y1="58" x2="30" y2="96" class="d-line"/><line x1="56" y1="58" x2="56" y2="96" class="d-line"/><line x1="82" y1="58" x2="82" y2="96" class="d-line"/><line x1="108" y1="58" x2="108" y2="96" class="d-line"/><line x1="134" y1="58" x2="134" y2="96" class="d-line"/><line x1="160" y1="58" x2="160" y2="96" class="d-line"/><line x1="186" y1="58" x2="186" y2="96" class="d-line"/><line x1="212" y1="58" x2="212" y2="96" class="d-line"/>
+            <rect x="20" y="98" width="20" height="20" class="d-b"/><rect x="46" y="98" width="20" height="20" class="d-b"/><rect x="72" y="98" width="20" height="20" class="d-b"/><rect x="98" y="98" width="20" height="20" class="d-b"/><rect x="124" y="98" width="20" height="20" class="d-b"/><rect x="150" y="98" width="20" height="20" class="d-b"/><rect x="176" y="98" width="20" height="20" class="d-b"/><rect x="202" y="98" width="20" height="20" class="d-b"/>
+          </g>
+          <g>
+            <rect x="260" y="36" width="20" height="20" class="d-a"/><rect x="286" y="36" width="20" height="20" class="d-a"/><rect x="312" y="36" width="20" height="20" class="d-a"/><rect x="338" y="36" width="20" height="20" class="d-a"/><rect x="364" y="36" width="20" height="20" class="d-a"/><rect x="390" y="36" width="20" height="20" class="d-a"/><rect x="416" y="36" width="20" height="20" class="d-a"/><rect x="442" y="36" width="20" height="20" class="d-a"/>
+            <line x1="270" y1="58" x2="309" y2="96" class="d-line"/><line x1="296" y1="58" x2="309" y2="96" class="d-line"/><line x1="322" y1="58" x2="309" y2="96" class="d-line"/><line x1="348" y1="58" x2="309" y2="96" class="d-line"/>
+            <line x1="374" y1="58" x2="413" y2="96" class="d-line"/><line x1="400" y1="58" x2="413" y2="96" class="d-line"/><line x1="426" y1="58" x2="413" y2="96" class="d-line"/><line x1="452" y1="58" x2="413" y2="96" class="d-line"/>
+            <rect x="299" y="98" width="20" height="20" class="d-b"/><rect x="403" y="98" width="20" height="20" class="d-b"/>
+          </g>
+          <g>
+            <rect x="500" y="36" width="20" height="20" class="d-a"/><rect x="526" y="36" width="20" height="20" class="d-a"/><rect x="552" y="36" width="20" height="20" class="d-a"/><rect x="578" y="36" width="20" height="20" class="d-a"/><rect x="604" y="36" width="20" height="20" class="d-a"/><rect x="630" y="36" width="20" height="20" class="d-a"/><rect x="656" y="36" width="20" height="20" class="d-a"/><rect x="682" y="36" width="20" height="20" class="d-a"/>
+            <line x1="510" y1="58" x2="601" y2="96" class="d-line"/><line x1="536" y1="58" x2="601" y2="96" class="d-line"/><line x1="562" y1="58" x2="601" y2="96" class="d-line"/><line x1="588" y1="58" x2="601" y2="96" class="d-line"/><line x1="614" y1="58" x2="601" y2="96" class="d-line"/><line x1="640" y1="58" x2="601" y2="96" class="d-line"/><line x1="666" y1="58" x2="601" y2="96" class="d-line"/><line x1="692" y1="58" x2="601" y2="96" class="d-line"/>
+            <rect x="591" y="98" width="20" height="20" class="d-b"/>
+          </g>
+          <rect x="20" y="148" width="16" height="16" class="d-a"/><text x="42" y="161" class="d-sm">query head</text>
+          <rect x="140" y="148" width="16" height="16" class="d-b"/><text x="162" y="161" class="d-sm">K/V head (cached)</text>
+          <text x="20" y="190" class="d-sm d-muted">8 query heads shown. KV cache size is proportional to the green boxes: MHA 8, GQA 2, MQA 1.</text>
+        </svg>
+        </div>
+        <figcaption>GQA keeps all query heads but shares K/V among groups. The KV cache shrinks by H_q / H_kv with usually small quality loss. MQA is the extreme case.</figcaption>
+      </figure>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Llama-3-8B shape (32 layers, d_head 128, fp16)</th><th class="num">H_kv</th><th class="num">KV per token</th><th class="num">Relative</th></tr></thead>
+        <tbody>
+          <tr><td>MHA</td><td class="num">32</td><td class="num">512 KiB</td><td class="num">4x</td></tr>
+          <tr><td>GQA (actual)</td><td class="num">8</td><td class="num">128 KiB</td><td class="num">1x</td></tr>
+          <tr><td>MQA</td><td class="num">1</td><td class="num">16 KiB</td><td class="num">1/8x</td></tr>
+          <tr><td>GQA + fp8 KV cache</td><td class="num">8</td><td class="num">64 KiB</td><td class="num">1/2x</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>Common traps</h3>
+      <div class="callout trap">
+        <ul class="mb-0">
+          <li>Plugging in query heads instead of KV heads.</li>
+          <li>Forgetting the factor 2, the batch, or the bytes per element.</li>
+          <li>Mixing GiB (2^30) and GB (10^9). 4 GiB = 4.29 GB. Exam options in GiB usually come out as clean powers of two.</li>
+          <li>Thinking the KV cache depends on parameter count. It depends on layers, KV heads and head_dim only. A 70B GQA model can need less KV per token than a 7B MHA model.</li>
+          <li>Thinking the cache is sized by max_new_tokens only. It holds prompt tokens plus generated tokens.</li>
+        </ul>
+      </div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p01-kv-1" data-topic="Inference" data-type="single" data-answer="D">
+        <div class="q-stem"><p>A model has 32 layers, 8 KV heads, head_dim 128, fp16 KV cache. You serve a batch of 4 sequences of 8,192 tokens each. KV cache size?</p></div>
+        <ul class="q-options">
+          <li data-key="A">16 GiB <span class="q-why">This uses 32 heads. With GQA only the 8 KV heads are cached.</span></li>
+          <li data-key="B">1 GiB <span class="q-why">This is one sequence. There are 4.</span></li>
+          <li data-key="C">32 GiB <span class="q-why">This uses 32 heads and 4-byte elements.</span></li>
+          <li data-key="D">4 GiB <span class="q-why">2 x 32 x 8 x 128 x 8192 x 4 x 2 = 2^32 bytes.</span></li>
+        </ul>
+        <div class="q-explain"><p>128 KiB per token x 32,768 tokens = 4 GiB.</p></div>
+      </div>
+      <div class="quiz" data-qid="p01-kv-2" data-topic="Inference" data-type="numeric" data-answer="80" data-tol="0.5" data-unit="GiB">
+        <div class="q-stem"><p>A 70B model with 80 layers, 8 KV heads, head_dim 128 and a bf16 KV cache serves 32 concurrent users at 8,192 tokens each. How many GiB of KV cache is that?</p></div>
+        <div class="q-explain"><p>2 x 80 x 8 x 128 x 2 = 327,680 bytes = 320 KiB per token. 32 x 8,192 = 262,144 tokens. 320 KiB x 262,144 = 80 GiB.</p></div>
+      </div>
+      <div class="quiz" data-qid="p01-kv-3" data-topic="Inference" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Switching a model from MHA with 32 heads to GQA with 4 KV groups (same layers and head_dim) changes the KV cache by what factor?</p></div>
+        <ul class="q-options">
+          <li data-key="A">No change, query heads are unchanged <span class="q-why">The cache stores K and V, whose head count drops from 32 to 4.</span></li>
+          <li data-key="B">8x smaller <span class="q-why">32 / 4 = 8.</span></li>
+          <li data-key="C">4x smaller <span class="q-why">4 is the group count, not the ratio.</span></li>
+          <li data-key="D">32x smaller <span class="q-why">That would be MQA (1 KV head).</span></li>
+        </ul>
+        <div class="q-explain"><p>The KV cache is proportional to H_kv. 32 to 4 is an 8x reduction.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Write the KV cache formula from memory and define each symbol.</summary><div class="answer"><p>2 x layers x kv_heads x head_dim x seq_len x batch x bytes_per_element. The 2 covers K and V.</p></div></details>
+        <details class="recall"><summary>KV bytes per token for 32 layers, 8 KV heads, d_head 128, fp16?</summary><div class="answer"><p>2 x 32 x 8 x 128 x 2 = 131,072 bytes = 128 KiB.</p></div></details>
+        <details class="recall"><summary>Why does GQA save memory without removing query heads?</summary><div class="answer"><p>Groups of query heads share one K/V head, and only K and V are cached. Each query head still has its own projection, so the model keeps most of its expressiveness.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 3 -->
+    <section id="weight-memory" data-track>
+      <h2>Weight memory and total VRAM</h2>
+
+      <h3>Intuition</h3>
+      <p>Weights are just numbers. Count them (the parameter count), multiply by bytes per number. 8 billion parameters at 2 bytes each is 16 billion bytes, which is 16 GB.</p>
+
+      <h3>The formula</h3>
+      <div class="formula">
+        <div class="f-title">Weight memory</div>
+        <div class="f-body">weights_bytes = P x b</div>
+        <dl class="f-defs"><dt>P</dt><dd>parameter count (8B = 8 x 10^9)</dd><dt>b</dt><dd>bytes per parameter: fp32 4, bf16/fp16 2, fp8/int8 1, int4 0.5</dd></dl>
+      </div>
+
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Params</th><th class="num">fp32</th><th class="num">bf16 / fp16</th><th class="num">fp8 / int8</th><th class="num">int4</th></tr></thead>
+        <tbody>
+          <tr><td>7B</td><td class="num">28 GB</td><td class="num">14 GB</td><td class="num">7 GB</td><td class="num">3.5 GB</td></tr>
+          <tr><td>8B</td><td class="num">32 GB</td><td class="num">16 GB</td><td class="num">8 GB</td><td class="num">4 GB</td></tr>
+          <tr><td>13B</td><td class="num">52 GB</td><td class="num">26 GB</td><td class="num">13 GB</td><td class="num">6.5 GB</td></tr>
+          <tr><td>70B</td><td class="num">280 GB</td><td class="num">140 GB</td><td class="num">70 GB</td><td class="num">35 GB</td></tr>
+        </tbody>
+        <caption>Decimal GB (10^9 bytes). In GiB: 8B bf16 = 14.9 GiB, 70B bf16 = 130.4 GiB. Real int4 formats add group scales: one fp16 scale per 128 weights is 4.125 bits per weight, so about 3% more.</caption>
+      </table>
+      </div>
+
+      <h3>What else uses VRAM during inference</h3>
+      <ul>
+        <li><strong>KV cache</strong>: often the largest variable cost under concurrency (previous section).</li>
+        <li><strong>Activations and workspace</strong>: temporary tensors for the current forward pass. They are small for decode and larger for long prefills. Chunked prefill caps them.</li>
+        <li><strong>CUDA context and libraries</strong>: on the order of hundreds of MB to about 1 GB per GPU. This varies with driver and library versions.</li>
+        <li><strong>Fragmentation</strong>: memory lost between allocations. PagedAttention exists largely to reduce it in the KV cache.</li>
+        <li><strong>Server preallocation</strong>: vLLM, for example, grabs a fixed fraction of VRAM up front (its <code>gpu_memory_utilization</code> setting, 0.9 by default in recent versions) and uses whatever is not needed for weights as KV cache blocks. Check your version's docs.</li>
+      </ul>
+      <div class="callout key"><span class="callout-title">Rule of thumb</span><p>Total inference VRAM is roughly weights + KV cache for your target concurrency + 10 to 20% overhead. An 8B bf16 model (16 GB) does not leave useful KV room on a 16 GB T4. On a 24 GB L4 or A10 it fits, leaving roughly 6 GB for KV cache after overhead. That is about 45k tokens of Llama-3-8B KV in fp16 (6 x 10^9 / 131,072). Training is far heavier: with Adam in mixed precision, plan on about 16 bytes per parameter before activations (weights, gradients, fp32 master weights and two optimizer moments).</p></div>
+
+      <h3>Worked example</h3>
+      <div class="worked">
+        <span class="w-title">Can Llama-3-8B in bf16 serve 16 users at 4k context on one 40 GB A100?</span>
+        <ol class="steps">
+          <li>Weights: 8 x 10^9 x 2 = 16 GB.</li>
+          <li>KV per token: 128 KiB. Tokens: 16 x 4,096 = 65,536. KV = 128 KiB x 65,536 = 8 GiB, about 8.6 GB.</li>
+          <li>Overhead: about 2 to 4 GB.</li>
+          <li>Total: about 27 to 29 GB, which is under 40 GB.</li>
+        </ol>
+        <span class="result">Yes, with room to spare</span>
+      </div>
+
+      <h3>Common traps</h3>
+      <div class="callout trap">
+        <ul class="mb-0">
+          <li>"8B in bf16 is 8 GB." No, bf16 is 2 bytes per parameter, so 16 GB.</li>
+          <li>Comparing GB on a spec sheet with GiB from <code>nvidia-smi</code> (it reports MiB) without converting.</li>
+          <li>Forgetting the KV cache, and then being surprised by out-of-memory errors at high concurrency even though "the model fits".</li>
+          <li>Assuming int4 halves memory compared with int8 exactly. Group scales and unquantized parts (often the embeddings and the LM head) add overhead.</li>
+        </ul>
+      </div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p01-w-1" data-topic="Inference" data-type="fill" data-answer="16|16 gb|16gb">
+        <div class="q-stem"><p>An 8B-parameter model's weights in bf16 take about <input class="q-input" aria-label="answer"> GB.</p></div>
+        <div class="q-explain"><p>8 x 10^9 parameters x 2 bytes = 16 x 10^9 bytes = 16 GB (14.9 GiB).</p></div>
+      </div>
+      <div class="quiz" data-qid="p01-w-2" data-topic="Inference" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Smallest single GPU (by memory) that can hold a 70B model's weights in int4, with some room for KV cache?</p></div>
+        <ul class="q-options">
+          <li data-key="A">24 GB L4 <span class="q-why">35 GB of weights does not fit.</span></li>
+          <li data-key="B">40 GB A100 <span class="q-why">35 GB plus scales (about 36 GB) leaves almost nothing for KV cache and overhead.</span></li>
+          <li data-key="C">80 GB A100 or H100 <span class="q-why">35 to 37 GB of weights leaves about 40 GB for KV cache.</span></li>
+          <li data-key="D">16 GB T4 <span class="q-why">Far too small.</span></li>
+        </ul>
+        <div class="q-explain"><p>70B x 0.5 bytes is about 35 GB plus quantization metadata. A 40 GB card is technically borderline but leaves no KV room, so 80 GB is the practical answer.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>13B in fp16?</summary><div class="answer"><p>26 GB.</p></div></details>
+        <details class="recall"><summary>Name four things besides weights that use VRAM at inference.</summary><div class="answer"><p>KV cache, activations and workspace, CUDA context and libraries, fragmentation and allocator reserves.</p></div></details>
+        <details class="recall"><summary>Roughly how many bytes per parameter for full fine-tuning with Adam in mixed precision?</summary><div class="answer"><p>About 16: 2 (bf16 weights) + 2 (bf16 grads) + 4 (fp32 master) + 8 (two fp32 Adam moments), before activations.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 4 -->
+    <section id="roofline-quantization" data-track>
+      <h2>Why 4-bit weight quantization speeds up decoding</h2>
+
+      <h3>Intuition</h3>
+      <p>Picture a chef (the GPU's math units) who can chop at lightning speed, fed by a narrow conveyor belt from the fridge (memory). When cooking one dish at a time, the chef waits on the belt almost the whole time. Shrinking each ingredient to a quarter of its size (4-bit weights instead of 16-bit) lets four times as much arrive per second. The chef barely notices the extra unwrapping (dequantization).</p>
+
+      <h3>The mechanism: arithmetic intensity and the roofline</h3>
+      <p><strong>Arithmetic intensity</strong> = FLOPs performed / bytes moved from memory. Every GPU has a <strong>ridge point</strong> = peak FLOP/s divided by memory bandwidth. Below the ridge you are memory bound and speed = bandwidth x intensity. Above it you are compute bound.</p>
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 300" role="img" aria-label="Roofline: attainable performance rises with arithmetic intensity until the ridge point, then is flat at peak compute. Decode at batch 1 sits far left; prefill sits right of the ridge.">
+          <defs><marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker></defs>
+          <line x1="70" y1="260" x2="690" y2="260" class="d-line" marker-end="url(#a4)"/>
+          <line x1="70" y1="260" x2="70" y2="20" class="d-line" marker-end="url(#a4)"/>
+          <text x="380" y="292" text-anchor="middle" class="d-sm">arithmetic intensity (FLOP per byte, log scale)</text>
+          <text x="22" y="140" text-anchor="middle" class="d-sm" transform="rotate(-90 22 140)">attainable FLOP/s</text>
+          <polyline points="70,250 420,60 690,60" class="d-line-a"/>
+          <line x1="420" y1="60" x2="420" y2="260" class="d-grid d-dash"/>
+          <text x="420" y="50" text-anchor="middle" class="d-sm d-ta">ridge: H100 ~295, A100 ~153</text>
+          <text x="560" y="80" class="d-sm d-ta">peak compute (flat roof)</text>
+          <text x="190" y="150" class="d-sm d-ta" transform="rotate(-28 190 150)">memory bound: bandwidth x intensity</text>
+          <circle cx="100" cy="234" r="7" class="d-d"/><text x="112" y="230" class="d-sm d-td">decode, batch 1 (~1)</text>
+          <circle cx="160" cy="201" r="7" class="d-c"/><text x="172" y="205" class="d-sm d-tc">decode, int4 weights (~4)</text>
+          <circle cx="330" cy="109" r="7" class="d-c"/><text x="344" y="130" class="d-sm d-tc">decode, batch 64</text>
+          <circle cx="600" cy="60" r="7" class="d-b"/><text x="560" y="105" class="d-sm d-tb">prefill, 2k tokens</text>
+        </svg>
+        </div>
+        <figcaption>Decode at batch 1 does about 1 FLOP per byte of bf16 weight, far left of the ridge. Quantizing weights to 4 bits moves it right by about 4x, and batching moves it right by about the batch size. Prefill is already compute bound.</figcaption>
+      </figure>
+
+      <h3>The formulas</h3>
+      <div class="formula">
+        <div class="f-title">Decode time per token (memory bound regime)</div>
+        <div class="f-body">t_token  ~  (weight_bytes + KV_bytes_read) / memory_bandwidth
+intensity_decode  ~  2 x B / b      (FLOP per byte of weights)
+ridge  =  peak_FLOPs / bandwidth</div>
+        <dl class="f-defs">
+          <dt>2</dt><dd>one multiply plus one add per weight per token</dd>
+          <dt>B</dt><dd>sequences decoded together (batch)</dd>
+          <dt>b</dt><dd>bytes per weight (2 for bf16, about 0.5 for int4)</dd>
+        </dl>
+      </div>
+
+      <h3>Worked example: 8B model, single user</h3>
+      <div class="worked">
+        <span class="w-title">H100 SXM (approximate vendor figures: ~3.35 TB/s HBM, ~989 TFLOPS dense bf16)</span>
+        <ol class="steps">
+          <li>bf16 weights: 16 GB read per token. 16e9 / 3.35e12 = 4.78 ms per token, a ceiling of about 209 tokens/s.</li>
+          <li>FLOPs needed per token: 2 x 8e9 = 16 GFLOP. At 989 TFLOPS that is 0.016 ms. Compute is about 300x faster than the memory traffic, so the GPU is idle waiting on memory.</li>
+          <li>int4 weights with group scales: about 4.125 bits per weight, so 4.125 GB. 4.125e9 / 3.35e12 = 1.23 ms per token, a ceiling of about 812 tokens/s.</li>
+          <li>Bytes ratio: 16 / 4.125 = 3.88x less data per token.</li>
+        </ol>
+        <span class="result">Up to ~3.9x faster decode ceiling; real gains are smaller (dequantization, KV reads, kernel efficiency)</span>
+      </div>
+      <p>On an A100 80GB (about 2.0 TB/s) the bf16 ceiling is 16e9 / 2.039e12 = 7.85 ms per token. Ridge points: A100 312 TFLOPS / 2.04 TB/s is about 153 FLOP/byte. H100 989 / 3.35 is about 295. Decode at batch 1 is near 1.</p>
+
+      <h3>What AWQ and GPTQ actually do</h3>
+      <ul>
+        <li>Both are <strong>weight-only, post-training</strong> quantization to about 4 bits, with a scale (and often a zero point) per group of weights, typically 128.</li>
+        <li><strong>GPTQ</strong> quantizes weights column by column and uses approximate second-order information (from calibration data) to adjust the remaining weights, compensating for each rounding error.</li>
+        <li><strong>AWQ</strong> (activation-aware) notices that a small fraction of weight channels matter most, namely those hit by large activations. It scales those channels up before quantization so they lose less precision.</li>
+        <li>At run time, kernels load 4-bit weights, <strong>dequantize them to fp16/bf16 in registers</strong>, and multiply with fp16 activations. The matmul itself is not an int4 matmul. That is why it is called W4A16.</li>
+      </ul>
+
+      <h3>Why the tempting wrong options are wrong</h3>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Claim</th><th>Why it is wrong</th></tr></thead>
+        <tbody>
+          <tr><td>"Fewer layers run"</td><td>Quantization changes the storage format of each weight, not the architecture. Every layer still runs. (Layer skipping and early exit are different techniques.)</td></tr>
+          <tr><td>"Attention becomes linear"</td><td>Attention cost depends on the attention algorithm, not on how weights are stored. Quantizing weights leaves softmax attention quadratic in sequence length.</td></tr>
+          <tr><td>"Matmuls run in int4"</td><td>Weight-only schemes dequantize to fp16/bf16 and multiply in 16-bit (W4A16). Integer tensor-core math needs activations quantized too (W8A8 or W4A4 schemes), which is a different technique. The win comes from fewer bytes moved, not faster arithmetic.</td></tr>
+          <tr><td>"It mostly helps prefill"</td><td>Prefill is compute bound, so fewer bytes barely matters there. Dequantization overhead can even make large-batch prefill slightly slower.</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p01-q-1" data-topic="Inference" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why does 4-bit weight-only quantization (AWQ, GPTQ) speed up single-user decoding?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Fewer layers are executed per token <span class="q-why">All layers still run. Only the storage format changes.</span></li>
+          <li data-key="B">Decoding is memory-bandwidth bound, so reading about 4x fewer weight bytes per token is the win <span class="q-why">Correct. At batch 1 the GPU waits on memory, and fewer bytes means less waiting.</span></li>
+          <li data-key="C">Attention becomes linear in sequence length <span class="q-why">Weight format does not change the attention algorithm.</span></li>
+          <li data-key="D">Matrix multiplications run in int4 on tensor cores <span class="q-why">Weights are dequantized to 16-bit before the multiply (W4A16).</span></li>
+        </ul>
+        <div class="q-explain"><p>Decode intensity is about 1 FLOP per byte versus a ridge of about 150 to 300. The bottleneck is bytes, so quarter-size weights give up to about 4x the decode ceiling.</p></div>
+      </div>
+      <div class="quiz" data-qid="p01-q-2" data-topic="Inference" data-type="single" data-answer="A">
+        <div class="q-stem"><p>A team quantizes a model to int4 weights and measures throughput at batch 256 with long prompts. The gain is much smaller than at batch 1. Most likely reason?</p></div>
+        <ul class="q-options">
+          <li data-key="A">At large batch the workload is closer to compute bound, so saving memory bytes matters less <span class="q-why">Correct. Intensity grows with batch size and approaches the ridge.</span></li>
+          <li data-key="B">int4 models produce longer outputs <span class="q-why">No mechanism for that.</span></li>
+          <li data-key="C">The KV cache is quantized too <span class="q-why">That would help, not hurt.</span></li>
+          <li data-key="D">Quantization disables batching <span class="q-why">It does not.</span></li>
+        </ul>
+        <div class="q-explain"><p>Batching reuses each weight read for B tokens, so intensity scales with B. Once near the ridge, compute (plus dequantization work) dominates.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Define arithmetic intensity and ridge point.</summary><div class="answer"><p>Intensity = FLOPs / bytes moved. Ridge = peak FLOP/s / bandwidth. Below the ridge you are memory bound.</p></div></details>
+        <details class="recall"><summary>Upper bound on bf16 decode speed for an 8B model on a ~2 TB/s GPU?</summary><div class="answer"><p>16 GB / 2 TB/s = 8 ms per token, about 125 tokens/s (ignoring KV reads).</p></div></details>
+        <details class="recall"><summary>What does "W4A16" mean, and where does the speedup come from?</summary><div class="answer"><p>4-bit weights and 16-bit activations. Weights are dequantized on the fly, and the speedup comes from moving fewer weight bytes.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 5 -->
+    <section id="throughput" data-track>
+      <h2>Raising throughput for many concurrent requests</h2>
+
+      <h3>Intuition</h3>
+      <p>Since decode wastes compute waiting on memory, the cheapest way to get more tokens per second is to serve many users in the same forward pass. Each weight read then feeds B tokens instead of 1. Almost every throughput technique either packs more sequences into each pass or frees memory so more sequences fit.</p>
+
+      <h3>The mechanisms</h3>
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 260" role="img" aria-label="Static batching waits for the longest request and leaves idle slots; continuous batching refills a slot as soon as a request finishes">
+          <text x="20" y="20" class="d-lg">Static batching</text>
+          <text x="380" y="20" class="d-lg">Continuous (in-flight) batching</text>
+          <g>
+            <rect x="20" y="36" width="120" height="22" class="d-a"/><rect x="140" y="36" width="160" height="22" class="d-box d-dash"/>
+            <rect x="20" y="64" width="280" height="22" class="d-b"/>
+            <rect x="20" y="92" width="60" height="22" class="d-c"/><rect x="80" y="92" width="220" height="22" class="d-box d-dash"/>
+            <rect x="20" y="120" width="200" height="22" class="d-e"/><rect x="220" y="120" width="80" height="22" class="d-box d-dash"/>
+            <text x="160" y="164" text-anchor="middle" class="d-sm d-muted">dashed = idle slot waiting for the batch</text>
+          </g>
+          <g>
+            <rect x="380" y="36" width="120" height="22" class="d-a"/><rect x="500" y="36" width="140" height="22" class="d-d"/>
+            <rect x="380" y="64" width="280" height="22" class="d-b"/>
+            <rect x="380" y="92" width="60" height="22" class="d-c"/><rect x="440" y="92" width="100" height="22" class="d-a"/><rect x="540" y="92" width="120" height="22" class="d-c"/>
+            <rect x="380" y="120" width="200" height="22" class="d-e"/><rect x="580" y="120" width="80" height="22" class="d-b"/>
+            <text x="520" y="164" text-anchor="middle" class="d-sm d-muted">new requests join at the next step</text>
+          </g>
+          <text x="20" y="200" class="d-bold">PagedAttention</text>
+          <g>
+            <rect x="20" y="212" width="40" height="22" class="d-a"/><rect x="62" y="212" width="40" height="22" class="d-b"/><rect x="104" y="212" width="40" height="22" class="d-a"/><rect x="146" y="212" width="40" height="22" class="d-c"/><rect x="188" y="212" width="40" height="22" class="d-b"/><rect x="230" y="212" width="40" height="22" class="d-a"/><rect x="272" y="212" width="40" height="22" class="d-box"/><rect x="314" y="212" width="40" height="22" class="d-box"/>
+          </g>
+          <text x="380" y="228" class="d-sm">KV stored in fixed-size blocks (e.g. 16 tokens) anywhere in memory;</text>
+          <text x="380" y="246" class="d-sm">a block table maps each sequence to its blocks, like OS virtual memory.</text>
+        </svg>
+        </div>
+        <figcaption>Continuous batching keeps every slot busy. PagedAttention stores each sequence's KV in non-contiguous blocks, so memory is not reserved for the maximum length up front.</figcaption>
+      </figure>
+
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Technique</th><th>What it does</th><th>Why it raises throughput</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Continuous (in-flight) batching</strong></td><td>The scheduler adds and removes sequences at every decode step instead of waiting for a whole batch to finish.</td><td>No idle slots behind long requests, so the effective batch stays high.</td></tr>
+          <tr><td><strong>PagedAttention</strong> (vLLM)</td><td>KV cache in fixed-size blocks with a block table, allocated on demand.</td><td>Near-zero fragmentation and no max-length reservation, so more sequences fit. It also enables sharing blocks across sequences.</td></tr>
+          <tr><td><strong>Prefix caching</strong></td><td>Reuses KV blocks for an identical prompt prefix (for example a shared system prompt).</td><td>Skips repeated prefill compute and stores shared blocks once.</td></tr>
+          <tr><td><strong>Chunked prefill</strong></td><td>Splits a long prefill into chunks mixed with decode steps.</td><td>Keeps decode flowing for other users (better inter-token latency) and keeps GPU utilization high.</td></tr>
+          <tr><td><strong>Tensor parallelism</strong></td><td>Splits each layer's matrices across GPUs. Every layer needs all-reduce communication.</td><td>Pools memory and bandwidth across GPUs. Lower latency per token. Needs fast interconnect (NVLink).</td></tr>
+          <tr><td><strong>Pipeline parallelism</strong></td><td>Different layers on different GPUs, with micro-batches flowing through.</td><td>Fits bigger models across nodes. Adds pipeline bubbles and latency.</td></tr>
+          <tr><td><strong>FlashAttention</strong></td><td>Tiled attention kernel that never writes the full attention matrix to HBM.</td><td>Fewer memory reads and writes. Exact result. Big win for long sequences.</td></tr>
+          <tr><td><strong>Quantized KV cache</strong> (fp8 / int8)</td><td>Stores K and V in 1 byte instead of 2.</td><td>Twice the tokens fit, and fewer bytes are read per decode step.</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <div class="callout trap"><span class="callout-title">What does NOT help</span>
+        <ul class="mb-0">
+          <li><strong>Disabling the KV cache</strong>: every step recomputes K and V for all previous tokens. Throughput collapses.</li>
+          <li><strong>Raising max_new_tokens for every request</strong>: requests run longer and reserve more KV, so fewer sequences fit and queues grow. If anything it lowers useful throughput. Set limits to what the task needs.</li>
+          <li>Raising temperature, or adding more few-shot examples (more prefill per request).</li>
+        </ul>
+      </div>
+
+      <h3>Worked example</h3>
+      <div class="worked">
+        <span class="w-title">How many concurrent 4k-token Llama-3-8B sequences fit in 24 GB of free KV space (fp16 vs fp8)?</span>
+        <ol class="steps">
+          <li>fp16: 128 KiB per token. 24 GB = 24 x 10^9 bytes. Divide by 131,072: about 183,105 tokens, so 183,105 / 4,096 is about 44 sequences.</li>
+          <li>fp8 KV: 64 KiB per token, so about 89 sequences.</li>
+          <li>With naive contiguous allocation reserving 8k per request "just in case", fp16 gives only about 22 sequences. That is the waste PagedAttention removes.</li>
+        </ol>
+        <span class="result">~44 (fp16) vs ~89 (fp8); reservations halve it</span>
+      </div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p01-t-1" data-topic="Inference" data-type="multi" data-answer="B,C,D">
+        <div class="q-stem"><p>Which techniques raise throughput for many concurrent requests? Select all that apply.</p></div>
+        <ul class="q-options">
+          <li data-key="A">Raise max_new_tokens for every request <span class="q-why">Longer requests hold slots and KV memory longer, which reduces concurrency.</span></li>
+          <li data-key="B">Continuous batching <span class="q-why">It keeps the batch full at every step.</span></li>
+          <li data-key="C">PagedAttention <span class="q-why">Less KV fragmentation means more sequences in memory.</span></li>
+          <li data-key="D">Prefix caching of a shared system prompt <span class="q-why">It skips repeated prefill and shares KV blocks.</span></li>
+          <li data-key="E">Disabling the KV cache <span class="q-why">It forces recomputation at every step. Much slower.</span></li>
+        </ul>
+        <div class="q-explain"><p>B, C and D either keep the batch full or let more sequences fit. A and E reduce effective throughput.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What problem does PagedAttention solve?</summary><div class="answer"><p>KV cache fragmentation and over-reservation from contiguous per-sequence allocation. It allocates fixed-size blocks on demand.</p></div></details>
+        <details class="recall"><summary>Tensor vs pipeline parallelism in one line each?</summary><div class="answer"><p>Tensor: split each layer's matrices across GPUs, with heavy communication on every layer. Pipeline: split layers into stages on different GPUs, which causes pipeline bubbles.</p></div></details>
+        <details class="recall"><summary>Does FlashAttention change the attention output?</summary><div class="answer"><p>No. It is an exact algorithm that reorders computation to cut memory traffic.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 6 -->
+    <section id="speculative-decoding" data-track>
+      <h2>Speculative decoding</h2>
+
+      <h3>Intuition</h3>
+      <p>A junior writer (small draft model) quickly drafts the next few words. The senior editor (target model) checks the whole draft in one read. Every word the editor would also have written is kept. At the first word the editor disagrees with, the editor writes their own word, and the junior drafts again from there. The editor reads once per batch of drafted words instead of once per word. Since decode is memory bound, checking 5 tokens in one pass costs about the same as generating 1.</p>
+
+      <h3>The mechanism</h3>
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 230" role="img" aria-label="Timeline: draft proposes 4 tokens, target verifies all 4 in one pass, accepts 3, rejects the 4th and samples a replacement">
+          <text x="20" y="22" class="d-lg">One speculative step (k = 4)</text>
+          <text x="20" y="58" class="d-sm d-muted">draft</text>
+          <rect x="80" y="40" width="70" height="28" rx="4" class="d-c"/><text x="115" y="59" text-anchor="middle" class="d-sm">"the"</text>
+          <rect x="155" y="40" width="70" height="28" rx="4" class="d-c"/><text x="190" y="59" text-anchor="middle" class="d-sm">"cat"</text>
+          <rect x="230" y="40" width="70" height="28" rx="4" class="d-c"/><text x="265" y="59" text-anchor="middle" class="d-sm">"sat"</text>
+          <rect x="305" y="40" width="70" height="28" rx="4" class="d-c"/><text x="340" y="59" text-anchor="middle" class="d-sm">"down"</text>
+          <text x="400" y="59" class="d-sm d-muted">4 cheap draft passes</text>
+          <text x="20" y="114" class="d-sm d-muted">target</text>
+          <rect x="80" y="94" width="295" height="32" rx="4" class="d-a"/><text x="227" y="115" text-anchor="middle" class="d-sm">ONE forward pass scores all 4 positions (+1 extra)</text>
+          <text x="20" y="170" class="d-sm d-muted">result</text>
+          <rect x="80" y="150" width="70" height="28" rx="4" class="d-b"/><text x="115" y="169" text-anchor="middle" class="d-sm">accept</text>
+          <rect x="155" y="150" width="70" height="28" rx="4" class="d-b"/><text x="190" y="169" text-anchor="middle" class="d-sm">accept</text>
+          <rect x="230" y="150" width="70" height="28" rx="4" class="d-b"/><text x="265" y="169" text-anchor="middle" class="d-sm">accept</text>
+          <rect x="305" y="150" width="70" height="28" rx="4" class="d-d"/><text x="340" y="169" text-anchor="middle" class="d-sm">reject</text>
+          <rect x="380" y="150" width="90" height="28" rx="4" class="d-a"/><text x="425" y="169" text-anchor="middle" class="d-sm">"on" (resample)</text>
+          <text x="20" y="214" class="d-sm">4 tokens produced for 1 target pass. Later drafts after the rejection are thrown away, which costs only cheap draft work.</text>
+        </svg>
+        </div>
+        <figcaption>The target verifies all drafted positions in parallel. Tokens are accepted left to right until the first rejection, which is replaced by a token sampled from a corrected distribution. If all k are accepted, the same pass yields one bonus token.</figcaption>
+      </figure>
+
+      <h3>The acceptance rule (why the output is exactly the target's)</h3>
+      <div class="formula">
+        <div class="f-title">Rejection sampling per drafted token x</div>
+        <div class="f-body">accept x with probability  min(1, p(x) / q(x))
+on reject, sample from  p'(y) = max(0, p(y) - q(y)) / sum_z max(0, p(z) - q(z))</div>
+        <dl class="f-defs"><dt>p</dt><dd>target model's distribution at this position (after temperature, top-p and so on)</dd><dt>q</dt><dd>draft model's distribution at the same position</dd></dl>
+      </div>
+      <p>The probability of emitting y ends up being q(y) min(1, p/q) + P(reject) p'(y) = p(y) exactly. This holds at any temperature, because p and q are simply whatever distributions sampling would use. At temperature 0 it reduces to "accept if the draft token equals the target's argmax".</p>
+
+      <div class="worked">
+        <span class="w-title">Numeric check: p = (A 0.6, B 0.3, C 0.1), q = (A 0.3, B 0.6, C 0.1)</span>
+        <ol class="steps">
+          <li>Draft proposes A (prob 0.3): accept with min(1, 0.6/0.3) = 1.</li>
+          <li>Draft proposes B (prob 0.6): accept with min(1, 0.3/0.6) = 0.5.</li>
+          <li>Draft proposes C (prob 0.1): accept with 1.</li>
+          <li>P(reject) = 0.6 x 0.5 = 0.3. Residual max(0, p - q) = (0.3, 0, 0), normalized to (1, 0, 0): always A.</li>
+          <li>P(A) = 0.3 x 1 + 0.3 x 1 = 0.6. P(B) = 0.6 x 0.5 = 0.3. P(C) = 0.1. That is exactly p.</li>
+        </ol>
+        <span class="result">Output distribution = target distribution (verified with exact fractions)</span>
+      </div>
+
+      <h3>Expected speedup</h3>
+      <div class="formula">
+        <div class="f-title">Expected tokens per target pass (i.i.d. acceptance assumption, Leviathan et al. 2023)</div>
+        <div class="f-body">E[tokens] = (1 - a^(k+1)) / (1 - a)
+speedup  ~  E[tokens] / (k x c + 1)</div>
+        <dl class="f-defs"><dt>a</dt><dd>probability a drafted token is accepted (sum over tokens of min(p, q))</dd><dt>k</dt><dd>number of drafted tokens per step</dd><dt>c</dt><dd>cost of one draft pass relative to one target pass</dd></dl>
+      </div>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>a</th><th class="num">k</th><th class="num">E[tokens per target pass]</th></tr></thead>
+        <tbody>
+          <tr><td>0.6</td><td class="num">4</td><td class="num">2.31</td></tr>
+          <tr><td>0.8</td><td class="num">4</td><td class="num">3.36 (speedup ~2.8 with c = 0.05)</td></tr>
+          <tr><td>0.8</td><td class="num">8</td><td class="num">4.33</td></tr>
+          <tr><td>0.9</td><td class="num">4</td><td class="num">4.10</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>Facts that get tested</h3>
+      <ul>
+        <li>The output distribution is <strong>exactly</strong> the target model's, so quality is not capped by the draft.</li>
+        <li>It works at <strong>any temperature</strong>. Acceptance (and so the speedup) is usually higher at low temperature, where distributions are peaked.</li>
+        <li>Rejected tokens do <strong>not</strong> each cost a full extra target pass. The verification pass already happened, and the replacement token comes from that same pass.</li>
+        <li>Speedup depends on acceptance rate, draft cost and k. A poor draft (low a) can make things slower.</li>
+        <li>It helps most when decode is memory bound (small batches). At high batch the GPU is already busy, so extra verification work competes for compute.</li>
+        <li>Variants: Medusa (extra decoding heads instead of a separate draft), EAGLE (a feature-level draft head), n-gram or prompt-lookup drafting (copy spans from the prompt).</li>
+      </ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p01-s-1" data-topic="Inference" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which statement about speculative decoding is correct?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Each rejected draft token costs a full extra target forward pass <span class="q-why">The single verification pass scores all positions, and the replacement comes from it.</span></li>
+          <li data-key="B">With the standard acceptance rule, the output follows the same distribution as sampling from the target model alone <span class="q-why">Correct: that is the rejection-sampling guarantee.</span></li>
+          <li data-key="C">It only speeds things up at temperature 0 <span class="q-why">The rule works for any sampling distribution.</span></li>
+          <li data-key="D">Output quality is capped by the draft model <span class="q-why">The target decides every token, so the draft only affects speed.</span></li>
+        </ul>
+        <div class="q-explain"><p>Speculative decoding is lossless: it trades cheap draft compute for fewer expensive memory-bound target passes, without changing the distribution.</p></div>
+      </div>
+      <div class="quiz" data-qid="p01-s-2" data-topic="Inference" data-type="fill" data-answer="draft|draft model|assistant">
+        <div class="q-stem"><p>In speculative decoding, a small <input class="q-input" aria-label="answer"> model proposes tokens that the large model verifies.</p></div>
+        <div class="q-explain"><p>Draft model (Hugging Face calls it the "assistant model" in assisted generation).</p></div>
+      </div>
+      <div class="quiz" data-qid="p01-s-3" data-topic="Inference" data-type="numeric" data-answer="3.36" data-tol="0.02">
+        <div class="q-stem"><p>Acceptance rate 0.8, 4 drafted tokens per step. Expected tokens produced per target pass? (2 decimals)</p></div>
+        <div class="q-explain"><p>(1 - 0.8^5) / (1 - 0.8) = (1 - 0.32768) / 0.2 = 3.3616.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>State the acceptance probability and the resample distribution.</summary><div class="answer"><p>Accept with min(1, p/q). On reject, sample from max(0, p - q) normalized.</p></div></details>
+        <details class="recall"><summary>Why does verifying k tokens cost about the same as generating 1?</summary><div class="answer"><p>Decode is memory bound, so one pass reads all weights once whether it scores 1 or k+1 positions. The extra FLOPs are nearly free.</p></div></details>
+        <details class="recall"><summary>When can speculative decoding be slower than plain decoding?</summary><div class="answer"><p>When acceptance is low or the draft is expensive, or at large batch sizes where the target is already compute bound.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 7 -->
+    <section id="constrained-decoding" data-track>
+      <h2>Grammar-constrained (structured) decoding</h2>
+
+      <h3>Intuition</h3>
+      <p>At every step the model proposes scores for every token. A grammar engine knows which tokens can legally come next, given a JSON schema, a regex or a grammar. It sets the scores of illegal tokens to minus infinity before sampling. The model can only walk paths that stay inside the grammar. Think of a form with dropdowns: you cannot type an invalid value, but you can still pick the wrong item.</p>
+
+      <h3>The mechanism</h3>
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 210" role="img" aria-label="Logits for candidate tokens; grammar mask sets illegal tokens to minus infinity; softmax over the remaining legal tokens">
+          <defs><marker id="a7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker></defs>
+          <text x="20" y="22" class="d-bold">Generated so far: {"status": </text>
+          <text x="20" y="54" class="d-sm d-muted">model logits</text>
+          <rect x="20" y="64" width="150" height="26" rx="4" class="d-box"/><text x="30" y="82" class="d-sm d-mono">"Sure  2.1</text>
+          <rect x="20" y="94" width="150" height="26" rx="4" class="d-box"/><text x="30" y="112" class="d-sm d-mono">"ok"  1.7</text>
+          <rect x="20" y="124" width="150" height="26" rx="4" class="d-box"/><text x="30" y="142" class="d-sm d-mono">"fail" 0.9</text>
+          <rect x="20" y="154" width="150" height="26" rx="4" class="d-box"/><text x="30" y="172" class="d-sm d-mono">}     0.4</text>
+          <line x1="180" y1="122" x2="250" y2="122" class="d-line" marker-end="url(#a7)"/>
+          <text x="262" y="54" class="d-sm d-muted">mask (enum: ok, fail)</text>
+          <rect x="260" y="64" width="160" height="26" rx="4" class="d-d"/><text x="270" y="82" class="d-sm d-mono">"Sure  -inf</text>
+          <rect x="260" y="94" width="160" height="26" rx="4" class="d-b"/><text x="270" y="112" class="d-sm d-mono">"ok"  1.7</text>
+          <rect x="260" y="124" width="160" height="26" rx="4" class="d-b"/><text x="270" y="142" class="d-sm d-mono">"fail" 0.9</text>
+          <rect x="260" y="154" width="160" height="26" rx="4" class="d-d"/><text x="270" y="172" class="d-sm d-mono">}     -inf</text>
+          <line x1="430" y1="122" x2="500" y2="122" class="d-line" marker-end="url(#a7)"/>
+          <text x="512" y="54" class="d-sm d-muted">softmax over legal tokens</text>
+          <rect x="510" y="94" width="190" height="26" rx="4" class="d-a"/><text x="520" y="112" class="d-sm d-mono">"ok"   0.69</text>
+          <rect x="510" y="124" width="190" height="26" rx="4" class="d-a"/><text x="520" y="142" class="d-sm d-mono">"fail" 0.31</text>
+          <text x="20" y="202" class="d-sm d-muted">Syntax is guaranteed. Whether "ok" is TRUE is still up to the model.</text>
+        </svg>
+        </div>
+        <figcaption>Constrained decoding masks logits at each step, for example with a finite-state machine compiled from the schema (Outlines, XGrammar, llama.cpp grammars, provider "structured outputs" modes). The probabilities shown are softmax(1.7, 0.9).</figcaption>
+      </figure>
+
+      <h3>What it guarantees, and what it does not</h3>
+      <div class="two-col">
+        <div class="callout tip"><span class="callout-title">Guaranteed</span><ul class="mb-0"><li>The output parses and matches the grammar: required keys, types, enums, brackets.</li><li>No retries for malformed JSON.</li></ul></div>
+        <div class="callout warn"><span class="callout-title">Not guaranteed</span><ul class="mb-0"><li>Values are correct or grounded.</li><li>Semantic constraints the schema cannot express.</li><li>That you can skip evals: you still measure accuracy.</li></ul></div>
+      </div>
+      <p>Caveats: if generation hits max_tokens mid-object, the output is truncated and invalid. Some schema features (complex regex patterns, some <code>oneOf</code> forms) may be unsupported depending on the engine or provider.</p>
+
+      <h3>Two subtle effects</h3>
+      <ul>
+        <li><strong>Overly strict enums force wrong values.</strong> If the true answer is not among the enum options (for example the document does not mention a category), the mask still forces one of them. Add an explicit "unknown" or "other" option, or make the field nullable.</li>
+        <li><strong>Field order matters.</strong> Tokens are generated left to right, and each token can only depend on earlier tokens. Putting a short <code>"reasoning"</code> field <em>before</em> <code>"answer"</code> lets the answer condition on that reasoning, which often improves accuracy. Putting the answer first means the reasoning becomes an after-the-fact justification.</li>
+        <li>Masking can distort the distribution. The model may have wanted to write a preamble, and forcing <code>{</code> pushes it into lower-probability territory. Few-shot examples in the target format reduce this.</li>
+      </ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p01-c-1" data-topic="Inference" data-type="multi" data-answer="B,C,E">
+        <div class="q-stem"><p>You use grammar-constrained decoding against a JSON schema. Which statements are true? Select all.</p></div>
+        <ul class="q-options">
+          <li data-key="A">It removes the need for an eval set <span class="q-why">Syntax is guaranteed. Correctness still must be measured.</span></li>
+          <li data-key="B">Adding a short reasoning field before the answer field can improve accuracy <span class="q-why">Generation is left to right, so the answer can condition on the reasoning.</span></li>
+          <li data-key="C">An overly strict enum can force a wrong value <span class="q-why">If the truth is not in the enum, the mask forces a wrong choice. Add "unknown".</span></li>
+          <li data-key="D">Field values are guaranteed correct <span class="q-why">Only the structure is guaranteed.</span></li>
+          <li data-key="E">The output always parses as schema-valid JSON <span class="q-why">That is the guarantee (assuming generation is not cut off by a token limit).</span></li>
+        </ul>
+        <div class="q-explain"><p>Constrained decoding constrains form, not truth. Design the schema to allow honest answers, and put reasoning before conclusions.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How is the constraint enforced at each step?</summary><div class="answer"><p>Logits of tokens that would violate the grammar are set to minus infinity before sampling.</p></div></details>
+        <details class="recall"><summary>Why add "unknown" to an enum?</summary><div class="answer"><p>Otherwise the model must pick a listed value even when none is true, which fabricates an answer.</p></div></details>
+        <details class="recall"><summary>Why does the order of fields matter?</summary><div class="answer"><p>Autoregressive generation means later fields can use earlier ones. Reasoning first can improve the answer that follows.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 8 -->
+    <section id="prompt-caching" data-track>
+      <h2>Prompt caching and prompt ordering</h2>
+
+      <h3>Intuition</h3>
+      <p>Prefill turns a prompt into KV entries. If the next request starts with exactly the same tokens, the server can reuse those KV entries and skip that part of prefill. The match must be a <strong>prefix</strong>: K and V at position i depend on every token before i. So one changed early token invalidates everything after it.</p>
+
+      <h3>The mechanism</h3>
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 200" role="img" aria-label="Good ordering: system and tools, then weekly manual, then user question; the cached prefix covers the first two. Bad ordering puts the question first and nothing is reusable.">
+          <text x="20" y="22" class="d-bold d-tb">Good: static, then semi-static, then dynamic</text>
+          <rect x="20" y="34" width="120" height="34" rx="4" class="d-b"/><text x="80" y="56" text-anchor="middle" class="d-sm">system + tools</text>
+          <rect x="140" y="34" width="420" height="34" rx="4" class="d-b"/><text x="350" y="56" text-anchor="middle" class="d-sm">20k-token manual (changes weekly)</text>
+          <rect x="560" y="34" width="120" height="34" rx="4" class="d-c"/><text x="620" y="56" text-anchor="middle" class="d-sm">user question</text>
+          <text x="20" y="88" class="d-sm d-tb">cache hit on 22,000 of 22,100 tokens; only the question is prefilled</text>
+          <text x="20" y="122" class="d-bold d-td">Bad: dynamic first</text>
+          <rect x="20" y="134" width="120" height="34" rx="4" class="d-c"/><text x="80" y="156" text-anchor="middle" class="d-sm">user question</text>
+          <rect x="140" y="134" width="120" height="34" rx="4" class="d-d"/><text x="200" y="156" text-anchor="middle" class="d-sm">system + tools</text>
+          <rect x="260" y="134" width="420" height="34" rx="4" class="d-d"/><text x="470" y="156" text-anchor="middle" class="d-sm">manual</text>
+          <text x="20" y="188" class="d-sm d-td">the first tokens differ on every request, so nothing after them can be reused</text>
+        </svg>
+        </div>
+        <figcaption>Order prompt parts from least to most frequently changing. The cache hit is the longest identical prefix.</figcaption>
+      </figure>
+
+      <h3>Rule and cache-breaking mistakes</h3>
+      <div class="callout key"><p class="mb-0"><strong>Order:</strong> static (system prompt, tool definitions) then semi-static (the weekly manual, retrieved docs shared by a session) then dynamic (user question, timestamps).</p></div>
+      <ul>
+        <li>A timestamp, request ID or user name at the top of the system prompt breaks the cache on every request.</li>
+        <li>Tool definitions serialized in a non-deterministic order (for example from an unordered dict or set) change the prefix.</li>
+        <li>Editing one character of the system prompt invalidates every cached prefix after it.</li>
+        <li>Inserting retrieved chunks before the static instructions.</li>
+        <li>Provider specifics vary and change over time. Some providers cache automatically above a minimum prompt length (OpenAI documents automatic caching for prompts of 1,024 tokens or more), others need explicit cache breakpoints (Anthropic's <code>cache_control</code>). Cached entries expire after a few minutes of inactivity. Check current docs for minimums, TTLs and pricing.</li>
+      </ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p01-pc-1" data-topic="Inference" data-type="single" data-answer="A">
+        <div class="q-stem"><p>A prompt has a system prompt plus tool definitions (never change), a 20k-token product manual (updated weekly) and the user's question. For longest-repeated-prefix caching, which order is best?</p></div>
+        <ul class="q-options">
+          <li data-key="A">System + tools, then manual, then question <span class="q-why">Most stable first, so the shared prefix is as long as possible.</span></li>
+          <li data-key="B">Question, then system + tools, then manual <span class="q-why">The prefix differs on every request, so there are no hits.</span></li>
+          <li data-key="C">Manual, then question, then system + tools <span class="q-why">The question in the middle breaks reuse of the system and tools part.</span></li>
+          <li data-key="D">Order does not matter for caching <span class="q-why">Caching is prefix based, so order is everything.</span></li>
+        </ul>
+        <div class="q-explain"><p>KV at position i depends on all earlier tokens, so only an identical prefix is reusable. Static, then semi-static, then dynamic.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why must the cached part be a prefix?</summary><div class="answer"><p>Each token's K and V depend on all preceding tokens through attention in earlier layers. Change an early token and all later KV changes.</p></div></details>
+        <details class="recall"><summary>Name two common cache-breaking mistakes.</summary><div class="answer"><p>A timestamp or user ID at the top, and non-deterministic tool or JSON ordering.</p></div></details>
+        <details class="recall"><summary>Which latency metric does a prefix-cache hit improve most?</summary><div class="answer"><p>Time to first token, because prefill for the cached part is skipped. Cost also drops on providers that discount cached tokens.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 9 -->
+    <section id="tokenization" data-track>
+      <h2>Tokenization: byte-level BPE and why Tamil costs more</h2>
+
+      <h3>Intuition</h3>
+      <p>Byte-level BPE starts from raw UTF-8 bytes (256 base symbols) and repeatedly merges the most frequent adjacent pair into a new token. It learns those merges from training text. Patterns that were frequent in the training data, mostly English, become single tokens. Rare byte sequences stay split into many small tokens.</p>
+
+      <h3>The mechanism</h3>
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 200" role="img" aria-label="English word hello is 5 bytes and likely one token; Tamil word vanakkam is 7 code points and 21 bytes, likely many tokens">
+          <text x="20" y="22" class="d-bold">"hello": 5 characters, 5 bytes</text>
+          <rect x="20" y="34" width="34" height="26" class="d-box"/><rect x="54" y="34" width="34" height="26" class="d-box"/><rect x="88" y="34" width="34" height="26" class="d-box"/><rect x="122" y="34" width="34" height="26" class="d-box"/><rect x="156" y="34" width="34" height="26" class="d-box"/>
+          <rect x="20" y="66" width="170" height="26" rx="4" class="d-b"/><text x="105" y="84" text-anchor="middle" class="d-sm">1 token (frequent merge)</text>
+          <text x="20" y="124" class="d-bold">"வணக்கம்" (vanakkam): 7 code points, 21 bytes</text>
+          <g>
+            <rect x="20" y="136" width="21" height="26" class="d-box"/><rect x="41" y="136" width="21" height="26" class="d-box"/><rect x="62" y="136" width="21" height="26" class="d-box"/><rect x="83" y="136" width="21" height="26" class="d-box"/><rect x="104" y="136" width="21" height="26" class="d-box"/><rect x="125" y="136" width="21" height="26" class="d-box"/><rect x="146" y="136" width="21" height="26" class="d-box"/><rect x="167" y="136" width="21" height="26" class="d-box"/><rect x="188" y="136" width="21" height="26" class="d-box"/><rect x="209" y="136" width="21" height="26" class="d-box"/><rect x="230" y="136" width="21" height="26" class="d-box"/><rect x="251" y="136" width="21" height="26" class="d-box"/><rect x="272" y="136" width="21" height="26" class="d-box"/><rect x="293" y="136" width="21" height="26" class="d-box"/><rect x="314" y="136" width="21" height="26" class="d-box"/><rect x="335" y="136" width="21" height="26" class="d-box"/><rect x="356" y="136" width="21" height="26" class="d-box"/><rect x="377" y="136" width="21" height="26" class="d-box"/><rect x="398" y="136" width="21" height="26" class="d-box"/><rect x="419" y="136" width="21" height="26" class="d-box"/><rect x="440" y="136" width="21" height="26" class="d-box"/>
+          </g>
+          <rect x="20" y="168" width="63" height="26" rx="4" class="d-c"/><rect x="83" y="168" width="63" height="26" rx="4" class="d-c"/><rect x="146" y="168" width="63" height="26" rx="4" class="d-c"/><rect x="209" y="168" width="63" height="26" rx="4" class="d-c"/><rect x="272" y="168" width="84" height="26" rx="4" class="d-c"/><rect x="356" y="168" width="105" height="26" rx="4" class="d-c"/>
+          <text x="480" y="186" class="d-sm">several tokens (few merges learned)</text>
+        </svg>
+        </div>
+        <figcaption>Every Tamil code point (U+0B80 to U+0BFF) is 3 bytes in UTF-8. With few Tamil merges learned, the word stays split into many tokens. Exact token counts depend on the specific tokenizer. Byte counts are exact.</figcaption>
+      </figure>
+
+      <h3>The two causes</h3>
+      <ol>
+        <li><strong>UTF-8 encoding</strong>: ASCII letters are 1 byte. Tamil characters are 3 bytes each. Byte-level BPE starts from bytes, so Tamil text starts with 3x the symbols.</li>
+        <li><strong>Merge statistics</strong>: merges are learned from the tokenizer's training corpus, which is dominated by English (and code). English words become whole tokens. Tamil byte sequences rarely get merged, so they stay fragmented.</li>
+      </ol>
+
+      <h3>Consequences</h3>
+      <ul>
+        <li><strong>Cost</strong>: providers bill per token, so the same message costs about 3x more in Tamil. It is not a "language surcharge", just more tokens.</li>
+        <li><strong>Context</strong>: the same context window holds about 3x less Tamil text. Long-document RAG needs smaller chunks.</li>
+        <li><strong>Latency</strong>: more output tokens means more decode steps.</li>
+        <li><strong>Model differences</strong>: tokenizers differ across model families (vocabulary size, training mix). Newer tokenizers with larger, more multilingual vocabularies reduce the gap. Always count tokens with the target model's own tokenizer, never by characters or by another model's tokenizer.</li>
+      </ul>
+
+      <h3>Worked example</h3>
+      <pre><code class="lang-py">word = "வணக்கம்"
+print(len(word), len(word.encode("utf-8")))   # 7 code points, 21 bytes
+print(len("hello".encode("utf-8")))           # 5 bytes</code></pre>
+
+      <h3>Common traps</h3>
+      <div class="callout trap"><ul class="mb-0">
+        <li>"The model translates to English internally, which costs tokens." No, tokens are counted on the input text as given.</li>
+        <li>"Tokenizers count characters." No, they segment bytes into learned subword units.</li>
+        <li>"Provider surcharge for non-English." Pricing is per token. The extra tokens come from the tokenizer.</li>
+      </ul></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p01-tok-1" data-topic="Inference" data-type="single" data-answer="D">
+        <div class="q-stem"><p>The same message uses about 3x more tokens in Tamil than in English with a byte-level BPE tokenizer. Why?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The model translates Tamil to English internally <span class="q-why">Tokenization happens on raw input, and there is no hidden translation step.</span></li>
+          <li data-key="B">Tokenizers count characters <span class="q-why">They work on bytes and learned merges, not characters.</span></li>
+          <li data-key="C">The provider adds a surcharge for non-English text <span class="q-why">Billing is per token. The token count itself is higher.</span></li>
+          <li data-key="D">Tamil characters take 3 bytes each in UTF-8, and BPE merges were learned mostly from English text <span class="q-why">Correct: more starting symbols and fewer learned merges.</span></li>
+        </ul>
+        <div class="q-explain"><p>Byte-level BPE begins at UTF-8 bytes (Tamil: 3 per code point) and only compresses patterns it saw often in training.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How many bytes is a Tamil code point in UTF-8? An ASCII letter?</summary><div class="answer"><p>3 bytes. 1 byte.</p></div></details>
+        <details class="recall"><summary>What does one BPE training step do?</summary><div class="answer"><p>It counts adjacent symbol pairs (weighted by frequency), merges the most frequent pair everywhere, and adds the merged symbol to the vocabulary.</p></div></details>
+        <details class="recall"><summary>Why must you count tokens with the target model's own tokenizer?</summary><div class="answer"><p>Vocabularies and merges differ across model families, so token counts for the same text differ.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ interview -->
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: inference</h2>
+      <p class="muted">Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="13-interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Inference">
+<details class="recall iq" data-level="basic" data-topic="Inference"><summary><span class="tag ok">Basic</span> What is the KV cache and why does it exist?</summary><div class="answer"><p>It stores each past token&#x27;s key and value vectors for every layer, so a new token only computes its own Q, K, V and attends to the cached ones. Without it, every step would recompute all previous tokens.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Inference"><summary><span class="tag ok">Basic</span> What is the difference between prefill and decode?</summary><div class="answer"><p>Prefill processes the whole prompt in one parallel forward pass (compute bound) and produces the first token. Decode generates one token per pass (memory-bandwidth bound).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Inference"><summary><span class="tag ok">Basic</span> What is time to first token vs time per output token?</summary><div class="answer"><p>TTFT is the delay before the first token (queueing + prefill). TPOT, or inter-token latency, is the time between subsequent tokens (decode speed).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Inference"><summary><span class="tag ok">Basic</span> How much memory do an 8B model&#x27;s weights need in bf16?</summary><div class="answer"><p>8e9 x 2 bytes = 16 GB (14.9 GiB), before KV cache and overhead.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Inference"><summary><span class="tag ok">Basic</span> What is quantization?</summary><div class="answer"><p>Storing weights (and sometimes activations or KV) in fewer bits, like int8 or int4 instead of bf16. It cuts memory and bandwidth at some accuracy cost.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Inference"><summary><span class="tag warn">Medium</span> Write the KV cache size formula and compute it for 32 layers, 8 KV heads, head_dim 128, fp16, 4 x 8192 tokens.</summary><div class="answer"><p>2 x layers x kv_heads x head_dim x seq x batch x bytes = 2 x 32 x 8 x 128 x 8192 x 4 x 2 = 2^32 bytes = 4 GiB.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Inference"><summary><span class="tag warn">Medium</span> Why is single-stream decoding memory-bandwidth bound?</summary><div class="answer"><p>Each token requires reading every weight once but does only about 2 FLOPs per weight, around 1 FLOP per byte for bf16, far below GPU ridge points (about 150 to 300 FLOP/byte). Time is roughly bytes read divided by bandwidth.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Inference"><summary><span class="tag warn">Medium</span> Why does 4-bit weight-only quantization speed up decoding?</summary><div class="answer"><p>It reads about 4x fewer weight bytes per token. Kernels dequantize to 16-bit and multiply in 16-bit (W4A16), so the win is bandwidth, not int4 arithmetic and not fewer layers.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Inference"><summary><span class="tag warn">Medium</span> What is continuous batching?</summary><div class="answer"><p>The server adds new requests and removes finished ones at every decode step instead of waiting for a whole batch to finish. This keeps GPU slots busy and greatly increases throughput.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Inference"><summary><span class="tag warn">Medium</span> What problem does PagedAttention solve?</summary><div class="answer"><p>KV cache fragmentation and over-reservation. KV is stored in fixed-size blocks allocated on demand and mapped by a block table, so more sequences fit and prefixes can be shared.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Inference"><summary><span class="tag warn">Medium</span> How does speculative decoding preserve output quality?</summary><div class="answer"><p>A draft model proposes k tokens. The target verifies them in one pass, accepting each with probability min(1, p/q) and resampling from max(0, p - q) on rejection. The output distribution exactly equals the target&#x27;s.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Inference"><summary><span class="tag warn">Medium</span> What is prompt or prefix caching and how should prompts be ordered to benefit?</summary><div class="answer"><p>Reuse of KV (or provider-side cache) for an identical prompt prefix. Order content from static (system prompt, tools) to semi-static (documents) to dynamic (user question), and avoid timestamps or IDs early in the prompt.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Inference"><summary><span class="tag warn">Medium</span> Why does Tamil text use about 3x more tokens than English?</summary><div class="answer"><p>Tamil code points are 3 bytes in UTF-8, and byte-level BPE merges were learned mostly from English, so Tamil byte sequences stay fragmented into many tokens.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Inference"><summary><span class="tag bad">Advanced</span> Explain the roofline model and use it to compare prefill and decode.</summary><div class="answer"><p>Attainable FLOP/s = min(peak compute, bandwidth x arithmetic intensity). Decode at batch 1 has intensity of about 1 FLOP/byte (memory bound). Prefill over N tokens reuses each weight N times (compute bound). Batching moves decode right on the roofline.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Inference"><summary><span class="tag bad">Advanced</span> When can speculative decoding make things slower?</summary><div class="answer"><p>When the acceptance rate is low, the draft is expensive, or the server already runs large batches (compute bound), so verifying extra tokens competes for compute.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Inference"><summary><span class="tag bad">Advanced</span> What does grammar-constrained decoding guarantee and not guarantee?</summary><div class="answer"><p>It guarantees outputs match the grammar or schema (barring truncation) by masking illegal tokens. It does not guarantee correct values, removes no need for evals, and can force wrong values with overly strict enums.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Inference"><summary><span class="tag bad">Advanced</span> How would you size GPUs to serve a 70B model to 32 users at 8k context?</summary><div class="answer"><p>Weights: 140 GB in bf16 (35 GB in int4). KV: 320 KiB/token x 262,144 tokens = 80 GiB in fp16. So bf16 needs about 230 GB plus overhead (for example 4 x 80 GB with tensor parallelism). int4 weights + fp8 KV fit in about 80 to 120 GB.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Inference"><summary><span class="tag bad">Advanced</span> Tensor parallelism vs pipeline parallelism for inference latency?</summary><div class="answer"><p>Tensor parallelism splits each layer across GPUs and lowers per-token latency but needs fast interconnect for per-layer all-reduces. Pipeline parallelism adds stage-to-stage latency and helps fit models across nodes, mainly for throughput.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="f4-prompt-engineering.html"><span class="dir">Previous</span><span>F4 Prompt engineering</span></a>
+      <a class="next" href="02-fine-tuning.html"><span class="dir">Next</span><span>02 Fine-tuning</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

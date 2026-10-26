@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD6">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Consistency, CAP, transactions and consensus | System Design</title>
+<meta name="description" content="Consistency models, CAP and PACELC, isolation levels and anomalies, two-phase commit, sagas, clocks, leader election and the Raft consensus algorithm.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD6</p>
+      <h1>Consistency, CAP, transactions and consensus</h1>
+      <p class="lede">Once data lives on more than one machine, 'what value does a read return?' stops being obvious. This part builds the vocabulary and the mechanisms: consistency models, the CAP theorem, transactions across services, time, and consensus.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~4 hours</span></div>
+    </div>
+
+    <section id="hard" data-track>
+      <h2>Why distributed data is hard</h2>
+<h3>Intuition</h3>
+<p>On one machine there is one memory and one clock, so "the latest value" is meaningful. Across machines, messages are delayed, lost or reordered, machines crash and restart, and clocks disagree. You cannot tell a crashed machine from a slow network. Every consistency model is a different promise about what you may observe in that mess.</p>
+<h3>Failure modes to design for</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Failure</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>Crash</td><td>A node stops and may restart, losing memory</td></tr><tr><td>Omission</td><td>A message or response is dropped</td></tr><tr><td>Delay</td><td>A message arrives late (long garbage collection pause, congestion)</td></tr><tr><td>Partition</td><td>The network splits into groups that cannot talk to each other</td></tr><tr><td>Byzantine</td><td>A node behaves arbitrarily or maliciously (rare inside one company, central to blockchains)</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout key"><span class="callout-title">Key idea</span><p>You cannot distinguish a dead node from a slow one. Systems use timeouts to guess, and every guess can be wrong. That single fact explains most of distributed systems theory.</p></div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why can you not tell a dead node from a slow one?</summary><div class="answer"><p>A missing reply could be a crash, a lost message or a long delay. Timeouts are only guesses.</p></div></details>
+      </div>
+    </section>
+
+    <section id="models" data-track>
+      <h2>Consistency models</h2>
+<h3>The spectrum</h3>
+<p>From strongest to weakest. Stronger models are easier to program against and cost more latency and availability.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Model</th><th>Promise</th><th>Example behaviour</th></tr></thead>
+<tbody>
+<tr><td>Linearizable (strong)</td><td>Every operation appears to take effect at a single instant between its start and end, in real-time order</td><td>Behaves like one copy. Once a write finishes, all later reads see it</td></tr><tr><td>Sequential</td><td>All see the same order of operations, which respects each client's own order, but not real time</td><td>Slightly weaker than linearizable</td></tr><tr><td>Causal</td><td>Operations that are causally related are seen in order by everyone</td><td>A reply is never seen before its question</td></tr><tr><td>Read-your-writes, monotonic reads</td><td>Session guarantees for one client</td><td>Your own post always appears for you</td></tr><tr><td>Eventual</td><td>If writes stop, all replicas converge to the same value</td><td>Reads may be stale or out of order for a while</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Linearizability in practice</h3>
+<p>Linearizability is what most people mean by "strongly consistent". It is required for: unique usernames, leader election and distributed locks, bank balances where overdrafts are not allowed, and inventory where overselling is unacceptable. It costs a round trip to a quorum or a leader on every operation, and it is unavailable on the minority side of a network partition.</p>
+<h3>Eventual consistency in practice</h3>
+<p>Good for: social counters, likes, feeds, product catalogue views, analytics, DNS. Pair it with techniques that make convergence safe: conflict resolution by version vectors or last-write-wins, CRDTs (data types that merge deterministically), read repair and anti-entropy.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd6-01.py"># A grow-only counter CRDT (G-Counter): each node counts only its own increments.
+# Merging takes the per-node maximum, so merges are order independent and repeatable.
+class GCounter:
+    def __init__(self, node):
+        self.node, self.counts = node, {}
+    def incr(self, n=1):
+        self.counts[self.node] = self.counts.get(self.node, 0) + n
+    def value(self):
+        return sum(self.counts.values())
+    def merge(self, other):
+        for k, v in other.counts.items():
+            self.counts[k] = max(self.counts.get(k, 0), v)
+
+a, b = GCounter("A"), GCounter("B")
+a.incr(3); b.incr(2)          # concurrent updates on two replicas
+a.merge(b); b.merge(a)        # gossip in any order, any number of times
+b.merge(a)
+print(a.value(), b.value())   # both converge to 5</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>5 5</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd6-q01" data-topic="Consistency" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which model guarantees that once a write completes, every later read from any client sees it?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Eventual <span class="q-why">Allows stale reads for a while.</span></li>
+          <li data-key="B">Linearizable <span class="q-why">Correct.</span></li>
+          <li data-key="C">Read-your-writes <span class="q-why">Only for the same client.</span></li>
+          <li data-key="D">Causal <span class="q-why">Only for causally related operations.</span></li>
+        </ul>
+        <div class="q-explain"><p>Linearizability behaves as if there is a single copy of the data.</p></div>
+      </div>
+    </section>
+
+    <section id="cap" data-track>
+      <h2>The CAP theorem and PACELC</h2>
+<h3>CAP</h3>
+<p>During a network <strong>P</strong>artition, a system must choose between <strong>C</strong>onsistency (linearizable reads and writes, so some requests must fail or wait) and <strong>A</strong>vailability (every request to a working node gets a non-error response, possibly stale). Partitions are a fact of life, so the real choice is C or A <strong>when a partition happens</strong>.</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 638 98" role="img" aria-label="CAP: during a partition the two sides cannot talk, so each side must either refuse requests (choose C) or answer possibly stale data (choose A)." style="min-width:638px"><defs><marker id="ah11" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah11a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah11b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah11d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="448.0" y2="49.0" class="d-line-d d-dash"/><text x="319.0" y="44.0" text-anchor="middle" class="d-sm d-muted">partition: link down</text><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="46.0" text-anchor="middle">Replica A</text><text x="105.0" y="61.0" text-anchor="middle">(accepts writes)</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="46.0" text-anchor="middle">Replica B</text><text x="533.0" y="61.0" text-anchor="middle">(accepts writes)</text></svg>
+</div>
+<figcaption>CAP: during a partition the two sides cannot talk, so each side must either refuse requests (choose C) or answer possibly stale data (choose A).</figcaption></figure>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Choice</th><th>During a partition</th><th>Examples</th></tr></thead>
+<tbody>
+<tr><td>CP</td><td>Refuses or blocks requests that cannot be made consistent</td><td>ZooKeeper, etcd, Consul, HBase, Spanner, MongoDB with majority writes</td></tr><tr><td>AP</td><td>Keeps answering, may return stale data, reconciles later</td><td>Cassandra, DynamoDB (default), Riak, CouchDB, DNS</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout trap"><span class="callout-title">Common misreadings</span><p>CAP does not say "pick two of three" in normal operation. Consistency in CAP means linearizability, not the C in ACID. A system is not "CA": a single machine that cannot partition is not distributed. And many databases are tunable per request.</p></div>
+<h3>PACELC</h3>
+<p>CAP only describes partitions. <strong>PACELC</strong> adds the everyday trade-off: if <strong>P</strong>artition, choose <strong>A</strong> or <strong>C</strong>; <strong>E</strong>lse (normal operation) choose <strong>L</strong>atency or <strong>C</strong>onsistency. Replicating synchronously gives consistency at the cost of latency.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>System</th><th>During partition</th><th>Else</th></tr></thead>
+<tbody>
+<tr><td>DynamoDB, Cassandra (defaults)</td><td>A</td><td>L</td></tr><tr><td>Spanner, HBase</td><td>C</td><td>C</td></tr><tr><td>MongoDB (defaults)</td><td>C</td><td>C (reads from primary)</td></tr><tr><td>Cosmos DB</td><td>tunable</td><td>tunable (five levels)</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd6-q02" data-topic="Consistency" data-type="single" data-answer="B">
+        <div class="q-stem"><p>During a network partition a CP system will:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Return stale data from both sides <span class="q-why">That is the AP choice.</span></li>
+          <li data-key="B">Refuse or block requests that cannot be made consistent <span class="q-why">Correct.</span></li>
+          <li data-key="C">Ignore the partition <span class="q-why">It cannot.</span></li>
+          <li data-key="D">Delete the minority side <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>CP systems sacrifice availability on the side that cannot reach a quorum.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd6-q03" data-topic="Consistency" data-type="single" data-answer="B">
+        <div class="q-stem"><p>PACELC adds what to CAP?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Cost <span class="q-why">No.</span></li>
+          <li data-key="B">The latency versus consistency trade-off in normal operation <span class="q-why">Correct.</span></li>
+          <li data-key="C">Security <span class="q-why">No.</span></li>
+          <li data-key="D">Compression <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Else, when there is no partition, you still trade latency against consistency.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>State CAP correctly.</summary><div class="answer"><p>During a network partition you must choose between linearizable consistency and availability.</p></div></details>
+      </div>
+    </section>
+
+    <section id="isolation" data-track>
+      <h2>Transactions and isolation</h2>
+<h3>The problem</h3>
+<p>Many transactions run at once. Perfect <strong>serializability</strong> (the result equals some one-at-a-time order) is the safest and the slowest. Databases offer weaker <strong>isolation levels</strong> that allow certain anomalies for speed.</p>
+<h3>The anomalies</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Anomaly</th><th>Description</th><th>Example</th></tr></thead>
+<tbody>
+<tr><td>Dirty read</td><td>Read data another transaction has not committed</td><td>See a deposit that is later rolled back</td></tr><tr><td>Non-repeatable read</td><td>Same row read twice gives different values</td><td>Balance changes between two reads</td></tr><tr><td>Phantom read</td><td>Same query returns different rows</td><td>New rows appear in a range</td></tr><tr><td>Lost update</td><td>Two read-modify-write cycles overwrite each other</td><td>Two increments become one</td></tr><tr><td>Write skew</td><td>Two transactions each read overlapping data and write different rows, together violating a rule</td><td>Two doctors go off call, leaving none</td></tr>
+</tbody>
+</table>
+</div>
+<h3>The standard levels (SQL standard)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Level</th><th>Dirty read</th><th>Non-repeatable read</th><th>Phantom</th></tr></thead>
+<tbody>
+<tr><td>Read uncommitted</td><td>Possible</td><td>Possible</td><td>Possible</td></tr><tr><td>Read committed</td><td>No</td><td>Possible</td><td>Possible</td></tr><tr><td>Repeatable read</td><td>No</td><td>No</td><td>Possible (not in some implementations)</td></tr><tr><td>Serializable</td><td>No</td><td>No</td><td>No</td></tr>
+</tbody>
+</table>
+</div>
+<p>Real engines differ. PostgreSQL's default is read committed and its repeatable read is <strong>snapshot isolation</strong>, which prevents phantoms but still allows write skew. MySQL InnoDB's default is repeatable read. Serializable is implemented by strict two-phase locking, or by serializable snapshot isolation that aborts conflicting transactions.</p>
+<h3>MVCC</h3>
+<p><strong>Multi-version concurrency control</strong> keeps several versions of each row so readers see a consistent snapshot without blocking writers. This is why long reads in PostgreSQL do not block writes, and why old versions must be cleaned up (vacuum).</p>
+<h3>Fixing lost updates</h3>
+<ul><li>Use an atomic update: <code>UPDATE accounts SET balance = balance - 10 WHERE id = 1</code> instead of read then write.</li><li><strong>Optimistic locking</strong>: store a version number and update <code>WHERE id = 1 AND version = 7</code>. If zero rows change, retry.</li><li><strong>Pessimistic locking</strong>: <code>SELECT ... FOR UPDATE</code> locks the row until commit.</li><li>Run at serializable and be ready to retry.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd6-q04" data-topic="Consistency" data-type="multi" data-answer="A,B,D">
+        <div class="q-stem"><p>Which statements about snapshot isolation (PostgreSQL repeatable read) are true? Select all.</p></div>
+        <ul class="q-options">
+          <li data-key="A">Readers do not block writers</li>
+          <li data-key="B">It prevents dirty reads</li>
+          <li data-key="C">It prevents write skew</li>
+          <li data-key="D">It still allows write skew</li>
+        </ul>
+        <div class="q-explain"><p>MVCC lets readers and writers proceed together and prevents dirty reads, but write skew is possible; only serializable prevents it.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is write skew?</summary><div class="answer"><p>Two transactions read overlapping data and write different rows so that a combined invariant breaks, which snapshot isolation does not prevent.</p></div></details>
+      </div>
+    </section>
+
+    <section id="distributed-tx" data-track>
+      <h2>Transactions across services</h2>
+<h3>Two-phase commit (2PC)</h3>
+<p>A <strong>coordinator</strong> asks all participants to <strong>prepare</strong> (do the work and promise to commit). If all vote yes it tells everyone to <strong>commit</strong>, otherwise to <strong>abort</strong>.</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 98" role="img" aria-label="Two-phase commit. Participants hold locks between prepare and the decision." style="min-width:760px"><defs><marker id="ah12" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah12a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah12b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah12d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah12)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah12)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah12)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">Coordinator: prepare</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle">Participants vote</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle">Coordinator decides</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle">Commit or abort</text></svg>
+</div>
+<figcaption>Two-phase commit. Participants hold locks between prepare and the decision.</figcaption></figure>
+<p>Problems: it <strong>blocks</strong> if the coordinator crashes after prepare, participants hold locks while waiting, and it adds latency and a single coordinator. Use it inside one database cluster or between a few trusted systems, not across many independent services.</p>
+<h3>Sagas</h3>
+<p>A <strong>saga</strong> breaks a business transaction into a sequence of <strong>local</strong> transactions, each with a <strong>compensating action</strong> that semantically undoes it. If step N fails, run compensations for steps N-1 down to 1.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Step</th><th>Action</th><th>Compensation</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>Create order (pending)</td><td>Cancel order</td></tr><tr><td>2</td><td>Reserve inventory</td><td>Release inventory</td></tr><tr><td>3</td><td>Charge payment</td><td>Refund payment</td></tr><tr><td>4</td><td>Confirm order</td><td>not needed</td></tr>
+</tbody>
+</table>
+</div>
+<p>Two styles: <strong>choreography</strong> (each service reacts to events, no central brain, harder to follow) and <strong>orchestration</strong> (a coordinator tells each service what to do, easier to reason about). Sagas give eventual consistency and <strong>no isolation</strong>, so handle intermediate states (an order is "pending") and make every step idempotent (<a href="sd8-messaging.html">SD8</a>).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd6-02.py">def run_saga(steps, fail_at=None):
+    done = []
+    for i, (name, do, undo) in enumerate(steps):
+        if i == fail_at:
+            print("FAIL at", name)
+            for dn, dundo in reversed(done):
+                print("  compensate", dn); dundo()
+            return False
+        do(); done.append((name, undo)); print("ok", name)
+    return True
+
+noop = lambda: None
+steps = [("create order", noop, noop), ("reserve stock", noop, noop), ("charge card", noop, noop)]
+run_saga(steps)
+print("---")
+run_saga(steps, fail_at=2)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>ok create order
+ok reserve stock
+ok charge card
+---
+ok create order
+ok reserve stock
+FAIL at charge card
+  compensate reserve stock
+  compensate create order</code></pre>
+<h3>Outbox and idempotency</h3>
+<p>Updating a database and publishing a message are two writes that can disagree. The <strong>transactional outbox</strong> writes the event into an outbox table in the same transaction as the data and a relay publishes it afterwards. Consumers must be <strong>idempotent</strong>, because delivery is at least once. See <a href="sd8-messaging.html">SD8</a>.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd6-q05" data-topic="Consistency" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A saga step fails halfway. What happens?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Everything rolls back automatically through locks <span class="q-why">That is 2PC, not a saga.</span></li>
+          <li data-key="B">Compensating actions undo earlier steps <span class="q-why">Correct.</span></li>
+          <li data-key="C">Nothing, the data stays inconsistent <span class="q-why">Compensation restores a consistent state.</span></li>
+          <li data-key="D">The coordinator crashes <span class="q-why">Not by design.</span></li>
+        </ul>
+        <div class="q-explain"><p>Sagas use compensating transactions instead of distributed locks.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>2PC versus saga?</summary><div class="answer"><p>2PC gives atomicity with blocking locks and a coordinator; a saga gives eventual consistency with local transactions and compensations.</p></div></details>
+      </div>
+    </section>
+
+    <section id="time" data-track>
+      <h2>Time and ordering</h2>
+<h3>Clocks lie</h3>
+<p>Physical clocks drift and jump (NTP corrections, leap seconds). Two machines never agree exactly, so "last write wins" by timestamp can silently drop data. Never use wall clocks to order events across machines unless you bound the uncertainty (Google Spanner uses atomic clocks and GPS with <strong>TrueTime</strong> and waits out the uncertainty window).</p>
+<h3>Logical clocks</h3>
+<ul><li><strong>Lamport clock</strong>: each node keeps a counter; increment on each event; on receiving a message set the counter to <code>max(local, received) + 1</code>. If A happened-before B then <code>L(A) &lt; L(B)</code>. It gives a consistent order but cannot tell whether two events were concurrent.</li><li><strong>Vector clock</strong>: a vector of counters, one per node. It can detect <strong>concurrent</strong> updates (neither vector dominates), which is what conflict resolution needs. Used in Dynamo-style stores.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd6-03.py">class Lamport:
+    def __init__(self): self.t = 0
+    def event(self): self.t += 1; return self.t
+    def send(self): return self.event()
+    def recv(self, ts): self.t = max(self.t, ts) + 1; return self.t
+
+a, b = Lamport(), Lamport()
+a.event(); a.event()
+ts = a.send()
+print("A sends with", ts, "-&gt; B local time after receive:", b.recv(ts))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>A sends with 3 -&gt; B local time after receive: 4</code></pre>
+<h3>Fencing tokens</h3>
+<p>A client holds a lock with a lease. It then pauses for a long garbage collection. The lease expires, another client gets the lock, and the first resumes and writes, thinking it still holds the lock. The fix: each lock grant carries an increasing <strong>fencing token</strong>, and the storage rejects writes with a token lower than one it has already seen.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd6-q06" data-topic="Consistency" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why can last-write-wins by wall-clock timestamp lose data?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Timestamps are too long <span class="q-why">No.</span></li>
+          <li data-key="B">Clocks across machines drift, so a later write may carry an earlier timestamp <span class="q-why">Correct.</span></li>
+          <li data-key="C">Databases ignore timestamps <span class="q-why">No.</span></li>
+          <li data-key="D">It needs consensus <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Without bounded clock error, timestamps cannot reliably order events from different machines.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd6-q07" data-topic="Consistency" data-type="fill" data-answer="vector|version vector">
+        <div class="q-stem"><p>A <input class="q-input" aria-label="blank 1"> clock lets you detect that two updates were concurrent.</p></div>
+        <div class="q-explain"><p>Vector clocks compare per-node counters; if neither dominates the other, the updates are concurrent.</p></div>
+      </div>
+    </section>
+
+    <section id="consensus" data-track>
+      <h2>Consensus and leader election</h2>
+<h3>What consensus is</h3>
+<p><strong>Consensus</strong> is getting several nodes to agree on one value (for example "who is leader" or "what is the next log entry") even when some nodes and messages fail. It underpins replicated state machines, distributed locks, configuration stores and leader election. The classic results: it is impossible to guarantee both safety and termination in a fully asynchronous system with even one crash failure (<strong>FLP</strong>), so practical algorithms use timeouts for liveness while always keeping safety.</p>
+<h3>Majority quorums</h3>
+<p>A group of <strong>2f + 1</strong> nodes tolerates <strong>f</strong> failures, because any two majorities overlap in at least one node. So 3 nodes tolerate 1 failure, 5 tolerate 2, and 7 tolerate 3. More nodes slow every decision, so five is common.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Nodes</th><th>Majority</th><th>Failures tolerated</th></tr></thead>
+<tbody>
+<tr><td>3</td><td>2</td><td>1</td></tr><tr><td>5</td><td>3</td><td>2</td></tr><tr><td>7</td><td>4</td><td>3</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Raft in plain language</h3>
+<p>Raft is designed to be understandable and is used by etcd, Consul and CockroachDB.</p>
+<ol><li>Each node is a <strong>follower</strong>, <strong>candidate</strong> or <strong>leader</strong>. Time is divided into numbered <strong>terms</strong>.</li><li>A follower that hears nothing from a leader for a random timeout becomes a candidate, increments the term and asks for votes. A node votes once per term. A candidate with votes from a majority becomes leader.</li><li>The leader receives client commands, appends them to its <strong>log</strong> and sends them to followers (<code>AppendEntries</code>). An entry is <strong>committed</strong> once stored on a majority, then applied to the state machine.</li><li>Randomised election timeouts avoid repeated ties. Voting rules ensure a new leader has all committed entries.</li></ol>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 638 294" role="img" aria-label="Raft: clients talk to the leader; the leader replicates log entries to followers and commits on a majority." style="min-width:638px"><defs><marker id="ah13" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah13a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah13b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah13d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="147.0" x2="234.0" y2="147.0" class="d-line" marker-end="url(#ah13)"/><text x="212.0" y="142.0" text-anchor="middle" class="d-sm d-muted">write x=5</text><line x1="382.3" y1="118.0" x2="469.7" y2="78.0" class="d-line" marker-end="url(#ah13)"/><text x="426.0" y="93.0" text-anchor="middle" class="d-sm d-muted">AppendEntries</text><line x1="404.0" y1="147.0" x2="448.0" y2="147.0" class="d-line" marker-end="url(#ah13)"/><text x="426.0" y="142.0" text-anchor="middle" class="d-sm d-muted">AppendEntries</text><line x1="382.3" y1="176.0" x2="469.7" y2="216.0" class="d-line" marker-end="url(#ah13)"/><text x="426.0" y="191.0" text-anchor="middle" class="d-sm d-muted">AppendEntries</text><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-e"/><text x="105.0" y="151.5" text-anchor="middle">Client</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-a"/><text x="319.0" y="144.0" text-anchor="middle">Leader</text><text x="319.0" y="159.0" text-anchor="middle">(term 7)</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="53.5" text-anchor="middle">Follower 1</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="151.5" text-anchor="middle">Follower 2</text><rect x="448.0" y="216.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="249.5" text-anchor="middle">Follower 3</text></svg>
+</div>
+<figcaption>Raft: clients talk to the leader; the leader replicates log entries to followers and commits on a majority.</figcaption></figure>
+<h3>Where consensus is used</h3>
+<ul><li>Leader election for databases and queues.</li><li>Metadata stores: ZooKeeper (ZAB), etcd (Raft), Consul (Raft).</li><li>Replicated databases: Spanner and CockroachDB replicate every range with Paxos or Raft.</li><li>Distributed locks and service discovery.</li></ul>
+<p>Keep the consensus group <strong>small and used for coordination</strong>, not for bulk data.</p>
+<h3>Gossip and failure detection</h3>
+<p>Large clusters use <strong>gossip</strong>: each node periodically tells a few random peers what it knows, and information spreads exponentially fast. Failure detectors such as <strong>phi-accrual</strong> estimate suspicion from heartbeat arrival times rather than a single hard timeout.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd6-q08" data-topic="Consistency" data-type="numeric" data-answer="3" data-tol="0">
+        <div class="q-stem"><p>How many node failures can a 7-node Raft cluster tolerate?</p></div>
+        <div class="q-explain"><p>A majority is 4 of 7, so up to 3 nodes can fail.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why do consensus groups have an odd size?</summary><div class="answer"><p>A majority quorum of 2f+1 tolerates f failures; an even size adds a node without tolerating more failures.</p></div></details>
+      </div>
+    </section>
+
+    <section id="choosing" data-track>
+      <h2>Choosing a consistency level</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Need</th><th>Pick</th></tr></thead>
+<tbody>
+<tr><td>Money, unique names, locks, inventory with no overselling</td><td>Linearizable, serializable transactions, consensus</td></tr><tr><td>Feeds, likes, counters, catalogue pages</td><td>Eventual consistency, caches, replicas</td></tr><tr><td>User must see their own actions</td><td>Read-your-writes via the leader or session stickiness</td></tr><tr><td>Cross-service business workflow</td><td>Saga with idempotent steps and an outbox</td></tr><tr><td>Mixed</td><td>Per-operation tunable consistency (quorum reads for the checkout path, eventual for browsing)</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout tip"><span class="callout-title">Interview tip</span><p>When asked "strong or eventual?", never answer globally. Say which operations need strong consistency and why, and use the cheaper model everywhere else.</p></div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Consistency</h2>
+      <p class="muted">11 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Consistency">
+<details class="recall iq" data-level="basic" data-topic="Consistency"><summary><span class="tag ok">Basic</span> What is eventual consistency?</summary><div class="answer"><p>If no new writes happen, all replicas eventually converge to the same value. Reads in the meantime may be stale.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Consistency"><summary><span class="tag ok">Basic</span> State the CAP theorem.</summary><div class="answer"><p>During a network partition a distributed system must choose between consistency (linearizability) and availability. Normal operation has no such forced choice.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Consistency"><summary><span class="tag warn">Medium</span> What is PACELC?</summary><div class="answer"><p>If there is a Partition choose Availability or Consistency; Else choose Latency or Consistency. It captures the everyday trade-off CAP ignores.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Consistency"><summary><span class="tag warn">Medium</span> Name the isolation levels and anomalies.</summary><div class="answer"><p>Read uncommitted (dirty reads), read committed (no dirty reads), repeatable read (no non-repeatable reads, phantoms possible), serializable (no anomalies). Write skew and lost updates need care at lower levels.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Consistency"><summary><span class="tag warn">Medium</span> What is MVCC?</summary><div class="answer"><p>Multi-version concurrency control keeps several versions of rows so readers see a consistent snapshot without blocking writers.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Consistency"><summary><span class="tag warn">Medium</span> Two-phase commit versus saga?</summary><div class="answer"><p>2PC gives atomic commit across participants through prepare and commit with a coordinator, but blocks and holds locks. A saga runs local transactions with compensating actions, giving eventual consistency without distributed locks.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Consistency"><summary><span class="tag bad">Advanced</span> Linearizability versus serializability?</summary><div class="answer"><p>Linearizability is a recency guarantee for single objects (operations appear instant in real-time order). Serializability is an isolation guarantee for transactions (equivalent to some serial order). Strict serializability combines both.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Consistency"><summary><span class="tag bad">Advanced</span> Why are wall clocks unsafe for ordering events?</summary><div class="answer"><p>Clocks drift and are corrected, so timestamps from different machines may not reflect causality. Use logical or vector clocks, or bounded uncertainty such as Spanner&#x27;s TrueTime.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Consistency"><summary><span class="tag bad">Advanced</span> Explain Raft briefly.</summary><div class="answer"><p>Nodes elect a leader per term by majority vote with randomised timeouts. The leader appends client commands to its log and replicates them; an entry commits when stored on a majority. A new leader always has all committed entries.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Consistency"><summary><span class="tag bad">Advanced</span> What is a fencing token?</summary><div class="answer"><p>A monotonically increasing number issued with each lock or lease. Storage rejects writes with a lower token, preventing a paused former lock holder from corrupting data.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Consistency"><summary><span class="tag bad">Advanced</span> What is a CRDT?</summary><div class="answer"><p>A data type whose replicas can be updated independently and merge deterministically without coordination, such as counters, sets and sequences. They give strong eventual consistency.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd5-replication-sharding.html"><span class="dir">Previous</span><span>SD5 Replication, partitioning and consistent hashing</span></a>
+      <a class="next" href="sd7-caching.html"><span class="dir">Next</span><span>SD7 Caching</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

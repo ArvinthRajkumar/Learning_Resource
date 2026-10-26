@@ -1,0 +1,5 @@
+CREATE TABLE t (id INTEGER PRIMARY KEY, email TEXT, country TEXT, score INTEGER);
+WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 2000)
+INSERT INTO t SELECT i, 'u' || i, CASE i % 4 WHEN 0 THEN 'US' ELSE 'UK' END, i % 100 FROM n;
+CREATE INDEX idx_cover ON t(country, score, email);
+EXPLAIN QUERY PLAN SELECT email FROM t WHERE country = 'US' AND score = 5;

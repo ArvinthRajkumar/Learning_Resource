@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="A12">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Advanced LLM application engineering: RAG, agents, evaluation and cost | AI/ML Prep</title>
+<meta name="description" content="Chunking and retrieval strategies, hybrid search and reranking, query rewriting, graph and agentic RAG, structured outputs, tool design, memory, evaluation harnesses, latency and cost engineering, and reliability patterns.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part A12</p>
+      <h1>Advanced LLM application engineering: RAG, agents, evaluation and cost</h1>
+      <p class="lede">Building an LLM product is mostly engineering around a stochastic component: retrieval quality, prompt and tool design, evaluation, latency, cost and failure handling. This part is the practical playbook with runnable examples of the pieces that are easy to get wrong.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~7 hours</span></div>
+    </div>
+
+    <section id="anatomy" data-track>
+      <h2>The anatomy of an LLM application</h2>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 294" role="img" aria-label="A typical LLM application: orchestration around retrieval, tools and guardrails, with evaluation and observability on the side." style="min-width:760px"><defs><marker id="ah6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah6a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah6b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah6d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="147.0" x2="234.0" y2="147.0" class="d-line" marker-end="url(#ah6)"/><line x1="319.0" y1="118.0" x2="319.0" y2="78.0" class="d-line" marker-end="url(#ah6)"/><line x1="382.3" y1="118.0" x2="469.7" y2="78.0" class="d-line" marker-end="url(#ah6)"/><line x1="404.0" y1="147.0" x2="448.0" y2="147.0" class="d-line" marker-end="url(#ah6)"/><line x1="382.3" y1="176.0" x2="469.7" y2="216.0" class="d-line" marker-end="url(#ah6)"/><line x1="618.0" y1="147.0" x2="662.0" y2="147.0" class="d-line" marker-end="url(#ah6)"/><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="151.5" text-anchor="middle">User</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-c"/><text x="319.0" y="144.0" text-anchor="middle" class="d-sm">Orchestrator</text><text x="319.0" y="159.0" text-anchor="middle" class="d-sm">(prompt, routing, memory)</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-d"/><text x="319.0" y="46.0" text-anchor="middle" class="d-sm">Guardrails</text><text x="319.0" y="61.0" text-anchor="middle" class="d-sm">(input and output checks)</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="46.0" text-anchor="middle" class="d-sm">Retrieval</text><text x="533.0" y="61.0" text-anchor="middle" class="d-sm">(hybrid search, rerank)</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-e"/><text x="533.0" y="144.0" text-anchor="middle">LLM</text><text x="533.0" y="159.0" text-anchor="middle">(model gateway)</text><rect x="448.0" y="216.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="249.5" text-anchor="middle">Tools and APIs</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-e"/><text x="747.0" y="151.5" text-anchor="middle">Tracing, evals, cost</text></svg>
+</div>
+<figcaption>A typical LLM application: orchestration around retrieval, tools and guardrails, with evaluation and observability on the side.</figcaption></figure>
+<p>Decide <strong>what the model does</strong> and <strong>what code does</strong>. Deterministic work (arithmetic, lookups, date maths, permissions, formatting) belongs in code or tools; the model handles language, judgement and flexible planning. Start with the simplest design (one prompt), add retrieval or tools when evaluation shows a gap, and use agents only when the control flow cannot be fixed in advance.</p>
+    </section>
+
+    <section id="rag" data-track>
+      <h2>Retrieval-augmented generation in depth</h2>
+<p>The basics are in <a href="03-rag-and-retrieval.html">03</a>. Most RAG failures come from retrieval, not generation, so improve retrieval first and measure it separately (recall@k of the evidence).</p>
+<h3>Chunking</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Strategy</th><th>How</th><th>When</th></tr></thead>
+<tbody>
+<tr><td>Fixed size with overlap</td><td>N tokens, overlap 10 to 20 percent</td><td>Baseline, uniform text</td></tr><tr><td><strong>Structure-aware</strong></td><td>Split on headings, paragraphs, code blocks, table rows</td><td>Documentation, HTML, markdown</td></tr><tr><td><strong>Semantic</strong></td><td>Split where embedding similarity between sentences drops</td><td>Narrative text</td></tr><tr><td><strong>Parent-child (small-to-big)</strong></td><td>Retrieve small precise chunks, return the surrounding larger section</td><td>Balance precision and context</td></tr><tr><td><strong>Contextual chunks</strong></td><td>Prepend a short generated summary of the document or section to each chunk</td><td>Chunks that lose meaning in isolation</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/a12-01.py">def chunk(text, size, overlap):
+    words = text.split()
+    step = size - overlap
+    return [" ".join(words[i:i + size]) for i in range(0, max(1, len(words) - overlap), step)]
+doc = " ".join("w%d" % i for i in range(1, 21))
+for c in chunk(doc, 8, 2):
+    print(c)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>w1 w2 w3 w4 w5 w6 w7 w8
+w7 w8 w9 w10 w11 w12 w13 w14
+w13 w14 w15 w16 w17 w18 w19 w20</code></pre>
+<p>Overlap prevents a fact from being cut in half at a boundary; too much overlap bloats the index. Keep <strong>metadata</strong> (source, section, date, access level) with every chunk for filtering and citations.</p>
+<h3>Hybrid search, fusion and reranking</h3>
+<p>Dense embeddings capture meaning; <strong>BM25</strong> captures exact terms (product codes, names). Run both and merge with <strong>reciprocal rank fusion</strong>: <code>score(d) = sum over lists of 1 / (k + rank)</code>, with <code>k</code> about 60. Then <strong>rerank</strong> the top 50 to 100 with a <strong>cross-encoder</strong> (query and document read together), which is more accurate than comparing separate embeddings, and keep the top few.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a12-02.py">def rrf(rankings, k=60):
+    scores = {}
+    for ranking in rankings:
+        for pos, doc in enumerate(ranking, 1):
+            scores[doc] = scores.get(doc, 0) + 1 / (k + pos)
+    return sorted(scores, key=lambda d: -scores[d])
+dense = ["d3", "d1", "d7", "d2"]
+bm25 = ["d7", "d3", "d9", "d1"]
+print(rrf([dense, bm25]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>['d3', 'd7', 'd1', 'd9', 'd2']</code></pre>
+<p>Documents ranked well by <strong>both</strong> retrievers rise to the top (<code>d3</code>, <code>d7</code>).</p>
+<h3>Improving the query</h3>
+<ul><li><strong>Query rewriting</strong>: turn a chat turn ("what about its price?") into a standalone search query using conversation history.</li><li><strong>Decomposition</strong>: split a multi-part question into sub-queries.</li><li><strong>HyDE</strong>: have the model write a hypothetical answer and embed that for search.</li><li><strong>Query routing</strong>: choose the index, tool or no retrieval at all.</li><li><strong>Metadata filters</strong> extracted from the query (date ranges, product).</li></ul>
+<h3>Beyond vanilla RAG</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Technique</th><th>Idea</th></tr></thead>
+<tbody>
+<tr><td><strong>Agentic RAG</strong></td><td>The model decides when and what to search, reads results, and searches again until it can answer</td></tr><tr><td><strong>Graph RAG</strong></td><td>Build a knowledge graph of entities and relations, retrieve connected subgraphs or community summaries for multi-hop and global questions</td></tr><tr><td><strong>Multi-vector retrieval</strong> (ColBERT)</td><td>Store per-token vectors and match late; higher accuracy, more storage</td></tr><tr><td><strong>Self-RAG, corrective RAG</strong></td><td>The model critiques retrieved passages and re-retrieves or abstains</td></tr><tr><td><strong>Long context versus RAG</strong></td><td>Stuffing whole documents is simple but costly and can lose middle information; RAG scales to large corpora and is cheaper per query</td></tr><tr><td><strong>Citations and abstention</strong></td><td>Require quotes and source ids; answer "not found" when evidence is missing</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Diagnosing a failing RAG answer</h3>
+<ol><li>Was the right document in the <strong>index</strong> (ingestion, parsing, OCR errors)?</li><li>Was it <strong>retrieved</strong> in the top k (recall)? If not: chunking, embeddings, hybrid, query rewriting.</li><li>Was it <strong>ranked</strong> high enough to enter the prompt? Add reranking.</li><li>Did the model <strong>use</strong> it (long prompt, distractors, "lost in the middle")? Fewer, better chunks; clear instructions.</li><li>Is the answer <strong>faithful</strong> to the sources? Add citations and faithfulness checks.</li></ol>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a12-q01" data-topic="LLM applications" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Most RAG failures originate in:</p></div>
+        <ul class="q-options">
+          <li data-key="A">The decoder size <span class="q-why">Not usually.</span></li>
+          <li data-key="B">Retrieval: chunking, query quality, ranking or missing documents <span class="q-why">Correct.</span></li>
+          <li data-key="C">The GPU <span class="q-why">No.</span></li>
+          <li data-key="D">The tokenizer only <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>If the evidence is not in the prompt, the model cannot be faithful to it.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a12-q02" data-topic="LLM applications" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does reciprocal rank fusion do?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Averages embeddings <span class="q-why">No.</span></li>
+          <li data-key="B">Merges rankings from several retrievers by summing 1 / (k + rank), favouring documents ranked well by several <span class="q-why">Correct.</span></li>
+          <li data-key="C">Reranks with a cross-encoder <span class="q-why">A separate step.</span></li>
+          <li data-key="D">Deletes duplicates only <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It combines BM25 and dense results without score calibration.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a12-q03" data-topic="LLM applications" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why use a cross-encoder reranker after retrieval?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is cheaper than bi-encoders <span class="q-why">It is more expensive per pair.</span></li>
+          <li data-key="B">It reads query and document together, giving more accurate relevance on a small candidate set <span class="q-why">Correct.</span></li>
+          <li data-key="C">It builds the index <span class="q-why">No.</span></li>
+          <li data-key="D">It replaces the LLM <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use it on the top 50 to 100 candidates only.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>List the checks for a wrong RAG answer.</summary><div class="answer"><p>Indexed? Retrieved in top k? Ranked into the prompt? Used by the model? Faithful to sources?</p></div></details>
+        <details class="recall"><summary>Name three chunking strategies.</summary><div class="answer"><p>Fixed size with overlap, structure-aware, semantic, and parent-child (small-to-big).</p></div></details>
+      </div>
+    </section>
+
+    <section id="tools" data-track>
+      <h2>Structured outputs and tool use</h2>
+<h3>Structured outputs</h3>
+<p>Ask for JSON that matches a <strong>schema</strong>, use the provider's structured-output or function-calling modes (constrained decoding guarantees valid syntax), <strong>validate</strong> with a schema library, and <strong>retry with the validation error</strong> if it fails. Keep schemas small, use enums, include an "unknown" option, and do not rely on the model for values you can compute.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a12-03.py">import json
+schema = {"name": str, "age": int, "tags": list}
+def validate(obj):
+    errs = []
+    for k, t in schema.items():
+        if k not in obj: errs.append("missing " + k)
+        elif not isinstance(obj[k], t): errs.append("%s should be %s" % (k, t.__name__))
+    return errs
+for raw in ('{"name": "Ada", "age": 36, "tags": ["x"]}', '{"name": "Ada", "age": "36"}', '{bad json'):
+    try:
+        print(validate(json.loads(raw)) or "valid")
+    except json.JSONDecodeError:
+        print("invalid JSON: retry with the error message")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>valid
+['age should be int', 'missing tags']
+invalid JSON: retry with the error message</code></pre>
+<h3>Designing tools</h3>
+<p>A tool is a function the model can call. Good tools are <strong>narrow</strong>, have <strong>clear names and descriptions</strong>, typed parameters with examples, <strong>idempotent</strong> or guarded, return <strong>concise, informative</strong> results (and useful errors the model can act on), and enforce <strong>permissions in code</strong>. Return IDs and short summaries, not megabytes. Limit the number of tools offered (selection accuracy drops with many).</p>
+<h3>Agent loops</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/a12-04.py"># A minimal agent loop with a scripted "model" so the control flow is visible and deterministic.
+def fake_model(history):
+    if not any(h.startswith("TOOL_RESULT") for h in history):
+        return {"tool": "calculator", "args": "17 * 23"}
+    return {"final": "17 x 23 = " + [h for h in history if h.startswith("TOOL_RESULT")][-1].split(":")[1]}
+def calculator(expr):
+    a, op, b = expr.split()
+    return str({"*": int(a) * int(b), "+": int(a) + int(b)}[op])
+history, steps = ["USER: what is 17 * 23?"], 0
+while steps &lt; 5:                                             # always cap the loop
+    out = fake_model(history); steps += 1
+    if "final" in out:
+        print(out["final"]); break
+    history.append("TOOL_RESULT:" + calculator(out["args"]))
+print("steps used:", steps)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>17 x 23 = 391
+steps used: 2</code></pre>
+<p>Production agents add: a <strong>step and cost budget</strong>, <strong>timeouts</strong>, <strong>human approval</strong> for risky actions, <strong>idempotent</strong> tool calls, structured traces, and fallbacks. Multi-agent systems (planner, workers, critic) add coordination overhead; prefer one capable agent with good tools until evaluation says otherwise (<a href="05-agents-and-tool-use.html">05</a>).</p>
+<h3>Memory</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Kind</th><th>What</th><th>Implementation</th></tr></thead>
+<tbody>
+<tr><td>Short-term</td><td>The current conversation</td><td>The context window, with truncation or summarisation</td></tr><tr><td>Long-term</td><td>Facts about the user or past sessions</td><td>A store (database or vectors) with retrieval and write policies</td></tr><tr><td>Working state</td><td>Task progress, plans</td><td>Explicit structured state outside the prompt</td></tr>
+</tbody>
+</table>
+</div>
+<p>Memory needs <strong>privacy controls</strong>, <strong>deletion</strong>, and rules for what to store; summarise old turns to save tokens.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a12-q04" data-topic="LLM applications" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which is good tool design for an LLM agent?</p></div>
+        <ul class="q-options">
+          <li data-key="A">One tool that does everything with free-form text <span class="q-why">Hard to select and validate.</span></li>
+          <li data-key="B">Narrow, clearly described tools with typed parameters, permission checks in code and concise results <span class="q-why">Correct.</span></li>
+          <li data-key="C">Returning entire databases <span class="q-why">Wastes tokens.</span></li>
+          <li data-key="D">Trusting the model to enforce permissions <span class="q-why">Never.</span></li>
+        </ul>
+        <div class="q-explain"><p>Enforce permissions outside the model.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you make structured output reliable?</summary><div class="answer"><p>Constrained decoding or structured-output mode, schema validation and a bounded retry with the error message.</p></div></details>
+      </div>
+    </section>
+
+    <section id="evals" data-track>
+      <h2>Evaluation harnesses</h2>
+<p>You cannot improve what you do not measure. Treat prompts like code: <strong>version them, test them, gate releases</strong>.</p>
+<h3>Build the evaluation set</h3>
+<p>Collect real or realistic inputs covering: common cases, edge cases, adversarial inputs, and past failures. Include <strong>expected outputs</strong> or <strong>rubrics</strong> and metadata (category, difficulty). 100 good examples beat 10,000 careless ones; grow it from production failures.</p>
+<h3>Choose graders</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Grader</th><th>Use</th><th>Caution</th></tr></thead>
+<tbody>
+<tr><td>Exact match or code (regex, JSON schema, unit test)</td><td>Extraction, classification, code</td><td>Brittle for free text</td></tr><tr><td>Reference-based similarity (ROUGE, embeddings)</td><td>Rough signal</td><td>Weakly correlated with quality</td></tr><tr><td><strong>LLM-as-judge</strong> with a rubric</td><td>Free-form quality, faithfulness, tone</td><td>Biases: position, length, self-preference; calibrate against humans; use pairwise comparisons and swap order</td></tr><tr><td>Human review</td><td>Ground truth, ambiguous cases</td><td>Slow and costly; sample</td></tr><tr><td><strong>Online metrics</strong></td><td>Thumbs, edits, task success, escalation rate</td><td>Noisy, delayed</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/a12-05.py"># Compare two prompts on a small labelled set; report the difference with an exact sign test on disagreements.
+from math import comb
+a_correct = [1,1,0,1,0,1,1,0,1,1,0,1,1,1,0,1,0,1,1,1]
+b_correct = [1,1,1,1,1,1,1,0,1,1,1,1,1,1,0,1,1,1,1,1]
+b_only = sum(1 for x, y in zip(a_correct, b_correct) if y and not x)
+a_only = sum(1 for x, y in zip(a_correct, b_correct) if x and not y)
+n = a_only + b_only
+p = 2 * sum(comb(n, k) for k in range(0, min(a_only, b_only) + 1)) / 2 ** n
+print("A accuracy %.2f, B accuracy %.2f, B-only wins %d, A-only wins %d, sign test p = %.3f" % (sum(a_correct) / 20, sum(b_correct) / 20, b_only, a_only, p))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>A accuracy 0.70, B accuracy 0.90, B-only wins 4, A-only wins 0, sign test p = 0.125</code></pre>
+<p>Only disagreements carry information about which is better (<a href="04-evaluation-and-statistics.html">04</a>). Run evaluations in <strong>CI</strong>, record model versions and prompts, and test across <strong>slices</strong>. Track <strong>faithfulness</strong> (is every claim supported by the retrieved text), <strong>answer relevance</strong>, <strong>context precision and recall</strong>, and <strong>refusal appropriateness</strong>.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a12-q05" data-topic="LLM applications" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which is a known bias of LLM judges?</p></div>
+        <ul class="q-options">
+          <li data-key="A">They prefer short answers <span class="q-why">Often the opposite.</span></li>
+          <li data-key="B">They favour longer answers, the first position and their own style <span class="q-why">Correct.</span></li>
+          <li data-key="C">They are always accurate <span class="q-why">No.</span></li>
+          <li data-key="D">They cannot read code <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Control with pairwise comparison, swapped order and calibration against humans.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What goes in an LLM evaluation set?</summary><div class="answer"><p>Realistic inputs across common, edge and adversarial cases with expected outputs or rubrics, grown from production failures.</p></div></details>
+      </div>
+    </section>
+
+    <section id="ops" data-track>
+      <h2>Latency, cost and reliability</h2>
+<h3>Cost model</h3>
+<p>Cost = input tokens x input price + output tokens x output price (output is usually 3 to 5 times dearer), plus retrieval and tool costs. Latency = time to first token (grows with prompt length) + generation time (output tokens x time per token).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a12-06.py">in_tok, out_tok = 3000, 400
+price_in, price_out = 3.0 / 1e6, 15.0 / 1e6           # dollars per token (example prices)
+cost = in_tok * price_in + out_tok * price_out
+print("cost per request $%.4f; per 1M requests $%.0f" % (cost, cost * 1e6))
+cached = in_tok * price_in * 0.1 * 0.8 + in_tok * price_in * 0.2 + out_tok * price_out      # 80% of the prompt cached at 10% price
+print("with prompt caching of 80%% of the prompt: $%.4f" % cached)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>cost per request $0.0150; per 1M requests $15000
+with prompt caching of 80% of the prompt: $0.0085</code></pre>
+<h3>Levers</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Lever</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td><strong>Prompt caching</strong></td><td>Reuse a stable prefix (system prompt, documents); order static content first (<a href="01-inference-and-memory.html">01</a>)</td></tr><tr><td><strong>Smaller or routed models</strong></td><td>Use a small model for easy requests and escalate; distil a large one</td></tr><tr><td><strong>Shorter prompts and outputs</strong></td><td>Fewer retrieved chunks, concise formats, <code>max_tokens</code></td></tr><tr><td><strong>Batching and async</strong></td><td>Offline jobs through batch APIs at lower prices</td></tr><tr><td><strong>Response and semantic caching</strong></td><td>Reuse answers to repeated or near-identical queries (mind freshness and personalisation)</td></tr><tr><td><strong>Streaming</strong></td><td>Improves perceived latency</td></tr><tr><td><strong>Parallel tool calls and speculative steps</strong></td><td>Cut round trips</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Reliability patterns</h3>
+<ul><li><strong>Timeouts, retries with backoff and jitter</strong>, and <strong>fallback models</strong> across providers (<a href="../system-design-guide/sd10-reliability.html">SD10</a>).</li><li><strong>Rate-limit handling</strong> and queues; <strong>idempotency</strong> for side-effecting tools.</li><li><strong>Validation and repair loops</strong> for structured output, with a cap.</li><li><strong>Guardrails</strong> at input and output, <strong>prompt-injection defences</strong> and least-privilege tools (<a href="a6-alignment-safety.html">A6</a>).</li><li><strong>Observability</strong>: log prompt version, model, tokens, latency, retrieved ids, tool calls and user feedback; sample traces for review; alert on cost spikes and quality drops (<a href="a7-mlops.html">A7</a>).</li><li><strong>Graceful degradation</strong>: if retrieval or a tool is down, say so rather than guess.</li><li><strong>Versioning and rollout</strong>: treat prompt and model changes like releases (canary, A/B, rollback); pin model versions where possible, because providers update models.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a12-q06" data-topic="LLM applications" data-type="numeric" data-answer="0.015" data-tol="0.0002">
+        <div class="q-stem"><p>Prompt 3,000 tokens at $3 per million input and output 400 tokens at $15 per million. Cost per request in dollars? (4 decimals)</p></div>
+        <div class="q-explain"><p>0.009 + 0.006 = $0.015.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a12-q07" data-topic="LLM applications" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you maximise prompt-cache hits?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Put the user's question first <span class="q-why">The prefix changes every request.</span></li>
+          <li data-key="B">Put stable content (system prompt, documents) first and variable content last <span class="q-why">Correct.</span></li>
+          <li data-key="C">Randomise the order <span class="q-why">No.</span></li>
+          <li data-key="D">Shorten the system prompt always <span class="q-why">Not the point.</span></li>
+        </ul>
+        <div class="q-explain"><p>Caching matches an identical prefix.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name cost and latency levers.</summary><div class="answer"><p>Prompt caching, model routing, shorter prompts and outputs, batching, response caching and streaming.</p></div></details>
+      </div>
+    </section>
+
+    <section id="choose" data-track>
+      <h2>Choosing an approach</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Need</th><th>Approach</th></tr></thead>
+<tbody>
+<tr><td>Private or changing knowledge</td><td>RAG (not fine-tuning)</td></tr><tr><td>Consistent format, tone or behaviour at scale</td><td>Few-shot prompting, then fine-tuning</td></tr><tr><td>Lower cost or latency at high volume</td><td>Distil or fine-tune a smaller model</td></tr><tr><td>Multi-step tasks with tools</td><td>Tool use or agent with a step budget</td></tr><tr><td>High-stakes decisions</td><td>Human in the loop, citations, strict validation</td></tr><tr><td>Unclear requirements</td><td>Prototype with prompts, build an eval set, then decide</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout key"><span class="callout-title">Key idea</span><p>LLM apps succeed through measurement: a labelled evaluation set, separate checks for retrieval and generation, tracing in production, and cost and latency budgets. Improve one component at a time and let the evaluation, not intuition, decide.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a12-q08" data-topic="LLM applications" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Your assistant must answer from a frequently changing internal wiki. Best first choice?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Fine-tune on the wiki monthly <span class="q-why">Stale and costly.</span></li>
+          <li data-key="B">RAG over the current wiki with citations <span class="q-why">Correct.</span></li>
+          <li data-key="C">A bigger base model <span class="q-why">Still lacks the data.</span></li>
+          <li data-key="D">Longer temperature <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Retrieval keeps knowledge fresh and attributable.</p></div>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: LLM applications</h2>
+      <p class="muted">13 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="LLM applications">
+<details class="recall iq" data-level="basic" data-topic="LLM applications"><summary><span class="tag ok">Basic</span> Why do RAG systems fail?</summary><div class="answer"><p>Mostly in retrieval: documents missing from the index, poor chunking or embeddings, no reranking, weak query rewriting, or the model ignoring the evidence.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="LLM applications"><summary><span class="tag ok">Basic</span> When use RAG versus fine-tuning?</summary><div class="answer"><p>RAG for private or changing knowledge and citations; fine-tuning for style, format or behaviour at scale. They combine well.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="LLM applications"><summary><span class="tag ok">Basic</span> What is structured output and how do you make it reliable?</summary><div class="answer"><p>Model output constrained to a schema; use constrained decoding or function calling, validate, and retry with the error.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="LLM applications"><summary><span class="tag warn">Medium</span> What is hybrid search and why use it?</summary><div class="answer"><p>Combining BM25 and dense retrieval (for example with reciprocal rank fusion) captures both exact terms and semantic similarity.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="LLM applications"><summary><span class="tag warn">Medium</span> What does a reranker do?</summary><div class="answer"><p>A cross-encoder scores query and document together for the top candidates, improving precision over bi-encoder similarity.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="LLM applications"><summary><span class="tag warn">Medium</span> How do you chunk documents?</summary><div class="answer"><p>Structure-aware or semantic splits with modest overlap, retaining metadata, with parent-child retrieval or contextual summaries where chunks lose meaning alone.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="LLM applications"><summary><span class="tag warn">Medium</span> How do you evaluate an LLM application?</summary><div class="answer"><p>Build a labelled set of realistic cases, grade with code, rubrics and calibrated LLM judges, check retrieval separately, run in CI and monitor online metrics.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="LLM applications"><summary><span class="tag warn">Medium</span> Name biases of LLM-as-judge.</summary><div class="answer"><p>Preference for longer answers, for the first position and for its own style; mitigate with pairwise swaps, rubrics and calibration against human labels.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="LLM applications"><summary><span class="tag bad">Advanced</span> Design an agent loop and its safeguards.</summary><div class="answer"><p>Plan, call tools, observe, repeat with a step and cost budget, timeouts, validated tool arguments, human approval for risky actions, idempotent tools and full tracing.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="LLM applications"><summary><span class="tag bad">Advanced</span> What is Graph RAG?</summary><div class="answer"><p>Building a knowledge graph of entities and relations from documents to retrieve connected context or community summaries, helping multi-hop and corpus-wide questions.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="LLM applications"><summary><span class="tag bad">Advanced</span> How do you cut LLM cost and latency?</summary><div class="answer"><p>Prompt caching of stable prefixes, model routing and distillation, shorter prompts and outputs, batching, semantic caching, streaming and parallel tool calls.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="LLM applications"><summary><span class="tag bad">Advanced</span> How do you version and release prompt changes?</summary><div class="answer"><p>Treat prompts as code: store in version control, test against the evaluation set, canary or A/B release, pin model versions and keep rollback ready.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="LLM applications"><summary><span class="tag bad">Advanced</span> Long context or retrieval?</summary><div class="answer"><p>Long context is simple but costly and can lose information in the middle; retrieval scales to large corpora and is cheaper, but needs good indexing. Combine them: retrieve then place a concise context.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="a11-stats-experiments.html"><span class="dir">Previous</span><span>A11 Statistics and experimentation for ML</span></a>
+      <a class="next" href="index.html"><span class="dir">Next</span><span>Hub</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,662 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="M09">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>M9 Linked Lists | DSA Master Guide</title>
+<meta name="description" content="Nodes connected by pointers. Pointer manipulation questions are common and tricky until you draw them.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<link rel="stylesheet" href="viz.css">
+<script src="viz.js" defer></script>
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Module 9</p>
+      <h1>Linked Lists</h1>
+      <p class="lede">Nodes connected by pointers. Pointer manipulation questions are common and tricky until you draw them. Topics in this module: Nodes, pointers and basic operations; reversing a linked list; fast/slow pointers: middle node and cycle detection.</p>
+      <div class="meta"><span class="tag warn">Important</span><span class="tag">3 topics</span><span class="tag">14 problems</span><span class="tag">54 interview questions</span></div>
+    </div>
+
+    <section id="why-this-module" data-track>
+      <h2>Start from scratch: why this module exists</h2>
+      <p>Arrays make insertion slow because items must shift. Linked lists store items in separate nodes joined by pointers, so insertion only changes arrows. The price is slow access by position.</p>
+      <p>In Python you rarely need a linked list, but linked-list questions train precise pointer reasoning that carries over to trees and graphs.</p>
+      <p><strong>Who needs it:</strong> Operating-system and memory-allocator authors, LRU cache implementers, and interviewers testing pointer care.</p>
+      <p><strong>Before you start:</strong> Modules 1 and 3.</p>
+      <h3>After this module you can</h3>
+      <ul><li>Insert, delete, search and reverse nodes safely.</li><li>Use dummy nodes and fast/slow pointers.</li><li>Detect cycles and find their start.</li><li>Merge sorted lists.</li></ul>
+      <p><strong>Common pitfalls:</strong> Losing the rest of the list by overwriting next, forgetting empty/one-node cases, accidental cycles, comparing nodes with == instead of is.</p>
+      <p><strong>Typical interview questions here:</strong> Reverse list, middle node, detect cycle, merge two lists, remove nth from end, palindrome list, add two numbers, LRU cache.</p>
+    </section>
+
+    <section id="c9_1" data-track>
+      <h2>Nodes, pointers and basic operations</h2>
+      <p><span class="tag warn">Important</span> <span class="tag">Topic 9.1</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>A singly linked list is a chain of nodes; each node stores a value and a reference (pointer) to the next node. The first node is the head; the last points to None.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Linked lists support O(1) insertion/deletion at a known position without shifting elements, and they teach pointer thinking used in trees and graphs.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>A treasure hunt: each clue tells you where the next clue is. You cannot jump to clue 5 directly; you must follow the chain.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Arrays have a weakness: inserting in the middle forces every later element to shift. What if each item remembered where the next one lives instead of relying on neighbouring memory? Then to insert, you create the new item and change two arrows. No shifting at all. This is the linked list, born from fixing the array's insertion cost.</p>
+      <p>The price: you lose instant access by position. To reach the 10th item you follow 9 arrows. You also pay memory for the arrows and lose the cache-friendliness of contiguous memory. Every data structure is a trade; linked lists trade access for flexible insertion.</p>
+      <p>To work with them you must think in pointers. Variables like cur and prev are not items; they are fingers pointing at items. Assigning cur = cur.next moves a finger. cur.next = something changes an arrow inside the list. Mixing those two up is the source of most bugs.</p>
+      <p>Dummy nodes solve the 'head is special' problem. Without one, inserting or deleting the first node needs separate code. With a dummy in front of the head, every node has a predecessor and one rule works for all.</p>
+      <p>Linked lists matter in interviews less because you will use them in Python, and more because they train pointer reasoning, which also applies to trees and graphs.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="ll"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Node: ListNode(val, next). Traversal: cur = head; while cur: ...; cur = cur.next.</li><li>Insert at head: new.next = head; head = new -&gt; O(1). Insert at tail: walk to the end -&gt; O(n) (or keep a tail pointer).</li><li>Delete a value: find the node BEFORE it (prev) and set prev.next = prev.next.next. Deleting the head needs special care - use a dummy node in front.</li><li>Access the i-th node: O(n). Search: O(n).</li><li>Doubly linked list: each node also has prev, enabling O(1) deletion given the node and backward traversal. Circular list: the tail points back to the head.</li><li>Use the visualiser to insert/delete and watch the arrows change.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>A linked list stores items in separate boxes called nodes. Each node has a value and a pointer to the next node. You only know where the list starts (the head). To reach the 5th item you must walk through the first four. That is why access by position is O(n), unlike arrays.</p>
+      <p>What linked lists are good at: inserting or removing at a known place by just changing pointers, without shifting other items. Insert at head: new.next = head; head = new. Delete a node: make the node before it skip over it.</p>
+      <p>The dummy node trick: create a fake node before the head (dummy.next = head). Now the head is no longer a special case: inserting or deleting at the front works like any other position. Return dummy.next at the end. It removes many 'if head is None' branches.</p>
+      <p>Variants: doubly linked lists have a prev pointer too (easy to go backwards and delete a known node in O(1)); circular lists have the tail pointing to the head. Python's collections.deque is built from blocks and is what you should use in real code.</p>
+      <p>Pointer safety: before you change node.next, save the old next node in a variable, otherwise you lose the rest of the list. Always think: 'what are the four things that change?' and draw boxes and arrows.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Each Python node is an object with val and next attributes (stored in a small dict or slots). The list itself is just a reference to the head node. A node is garbage collected when no references remain.</li><li>A cycle keeps nodes alive in reference counting; Python's cyclic garbage collector handles them, but interview code should avoid creating accidental cycles.</li><li>collections.deque is implemented as a doubly linked list of blocks, giving O(1) at both ends with good memory locality.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Operating systems</td><td>Free-memory lists, process queues and file-system structures use linked lists.</td></tr><tr><td>Undo history and music playlists</td><td>Next/previous navigation with cheap insert/remove is naturally linked.</td></tr><tr><td>Hash tables with chaining and LRU caches</td><td>A doubly linked list plus a dict implements an LRU cache with O(1) operations.</td></tr><tr><td>Interviewers</td><td>Linked list problems test careful pointer handling and edge cases (empty, one node, head removal).</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Linked list vs Python list</td><td>Python list: O(1) index, fast iteration, slow middle insert. Linked list: O(1) insert after a known node, O(n) index. In Python the list wins in nearly all real code.</td></tr><tr><td>Singly vs doubly</td><td>Doubly gives O(1) delete of a given node and backward traversal at the cost of extra memory.</td></tr><tr><td>When NOT to use a linked list</td><td>When you need random access, binary search or compact memory.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>class ListNode: def __init__(self, val=0, next=None): self.val = val; self.next = next.</li><li>while cur: ...; cur = cur.next is the standard walk. while cur and cur.next: when you look two ahead.</li><li>Compare nodes with 'is' not '=='.</li><li>Convert a list to a linked list using a loop with a dummy node (helper build()).</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c9_1.py">def delete_value(head, val):
+    dummy = ListNode(0, head)          # dummy handles deleting the head
+    prev, cur = dummy, head
+    while cur:
+        if cur.val == val:
+            prev.next = cur.next       # unlink cur
+            break
+        prev, cur = cur, cur.next
+    return dummy.next</code></pre>
+      <details class="box"><summary>Helper code used in these examples (ListNode, TreeNode and builders)</summary><div class="d-body">
+<pre><code class="lang-py" data-embed="solutions/preludes/ll.py">class ListNode:
+    def __init__(self, val=0, next=None):
+        self.val = val
+        self.next = next
+    def __repr__(self):
+        return "Node(%r)" % (self.val,)
+
+def build(values, cycle_pos=-1):
+    """Build a linked list from a Python list (cycle_pos links the tail back to that index)."""
+    dummy = ListNode()
+    cur, nodes = dummy, []
+    for v in values:
+        cur.next = ListNode(v)
+        cur = cur.next
+        nodes.append(cur)
+    if 0 &lt;= cycle_pos &lt; len(nodes):
+        cur.next = nodes[cycle_pos]
+    return dummy.next
+
+def to_list(head):
+    out = []
+    while head:
+        out.append(head.val)
+        head = head.next
+    return out</code></pre>
+</div></details>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>to_list(delete_value(build([1, 2, 3, 4]), 3))</code>, returns <code>[1, 2, 4]</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>prev (after)</th><th>cur (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>dummy = ListNode(0, head)          # dummy handles deleting the head</code></td><td>-</td><td>-</td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>prev, cur = dummy, head</code></td><td><strong><code>Node(0)</code></strong></td><td><strong><code>Node(1)</code></strong></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>while cur:</code></td><td><code>Node(0)</code></td><td><code>Node(1)</code></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>if cur.val == val:</code></td><td><code>Node(0)</code></td><td><code>Node(1)</code></td></tr>
+<tr><td class="num">5</td><td class="num">8</td><td><code>prev, cur = cur, cur.next</code></td><td><strong><code>Node(1)</code></strong></td><td><strong><code>Node(2)</code></strong></td></tr>
+<tr><td class="num">6</td><td class="num">4</td><td><code>while cur:</code></td><td><code>Node(1)</code></td><td><code>Node(2)</code></td></tr>
+<tr><td class="num">7</td><td class="num">5</td><td><code>if cur.val == val:</code></td><td><code>Node(1)</code></td><td><code>Node(2)</code></td></tr>
+<tr><td class="num">8</td><td class="num">8</td><td><code>prev, cur = cur, cur.next</code></td><td><strong><code>Node(2)</code></strong></td><td><strong><code>Node(3)</code></strong></td></tr>
+<tr><td class="num">9</td><td class="num">4</td><td><code>while cur:</code></td><td><code>Node(2)</code></td><td><code>Node(3)</code></td></tr>
+<tr><td class="num">10</td><td class="num">5</td><td><code>if cur.val == val:</code></td><td><code>Node(2)</code></td><td><code>Node(3)</code></td></tr>
+<tr><td class="num">11</td><td class="num">6</td><td><code>prev.next = cur.next       # unlink cur</code></td><td><code>Node(2)</code></td><td><code>Node(3)</code></td></tr>
+<tr><td class="num">12</td><td class="num">7</td><td><code>break</code></td><td><code>Node(2)</code></td><td><code>Node(3)</code></td></tr>
+<tr><td class="num">13</td><td class="num">9</td><td><code>return dummy.next</code></td><td><code>Node(2)</code></td><td><code>Node(3)</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>O(n) time to find the node, O(1) space.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Losing the rest of the list by overwriting next before saving it.</li><li>Not handling an empty list or deleting the head.</li><li>Infinite loops from accidental cycles.</li><li>Comparing nodes with == instead of <code>is</code>.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"Without extra space", "in place", "pointers" -&gt; linked list manipulation; dummy node simplifies head cases.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m09-problems.html#prob-middle_node">Middle of a Linked List</a> <span class="tag">LC 876</span></td><td><span class="tag ok">Easy</span></td><td>Slow and fast pointers</td></tr><tr><td><a href="m09-problems.html#prob-merge_two_lists">Merge Two Sorted Linked Lists</a> <span class="tag">LC 21</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Linked list, dummy node</td></tr><tr><td><a href="m09-problems.html#prob-delete_duplicates_list">Remove Duplicates from a Sorted List</a> <span class="tag">LC 83</span></td><td><span class="tag ok">Easy</span></td><td>Linked list pointers</td></tr><tr><td><a href="m09-problems.html#prob-remove_nth_from_end">Remove N-th Node From End</a> <span class="tag">LC 19</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Two pointers on a linked list</td></tr><tr><td><a href="m09-problems.html#prob-swap_pairs">Swap Nodes in Pairs</a> <span class="tag">LC 24</span></td><td><span class="tag warn">Medium</span></td><td>Linked list pointers</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why use a linked list at all?</summary><div class="answer"><p>Insertion and deletion at a known node change only pointers, with no shifting. It also teaches pointer reasoning.</p></div></details>
+        <details class="recall"><summary>Why not use it for lookup by position?</summary><div class="answer"><p>Reaching index i needs i steps: O(n).</p></div></details>
+        <details class="recall"><summary>Why use a dummy node?</summary><div class="answer"><p>It removes the special case for the head, so insertion and deletion use the same code everywhere.</p></div></details>
+        <details class="recall"><summary>Why save node.next before changing it?</summary><div class="answer"><p>The only reference to the rest of the list is node.next; overwriting it first loses the rest.</p></div></details>
+        <details class="recall"><summary>Why compare nodes with 'is'?</summary><div class="answer"><p>Two different nodes can hold equal values. 'is' checks they are the same node object.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c9_1-q1" data-topic="Linked Lists" data-type="single" data-answer="A">
+        <div class="q-stem"><p>Time to insert at the head of a singly linked list?</p></div>
+        <ul class="q-options">
+          <li data-key="A">O(1)</li>
+          <li data-key="B">O(n)</li>
+          <li data-key="C">O(log n)</li>
+          <li data-key="D">O(n^2)</li>
+        </ul>
+        <div class="q-explain"><p>Only two pointer updates are needed.</p></div>
+      </div>
+      <div class="quiz" data-qid="c9_1-q2" data-topic="Linked Lists" data-type="single" data-answer="B">
+        <div class="q-stem"><p>To delete node X you need to modify...</p></div>
+        <ul class="q-options">
+          <li data-key="A">X.next only</li>
+          <li data-key="B">the node before X</li>
+          <li data-key="C">the head always</li>
+          <li data-key="D">nothing</li>
+        </ul>
+        <div class="q-explain"><p>The previous node must skip over X.</p></div>
+      </div>
+    </section>
+
+    <section id="c9_2" data-track>
+      <h2>Reversing a linked list</h2>
+      <p><span class="tag warn">Important</span> <span class="tag">Topic 9.2</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>Reversing means flipping every arrow so the last node becomes the head. You do it by walking once and re-pointing each node to the one before it.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>List reversal is a building block for palindrome checks, reorder problems and block reversals.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>A conga line turning around: each dancer turns to hold the shoulders of the person who was behind them.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Reversing an array is easy: swap from both ends. For a singly linked list you cannot jump to the end or step backward, so you must reverse the DIRECTION of every arrow as you walk forward once.</p>
+      <p>Think of a train where each car is hooked to the next. To reverse the train you disconnect each coupling and hook it the other way, one car at a time, never losing the remaining cars. You need one finger on the car you are flipping (cur), one on the part already reversed (prev) and one remembering the rest (nxt).</p>
+      <p>Why are three variables essential? When you flip cur.next to point backwards, the only pointer to the rest of the list is destroyed unless you saved it first. That single sentence explains the whole algorithm and its most common bug.</p>
+      <p>Reversal is a building block: palindromes (reverse half), reorder lists, reverse in groups of k, add numbers stored most-significant-first.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="ll_reverse"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Use three names: prev (starts None), cur (starts head), nxt.</li><li>Loop: nxt = cur.next (save the rest); cur.next = prev (flip); prev = cur; cur = nxt (advance).</li><li>When cur becomes None, prev is the new head.</li><li>1 -&gt; 2 -&gt; 3: after step 1: None &lt;- 1  2 -&gt; 3; step 2: None &lt;- 1 &lt;- 2  3; step 3: None &lt;- 1 &lt;- 2 &lt;- 3. Head = 3.</li><li>The animation highlights prev, cur and nxt as arrows flip.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>To reverse a list you flip every arrow. You walk once with three names: prev (the part already reversed, starting as None), cur (the node you are working on) and nxt (the node after cur). For each node: save nxt, point cur backwards to prev, move prev and cur one step forward.</p>
+      <p>Order matters! Step 1 save, step 2 flip, step 3 move prev, step 4 move cur. If you flip before saving, you lose the remaining list forever.</p>
+      <p>When cur becomes None you have flipped everything and prev is the last node you handled - the new head. Return prev, not cur.</p>
+      <p>Reversal is a building block: palindrome list (reverse the second half and compare), reorder list, reverse nodes in groups of k, add two numbers stored in forward order.</p>
+      <p>There is also a recursive version: reverse the rest of the list, then make the next node point back to the current one and set current.next = None. It uses O(n) stack space.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Iterative reversal makes n pointer changes in one pass, O(n) time O(1) space. Recursive reversal reaches the last node first and sets each node.next.next = node on the way back, using O(n) stack.</li><li>After reversing, the old head's next must be None; otherwise a cycle forms. In the iterative version this happens automatically because prev starts as None.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Browsers and editors</td><td>Undo/redo stacks and history lists reverse or traverse sequences.</td></tr><tr><td>Text and arithmetic libraries</td><td>Adding big numbers stored digit by digit often requires reversing lists.</td></tr><tr><td>Interviewers</td><td>The most common linked list question; performance and pointer care are scored.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Iterative vs recursive</td><td>Iterative is safer in Python (no recursion limit). Recursive is elegant but uses O(n) stack.</td></tr><tr><td>Reverse list vs copy to array</td><td>Copy to an array and rebuild costs O(n) extra space; pointer reversal costs O(1).</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>Tuple swap works on nodes: cur.next, prev, cur = prev, cur, cur.next (be careful about evaluation order; the explicit four-line version is safer).</li><li>Test with build([1,2,3]) and to_list(...) helpers.</li><li>Test an empty list and a one-node list.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c9_2.py">def reverse_list(head):
+    prev, cur = None, head
+    while cur:
+        nxt = cur.next      # 1. remember the rest
+        cur.next = prev     # 2. flip the arrow
+        prev = cur          # 3. move prev forward
+        cur = nxt           # 4. move cur forward
+    return prev</code></pre>
+      <details class="box"><summary>Helper code used in these examples (ListNode, TreeNode and builders)</summary><div class="d-body">
+<pre><code class="lang-py" data-embed="solutions/preludes/ll.py">class ListNode:
+    def __init__(self, val=0, next=None):
+        self.val = val
+        self.next = next
+    def __repr__(self):
+        return "Node(%r)" % (self.val,)
+
+def build(values, cycle_pos=-1):
+    """Build a linked list from a Python list (cycle_pos links the tail back to that index)."""
+    dummy = ListNode()
+    cur, nodes = dummy, []
+    for v in values:
+        cur.next = ListNode(v)
+        cur = cur.next
+        nodes.append(cur)
+    if 0 &lt;= cycle_pos &lt; len(nodes):
+        cur.next = nodes[cycle_pos]
+    return dummy.next
+
+def to_list(head):
+    out = []
+    while head:
+        out.append(head.val)
+        head = head.next
+    return out</code></pre>
+</div></details>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - copy to a Python list</h4>
+      <p>Collect the values, reverse the list and rebuild nodes. Easy but uses O(n) extra memory.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c9_2_stage1.py">def reverse_list(head):
+    vals = to_list(head)[::-1]
+    dummy = tail = ListNode()
+    for v in vals:
+        tail.next = ListNode(v)
+        tail = tail.next
+    return dummy.next</code></pre>
+      <p class="muted small">Check: <code>to_list(reverse_list(build([1, 2, 3])))</code> returns <code>[3, 2, 1]</code></p>
+      <h4>Stage 2 - flip the arrows</h4>
+      <p>Walk once and point each node backwards using prev/cur/nxt: O(n) time, O(1) space.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c9_2_stage2.py">def reverse_list(head):
+    prev, cur = None, head
+    while cur:
+        nxt = cur.next
+        cur.next = prev
+        prev, cur = cur, nxt
+    return prev</code></pre>
+      <p class="muted small">Check: <code>to_list(reverse_list(build([1, 2, 3])))</code> returns <code>[3, 2, 1]</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>reverse_list(build([1, 2, 3]))</code>, returns <code>Node(3)</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>cur (after)</th><th>prev (after)</th><th>nxt (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>prev, cur = None, head</code></td><td><strong><code>Node(1)</code></strong></td><td><strong><code>None</code></strong></td><td>-</td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>while cur:</code></td><td><code>Node(1)</code></td><td><code>None</code></td><td>-</td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>nxt = cur.next      # 1. remember the rest</code></td><td><code>Node(1)</code></td><td><code>None</code></td><td><strong><code>Node(2)</code></strong></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>cur.next = prev     # 2. flip the arrow</code></td><td><code>Node(1)</code></td><td><code>None</code></td><td><code>Node(2)</code></td></tr>
+<tr><td class="num">5</td><td class="num">6</td><td><code>prev = cur          # 3. move prev forward</code></td><td><code>Node(1)</code></td><td><strong><code>Node(1)</code></strong></td><td><code>Node(2)</code></td></tr>
+<tr><td class="num">6</td><td class="num">7</td><td><code>cur = nxt           # 4. move cur forward</code></td><td><strong><code>Node(2)</code></strong></td><td><code>Node(1)</code></td><td><code>Node(2)</code></td></tr>
+<tr><td class="num">7</td><td class="num">3</td><td><code>while cur:</code></td><td><code>Node(2)</code></td><td><code>Node(1)</code></td><td><code>Node(2)</code></td></tr>
+<tr><td class="num">8</td><td class="num">4</td><td><code>nxt = cur.next      # 1. remember the rest</code></td><td><code>Node(2)</code></td><td><code>Node(1)</code></td><td><strong><code>Node(3)</code></strong></td></tr>
+<tr><td class="num">9</td><td class="num">5</td><td><code>cur.next = prev     # 2. flip the arrow</code></td><td><code>Node(2)</code></td><td><code>Node(1)</code></td><td><code>Node(3)</code></td></tr>
+<tr><td class="num">10</td><td class="num">6</td><td><code>prev = cur          # 3. move prev forward</code></td><td><code>Node(2)</code></td><td><strong><code>Node(2)</code></strong></td><td><code>Node(3)</code></td></tr>
+<tr><td class="num">11</td><td class="num">7</td><td><code>cur = nxt           # 4. move cur forward</code></td><td><strong><code>Node(3)</code></strong></td><td><code>Node(2)</code></td><td><code>Node(3)</code></td></tr>
+<tr><td class="num">12</td><td class="num">3</td><td><code>while cur:</code></td><td><code>Node(3)</code></td><td><code>Node(2)</code></td><td><code>Node(3)</code></td></tr>
+<tr><td class="num">13</td><td class="num">4</td><td><code>nxt = cur.next      # 1. remember the rest</code></td><td><code>Node(3)</code></td><td><code>Node(2)</code></td><td><strong><code>None</code></strong></td></tr>
+<tr><td class="num">14</td><td class="num">5</td><td><code>cur.next = prev     # 2. flip the arrow</code></td><td><code>Node(3)</code></td><td><code>Node(2)</code></td><td><code>None</code></td></tr>
+<tr><td class="num">15</td><td class="num">6</td><td><code>prev = cur          # 3. move prev forward</code></td><td><code>Node(3)</code></td><td><strong><code>Node(3)</code></strong></td><td><code>None</code></td></tr>
+<tr><td class="num">16</td><td class="num">7</td><td><code>cur = nxt           # 4. move cur forward</code></td><td><strong><code>None</code></strong></td><td><code>Node(3)</code></td><td><code>None</code></td></tr>
+<tr><td class="num">17</td><td class="num">3</td><td><code>while cur:</code></td><td><code>None</code></td><td><code>Node(3)</code></td><td><code>None</code></td></tr>
+<tr><td class="num">18</td><td class="num">8</td><td><code>return prev</code></td><td><code>None</code></td><td><code>Node(3)</code></td><td><code>None</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>O(n) time, O(1) space (recursive version: O(n) stack).</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Forgetting to save cur.next before overwriting it.</li><li>Returning cur (None) instead of prev.</li><li>Not setting the old head's next to None (creates a cycle).</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"Reverse", "palindrome list", "reorder" -&gt; reversal as a subroutine.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m09-problems.html#prob-reverse_list">Reverse a Linked List</a> <span class="tag">LC 206</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Linked list pointers</td></tr><tr><td><a href="m09-problems.html#prob-merge_two_lists">Merge Two Sorted Linked Lists</a> <span class="tag">LC 21</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Linked list, dummy node</td></tr><tr><td><a href="m09-problems.html#prob-is_palindrome_list">Palindrome Linked List</a> <span class="tag">LC 234</span></td><td><span class="tag warn">Medium</span></td><td>Slow/fast pointers + reversal</td></tr><tr><td><a href="m09-problems.html#prob-add_two_numbers">Add Two Numbers (Linked Lists)</a> <span class="tag">LC 2</span></td><td><span class="tag warn">Medium</span></td><td>Linked list with carry</td></tr><tr><td><a href="m09-problems.html#prob-reverse_k_group">Reverse Nodes in k-Group</a> <span class="tag">LC 25</span></td><td><span class="tag bad">Hard</span></td><td>Linked list reversal in blocks</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why three pointers for reversal?</summary><div class="answer"><p>prev holds the reversed part, cur the node being flipped, nxt remembers the rest so it is not lost.</p></div></details>
+        <details class="recall"><summary>Why return prev?</summary><div class="answer"><p>When cur becomes None, prev is the last real node, the new head.</p></div></details>
+        <details class="recall"><summary>Why is iterative reversal O(1) space but recursive O(n)?</summary><div class="answer"><p>Recursion keeps one stack frame per node.</p></div></details>
+        <details class="recall"><summary>Why not copy values into a Python list and rebuild?</summary><div class="answer"><p>It works but uses O(n) extra memory and defeats the point of in-place pointer reasoning.</p></div></details>
+        <details class="recall"><summary>Why does the old head end up with next = None?</summary><div class="answer"><p>prev starts as None, and the first flip sets head.next = prev.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c9_2-q1" data-topic="Linked Lists" data-type="single" data-answer="B">
+        <div class="q-stem"><p>After the loop in iterative reversal, the new head is...</p></div>
+        <ul class="q-options">
+          <li data-key="A">cur</li>
+          <li data-key="B">prev</li>
+          <li data-key="C">nxt</li>
+          <li data-key="D">dummy</li>
+        </ul>
+        <div class="q-explain"><p>cur has walked off the end (None); prev is the last real node.</p></div>
+      </div>
+      <div class="quiz" data-qid="c9_2-q2" data-topic="Linked Lists" data-type="single" data-answer="A">
+        <div class="q-stem"><p>Space complexity of iterative reversal?</p></div>
+        <ul class="q-options">
+          <li data-key="A">O(1)</li>
+          <li data-key="B">O(n)</li>
+          <li data-key="C">O(log n)</li>
+          <li data-key="D">O(n^2)</li>
+        </ul>
+        <div class="q-explain"><p>Just three pointers.</p></div>
+      </div>
+    </section>
+
+    <section id="c9_3" data-track>
+      <h2>Fast/slow pointers: middle node and cycle detection</h2>
+      <p><span class="tag warn">Important</span> <span class="tag">Topic 9.3</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>Floyd's algorithm moves a slow pointer one step and a fast pointer two steps at a time. It finds the middle of a list and detects (and locates) cycles without extra memory.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Cycle detection is a favourite question. The technique also appears in finding duplicates and in numerical cycles.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Two runners on a track at different speeds: if the track is a loop, the faster runner eventually laps the slower one; on a straight road the faster one just reaches the end.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>How do you tell if a list loops back on itself? A person walking the list would eventually notice a repeated node, but remembering every visited node costs O(n) memory. Is there a way with no memory?</p>
+      <p>Picture two runners on a track. If the track is a straight road, the faster runner reaches the end. If it is a circular track, the faster runner keeps lapping and must catch the slower one. The catch-up happens because the gap between them changes by exactly one step each round, so it cannot jump over zero.</p>
+      <p>That is Floyd's algorithm: move slow by one and fast by two. If they ever stand on the same node, there is a cycle. If fast reaches None, there is no cycle. It uses two pointers and no extra memory.</p>
+      <p>Where does the cycle start? Let the head be a distance a from the cycle start, and let the meeting point be b steps inside the cycle. Slow travelled a + b, fast travelled 2(a + b), so fast went an extra a + b which is a whole number of laps. This gives a = (laps x cycle length) - b: walking a steps from the meeting point returns to the cycle start. Therefore a pointer from the head and another from the meeting point, both moving one step at a time, meet exactly at the start.</p>
+      <p>The same idea (fast/slow) finds the middle (fast covers twice the distance) and the k-th node from the end (a fixed gap).</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="ll_cycle"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Middle: when fast reaches the end, slow is at the middle (for even length, the second middle).</li><li>Cycle: if there is a cycle, fast gains one step on slow every round, so they meet. If fast hits None, no cycle.</li><li>Cycle start: after they meet, put one pointer back at head and move both one step at a time; they meet at the cycle start.</li><li>Merging sorted lists: dummy node + tail pointer, attach the smaller head each time.</li><li>Run the animation on a list with a cycle: watch the pointers meet.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Slow and fast pointers are two walkers on the same list. Slow takes one step each time; fast takes two. When fast reaches the end, slow is exactly in the middle. That finds the middle node in one pass without knowing the length.</p>
+      <p>Cycle detection: if the list has a loop, fast and slow both end up running around the loop. Because fast gains one step on slow each round, they must meet inside the loop. If there is no loop, fast reaches None and you stop. Space needed: O(1), compared with O(n) for a set of visited nodes.</p>
+      <p>Finding where the loop starts: after they meet, restart one pointer at the head. Move both one step at a time. They meet at the first node of the loop. (Math reason: distance from head to loop start equals distance from the meeting point to loop start, going around.)</p>
+      <p>Gap pointers: to find the n-th node from the end, move fast n steps ahead first. Then move both together. When fast reaches the end, slow is at the right spot.</p>
+      <p>Always check fast and fast.next in the while condition; checking only one causes 'NoneType has no attribute next' errors.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Slow enters the cycle after a steps; fast is already inside. The gap (in cycle terms) closes by one each iteration, so they meet within the cycle length steps: total O(n).</li><li>The visited-set method is simpler (O(n) memory) and appropriate when memory is not constrained.</li><li>Comparing nodes uses identity (is). Two different nodes with the same value are not the same node.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Memory and system tools</td><td>Detecting loops in linked structures, reference graphs or state machines.</td></tr><tr><td>Cryptography (Pollard's rho)</td><td>Floyd's cycle detection finds collisions in factoring and discrete log algorithms.</td></tr><tr><td>Interviewers</td><td>A near-universal question; the cycle-start follow-up checks depth of understanding.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Floyd vs visited set</td><td>Floyd: O(1) space, slightly trickier. Set: O(n) space, easier to explain.</td></tr><tr><td>Fast/slow vs counting length first</td><td>Counting the length then walking length/2 is two passes; fast/slow does it in one pass.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>while fast and fast.next: slow = slow.next; fast = fast.next.next</li><li>if slow is fast: return True</li><li>A visited set of nodes works but costs O(n) memory: seen = set(); if node in seen: return True.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c9_3.py">def has_cycle(head):
+    slow = fast = head
+    while fast and fast.next:
+        slow = slow.next             # 1 step
+        fast = fast.next.next        # 2 steps
+        if slow is fast:             # met inside the cycle
+            return True
+    return False</code></pre>
+      <details class="box"><summary>Helper code used in these examples (ListNode, TreeNode and builders)</summary><div class="d-body">
+<pre><code class="lang-py" data-embed="solutions/preludes/ll.py">class ListNode:
+    def __init__(self, val=0, next=None):
+        self.val = val
+        self.next = next
+    def __repr__(self):
+        return "Node(%r)" % (self.val,)
+
+def build(values, cycle_pos=-1):
+    """Build a linked list from a Python list (cycle_pos links the tail back to that index)."""
+    dummy = ListNode()
+    cur, nodes = dummy, []
+    for v in values:
+        cur.next = ListNode(v)
+        cur = cur.next
+        nodes.append(cur)
+    if 0 &lt;= cycle_pos &lt; len(nodes):
+        cur.next = nodes[cycle_pos]
+    return dummy.next
+
+def to_list(head):
+    out = []
+    while head:
+        out.append(head.val)
+        head = head.next
+    return out</code></pre>
+</div></details>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - remember visited nodes</h4>
+      <p>A set of visited nodes finds a repeat. O(n) time but O(n) memory.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c9_3_stage1.py">def has_cycle(head):
+    seen = set()
+    while head:
+        if id(head) in seen:
+            return True
+        seen.add(id(head))
+        head = head.next
+    return False</code></pre>
+      <p class="muted small">Check: <code>has_cycle(build([3, 2, 0, -4], 1))</code> returns <code>True</code></p>
+      <h4>Stage 2 - slow and fast pointers</h4>
+      <p>Two runners must meet on a loop. O(n) time, O(1) space.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c9_3_stage2.py">def has_cycle(head):
+    slow = fast = head
+    while fast and fast.next:
+        slow, fast = slow.next, fast.next.next
+        if slow is fast:
+            return True
+    return False</code></pre>
+      <p class="muted small">Check: <code>has_cycle(build([3, 2, 0, -4], 1))</code> returns <code>True</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>has_cycle(build([3, 2, 0, -4], 1))</code>, returns <code>True</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>slow (after)</th><th>fast (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>slow = fast = head</code></td><td><strong><code>Node(3)</code></strong></td><td><strong><code>Node(3)</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>while fast and fast.next:</code></td><td><code>Node(3)</code></td><td><code>Node(3)</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>slow = slow.next             # 1 step</code></td><td><strong><code>Node(2)</code></strong></td><td><code>Node(3)</code></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>fast = fast.next.next        # 2 steps</code></td><td><code>Node(2)</code></td><td><strong><code>Node(0)</code></strong></td></tr>
+<tr><td class="num">5</td><td class="num">6</td><td><code>if slow is fast:             # met inside the cycle</code></td><td><code>Node(2)</code></td><td><code>Node(0)</code></td></tr>
+<tr><td class="num">6</td><td class="num">3</td><td><code>while fast and fast.next:</code></td><td><code>Node(2)</code></td><td><code>Node(0)</code></td></tr>
+<tr><td class="num">7</td><td class="num">4</td><td><code>slow = slow.next             # 1 step</code></td><td><strong><code>Node(0)</code></strong></td><td><code>Node(0)</code></td></tr>
+<tr><td class="num">8</td><td class="num">5</td><td><code>fast = fast.next.next        # 2 steps</code></td><td><code>Node(0)</code></td><td><strong><code>Node(2)</code></strong></td></tr>
+<tr><td class="num">9</td><td class="num">6</td><td><code>if slow is fast:             # met inside the cycle</code></td><td><code>Node(0)</code></td><td><code>Node(2)</code></td></tr>
+<tr><td class="num">10</td><td class="num">3</td><td><code>while fast and fast.next:</code></td><td><code>Node(0)</code></td><td><code>Node(2)</code></td></tr>
+<tr><td class="num">11</td><td class="num">4</td><td><code>slow = slow.next             # 1 step</code></td><td><strong><code>Node(-4)</code></strong></td><td><code>Node(2)</code></td></tr>
+<tr><td class="num">12</td><td class="num">5</td><td><code>fast = fast.next.next        # 2 steps</code></td><td><code>Node(-4)</code></td><td><strong><code>Node(-4)</code></strong></td></tr>
+<tr><td class="num">13</td><td class="num">6</td><td><code>if slow is fast:             # met inside the cycle</code></td><td><code>Node(-4)</code></td><td><code>Node(-4)</code></td></tr>
+<tr><td class="num">14</td><td class="num">7</td><td><code>return True</code></td><td><code>Node(-4)</code></td><td><code>Node(-4)</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>O(n) time (they meet within about n steps), O(1) space (a visited set would be O(n)).</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Checking only <code>fast.next</code> and crashing when fast is None.</li><li>Using == on node values: two different nodes may have equal values; use <code>is</code>.</li><li>Assuming the meeting point is the cycle start.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"Detect loop", "middle", "k-th from the end" -&gt; fast/slow or gap pointers.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m09-problems.html#prob-middle_node">Middle of a Linked List</a> <span class="tag">LC 876</span></td><td><span class="tag ok">Easy</span></td><td>Slow and fast pointers</td></tr><tr><td><a href="m09-problems.html#prob-merge_two_lists">Merge Two Sorted Linked Lists</a> <span class="tag">LC 21</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Linked list, dummy node</td></tr><tr><td><a href="m09-problems.html#prob-has_cycle">Detect a Cycle (Floyd)</a> <span class="tag">LC 141</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Floyd's tortoise and hare</td></tr><tr><td><a href="m09-problems.html#prob-remove_nth_from_end">Remove N-th Node From End</a> <span class="tag">LC 19</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Two pointers on a linked list</td></tr><tr><td><a href="m09-problems.html#prob-reorder_list">Reorder List</a> <span class="tag">LC 143</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Linked list: middle + reverse + merge</td></tr><tr><td><a href="m09-problems.html#prob-sort_list">Sort List</a> <span class="tag">LC 148</span></td><td><span class="tag warn">Medium</span></td><td>Merge sort on linked lists</td></tr><tr><td><a href="m09-problems.html#prob-rotate_list">Rotate List</a> <span class="tag">LC 61</span></td><td><span class="tag warn">Medium</span></td><td>Linked list: make it a ring then cut</td></tr><tr><td><a href="m09-problems.html#prob-cycle_start">Find the Start of a Cycle</a> <span class="tag">LC 142</span></td><td><span class="tag bad">Hard</span></td><td>Floyd's algorithm phase 2</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why must fast and slow meet if a cycle exists?</summary><div class="answer"><p>Inside the loop fast gains exactly one node per step on slow, so the gap shrinks by one and must reach zero.</p></div></details>
+        <details class="recall"><summary>Why check fast and fast.next?</summary><div class="answer"><p>fast moves two nodes; if fast.next is None, fast.next.next would crash.</p></div></details>
+        <details class="recall"><summary>Why does restarting one pointer at the head find the cycle start?</summary><div class="answer"><p>The distance from the head to the cycle start equals the distance from the meeting point to the cycle start going around.</p></div></details>
+        <details class="recall"><summary>Why not just store visited nodes?</summary><div class="answer"><p>It works but uses O(n) memory; Floyd uses O(1).</p></div></details>
+        <details class="recall"><summary>Why use a gap of n for 'nth from the end'?</summary><div class="answer"><p>When the leading pointer reaches the end, the trailing pointer is exactly n nodes behind.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c9_3-q1" data-topic="Linked Lists" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In Floyd's algorithm the fast pointer moves...</p></div>
+        <ul class="q-options">
+          <li data-key="A">1 step</li>
+          <li data-key="B">2 steps</li>
+          <li data-key="C">3 steps</li>
+          <li data-key="D">random</li>
+        </ul>
+        <div class="q-explain"><p>Fast moves two nodes per iteration; slow moves one.</p></div>
+      </div>
+      <div class="quiz" data-qid="c9_3-q2" data-topic="Linked Lists" data-type="single" data-answer="B">
+        <div class="q-stem"><p>If the list has no cycle, the loop ends when...</p></div>
+        <ul class="q-options">
+          <li data-key="A">slow is None</li>
+          <li data-key="B">fast or fast.next is None</li>
+          <li data-key="C">slow is fast</li>
+          <li data-key="D">never</li>
+        </ul>
+        <div class="q-explain"><p>Fast reaches the end first.</p></div>
+      </div>
+    </section>
+
+    <h2 id="practice-problems">Practice problems for this module</h2>
+
+    <p>14 problems with hints, approach, dry run and tested solutions on the <a href="m09-problems.html">problem set for this module</a>.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m09-problems.html#prob-reverse_list">Reverse a Linked List</a> <span class="tag">LC 206</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Linked list pointers</td></tr><tr><td><a href="m09-problems.html#prob-middle_node">Middle of a Linked List</a> <span class="tag">LC 876</span></td><td><span class="tag ok">Easy</span></td><td>Slow and fast pointers</td></tr><tr><td><a href="m09-problems.html#prob-merge_two_lists">Merge Two Sorted Linked Lists</a> <span class="tag">LC 21</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Linked list, dummy node</td></tr><tr><td><a href="m09-problems.html#prob-delete_duplicates_list">Remove Duplicates from a Sorted List</a> <span class="tag">LC 83</span></td><td><span class="tag ok">Easy</span></td><td>Linked list pointers</td></tr><tr><td><a href="m09-problems.html#prob-has_cycle">Detect a Cycle (Floyd)</a> <span class="tag">LC 141</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Floyd's tortoise and hare</td></tr><tr><td><a href="m09-problems.html#prob-remove_nth_from_end">Remove N-th Node From End</a> <span class="tag">LC 19</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Two pointers on a linked list</td></tr><tr><td><a href="m09-problems.html#prob-is_palindrome_list">Palindrome Linked List</a> <span class="tag">LC 234</span></td><td><span class="tag warn">Medium</span></td><td>Slow/fast pointers + reversal</td></tr><tr><td><a href="m09-problems.html#prob-add_two_numbers">Add Two Numbers (Linked Lists)</a> <span class="tag">LC 2</span></td><td><span class="tag warn">Medium</span></td><td>Linked list with carry</td></tr><tr><td><a href="m09-problems.html#prob-reorder_list">Reorder List</a> <span class="tag">LC 143</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Linked list: middle + reverse + merge</td></tr><tr><td><a href="m09-problems.html#prob-swap_pairs">Swap Nodes in Pairs</a> <span class="tag">LC 24</span></td><td><span class="tag warn">Medium</span></td><td>Linked list pointers</td></tr><tr><td><a href="m09-problems.html#prob-sort_list">Sort List</a> <span class="tag">LC 148</span></td><td><span class="tag warn">Medium</span></td><td>Merge sort on linked lists</td></tr><tr><td><a href="m09-problems.html#prob-rotate_list">Rotate List</a> <span class="tag">LC 61</span></td><td><span class="tag warn">Medium</span></td><td>Linked list: make it a ring then cut</td></tr><tr><td><a href="m09-problems.html#prob-cycle_start">Find the Start of a Cycle</a> <span class="tag">LC 142</span></td><td><span class="tag bad">Hard</span></td><td>Floyd's algorithm phase 2</td></tr><tr><td><a href="m09-problems.html#prob-reverse_k_group">Reverse Nodes in k-Group</a> <span class="tag">LC 25</span></td><td><span class="tag bad">Hard</span></td><td>Linked list reversal in blocks</td></tr>
+</tbody>
+</table>
+</div>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Linked Lists</h2>
+      <p class="muted">54 questions: try to answer aloud in under a minute, then reveal. All questions from every module are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Linked Lists">
+<details class="recall iq" data-level="basic" data-topic="Linked Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Array vs linked list - when do you use which?</summary><div class="answer"><p>Array (Python list): fast random access O(1), cache friendly, slow insert/delete in the middle O(n). Linked list: O(1) insert/delete when you already hold the node, slow access O(n), extra memory for pointers.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Linked Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you delete a node from a singly linked list?</summary><div class="answer"><p>Find the node before it (prev) and set prev.next = prev.next.next. For the head, set head = head.next (or use a dummy node).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Linked Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is a dummy node and why use it?</summary><div class="answer"><p>A fake node placed before the head. It makes inserting/deleting at the head the same as anywhere else, and you return dummy.next.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Linked Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you find the length of a linked list?</summary><div class="answer"><p>Walk with a counter until the node is None. O(n).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Linked Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the difference between singly, doubly and circular linked lists?</summary><div class="answer"><p>Singly: one pointer (next). Doubly: next and prev. Circular: the last node points back to the first.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Linked Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why is inserting at the front O(1) for a linked list but O(n) for an array?</summary><div class="answer"><p>A linked list only changes two pointers; an array must shift every element to make room.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Linked Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Reverse a linked list iteratively.</summary><div class="answer"><pre><code class="lang-py">def reverse(head):
+    prev, cur = None, head
+    while cur:
+        nxt = cur.next
+        cur.next = prev
+        prev, cur = cur, nxt
+    return prev</code></pre></div></details>
+<details class="recall iq" data-level="basic" data-topic="Linked Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the time and space complexity?</summary><div class="answer"><p>O(n) time and O(1) space for the iterative version. Recursive version uses O(n) stack space.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Linked Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you check if a linked list is a palindrome in O(1) space?</summary><div class="answer"><p>Find the middle with slow/fast pointers, reverse the second half, compare both halves node by node (optionally restore the list).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Linked Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What goes wrong if you flip the pointer before saving next?</summary><div class="answer"><p>You lose the reference to the rest of the list and cannot continue.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Linked Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you reverse only a part of the list (positions m to n)?</summary><div class="answer"><p>Walk to the node before position m, reverse n - m + 1 nodes with the same prev/cur logic, and reconnect the two ends.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Linked Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How can you reverse a linked list recursively?</summary><div class="answer"><p>Reverse the rest (head.next), then set head.next.next = head and head.next = None, returning the new head.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Linked Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you detect a cycle in a linked list?</summary><div class="answer"><p>Floyd&#x27;s tortoise and hare: slow moves 1, fast moves 2. If they meet there is a cycle; if fast hits None there is none. O(n) time, O(1) space.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Linked Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you find the middle of a linked list?</summary><div class="answer"><p>Slow/fast pointers. When fast reaches the end, slow is at the middle (second middle for even length).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Linked Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you find where the cycle begins?</summary><div class="answer"><p>After the pointers meet, reset one pointer to the head and move both one step at a time; the meeting node is the start of the cycle.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Linked Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you remove the N-th node from the end?</summary><div class="answer"><p>Use a dummy node. Move fast n steps ahead, then move slow and fast together until fast.next is None. Then slow.next = slow.next.next.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Linked Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you merge two sorted linked lists?</summary><div class="answer"><p>Use a dummy node and a tail pointer. Repeatedly attach the smaller of the two current nodes, then attach the remaining list.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Linked Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why does fast moving by 2 guarantee meeting?</summary><div class="answer"><p>Relative speed is 1 node per step inside the loop, so the gap decreases by one each iteration and must reach zero rather than jump over it.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Insert a value in a sorted linked list.</summary><div class="answer"><pre><code class="lang-py">def insert_sorted(head, val):
+    dummy = ListNode(0, head)
+    cur = dummy
+    while cur.next and cur.next.val &lt; val:
+        cur = cur.next
+    cur.next = ListNode(val, cur.next)
+    return dummy.next</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What happens if you set cur.next = None while traversing without saving next?</summary><div class="answer"><p>The rest of the list becomes unreachable (lost) because the only reference to it was cur.next.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> Why do operating systems use linked lists for free memory blocks?</summary><div class="answer"><p>Blocks are allocated and freed in arbitrary places; linking them allows O(1) insertion/removal without moving memory.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use a linked list at all?</summary><div class="answer"><p>Insertion and deletion at a known node change only pointers, with no shifting. It also teaches pointer reasoning.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use it for lookup by position?</summary><div class="answer"><p>Reaching index i needs i steps: O(n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use a dummy node?</summary><div class="answer"><p>It removes the special case for the head, so insertion and deletion use the same code everywhere.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why save node.next before changing it?</summary><div class="answer"><p>The only reference to the rest of the list is node.next; overwriting it first loses the rest.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why compare nodes with &#x27;is&#x27;?</summary><div class="answer"><p>Two different nodes can hold equal values. &#x27;is&#x27; checks they are the same node object.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why doesn&#x27;t Python include a built-in linked list?</summary><div class="answer"><p>list and deque cover almost every need with better performance and memory layout.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Find the length of a linked list.</summary><div class="answer"><pre><code class="lang-py">def length(head):
+    n = 0
+    while head:
+        n += 1
+        head = head.next
+    return n</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What happens if the last node&#x27;s next points to the head?</summary><div class="answer"><p>The list becomes circular; a naive while node: loop never ends.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Reverse the first k nodes of a linked list.</summary><div class="answer"><pre><code class="lang-py">def reverse_first_k(head, k):
+    prev, cur = None, head
+    for _ in range(k):
+        nxt = cur.next
+        cur.next = prev
+        prev, cur = cur, nxt
+    head.next = cur
+    return prev</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> After reversal why is head.next sometimes still pointing to the old second node?</summary><div class="answer"><p>Because you forgot to set it; the iterative template sets cur.next = prev, so the old head gets prev = None. If you reuse the old head variable without relinking you can create a cycle.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How would you add two numbers stored as linked lists in most-significant-digit order?</summary><div class="answer"><p>Reverse both, add with carry as in the reversed-digit problem, then reverse the result (or use stacks).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why three pointers for reversal?</summary><div class="answer"><p>prev holds the reversed part, cur the node being flipped, nxt remembers the rest so it is not lost.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why return prev?</summary><div class="answer"><p>When cur becomes None, prev is the last real node, the new head.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is iterative reversal O(1) space but recursive O(n)?</summary><div class="answer"><p>Recursion keeps one stack frame per node.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not copy values into a Python list and rebuild?</summary><div class="answer"><p>It works but uses O(n) extra memory and defeats the point of in-place pointer reasoning.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does the old head end up with next = None?</summary><div class="answer"><p>prev starts as None, and the first flip sets head.next = prev.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is recursion elegant for reversal but risky in Python?</summary><div class="answer"><p>Each node adds a frame, so a list of 10^5 nodes exceeds the recursion limit.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Reverse a linked list recursively.</summary><div class="answer"><pre><code class="lang-py">def rev(head):
+    if not head or not head.next:
+        return head
+    new_head = rev(head.next)
+    head.next.next = head
+    head.next = None
+    return new_head</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Find the length of the cycle.</summary><div class="answer"><pre><code class="lang-py">def cycle_length(head):
+    slow = fast = head
+    while fast and fast.next:
+        slow, fast = slow.next, fast.next.next
+        if slow is fast:
+            n, cur = 1, slow.next
+            while cur is not slow:
+                n += 1
+                cur = cur.next
+            return n
+    return 0</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> In a list of 5 nodes with the tail pointing to node 1, what do slow and fast do?</summary><div class="answer"><p>They eventually meet inside the cycle, since a cycle exists; the loop terminates when slow is fast.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> Where else does Floyd&#x27;s algorithm show up?</summary><div class="answer"><p>Detecting repeated states in iterative functions (like &#x27;happy numbers&#x27;), finding duplicates in arrays treated as functional graphs and Pollard&#x27;s rho factorisation.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why must fast and slow meet if a cycle exists?</summary><div class="answer"><p>Inside the loop fast gains exactly one node per step on slow, so the gap shrinks by one and must reach zero.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why check fast and fast.next?</summary><div class="answer"><p>fast moves two nodes; if fast.next is None, fast.next.next would crash.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does restarting one pointer at the head find the cycle start?</summary><div class="answer"><p>The distance from the head to the cycle start equals the distance from the meeting point to the cycle start going around.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not just store visited nodes?</summary><div class="answer"><p>It works but uses O(n) memory; Floyd uses O(1).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use a gap of n for &#x27;nth from the end&#x27;?</summary><div class="answer"><p>When the leading pointer reaches the end, the trailing pointer is exactly n nodes behind.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not move fast by 3?</summary><div class="answer"><p>It can still detect cycles but the correctness argument is less clean and may skip over slow in some cycle lengths.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Find the middle of a linked list.</summary><div class="answer"><pre><code class="lang-py">def middle(head):
+    slow = fast = head
+    while fast and fast.next:
+        slow, fast = slow.next, fast.next.next
+    return slow</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Linked Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> Where do you meet cycle detection outside linked lists?</summary><div class="answer"><p>Detecting infinite loops in state machines, repeated states in iterated functions and deadlock-like waits.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Linked Lists"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> How do you implement an LRU cache?</summary><div class="answer"><p>A dict from key to node plus a doubly linked list ordered by recency; move a node to the front on access, remove from the tail on eviction. All operations O(1).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Linked Lists"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Reverse nodes in groups of k.</summary><div class="answer"><p>Reverse each group of k with the same loop and reconnect the tail of the previous group to the new head; leave the final group as is if shorter than k.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Linked Lists"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Reverse a sublist between positions m and n.</summary><div class="answer"><p>Walk to the node before m, reverse n - m + 1 nodes with the same loop, then reconnect both ends.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Linked Lists"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Why not move fast by 3?</summary><div class="answer"><p>It can still work in some cases, but the gap changes by 2 per step; if the cycle length shares a factor with the gap, fast might skip over slow for several laps. Using 2 guarantees correctness and the simple proof.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="m10-problems.html"><span class="dir">Previous</span><span>Problems 10: Stacks & Queues</span></a>
+      <a class="next" href="m09-problems.html"><span class="dir">Next</span><span>Problems 9: Linked Lists</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

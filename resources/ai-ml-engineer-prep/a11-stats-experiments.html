@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="A11">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Statistics and experimentation for ML | AI/ML Prep</title>
+<meta name="description" content="Sampling and the central limit theorem, confidence intervals, hypothesis tests, p-values and their misuse, power and sample size, multiple comparisons, Bayesian A/B testing, bootstrap and causal thinking, all computed in code.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part A11</p>
+      <h1>Statistics and experimentation for ML</h1>
+      <p class="lede">Models are judged with numbers that are noisy. Statistics tells you how much to trust a difference. This part covers the tools interviewers ask about most: intervals, tests, power, multiple comparisons and A/B experiments, each verified by simulation.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="sampling" data-track>
+      <h2>Sampling and uncertainty</h2>
+<h3>Population versus sample</h3>
+<p>We observe a <strong>sample</strong> and want to learn about a <strong>population</strong>. Any statistic computed from the sample (mean, accuracy) varies from sample to sample. Its spread is the <strong>standard error</strong>: for a mean it is <code>s / sqrt(n)</code>, so quadrupling the data halves the uncertainty.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a11-01.py">import random, math
+random.seed(0)
+population = [random.gauss(100, 15) for _ in range(100000)]
+for n in (10, 100, 1000):
+    means = []
+    for _ in range(2000):
+        sample = random.sample(population, n)
+        means.append(sum(sample) / n)
+    m = sum(means) / len(means)
+    se = math.sqrt(sum((x - m) ** 2 for x in means) / len(means))
+    print("n=%4d  spread of sample means %.2f   theory 15/sqrt(n) = %.2f" % (n, se, 15 / math.sqrt(n)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>n=  10  spread of sample means 4.74   theory 15/sqrt(n) = 4.74
+n= 100  spread of sample means 1.50   theory 15/sqrt(n) = 1.50
+n=1000  spread of sample means 0.47   theory 15/sqrt(n) = 0.47</code></pre>
+<h3>Central limit theorem (CLT)</h3>
+<p>The sample mean is approximately <strong>normal</strong> for large <code>n</code> regardless of the data's shape (given finite variance), with mean <code>mu</code> and standard deviation <code>sigma / sqrt(n)</code>. This justifies most standard intervals and tests. It is slow for heavy-tailed data (income, revenue, latency) where outliers dominate: use medians, trimmed means, log transforms or the bootstrap.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a11-q01" data-topic="Statistics and experiments" data-type="numeric" data-answer="2" data-tol="0.001">
+        <div class="q-stem"><p>The standard deviation of a population is 20. What is the standard error of the mean for n = 100?</p></div>
+        <div class="q-explain"><p>20 / sqrt(100) = 2.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a11-q02" data-topic="Statistics and experiments" data-type="single" data-answer="B">
+        <div class="q-stem"><p>The central limit theorem says that:</p></div>
+        <ul class="q-options">
+          <li data-key="A">All data is normal <span class="q-why">No.</span></li>
+          <li data-key="B">Sample means are approximately normal for large n, whatever the data's shape (finite variance) <span class="q-why">Correct.</span></li>
+          <li data-key="C">Variance equals the mean <span class="q-why">No.</span></li>
+          <li data-key="D">p-values are uniform <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>That is why many tests work even for non-normal data.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Standard error of a mean?</summary><div class="answer"><p>sigma / sqrt(n); four times the data halves it.</p></div></details>
+      </div>
+    </section>
+
+    <section id="ci" data-track>
+      <h2>Confidence intervals</h2>
+<p>A <strong>95 percent confidence interval</strong> is built by a procedure that, over many repetitions, captures the true value 95 percent of the time. It does <strong>not</strong> mean "95 percent probability the true value is in this particular interval". For a mean: <code>mean +/- 1.96 x s / sqrt(n)</code>. For a proportion <code>p_hat</code> (accuracy, click rate): <code>p_hat +/- 1.96 sqrt(p_hat (1 - p_hat) / n)</code>, or the better-behaved <strong>Wilson interval</strong> for small samples or extreme <code>p</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a11-02.py">import random, math
+random.seed(1)
+true_p, n, trials, covered = 0.7, 200, 2000, 0
+for _ in range(trials):
+    x = sum(random.random() &lt; true_p for _ in range(n))
+    p = x / n
+    se = math.sqrt(p * (1 - p) / n)
+    if p - 1.96 * se &lt;= true_p &lt;= p + 1.96 * se:
+        covered += 1
+print("coverage of 95%% intervals: %.1f%%" % (100 * covered / trials))
+def wilson(x, n, z=1.96):
+    p = x / n; d = 1 + z * z / n
+    c = (p + z * z / (2 * n)) / d
+    h = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d
+    return round(c - h, 3), round(c + h, 3)
+print("accuracy 95/100 -&gt; Wilson interval", wilson(95, 100))
+print("accuracy 950/1000 -&gt; Wilson interval", wilson(950, 1000))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>coverage of 95% intervals: 94.8%
+accuracy 95/100 -&gt; Wilson interval (0.888, 0.978)
+accuracy 950/1000 -&gt; Wilson interval (0.935, 0.962)</code></pre>
+<p>The same 95 percent accuracy is far less certain with 100 test examples than with 1,000. <strong>Always report an interval with a metric</strong>, and be wary of leaderboard differences smaller than the interval.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a11-q03" data-topic="Statistics and experiments" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does a 95 percent confidence interval mean?</p></div>
+        <ul class="q-options">
+          <li data-key="A">95 percent of the data lies in it <span class="q-why">No.</span></li>
+          <li data-key="B">The procedure captures the true value in 95 percent of repeated experiments <span class="q-why">Correct.</span></li>
+          <li data-key="C">There is a 95 percent chance the truth is in this interval <span class="q-why">A common misreading.</span></li>
+          <li data-key="D">The effect is large <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It is a statement about the long-run behaviour of the method.</p></div>
+      </div>
+    </section>
+
+    <section id="tests" data-track>
+      <h2>Hypothesis testing</h2>
+<h3>The logic</h3>
+<ol><li>State a <strong>null hypothesis</strong> <code>H0</code> (no difference, no effect) and an alternative <code>H1</code>.</li><li>Choose a significance level <code>alpha</code> (commonly 0.05).</li><li>Compute a <strong>test statistic</strong> from the data.</li><li>The <strong>p-value</strong> is the probability, if <code>H0</code> were true, of seeing data at least as extreme as observed. If <code>p &lt; alpha</code>, reject <code>H0</code>.</li></ol>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Error</th><th>Meaning</th><th>Probability</th></tr></thead>
+<tbody>
+<tr><td>Type I (false positive)</td><td>Reject a true <code>H0</code></td><td><code>alpha</code></td></tr><tr><td>Type II (false negative)</td><td>Fail to reject a false <code>H0</code></td><td><code>beta</code></td></tr><tr><td><strong>Power</strong></td><td>Detect a real effect</td><td><code>1 - beta</code> (aim for 80 percent or more)</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Common tests</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Question</th><th>Test</th></tr></thead>
+<tbody>
+<tr><td>Mean of one group versus a value</td><td>One-sample t-test</td></tr><tr><td>Two independent group means</td><td>Welch's t-test (does not assume equal variances)</td></tr><tr><td>Same units before and after</td><td>Paired t-test</td></tr><tr><td>Two proportions (A/B conversion)</td><td>Two-proportion z-test</td></tr><tr><td>Categories versus expected counts</td><td>Chi-square test</td></tr><tr><td>Non-normal or ordinal data</td><td>Mann-Whitney U (independent), Wilcoxon signed-rank (paired)</td></tr><tr><td>Two classifiers on the same test set</td><td><strong>McNemar's test</strong> or exact sign test on disagreements (<a href="04-evaluation-and-statistics.html">04</a>)</td></tr><tr><td>Several groups</td><td>ANOVA (then post-hoc tests)</td></tr><tr><td>Any statistic, any shape</td><td><strong>Permutation test</strong> or bootstrap</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/a11-03.py">import random, math
+random.seed(2)
+a = [random.gauss(100, 15) for _ in range(40)]
+b = [random.gauss(108, 15) for _ in range(40)]
+def welch_t(x, y):
+    mx, my = sum(x) / len(x), sum(y) / len(y)
+    vx = sum((v - mx) ** 2 for v in x) / (len(x) - 1)
+    vy = sum((v - my) ** 2 for v in y) / (len(y) - 1)
+    return (my - mx) / math.sqrt(vx / len(x) + vy / len(y))
+t = welch_t(a, b)
+# permutation test: shuffle group labels many times
+obs = abs(sum(b) / len(b) - sum(a) / len(a))
+pool, count = a + b, 0
+for _ in range(5000):
+    random.shuffle(pool)
+    if abs(sum(pool[40:]) / 40 - sum(pool[:40]) / 40) &gt;= obs:
+        count += 1
+print("Welch t = %.2f, permutation p-value = %.4f" % (t, count / 5000))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>Welch t = 2.20, permutation p-value = 0.0312</code></pre>
+<h3>What a p-value is not</h3>
+<ul><li>Not the probability that <code>H0</code> is true, nor that the result will replicate.</li><li><strong>Not the size or importance of the effect</strong>: with huge samples trivial differences are "significant"; report an <strong>effect size</strong> and its interval.</li><li>A non-significant result is not proof of no effect (the test may be <strong>underpowered</strong>).</li><li>A p-value just below 0.05 from a single run is weak evidence.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a11-q04" data-topic="Statistics and experiments" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is a p-value?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The probability the null is true <span class="q-why">No.</span></li>
+          <li data-key="B">The probability of data at least this extreme if the null hypothesis were true <span class="q-why">Correct.</span></li>
+          <li data-key="C">The effect size <span class="q-why">No.</span></li>
+          <li data-key="D">The power <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It is computed assuming H0.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Type I and II errors and power?</summary><div class="answer"><p>False positive (alpha), false negative (beta), and power = 1 - beta.</p></div></details>
+      </div>
+    </section>
+
+    <section id="power" data-track>
+      <h2>Power and sample size</h2>
+<p>Before an experiment decide the <strong>minimum detectable effect (MDE)</strong> you care about. The sample needed per group for two proportions with <code>alpha = 0.05</code> (two-sided) and power 80 percent is approximately <code>n = 2 (1.96 + 0.84)^2 p (1 - p) / MDE^2</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a11-04.py">def n_per_group(p, mde, z_alpha=1.96, z_beta=0.84):
+    return int(2 * (z_alpha + z_beta) ** 2 * p * (1 - p) / mde ** 2) + 1
+for mde in (0.02, 0.01, 0.005):
+    print("baseline 10%%, detect %.1f point lift: %d users per group" % (mde * 100, n_per_group(0.10, mde)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>baseline 10%, detect 2.0 point lift: 3528 users per group
+baseline 10%, detect 1.0 point lift: 14112 users per group
+baseline 10%, detect 0.5 point lift: 56448 users per group</code></pre>
+<p>Halving the detectable effect <strong>quadruples</strong> the sample. If you cannot get enough data, accept a larger MDE, use a more sensitive metric, reduce variance (<strong>CUPED</strong>: adjust by pre-experiment behaviour), or run longer.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a11-q05" data-topic="Statistics and experiments" data-type="numeric" data-answer="4" data-tol="0">
+        <div class="q-stem"><p>To halve the minimum detectable effect, how many times larger must the sample become?</p></div>
+        <div class="q-explain"><p>n is proportional to 1 / MDE^2, so halving the MDE quadruples n.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you size an A/B test?</summary><div class="answer"><p>Choose baseline rate, minimum detectable effect, alpha and power, then compute n (about 2 (1.96 + 0.84)^2 p(1 - p) / MDE^2 per group).</p></div></details>
+      </div>
+    </section>
+
+    <section id="multiple" data-track>
+      <h2>Multiple comparisons</h2>
+<p>Test 20 independent true-null hypotheses at <code>alpha = 0.05</code> and you expect one false positive; the chance of at least one is <code>1 - 0.95^20 = 64 percent</code>. This is <strong>p-hacking</strong> when it happens by accident (many metrics, segments, model variants). Corrections: <strong>Bonferroni</strong> (use <code>alpha / m</code>, conservative), <strong>Holm</strong> (step-down, uniformly better), and <strong>Benjamini-Hochberg</strong> (controls the false discovery rate, preferred for many tests).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a11-05.py">import random
+random.seed(3)
+m, alpha = 100, 0.05
+pvals = sorted(random.random() for _ in range(m))             # 100 tests where the null is true everywhere
+print("raw 'significant' results:", sum(p &lt; alpha for p in pvals))
+print("Bonferroni significant   :", sum(p &lt; alpha / m for p in pvals))
+bh = max([i for i, p in enumerate(pvals, 1) if p &lt;= alpha * i / m], default=0)
+print("Benjamini-Hochberg       :", bh)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>raw 'significant' results: 6
+Bonferroni significant   : 0
+Benjamini-Hochberg       : 0</code></pre>
+<p>With every null true, about 5 raw tests look significant by chance, while corrected procedures report none. In model comparison the same applies when you try many hyperparameter settings on one validation set: the winner is partly luck (<strong>winner's curse</strong>); confirm on untouched data.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a11-q06" data-topic="Statistics and experiments" data-type="numeric" data-answer="40" data-tol="1">
+        <div class="q-stem"><p>You test 10 independent true nulls at alpha = 0.05. What is the probability of at least one false positive? (percent, nearest whole number)</p></div>
+        <div class="q-explain"><p>1 - 0.95^10 = 0.401, about 40 percent.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a11-q07" data-topic="Statistics and experiments" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which correction controls the false discovery rate?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Bonferroni <span class="q-why">Controls family-wise error.</span></li>
+          <li data-key="B">Benjamini-Hochberg <span class="q-why">Correct.</span></li>
+          <li data-key="C">None <span class="q-why">No.</span></li>
+          <li data-key="D">Tukey <span class="q-why">Different purpose.</span></li>
+        </ul>
+        <div class="q-explain"><p>BH is less conservative when many tests are run.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why correct for multiple comparisons?</summary><div class="answer"><p>With many tests some are significant by chance; corrections control the family-wise error or false discovery rate.</p></div></details>
+      </div>
+    </section>
+
+    <section id="bootstrap" data-track>
+      <h2>Bootstrap</h2>
+<p>Resample your data <strong>with replacement</strong> many times, recompute the statistic each time, and use the spread of those values as its uncertainty. No distributional formulas needed: works for medians, AUC, F1 and ratios.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a11-06.py">import random
+random.seed(4)
+latency = [random.lognormvariate(3.0, 0.8) for _ in range(300)]       # skewed data
+def p95(x): return sorted(x)[int(0.95 * len(x))]
+boots = sorted(p95([random.choice(latency) for _ in latency]) for _ in range(2000))
+print("p95 latency %.1f ms, 95%% bootstrap interval (%.1f, %.1f)" % (p95(latency), boots[50], boots[1949]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>p95 latency 87.7 ms, 95% bootstrap interval (74.6, 116.6)</code></pre>
+<p>Cautions: needs independent observations (resample whole <strong>users</strong>, not rows, when rows cluster), can fail for extreme statistics (the maximum) and small samples.</p>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does the bootstrap do?</summary><div class="answer"><p>Resamples the data with replacement to estimate the sampling distribution of any statistic.</p></div></details>
+      </div>
+    </section>
+
+    <section id="bayes" data-track>
+      <h2>Bayesian view and A/B decisions</h2>
+<p>A Bayesian A/B test models each conversion rate with a <strong>Beta</strong> distribution, updates it with the data (<code>Beta(1 + successes, 1 + failures)</code>), and reports <strong>the probability that B beats A</strong> and the <strong>expected loss</strong> from choosing wrongly. It answers the question people actually ask, and handles peeking more gracefully, though the prior and decision threshold still matter.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a11-07.py">import random
+random.seed(5)
+a_conv, a_n, b_conv, b_n = 480, 10000, 540, 10000
+wins, diffs = 0, []
+for _ in range(20000):
+    pa = random.betavariate(1 + a_conv, 1 + a_n - a_conv)
+    pb = random.betavariate(1 + b_conv, 1 + b_n - b_conv)
+    wins += pb &gt; pa
+    diffs.append(pb - pa)
+diffs.sort()
+print("P(B beats A) = %.3f, 95%% credible interval for the lift (%.4f, %.4f)" % (wins / 20000, diffs[500], diffs[19499]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>P(B beats A) = 0.973, 95% credible interval for the lift (-0.0001, 0.0121)</code></pre>
+<h3>Pitfalls in online experiments</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Pitfall</th><th>Remedy</th></tr></thead>
+<tbody>
+<tr><td>Peeking and stopping early</td><td>Fix sample size in advance, or use sequential or Bayesian methods</td></tr><tr><td>Sample ratio mismatch (SRM): traffic split differs from planned</td><td>Check with a chi-square test; investigate bugs before trusting results</td></tr><tr><td>Novelty and primacy effects</td><td>Run long enough; look at effect over time</td></tr><tr><td>Network effects and interference (marketplaces, social)</td><td>Cluster or switchback randomisation</td></tr><tr><td>Many metrics</td><td>One primary metric, guardrails, corrections for the rest</td></tr><tr><td>Simpson's paradox</td><td>A trend in each segment reverses in the aggregate; analyse by segment, and know the causal structure</td></tr><tr><td>Survivorship and selection bias</td><td>Compare randomised groups, not self-selected ones</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a11-q08" data-topic="Statistics and experiments" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Sample ratio mismatch in an A/B test indicates:</p></div>
+        <ul class="q-options">
+          <li data-key="A">A great result <span class="q-why">No.</span></li>
+          <li data-key="B">A problem with assignment or logging that invalidates the analysis until fixed <span class="q-why">Correct.</span></li>
+          <li data-key="C">High power <span class="q-why">No.</span></li>
+          <li data-key="D">A Bayesian prior <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>If the traffic split differs from plan, the groups may not be comparable.</p></div>
+      </div>
+    </section>
+
+    <section id="causal" data-track>
+      <h2>Correlation, causation and causal thinking</h2>
+<p><strong>Correlation is not causation.</strong> Confounders cause both variables (ice cream sales and drownings both rise in summer). The gold standard is a <strong>randomised controlled experiment</strong>, which balances confounders on average. When you cannot randomise: <strong>natural experiments</strong>, <strong>difference-in-differences</strong>, <strong>instrumental variables</strong>, <strong>regression discontinuity</strong>, <strong>matching or propensity scores</strong>, and causal graphs (DAGs) to decide what to adjust for (adjusting for a <strong>collider</strong> introduces bias). For ML: a model trained on observational data predicts, but does not tell you what happens if you <strong>intervene</strong>; recommender and policy decisions are interventions.</p>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Report effect sizes with intervals, size experiments by power, decide metrics in advance, correct for multiple looks, and remember a significant difference is a statement about noise, not about whether the effect matters.</p></div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Statistics and experiments</h2>
+      <p class="muted">13 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Statistics and experiments">
+<details class="recall iq" data-level="basic" data-topic="Statistics and experiments"><summary><span class="tag ok">Basic</span> What is a p-value?</summary><div class="answer"><p>The probability of data at least as extreme as observed if the null hypothesis were true; it is not the probability that the null is true.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Statistics and experiments"><summary><span class="tag ok">Basic</span> What is a confidence interval?</summary><div class="answer"><p>A range produced by a procedure that covers the true value in a stated fraction (such as 95 percent) of repeated experiments.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Statistics and experiments"><summary><span class="tag ok">Basic</span> Type I and Type II errors?</summary><div class="answer"><p>Type I is a false positive (probability alpha); Type II is a false negative (beta); power is 1 minus beta.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Statistics and experiments"><summary><span class="tag warn">Medium</span> What does the central limit theorem say?</summary><div class="answer"><p>Sample means are approximately normal for large n regardless of the data&#x27;s distribution, with standard error sigma over sqrt(n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Statistics and experiments"><summary><span class="tag warn">Medium</span> How do you size an A/B test?</summary><div class="answer"><p>Pick the baseline rate, minimum detectable effect, alpha and power, then n per group is about 2 (1.96 + 0.84)^2 p (1 - p) / MDE^2 for proportions.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Statistics and experiments"><summary><span class="tag warn">Medium</span> Why is peeking at an A/B test a problem?</summary><div class="answer"><p>Repeated looks inflate the false positive rate; fix the sample size in advance or use sequential or Bayesian methods.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Statistics and experiments"><summary><span class="tag warn">Medium</span> What are multiple comparisons and how do you correct them?</summary><div class="answer"><p>Many tests produce false positives by chance. Use Bonferroni or Holm to control family-wise error or Benjamini-Hochberg to control false discovery rate.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Statistics and experiments"><summary><span class="tag warn">Medium</span> When use the bootstrap?</summary><div class="answer"><p>To estimate uncertainty of any statistic (median, AUC, F1) without distributional assumptions, resampling independent units with replacement.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Statistics and experiments"><summary><span class="tag bad">Advanced</span> Explain Simpson&#x27;s paradox.</summary><div class="answer"><p>A trend appearing in every subgroup reverses in the aggregate because group sizes differ; analyse by segment and understand the causal structure.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Statistics and experiments"><summary><span class="tag bad">Advanced</span> Frequentist versus Bayesian A/B testing?</summary><div class="answer"><p>Frequentist tests give p-values and intervals about long-run error rates; Bayesian tests give the probability that B beats A and expected loss from a prior and the data, which is easier to interpret.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Statistics and experiments"><summary><span class="tag bad">Advanced</span> How do you compare two classifiers on the same test set?</summary><div class="answer"><p>Use a paired test on disagreements (McNemar or exact sign test) or a paired bootstrap, not just the accuracy difference.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Statistics and experiments"><summary><span class="tag bad">Advanced</span> What is CUPED?</summary><div class="answer"><p>A variance reduction method that adjusts the metric using pre-experiment covariates, shrinking confidence intervals and the sample needed.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Statistics and experiments"><summary><span class="tag bad">Advanced</span> What is a confounder and how do you handle it?</summary><div class="answer"><p>A variable affecting both treatment and outcome. Randomise, or adjust using matching, regression, propensity scores, instrumental variables or causal graphs.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="a10-reinforcement-learning.html"><span class="dir">Previous</span><span>A10 Reinforcement learning from scratch</span></a>
+      <a class="next" href="a12-llm-apps.html"><span class="dir">Next</span><span>A12 Advanced LLM application engineering: RAG, agents, evaluation and cost</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

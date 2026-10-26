@@ -1,0 +1,743 @@
+{
+ "_note": "Interview question bank. Edit here, then run: python3 tools/build_interview.py",
+ "questions": [
+  {
+   "topic": "Diffusion basics",
+   "level": "basic",
+   "q": "Explain a diffusion model in a few sentences.",
+   "a": "It is a generative model built from two processes. The forward process gradually adds Gaussian noise to a real image over T steps until nothing but noise is left. A neural network is trained to undo that corruption. To generate, you start from pure noise and apply the network repeatedly, removing a little noise each step, until an image appears."
+  },
+  {
+   "topic": "Diffusion basics",
+   "level": "basic",
+   "q": "What is the difference between the forward and the reverse process?",
+   "a": "The forward process is a fixed recipe with no learned parameters: it mixes in noise according to the schedule. The reverse process is what the network learns: given a noisy image and the timestep, it predicts the noise so that one step of cleaning can be taken."
+  },
+  {
+   "topic": "Diffusion basics",
+   "level": "basic",
+   "q": "What is a noise schedule, and is it learned?",
+   "a": "It is the list of beta values, one per timestep, saying how much new noise is mixed in at each step. It is chosen before training and never learned. Alpha is 1 minus beta, and alpha-bar is the running product of the alphas. A typical linear schedule uses T = 1000 and beta from 1e-4 to 0.02."
+  },
+  {
+   "topic": "Diffusion basics",
+   "level": "medium",
+   "q": "Write the one-step shortcut formula and say why it matters.",
+   "a": "x_t = sqrt(alpha_bar_t) * x_0 + sqrt(1 - alpha_bar_t) * noise, with noise drawn from a standard Gaussian. It lets training jump to any timestep in one operation instead of adding noise t times, which makes every training step cheap."
+  },
+  {
+   "topic": "Diffusion basics",
+   "level": "medium",
+   "q": "Why is the shortcut formula valid?",
+   "a": "Each forward step is x_t = sqrt(alpha_t) * x_(t-1) + sqrt(beta_t) * z. Chaining steps multiplies the signal coefficients (giving sqrt(alpha_bar_t)) and adds independent Gaussian variances, and independent Gaussians add up to another Gaussian whose variance is 1 - alpha_bar_t. So t small steps collapse into one."
+  },
+  {
+   "topic": "Diffusion basics",
+   "level": "medium",
+   "q": "What does alpha_bar_t tell you, and what are its values at the two ends?",
+   "a": "It is the fraction of the original signal that survives up to step t. It is close to 1 for small t, and close to 0 at the end (about 4e-5 for the linear schedule above), so the final image is almost pure Gaussian noise."
+  },
+  {
+   "topic": "Diffusion basics",
+   "level": "advanced",
+   "q": "Why must x_T be close to pure Gaussian noise?",
+   "a": "Sampling starts from a draw of N(0, I). If the schedule leaves residual signal at t = T, the distribution seen in training at the last step differs from the starting point used at sampling time, and quality suffers. This is one motivation for schedules such as cosine, and for zero-terminal-SNR fixes."
+  },
+  {
+   "topic": "Diffusion basics",
+   "level": "advanced",
+   "q": "How does noise prediction relate to score matching?",
+   "a": "The score is the gradient of the log density of the noisy data. Up to a scale factor it equals the negative predicted noise: score = -epsilon_theta / sqrt(1 - alpha_bar_t). Predicting the noise and estimating the score are the same thing in different units, which is why diffusion and score-based models are two views of one idea."
+  },
+  {
+   "topic": "Training and loss",
+   "level": "basic",
+   "q": "What does the network predict, and what is the loss?",
+   "a": "It predicts the noise that was added to the image. The loss is the mean squared error between the real noise and the predicted noise: loss = mean((real_noise - predicted_noise) ** 2)."
+  },
+  {
+   "topic": "Training and loss",
+   "level": "basic",
+   "q": "Walk through one training step.",
+   "a": "Take a batch of clean images. Draw a random timestep per image and fresh Gaussian noise. Build the noisy images with the shortcut formula. Feed noisy images and timesteps to the U-Net to get predicted noise. Compute the MSE against the real noise, backpropagate, and let the optimizer update the weights."
+  },
+  {
+   "topic": "Training and loss",
+   "level": "medium",
+   "q": "Why use a random timestep per image rather than looping over all timesteps?",
+   "a": "The full objective is an average over timesteps, so one random timestep per image is an unbiased sample of it. Across many batches the single network sees every noise level, which it needs because sampling visits all of them. Looping over every t for every image would multiply the cost by T for no benefit."
+  },
+  {
+   "topic": "Training and loss",
+   "level": "medium",
+   "q": "Why predict the noise instead of the clean image?",
+   "a": "The two are interchangeable, since the clean image can be recovered as (x_t - sqrt(1 - alpha_bar_t) * noise) / sqrt(alpha_bar_t). Noise has unit variance at every timestep, so the loss has a similar scale everywhere, and it worked well in the original DDPM work. Other targets such as v-prediction exist and behave better in some regimes."
+  },
+  {
+   "topic": "Training and loss",
+   "level": "medium",
+   "q": "The loss curve is noisy and plateaus early. Is something wrong?",
+   "a": "Usually not. Each batch uses random timesteps and random noise, so the loss jitters, and it falls quickly then flattens because the hard part is the fine detail. Judge progress by saving sample images every few epochs, not by the loss number alone."
+  },
+  {
+   "topic": "Training and loss",
+   "level": "advanced",
+   "q": "How does the simple DDPM loss differ from the true variational bound?",
+   "a": "The simple loss drops the per-timestep weighting terms of the bound. That effectively down-weights the easy low-noise steps and emphasizes harder, noisier denoising, which improved sample quality at the cost of a worse likelihood. Improved DDPM adds a learned variance term to recover likelihood."
+  },
+  {
+   "topic": "U-Net and embeddings",
+   "level": "basic",
+   "q": "Why a U-Net for the denoiser?",
+   "a": "The input and output are both images of the same shape. The encoder shrinks the image to capture wide context, the decoder grows it back, and skip connections carry fine detail across so the output can be sharp."
+  },
+  {
+   "topic": "U-Net and embeddings",
+   "level": "basic",
+   "q": "What is a residual block?",
+   "a": "A block whose output is its input plus a learned correction, with a convolution on the shortcut when the channel counts differ. It makes deep networks easier to train because the identity path is always available."
+  },
+  {
+   "topic": "U-Net and embeddings",
+   "level": "medium",
+   "q": "What does a skip connection do in a U-Net?",
+   "a": "It concatenates the encoder feature map at some resolution onto the decoder feature map at the same resolution. The decoder then has access to spatial detail that was lost when downsampling, and gradients get a short path back to early layers."
+  },
+  {
+   "topic": "U-Net and embeddings",
+   "level": "medium",
+   "q": "How does the network know which timestep it is looking at?",
+   "a": "The integer t is turned into a sinusoidal embedding vector, passed through a small MLP, and added into every ResBlock. That tells each block how noisy its input is, so it can behave differently for t = 10 and t = 900."
+  },
+  {
+   "topic": "U-Net and embeddings",
+   "level": "medium",
+   "q": "Why a sinusoidal embedding rather than the raw integer t?",
+   "a": "A bare number gives the network little to work with and no sense that 347 is near 350. Sines and cosines at many frequencies give a rich vector where nearby timesteps look similar. It is the same idea as positional encoding in Transformers, and it is a fixed formula, not learned."
+  },
+  {
+   "topic": "U-Net and embeddings",
+   "level": "medium",
+   "q": "Why put self-attention only at the bottleneck?",
+   "a": "Attention compares every position with every other, so cost grows with the square of the number of positions. At the bottleneck the feature map is smallest, so global attention is cheap there, and it is where long-range relationships matter most."
+  },
+  {
+   "topic": "U-Net and embeddings",
+   "level": "advanced",
+   "q": "Why does this U-Net use GroupNorm and not BatchNorm?",
+   "a": "With batch sizes of 4 to 16, batch statistics are noisy, and they differ between training and sampling. GroupNorm normalizes within each sample over groups of channels, so it does not depend on the batch and behaves the same at train and test time."
+  },
+  {
+   "topic": "Sampling and speed",
+   "level": "basic",
+   "q": "How do you generate an image with a trained model?",
+   "a": "Start with a tensor of Gaussian noise. For t from T-1 down to 0, feed the current image and t to the U-Net to get predicted noise, then apply the sampling formula to get a slightly cleaner image. The result after the last step is the generated image."
+  },
+  {
+   "topic": "Sampling and speed",
+   "level": "medium",
+   "q": "Write the DDPM sampling step.",
+   "a": "x_(t-1) = (1 / sqrt(alpha_t)) * (x_t - ((1 - alpha_t) / sqrt(1 - alpha_bar_t)) * predicted_noise) + sqrt(beta_t) * z, where z is fresh Gaussian noise for every step except the last, where it is zero."
+  },
+  {
+   "topic": "Sampling and speed",
+   "level": "medium",
+   "q": "Why add fresh noise at each sampling step?",
+   "a": "Each reverse step is a draw from a Gaussian, not a single deterministic point. The injected noise keeps the process stochastic, which gives diversity and stops samples collapsing toward bland, repetitive output. It is left out at the last step so the final image is clean."
+  },
+  {
+   "topic": "Sampling and speed",
+   "level": "medium",
+   "q": "How does DDIM generate in 50 steps with the same trained model?",
+   "a": "Each DDIM step estimates the clean image from the current noisy one, then re-noises that estimate to whichever earlier timestep you are jumping to, instead of only stepping from t to t-1. You can therefore visit, say, every 20th timestep. Training is unchanged; only the sampling loop differs."
+  },
+  {
+   "topic": "Sampling and speed",
+   "level": "advanced",
+   "q": "Give the DDIM update with no added noise.",
+   "a": "First x0_hat = (x_t - sqrt(1 - alpha_bar_t) * predicted_noise) / sqrt(alpha_bar_t). Then x_prev = sqrt(alpha_bar_prev) * x0_hat + sqrt(1 - alpha_bar_prev) * predicted_noise. With no added noise the mapping from starting noise to image is deterministic."
+  },
+  {
+   "topic": "Sampling and speed",
+   "level": "advanced",
+   "q": "Why is the cosine schedule often better than the linear one?",
+   "a": "Linear destroys the image too early: at t = 500, alpha_bar is about 0.08, so well over half the steps see near-static and teach little. Cosine keeps more signal, with alpha_bar around 0.49 at t = 500, so more training steps land where structure still exists."
+  },
+  {
+   "topic": "Sampling and speed",
+   "level": "advanced",
+   "q": "What else can make generation cheaper?",
+   "a": "Better solvers that need fewer steps (DPM-Solver style), distillation into a few-step student, and latent diffusion, which runs the whole process in the compressed latent space of an autoencoder so each network evaluation is far cheaper."
+  },
+  {
+   "topic": "Conditioning and guidance",
+   "level": "basic",
+   "q": "How do you condition the model on a class label?",
+   "a": "Embed the label with nn.Embedding and add it to the timestep embedding. Every ResBlock then receives one signal saying both how noisy the input is and which class to produce. No other part of the U-Net has to change."
+  },
+  {
+   "topic": "Conditioning and guidance",
+   "level": "medium",
+   "q": "Explain classifier-free guidance.",
+   "a": "During training, replace the real label with a null label about 10% of the time, so one model learns both conditional and unconditional generation. At sampling run it twice per step and combine: predicted_noise = uncond + scale * (cond - uncond). This exaggerates the direction the label pulls in."
+  },
+  {
+   "topic": "Conditioning and guidance",
+   "level": "medium",
+   "q": "What does the guidance scale trade off?",
+   "a": "Higher values follow the label more strictly but reduce variety and can give harsh, oversaturated images. A value of 1.0 applies no extra push, and around 3.0 is a reasonable starting point for this setup."
+  },
+  {
+   "topic": "Conditioning and guidance",
+   "level": "advanced",
+   "q": "What does classifier-free guidance cost at sampling time?",
+   "a": "Two network evaluations per step, so generation is twice as slow. With 50 DDIM steps that is 100 evaluations, still about ten times fewer than the 1000-step unconditional loop."
+  },
+  {
+   "topic": "Conditioning and guidance",
+   "level": "advanced",
+   "q": "How does text conditioning differ from adding a label embedding?",
+   "a": "A text prompt is encoded by a separate, much larger text encoder into a sequence of vectors, and the U-Net attends to them with cross-attention layers. A class label is a single index, so adding its embedding to the time embedding is enough."
+  },
+  {
+   "topic": "Practical training",
+   "level": "basic",
+   "q": "You have 4GB of VRAM. What are your levers?",
+   "a": "Small resolution (32 or 64), small batch size, mixed precision, a small U-Net (few base channels, 2 to 3 stages), and attention only at the bottleneck. Add gradient accumulation if you want a larger effective batch."
+  },
+  {
+   "topic": "Practical training",
+   "level": "basic",
+   "q": "What does mixed precision with GradScaler do?",
+   "a": "Most of the math runs in 16-bit floats, which roughly halves activation memory. Small gradients can underflow in fp16, so the scaler multiplies the loss up before backward and divides the gradients down before the optimizer step."
+  },
+  {
+   "topic": "Practical training",
+   "level": "medium",
+   "q": "What is EMA and why does it help?",
+   "a": "An exponential moving average keeps a shadow copy of the weights updated as a slow average of the real ones. Raw weights jitter from batch to batch; the average is smoother and gives visibly better samples. Train with the real weights, generate with the EMA copy."
+  },
+  {
+   "topic": "Practical training",
+   "level": "medium",
+   "q": "The loss becomes nan. What do you try?",
+   "a": "Lower the learning rate, add gradient clipping (clip_grad_norm_ with a ceiling of 1.0, after scaler.unscale_ if using mixed precision), and confirm you call scaler.scale(loss).backward() when mixed precision is on."
+  },
+  {
+   "topic": "Practical training",
+   "level": "medium",
+   "q": "Loss decreases but samples stay pure noise. Where do you look?",
+   "a": "A falling loss says the model is learning, so first train longer. If the loss looks healthy but sampling still fails, suspect the sampling code: compare the formula line by line, check the timestep indexing, that you sample from the right checkpoint or EMA weights, and that the clamp and rescale to 0-1 match the data normalization."
+  },
+  {
+   "topic": "Practical training",
+   "level": "advanced",
+   "q": "How does gradient accumulation work, and what must you adjust?",
+   "a": "Run several micro-batches, letting gradients add up, and call the optimizer step once. The effective batch is micro-batch size times accumulation steps. Divide each micro-batch loss by the number of accumulation steps so the summed gradient matches a true large-batch average."
+  },
+  {
+   "topic": "Practical training",
+   "level": "advanced",
+   "q": "Why debug at 32 by 32 before moving to 64 by 64?",
+   "a": "It is roughly four times cheaper per epoch, and almost every real problem (shape bugs, a bad schedule, a model that never learns) shows up just as clearly at the smaller size. Move up once the pipeline is known to work."
+  },
+  {
+   "topic": "Diffusion math",
+   "level": "basic",
+   "q": "What does one forward diffusion step do?",
+   "a": "It scales the previous image by sqrt(1 - beta_t) and adds Gaussian noise of variance beta_t, so signal shrinks as noise is added while the overall variance stays near 1."
+  },
+  {
+   "topic": "Diffusion math",
+   "level": "basic",
+   "q": "Why can you jump straight to step t?",
+   "a": "Composing Gaussian steps gives another Gaussian: x_t = sqrt(alpha_bar_t) x_0 + sqrt(1 - alpha_bar_t) eps, because independent Gaussians add by summing variances."
+  },
+  {
+   "topic": "Diffusion math",
+   "level": "basic",
+   "q": "What is alpha_bar_t?",
+   "a": "The cumulative product of alpha_s = 1 - beta_s up to t. It is the fraction of the original signal variance that survives at step t."
+  },
+  {
+   "topic": "Diffusion math",
+   "level": "medium",
+   "q": "Derive the closed form of the forward process by induction.",
+   "a": "Assume x_(t-1) = sqrt(ab_(t-1)) x_0 + sqrt(1 - ab_(t-1)) e1. Then x_t = sqrt(alpha_t) x_(t-1) + sqrt(beta_t) e2. The noise terms merge with variance alpha_t (1 - ab_(t-1)) + beta_t = 1 - ab_t, and the signal coefficient is sqrt(alpha_t ab_(t-1)) = sqrt(ab_t)."
+  },
+  {
+   "topic": "Diffusion math",
+   "level": "medium",
+   "q": "What is the posterior q(x_(t-1) | x_t, x_0) and why is it useful?",
+   "a": "A Gaussian with mean a weighted average of x_0 and x_t and variance beta_tilde_t = (1 - ab_(t-1)) / (1 - ab_t) beta_t. It is the exact target for each reverse step if x_0 were known, so the model learns to approximate its mean."
+  },
+  {
+   "topic": "Diffusion math",
+   "level": "medium",
+   "q": "How does the network's noise prediction give the reverse mean?",
+   "a": "Replace x_0 by (x_t - sqrt(1 - ab_t) eps) / sqrt(ab_t) in the posterior mean to get mu = (x_t - beta_t / sqrt(1 - ab_t) eps_theta) / sqrt(alpha_t)."
+  },
+  {
+   "topic": "Diffusion math",
+   "level": "medium",
+   "q": "Why is the simple loss better than the true ELBO weighting for samples?",
+   "a": "The ELBO weights low-noise steps heavily; dropping the weights emphasises harder, noisier denoising, which improved perceptual quality at the cost of a worse likelihood."
+  },
+  {
+   "topic": "Diffusion math",
+   "level": "medium",
+   "q": "What is SNR in diffusion and why do schedules care?",
+   "a": "alpha_bar / (1 - alpha_bar). A schedule is a path of log-SNR over time; a good one spreads steps over the noise range where structure is formed, which is why cosine beats linear."
+  },
+  {
+   "topic": "Diffusion math",
+   "level": "advanced",
+   "q": "Compare eps, x0 and v prediction.",
+   "a": "They are linear reparameterisations of each other given x_t. eps is stable at low noise but amplifies errors at very high noise, x0 is blurry at low noise, and v = sqrt(ab) eps - sqrt(1 - ab) x0 is well scaled at all levels and works with zero terminal SNR."
+  },
+  {
+   "topic": "Diffusion math",
+   "level": "advanced",
+   "q": "How is a diffusion model related to score matching?",
+   "a": "The noisy marginal's score equals - eps / sqrt(1 - alpha_bar), so training eps_theta by regression is denoising score matching and eps_theta gives the score up to a known scale."
+  },
+  {
+   "topic": "Diffusion math",
+   "level": "advanced",
+   "q": "What is the probability flow ODE?",
+   "a": "A deterministic ODE with the same marginals as the reverse SDE, dx/dt = f(x, t) - 1/2 g(t)^2 score. DDIM and most fast samplers discretise it."
+  },
+  {
+   "topic": "Diffusion math",
+   "level": "advanced",
+   "q": "What variance should the reverse step use?",
+   "a": "sigma_t^2 = beta_t or beta_tilde_t are the two fixed extremes. Improved DDPM learns an interpolation between them, which improves likelihood and allows fewer steps."
+  },
+  {
+   "topic": "Diffusion math",
+   "level": "advanced",
+   "q": "Why must alpha_bar_T be close to zero?",
+   "a": "Sampling starts from Normal(0, I). If the forward process leaves signal at T the start distribution mismatches the training one, causing artefacts such as washed-out images."
+  },
+  {
+   "topic": "Diffusion samplers",
+   "level": "basic",
+   "q": "Why is diffusion sampling slow?",
+   "a": "It runs the network once per step for tens to thousands of sequential steps, and guidance doubles the cost."
+  },
+  {
+   "topic": "Diffusion samplers",
+   "level": "basic",
+   "q": "What is the difference between DDPM and DDIM sampling?",
+   "a": "DDPM adds fresh noise each step (stochastic, 1,000 steps). DDIM with eta = 0 is deterministic and can skip timesteps, giving good images in 20 to 50 steps from the same trained model."
+  },
+  {
+   "topic": "Diffusion samplers",
+   "level": "medium",
+   "q": "Write the DDIM update.",
+   "a": "x0_hat = (x_t - sqrt(1 - ab_t) eps) / sqrt(ab_t); x_s = sqrt(ab_s) x0_hat + sqrt(1 - ab_s - sigma^2) eps + sigma z, with sigma = 0 for the deterministic version."
+  },
+  {
+   "topic": "Diffusion samplers",
+   "level": "medium",
+   "q": "What is DDIM inversion used for?",
+   "a": "Because the map from noise to image is deterministic and invertible, running it backwards from a real image finds a noise code that regenerates it, enabling editing by changing the prompt."
+  },
+  {
+   "topic": "Diffusion samplers",
+   "level": "medium",
+   "q": "Why do higher-order solvers need fewer steps?",
+   "a": "The sampling trajectory is a smooth ODE; second or third order methods such as Heun and DPM-Solver have much lower error per step than Euler."
+  },
+  {
+   "topic": "Diffusion samplers",
+   "level": "medium",
+   "q": "What are ancestral samplers?",
+   "a": "Samplers that inject fresh noise each step. They never converge to a single image as steps increase, which gives variety but makes results less repeatable."
+  },
+  {
+   "topic": "Diffusion samplers",
+   "level": "medium",
+   "q": "What does classifier-free guidance cost and what are its failure modes?",
+   "a": "Two network evaluations per step. Large scales oversaturate and reduce diversity; thresholding and guidance rescaling mitigate it."
+  },
+  {
+   "topic": "Diffusion samplers",
+   "level": "advanced",
+   "q": "Explain progressive distillation.",
+   "a": "A student is trained to match two teacher steps with one; the student becomes the next teacher and the number of steps halves each round, down to 4 or 8 steps."
+  },
+  {
+   "topic": "Diffusion samplers",
+   "level": "advanced",
+   "q": "What is a consistency model?",
+   "a": "A function that maps any point on a probability flow ODE trajectory to the same clean sample. It enables one-step generation, trained by distillation or directly with consistency losses."
+  },
+  {
+   "topic": "Diffusion samplers",
+   "level": "advanced",
+   "q": "What is flow matching and why does it sample efficiently?",
+   "a": "Learn a velocity field that transports noise to data along straight interpolation paths. Straight paths are integrated accurately with few ODE steps; rectified flow straightens paths further."
+  },
+  {
+   "topic": "Diffusion samplers",
+   "level": "advanced",
+   "q": "How do you compare samplers fairly?",
+   "a": "At equal number of network evaluations, not steps, with a fixed prompt set and seeds, using distribution metrics and human preference with confidence intervals."
+  },
+  {
+   "topic": "Diffusion samplers",
+   "level": "advanced",
+   "q": "How does timestep spacing affect results?",
+   "a": "Spacing in log-SNR (or the Karras schedule) places more steps where the image changes most; uniform spacing wastes steps at very high noise."
+  },
+  {
+   "topic": "Latent diffusion",
+   "level": "basic",
+   "q": "Why do diffusion models work in a latent space?",
+   "a": "Pixel space is large and mostly imperceptible detail. A VAE compresses 8 times per side (about 48 times fewer values), making the denoiser far cheaper and enabling high resolution on ordinary GPUs."
+  },
+  {
+   "topic": "Latent diffusion",
+   "level": "basic",
+   "q": "What are the main components of Stable Diffusion?",
+   "a": "A VAE (encoder and decoder), a text encoder (CLIP), a denoiser (U-Net or transformer) with cross-attention to the text, and a scheduler."
+  },
+  {
+   "topic": "Latent diffusion",
+   "level": "medium",
+   "q": "How does text condition the image?",
+   "a": "Prompt tokens are encoded to a sequence of vectors; cross-attention layers use image features as queries and text vectors as keys and values, so each position gathers relevant words."
+  },
+  {
+   "topic": "Latent diffusion",
+   "level": "medium",
+   "q": "What is the VAE scaling factor?",
+   "a": "A constant (0.18215 for SD 1.x) that normalises latent variance so it matches the unit-variance noise assumption; omitting it gives wrong colours."
+  },
+  {
+   "topic": "Latent diffusion",
+   "level": "medium",
+   "q": "What does a negative prompt do?",
+   "a": "It replaces the empty prompt in classifier-free guidance so the sampler is pushed away from the negative description and toward the positive one."
+  },
+  {
+   "topic": "Latent diffusion",
+   "level": "medium",
+   "q": "Why is the VAE decoder a quality bottleneck?",
+   "a": "8x compression loses fine detail such as small faces, text and thin lines; later models use more latent channels and better decoders."
+  },
+  {
+   "topic": "Latent diffusion",
+   "level": "medium",
+   "q": "U-Net versus diffusion transformer?",
+   "a": "U-Nets use convolutions and multi-scale structure; DiTs use patch tokens, transformer blocks and adaLN conditioning, scaling more predictably with data and parameters and handling variable sizes naturally."
+  },
+  {
+   "topic": "Latent diffusion",
+   "level": "advanced",
+   "q": "What is MMDiT?",
+   "a": "A multimodal diffusion transformer with separate weights for text and image tokens that attend to each other in joint attention, used in SD3."
+  },
+  {
+   "topic": "Latent diffusion",
+   "level": "advanced",
+   "q": "Why does attention cost grow so fast with resolution?",
+   "a": "Self-attention is quadratic in the number of positions; doubling image side quadruples positions and multiplies attention cost by sixteen, hence latents and efficient attention kernels."
+  },
+  {
+   "topic": "Latent diffusion",
+   "level": "advanced",
+   "q": "Describe the inference pipeline step by step.",
+   "a": "Encode the prompt and an unconditional or negative prompt, sample a seeded latent, run scheduler steps with the denoiser and classifier-free guidance, divide by the scale factor, decode with the VAE, post-process."
+  },
+  {
+   "topic": "Latent diffusion",
+   "level": "advanced",
+   "q": "How would you run Stable Diffusion on 4 GB of VRAM?",
+   "a": "fp16 weights, attention slicing, VAE tiling, CPU offloading of idle components, memory-efficient attention (xformers or SDPA), smaller resolution, or quantised models."
+  },
+  {
+   "topic": "Latent diffusion",
+   "level": "advanced",
+   "q": "How does SDXL differ from SD 1.5?",
+   "a": "A larger U-Net (about 2.6B parameters), two text encoders, 1024 px native resolution, size and crop micro-conditioning and an optional refiner stage."
+  },
+  {
+   "topic": "Diffusion control",
+   "level": "basic",
+   "q": "What is LoRA and why is it popular?",
+   "a": "Low-rank adaptation freezes the base weights and trains small matrices B A added to attention layers, using about 0.1 to 1 percent of the parameters, producing tiny files that can be merged or swapped at inference."
+  },
+  {
+   "topic": "Diffusion control",
+   "level": "basic",
+   "q": "How many parameters does a rank-r LoRA add to a d_out by d_in matrix?",
+   "a": "r times (d_in + d_out)."
+  },
+  {
+   "topic": "Diffusion control",
+   "level": "medium",
+   "q": "DreamBooth versus textual inversion?",
+   "a": "DreamBooth fine-tunes model weights to bind a rare token to a subject with prior preservation. Textual inversion trains only a new token embedding, so it is lighter but less expressive."
+  },
+  {
+   "topic": "Diffusion control",
+   "level": "medium",
+   "q": "What is prior preservation loss?",
+   "a": "A regularisation that trains on class images generated by the original model so the class word keeps its general meaning and the model does not drift or overfit."
+  },
+  {
+   "topic": "Diffusion control",
+   "level": "medium",
+   "q": "How does ControlNet add spatial control without harming the base model?",
+   "a": "It clones the encoder as a trainable branch fed with the control map and connects it to the frozen U-Net through zero-initialised convolutions, so training starts as an exact no-op."
+  },
+  {
+   "topic": "Diffusion control",
+   "level": "medium",
+   "q": "Explain img2img and the strength parameter.",
+   "a": "Encode the input, add noise only to an intermediate timestep, then denoise. Strength sets how much noise: low keeps the layout, high lets the prompt override."
+  },
+  {
+   "topic": "Diffusion control",
+   "level": "medium",
+   "q": "How does inpainting work?",
+   "a": "Inpainting-trained models receive the mask and masked image as extra channels. Alternatively, at each step replace the known region with a noised copy of the original so only the hole is generated."
+  },
+  {
+   "topic": "Diffusion control",
+   "level": "advanced",
+   "q": "What failure modes appear when fine-tuning on a few images?",
+   "a": "Overfitting (the subject appears everywhere, backgrounds copied), language drift, catastrophic forgetting of general abilities; mitigate with fewer steps, lower learning rate, regularisation images and LoRA scale."
+  },
+  {
+   "topic": "Diffusion control",
+   "level": "advanced",
+   "q": "IP-Adapter versus ControlNet?",
+   "a": "IP-Adapter injects a reference image's CLIP features through extra cross-attention to transfer appearance or style; ControlNet injects spatial structure maps such as edges, depth or pose."
+  },
+  {
+   "topic": "Diffusion control",
+   "level": "advanced",
+   "q": "How can you edit a real photo with a text prompt while preserving layout?",
+   "a": "DDIM-invert the photo to a noise code, reuse or blend cross-attention maps (prompt-to-prompt), regenerate with the edited prompt, or use an instruction-tuned editor such as InstructPix2Pix."
+  },
+  {
+   "topic": "Diffusion control",
+   "level": "advanced",
+   "q": "How do you choose a LoRA rank?",
+   "a": "Start at 8 to 32 for styles and 4 to 16 for characters; raise rank for more capacity if underfitting, lower it if overfitting, watching file size and generalisation."
+  },
+  {
+   "topic": "Diffusion control",
+   "level": "advanced",
+   "q": "Why does generating far from the training resolution cause duplicated subjects?",
+   "a": "The model learned composition at specific sizes; larger canvases are treated as several images. Use hires fix, tiled approaches, or models trained on multiple aspect ratios."
+  },
+  {
+   "topic": "Diffusion evaluation",
+   "level": "basic",
+   "q": "What does FID measure?",
+   "a": "The Fréchet distance between Gaussian fits of Inception features of real and generated images: lower means the generated distribution is closer to the real one."
+  },
+  {
+   "topic": "Diffusion evaluation",
+   "level": "basic",
+   "q": "What does CLIPScore measure?",
+   "a": "How well an image matches its text prompt, as the cosine similarity of CLIP embeddings."
+  },
+  {
+   "topic": "Diffusion evaluation",
+   "level": "medium",
+   "q": "What are the limits of FID?",
+   "a": "It needs many samples, depends on the ImageNet-trained feature network, ignores prompt alignment, is biased for small sample sizes and can be gamed. Use KID, FD-DINOv2 and human evaluation alongside it."
+  },
+  {
+   "topic": "Diffusion evaluation",
+   "level": "medium",
+   "q": "How do you run a human evaluation?",
+   "a": "Show randomised side-by-side pairs for the same prompt, ask about quality and prompt match, use many prompts and raters, and report win rates with confidence intervals or Elo scores."
+  },
+  {
+   "topic": "Diffusion evaluation",
+   "level": "medium",
+   "q": "Why re-caption training images?",
+   "a": "Web alt-text is short and noisy; detailed synthetic captions improve prompt following and compositional accuracy."
+  },
+  {
+   "topic": "Diffusion evaluation",
+   "level": "medium",
+   "q": "What does a data pipeline for image generation involve?",
+   "a": "Collection, deduplication, quality and aesthetic filtering, safety filtering, re-captioning and bucketing by resolution."
+  },
+  {
+   "topic": "Diffusion evaluation",
+   "level": "advanced",
+   "q": "How can a diffusion model memorise training images and how do you reduce it?",
+   "a": "Duplicated images and captions make near-copies likely. Deduplicate, diversify data, limit overfitting, apply output checks and consider differential privacy."
+  },
+  {
+   "topic": "Diffusion evaluation",
+   "level": "advanced",
+   "q": "What layers of safety do image generators use?",
+   "a": "Data filtering, model-level safety training, prompt classifiers, output classifiers, provenance watermarking, access controls and red teaming. No single layer is sufficient."
+  },
+  {
+   "topic": "Diffusion evaluation",
+   "level": "advanced",
+   "q": "How does watermarking help and what are its limits?",
+   "a": "Invisible watermarks and C2PA credentials signal AI origin, but they can be stripped by edits or metadata removal, so they supplement rather than replace other controls."
+  },
+  {
+   "topic": "Diffusion evaluation",
+   "level": "advanced",
+   "q": "How would you test for bias?",
+   "a": "Audit prompt sets across occupations, attributes and cultures, measure demographic distributions of outputs, compare with references, and iterate on data and training rather than only prompt rewriting."
+  },
+  {
+   "topic": "Diffusion evaluation",
+   "level": "advanced",
+   "q": "What belongs in a good evaluation report?",
+   "a": "Model, sampler, steps, guidance, seeds, a fixed public prompt set, enough samples, uncurated samples, metrics with intervals, compute-matched comparisons and failure cases."
+  },
+  {
+   "topic": "Diffusion evaluation",
+   "level": "advanced",
+   "q": "Why compare samplers or models at equal network evaluations?",
+   "a": "Steps are not equal cost: Heun doubles evaluations and guidance doubles them again, so equal steps can hide large compute differences."
+  },
+  {
+   "topic": "Beyond images",
+   "level": "basic",
+   "q": "How is video generation different from image generation?",
+   "a": "It adds a time dimension: much more data and the need for temporal consistency. Models add temporal attention or use space-time transformers over compressed video latents."
+  },
+  {
+   "topic": "Beyond images",
+   "level": "basic",
+   "q": "How does diffusion generate audio?",
+   "a": "Represent audio as a spectrogram or codec latent, diffuse it with a U-Net or transformer, and convert back to a waveform with a vocoder or decoder."
+  },
+  {
+   "topic": "Beyond images",
+   "level": "medium",
+   "q": "What is score distillation sampling?",
+   "a": "Optimise a 3D representation so renderings from random views are denoised well by a text-conditioned image diffusion model; the diffusion gradient flows through the renderer into 3D parameters."
+  },
+  {
+   "topic": "Beyond images",
+   "level": "medium",
+   "q": "What is the Janus problem in text-to-3D?",
+   "a": "Multiple faces appear on one object because the 2D prior does not know which view it is seeing; view-dependent prompts and multi-view models reduce it."
+  },
+  {
+   "topic": "Beyond images",
+   "level": "medium",
+   "q": "Why use diffusion for robot policies?",
+   "a": "It represents multimodal action distributions and generates action chunks conditioned on observations, instead of averaging different valid behaviours."
+  },
+  {
+   "topic": "Beyond images",
+   "level": "medium",
+   "q": "How does diffusion handle discrete data like text?",
+   "a": "Use a discrete corruption such as masking tokens (absorbing diffusion) or token replacement, or add Gaussian noise to embeddings and round at the end."
+  },
+  {
+   "topic": "Beyond images",
+   "level": "advanced",
+   "q": "Why must protein diffusion models be equivariant?",
+   "a": "A molecule's identity does not change when rotated or translated, so SE(3)-equivariant denoisers build in the symmetry and learn more efficiently."
+  },
+  {
+   "topic": "Beyond images",
+   "level": "advanced",
+   "q": "Compare diffusion with GANs, VAEs and autoregressive models.",
+   "a": "GANs sample in one step but are unstable and cover modes poorly; VAEs are fast but blurry alone; autoregressive models give exact likelihood and scale well but sample sequentially; diffusion is stable and flexible at the cost of multiple steps."
+  },
+  {
+   "topic": "Beyond images",
+   "level": "advanced",
+   "q": "What is a spacetime patch?",
+   "a": "A token covering a small region over a few frames of the compressed video latent; transformers over such tokens handle variable durations, sizes and aspect ratios."
+  },
+  {
+   "topic": "Beyond images",
+   "level": "advanced",
+   "q": "Why is long video generation hard?",
+   "a": "Compute grows with frames, errors accumulate over time, and the model must keep identity, physics and camera motion consistent; solutions include factorised attention, hierarchical generation and autoregressive extension."
+  },
+  {
+   "topic": "Training diffusion",
+   "level": "basic",
+   "q": "What is EMA and why do diffusion models use it?",
+   "a": "An exponential moving average of the weights smooths batch noise; sampling with EMA weights produces visibly better and more stable images."
+  },
+  {
+   "topic": "Training diffusion",
+   "level": "basic",
+   "q": "What does gradient clipping do?",
+   "a": "It caps the global gradient norm so a single bad batch cannot cause a huge step, preventing loss spikes and nan."
+  },
+  {
+   "topic": "Training diffusion",
+   "level": "medium",
+   "q": "Why does fp16 training need loss scaling and bf16 does not?",
+   "a": "fp16 has a small exponent range so tiny gradients underflow to zero; scaling the loss moves them into range. bf16 has fp32's range with lower precision."
+  },
+  {
+   "topic": "Training diffusion",
+   "level": "medium",
+   "q": "How would you debug 'loss decreases but samples are noise'?",
+   "a": "Check sampling code (coefficients, timestep indexing, noise at the last step), use EMA weights, verify data normalisation matches between train and sample, and run a toy overfit test."
+  },
+  {
+   "topic": "Training diffusion",
+   "level": "medium",
+   "q": "What is the quickest sanity test for a new diffusion pipeline?",
+   "a": "Overfit eight images. If the model cannot memorise them, the data, schedule or training loop is broken."
+  },
+  {
+   "topic": "Training diffusion",
+   "level": "medium",
+   "q": "What is min-SNR weighting?",
+   "a": "A loss weighting that caps the weight at high SNR (min(SNR, gamma)), reducing conflicting gradient directions across timesteps and speeding convergence."
+  },
+  {
+   "topic": "Training diffusion",
+   "level": "medium",
+   "q": "What is noise offset?",
+   "a": "Adding a small per-channel constant to the noise so the model learns to change the mean brightness, fixing the difficulty with very dark or very bright images."
+  },
+  {
+   "topic": "Training diffusion",
+   "level": "advanced",
+   "q": "How does resolution change the best noise schedule?",
+   "a": "Higher resolution images keep recognisable structure at the same noise level for longer, so the schedule is shifted toward more noise (or the timestep distribution is shifted) at higher resolutions."
+  },
+  {
+   "topic": "Training diffusion",
+   "level": "advanced",
+   "q": "What parallelism strategies exist for big diffusion models?",
+   "a": "DDP for data parallelism, FSDP or ZeRO to shard states, tensor and pipeline parallelism for huge transformers, activation checkpointing and gradient accumulation."
+  },
+  {
+   "topic": "Training diffusion",
+   "level": "advanced",
+   "q": "Why precompute latents and text embeddings?",
+   "a": "The VAE and text encoders are frozen, so encoding once removes their cost from every epoch and frees GPU memory."
+  },
+  {
+   "topic": "Training diffusion",
+   "level": "advanced",
+   "q": "Estimate training cost for a 2B parameter denoiser.",
+   "a": "About 6 x parameters x tokens x images FLOPs; for 2e9 parameters, 1,024 tokens and 1e9 images that is 1.2e22 FLOPs, roughly a thousand A100 GPU-days at realistic utilisation."
+  },
+  {
+   "topic": "Training diffusion",
+   "level": "advanced",
+   "q": "What is zero terminal SNR?",
+   "a": "Rescaling the schedule so alpha_bar_T = 0 exactly, typically with v-prediction, so the model trains on the pure noise it will start from at sampling time."
+  }
+ ]
+}

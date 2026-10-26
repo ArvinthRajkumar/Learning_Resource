@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="M12">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>M12 Trees & Binary Search Trees | DSA Master Guide</title>
+<meta name="description" content="Hierarchical data. Traversals and recursion on trees appear in many assessments.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<link rel="stylesheet" href="viz.css">
+<script src="viz.js" defer></script>
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Module 12</p>
+      <h1>Trees &amp; Binary Search Trees</h1>
+      <p class="lede">Hierarchical data. Traversals and recursion on trees appear in many assessments. Topics in this module: Tree terminology and traversals; binary search trees: search, insert, delete; height, balance, lowest common ancestor and heaps as trees.</p>
+      <div class="meta"><span class="tag warn">Important</span><span class="tag">3 topics</span><span class="tag">17 problems</span><span class="tag">56 interview questions</span></div>
+    </div>
+
+    <section id="why-this-module" data-track>
+      <h2>Start from scratch: why this module exists</h2>
+      <p>Hierarchies (folders, organisation charts, HTML) cannot be expressed with flat lists. Trees give each item one parent and any number of children, and their self-similar structure makes recursion natural. Binary search trees add ordering for fast search.</p>
+      <p>Most tree solutions reduce to one template: handle None, get answers from the left and right subtrees, combine them.</p>
+      <p><strong>Who needs it:</strong> File systems, browsers (DOM), databases (indexes), compilers (syntax trees) and interviewers.</p>
+      <p><strong>Before you start:</strong> Modules 9-11.</p>
+      <h3>After this module you can</h3>
+      <ul><li>Traverse trees in all orders.</li><li>Search, insert and validate BSTs.</li><li>Compute height, balance, diameter and LCA.</li><li>Choose DFS vs BFS.</li></ul>
+      <p><strong>Common pitfalls:</strong> Missing the None check, confusing height and depth, validating a BST with only parent checks, deep recursion on skewed trees.</p>
+      <p><strong>Typical interview questions here:</strong> Traversals, max depth, invert tree, symmetric tree, validate BST, LCA, diameter, level order, kth smallest.</p>
+    </section>
+
+    <section id="c12_1" data-track>
+      <h2>Tree terminology and traversals</h2>
+      <p><span class="tag warn">Important</span> <span class="tag">Topic 12.1</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>A tree is a set of nodes connected by edges with one root and no cycles. In a binary tree each node has at most two children (left and right). A traversal visits every node in a defined order.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Trees model hierarchies (file systems, organisation charts) and make searching efficient. Traversals are the base of nearly every tree problem.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>A family tree: the oldest ancestor is the root; children branch downward; a person without children is a leaf.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Lists are flat, but much real data is hierarchical: a company (CEO, managers, staff), a folder structure, an HTML page (tags inside tags), a family. A list cannot show 'belongs to'. A tree can: each item has one parent and any number of children.</p>
+      <p>Why a TREE and not a general graph? Because the restriction (one parent, no cycles) gives us powerful guarantees: there is exactly one path from the root to any node, recursion never loops, and every node's subtree is itself a tree. That self-similarity is why tree code is so short and recursive.</p>
+      <p>A binary tree limits each node to two children. This is enough for searching (go left or right), expression parsing and heaps, and it keeps code simple (node.left, node.right).</p>
+      <p>Traversal is the first skill: how do you visit every node without missing any? Depth-first goes down a branch fully before the next; breadth-first goes level by level. The three DFS orders differ only in when the node is processed relative to its children, and each suits a different task: preorder copies a tree (parents before children), inorder reads a BST in sorted order, postorder deletes or evaluates (children before parents).</p>
+      <p>Height matters because it controls cost. Operations that walk root-to-leaf cost O(height): log n for a balanced tree, n for a degenerate one.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="tree:inorder"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Terms: root (top), leaf (no children), parent/child, depth of a node (edges from root), height of the tree (edges on the longest root-to-leaf path), level (all nodes at one depth).</li><li>Inorder: left, node, right. Preorder: node, left, right. Postorder: left, right, node. Level-order: level by level using a queue.</li><li>For a BST, inorder gives sorted order.</li><li>All three DFS traversals are recursion on the left and right subtrees; they only differ in WHEN you record the node.</li><li>Pick a traversal in the visualiser and watch the current node highlight.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>A tree is like a family tree or a folder structure. There is one top node (the root). Each node can have children below it. A node with no children is a leaf. A binary tree allows at most two children: left and right. Trees have no loops, and there is exactly one path between any two nodes.</p>
+      <p>Words you must know: depth of a node = number of edges from the root to it (root has depth 0). Height of a tree = number of edges (or nodes, check the problem!) on the longest path down. Level = all nodes at the same depth. Subtree = a node together with everything below it.</p>
+      <p>Traversal means visiting every node once. DFS goes deep first and has three flavours that differ only in WHEN you record the node: preorder (before the children), inorder (between left and right children), postorder (after both children). BFS (level order) visits level by level using a queue.</p>
+      <p>Almost all tree recursion has the same shape: if node is None return something simple; otherwise get answers from node.left and node.right and combine them with node.val. Memorise this shape and tree questions become easy.</p>
+      <p>Complexity: visiting all nodes is O(n). Recursion uses space equal to the tree height h: O(log n) for a balanced tree, O(n) for a skewed tree that looks like a linked list.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Each node object stores val, left and right references. A leaf has both as None. The recursion stack depth equals the current depth, hence O(h) space.</li><li>Preorder + inorder (or postorder + inorder) uniquely determine a binary tree, which is a classic reconstruction question.</li><li>Level-order traversal uses a queue; the queue holds at most one level plus children, so O(width).</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Operating systems</td><td>File systems are trees of folders and files.</td></tr><tr><td>Browsers</td><td>The HTML DOM is a tree; CSS selectors and rendering traverse it.</td></tr><tr><td>Databases and compilers</td><td>B-tree indexes and abstract syntax trees.</td></tr><tr><td>Interviewers</td><td>Tree recursion is the most common medium-level pattern.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Tree vs list</td><td>A list is better for sequences with index access. A tree is better for hierarchies and ordered dynamic data.</td></tr><tr><td>DFS vs BFS on trees</td><td>DFS uses O(height) memory; BFS uses O(width). BFS is needed for level-based answers.</td></tr><tr><td>Recursive vs iterative traversal</td><td>Recursive is shorter; iterative avoids the recursion limit on skewed trees.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>class TreeNode: def __init__(self, val=0, left=None, right=None): ...</li><li>Level order: use deque and process len(queue) nodes per level.</li><li>Iterative inorder uses a stack: go left as far as possible, pop, visit, go right.</li><li>Use a helper function inside when you need to carry extra data (result list, global best).</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c12_1.py">def inorder(node, out):
+    if node is None:
+        return out
+    inorder(node.left, out)       # 1. left subtree
+    out.append(node.val)          # 2. this node
+    inorder(node.right, out)      # 3. right subtree
+    return out
+
+def preorder(node, out):
+    if node is None:
+        return out
+    out.append(node.val)
+    preorder(node.left, out)
+    preorder(node.right, out)
+    return out
+
+def postorder(node, out):
+    if node is None:
+        return out
+    postorder(node.left, out)
+    postorder(node.right, out)
+    out.append(node.val)
+    return out</code></pre>
+      <details class="box"><summary>Helper code used in these examples (ListNode, TreeNode and builders)</summary><div class="d-body">
+<pre><code class="lang-py" data-embed="solutions/preludes/tree.py">class TreeNode:
+    def __init__(self, val=0, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+    def __repr__(self):
+        return "Node(%r)" % (self.val,)
+
+def build_tree(vals):
+    """Build a binary tree from a level-order list; None means 'no node'."""
+    if not vals or vals[0] is None:
+        return None
+    root = TreeNode(vals[0])
+    queue, i = [root], 1
+    while queue and i &lt; len(vals):
+        node = queue.pop(0)
+        if i &lt; len(vals) and vals[i] is not None:
+            node.left = TreeNode(vals[i]); queue.append(node.left)
+        i += 1
+        if i &lt; len(vals) and vals[i] is not None:
+            node.right = TreeNode(vals[i]); queue.append(node.right)
+        i += 1
+    return root
+
+def find_node(root, val):
+    if not root:
+        return None
+    if root.val == val:
+        return root
+    return find_node(root.left, val) or find_node(root.right, val)</code></pre>
+</div></details>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>inorder(build_tree([4, 2, 6, 1, 3]), [])</code>, returns <code>[1, 2, 3, 4, 6]</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">depth</th><th class="num">line</th><th>statement executed</th><th>node (after)</th><th>out (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">1</td><td class="num">2</td><td><code>if node is None:</code></td><td><strong><code>Node(4)</code></strong></td><td><strong><code>[]</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">1</td><td class="num">4</td><td><code>inorder(node.left, out)       # 1. left subtree</code></td><td><strong><code>Node(2)</code></strong></td><td><code>[]</code></td></tr>
+<tr><td class="num">3</td><td class="num">2</td><td class="num">2</td><td><code>if node is None:</code></td><td><code>Node(2)</code></td><td><code>[]</code></td></tr>
+<tr><td class="num">4</td><td class="num">2</td><td class="num">4</td><td><code>inorder(node.left, out)       # 1. left subtree</code></td><td><strong><code>Node(1)</code></strong></td><td><code>[]</code></td></tr>
+<tr><td class="num">5</td><td class="num">3</td><td class="num">2</td><td><code>if node is None:</code></td><td><code>Node(1)</code></td><td><code>[]</code></td></tr>
+<tr><td class="num">6</td><td class="num">3</td><td class="num">4</td><td><code>inorder(node.left, out)       # 1. left subtree</code></td><td><strong><code>None</code></strong></td><td><code>[]</code></td></tr>
+<tr><td class="num">7</td><td class="num">4</td><td class="num">2</td><td><code>if node is None:</code></td><td><code>None</code></td><td><code>[]</code></td></tr>
+<tr><td class="num">8</td><td class="num">4</td><td class="num">3</td><td><code>return out</code></td><td><code>None</code></td><td><code>[]</code></td></tr>
+<tr><td class="num">9</td><td class="num">3</td><td class="num">5</td><td><code>out.append(node.val)          # 2. this node</code></td><td><strong><code>Node(1)</code></strong></td><td><strong><code>[1]</code></strong></td></tr>
+<tr><td class="num">10</td><td class="num">3</td><td class="num">6</td><td><code>inorder(node.right, out)      # 3. right subtree</code></td><td><strong><code>None</code></strong></td><td><code>[1]</code></td></tr>
+<tr><td class="num">11</td><td class="num">4</td><td class="num">2</td><td><code>if node is None:</code></td><td><code>None</code></td><td><code>[1]</code></td></tr>
+<tr><td class="num">12</td><td class="num">4</td><td class="num">3</td><td><code>return out</code></td><td><code>None</code></td><td><code>[1]</code></td></tr>
+<tr><td class="num">13</td><td class="num">3</td><td class="num">7</td><td><code>return out</code></td><td><strong><code>Node(1)</code></strong></td><td><code>[1]</code></td></tr>
+<tr><td class="num">14</td><td class="num">2</td><td class="num">5</td><td><code>out.append(node.val)          # 2. this node</code></td><td><strong><code>Node(2)</code></strong></td><td><strong><code>[1, 2]</code></strong></td></tr>
+<tr><td class="num">15</td><td class="num">2</td><td class="num">6</td><td><code>inorder(node.right, out)      # 3. right subtree</code></td><td><strong><code>Node(3)</code></strong></td><td><code>[1, 2]</code></td></tr>
+<tr><td class="num">16</td><td class="num">3</td><td class="num">2</td><td><code>if node is None:</code></td><td><code>Node(3)</code></td><td><code>[1, 2]</code></td></tr>
+<tr><td class="num">17</td><td class="num">3</td><td class="num">4</td><td><code>inorder(node.left, out)       # 1. left subtree</code></td><td><strong><code>None</code></strong></td><td><code>[1, 2]</code></td></tr>
+<tr><td class="num">18</td><td class="num">4</td><td class="num">2</td><td><code>if node is None:</code></td><td><code>None</code></td><td><code>[1, 2]</code></td></tr>
+<tr><td class="num">19</td><td class="num">4</td><td class="num">3</td><td><code>return out</code></td><td><code>None</code></td><td><code>[1, 2]</code></td></tr>
+<tr><td class="num">20</td><td class="num">3</td><td class="num">5</td><td><code>out.append(node.val)          # 2. this node</code></td><td><strong><code>Node(3)</code></strong></td><td><strong><code>[1, 2, 3]</code></strong></td></tr>
+<tr><td class="num">21</td><td class="num">3</td><td class="num">6</td><td><code>inorder(node.right, out)      # 3. right subtree</code></td><td><strong><code>None</code></strong></td><td><code>[1, 2, 3]</code></td></tr>
+<tr><td class="num">22</td><td class="num">4</td><td class="num">2</td><td><code>if node is None:</code></td><td><code>None</code></td><td><code>[1, 2, 3]</code></td></tr>
+<tr><td class="num">23</td><td class="num">4</td><td class="num">3</td><td><code>return out</code></td><td><code>None</code></td><td><code>[1, 2, 3]</code></td></tr>
+<tr><td class="num">24</td><td class="num">3</td><td class="num">7</td><td><code>return out</code></td><td><strong><code>Node(3)</code></strong></td><td><code>[1, 2, 3]</code></td></tr>
+<tr><td class="num">25</td><td class="num">2</td><td class="num">7</td><td><code>return out</code></td><td><strong><code>Node(2)</code></strong></td><td><code>[1, 2, 3]</code></td></tr>
+<tr><td class="num">26</td><td class="num">1</td><td class="num">5</td><td><code>out.append(node.val)          # 2. this node</code></td><td><strong><code>Node(4)</code></strong></td><td><strong><code>[1, 2, 3, 4]</code></strong></td></tr>
+<tr><td class="num">27</td><td class="num">1</td><td class="num">6</td><td><code>inorder(node.right, out)      # 3. right subtree</code></td><td><strong><code>Node(6)</code></strong></td><td><code>[1, 2, 3, 4]</code></td></tr>
+<tr><td class="num">28</td><td class="num">2</td><td class="num">2</td><td><code>if node is None:</code></td><td><code>Node(6)</code></td><td><code>[1, 2, 3, 4]</code></td></tr>
+<tr><td class="num">29</td><td class="num">2</td><td class="num">4</td><td><code>inorder(node.left, out)       # 1. left subtree</code></td><td><strong><code>None</code></strong></td><td><code>[1, 2, 3, 4]</code></td></tr>
+<tr><td class="num">30</td><td class="num">3</td><td class="num">2</td><td><code>if node is None:</code></td><td><code>None</code></td><td><code>[1, 2, 3, 4]</code></td></tr>
+<tr><td class="num">31</td><td class="num">3</td><td class="num">3</td><td><code>return out</code></td><td><code>None</code></td><td><code>[1, 2, 3, 4]</code></td></tr>
+<tr><td class="num">32</td><td class="num">2</td><td class="num">5</td><td><code>out.append(node.val)          # 2. this node</code></td><td><strong><code>Node(6)</code></strong></td><td><strong><code>[1, 2, 3, 4, 6]</code></strong></td></tr>
+<tr><td class="num">33</td><td class="num">2</td><td class="num">6</td><td><code>inorder(node.right, out)      # 3. right subtree</code></td><td><strong><code>None</code></strong></td><td><code>[1, 2, 3, 4, 6]</code></td></tr>
+<tr><td class="num">34</td><td class="num">3</td><td class="num">2</td><td><code>if node is None:</code></td><td><code>None</code></td><td><code>[1, 2, 3, 4, 6]</code></td></tr>
+<tr><td class="num">35</td><td class="num">3</td><td class="num">3</td><td><code>return out</code></td><td><code>None</code></td><td><code>[1, 2, 3, 4, 6]</code></td></tr>
+<tr><td class="num">36</td><td class="num">2</td><td class="num">7</td><td><code>return out</code></td><td><strong><code>Node(6)</code></strong></td><td><code>[1, 2, 3, 4, 6]</code></td></tr>
+<tr><td class="num">37</td><td class="num">1</td><td class="num">7</td><td><code>return out</code></td><td><strong><code>Node(4)</code></strong></td><td><code>[1, 2, 3, 4, 6]</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>O(n) time (each node once); O(h) stack space, h = height (O(n) for a skewed tree, O(log n) for a balanced tree).</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Missing the <code>if node is None</code> base case.</li><li>Confusing depth (from the root) with height (down to the leaves).</li><li>Mixing up the order of pre/in/post.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"Traverse", "path", "sum of nodes", "count nodes" -&gt; DFS recursion; "level" questions -&gt; BFS with a queue.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m12-problems.html#prob-inorder">Inorder Traversal</a></td><td><span class="tag ok">Easy</span></td><td>Tree traversal</td></tr><tr><td><a href="m12-problems.html#prob-max_depth">Maximum Depth of a Binary Tree</a> <span class="tag">LC 104</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Tree recursion</td></tr><tr><td><a href="m12-problems.html#prob-invert_tree">Invert a Binary Tree</a> <span class="tag">LC 226</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Tree recursion</td></tr><tr><td><a href="m12-problems.html#prob-level_order">Level Order Traversal</a> <span class="tag">LC 102</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Tree BFS with a queue</td></tr><tr><td><a href="m12-problems.html#prob-build_tree_pre_in">Construct Tree from Preorder and Inorder</a> <span class="tag">LC 105</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Tree recursion + hash map</td></tr><tr><td><a href="m12-problems.html#prob-zigzag_level_order">Binary Tree Zigzag Level Order</a> <span class="tag">LC 103</span></td><td><span class="tag warn">Medium</span></td><td>BFS with direction flag</td></tr><tr><td><a href="m12-problems.html#prob-right_side_view">Right Side View of a Tree</a></td><td><span class="tag warn">Medium</span></td><td>Level order BFS</td></tr><tr><td><a href="m12-problems.html#prob-serialize_tree">Serialize and Deserialize Binary Tree</a> <span class="tag">LC 297</span> <span class="tag accent">must-do</span></td><td><span class="tag bad">Hard</span></td><td>Preorder with null markers</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why use a tree instead of a list for hierarchies?</summary><div class="answer"><p>A list cannot express 'belongs to'. A tree gives every item one parent and shows containment directly.</p></div></details>
+        <details class="recall"><summary>Why is tree recursion so short?</summary><div class="answer"><p>Every subtree is itself a tree, so one function handles the node and trusts recursive calls for the children.</p></div></details>
+        <details class="recall"><summary>Why are there three DFS orders?</summary><div class="answer"><p>They differ in when the node is processed: before children (copy), between children (sorted order in a BST), after children (delete or evaluate).</p></div></details>
+        <details class="recall"><summary>Why does BFS need a queue?</summary><div class="answer"><p>It must serve the oldest discovered node first to go level by level.</p></div></details>
+        <details class="recall"><summary>Why can recursion fail on a skewed tree?</summary><div class="answer"><p>Depth equals the number of nodes, which can exceed Python's recursion limit. Use an iterative traversal.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c12_1-q1" data-topic="Trees &amp; Binary Search Trees" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Inorder traversal of a BST gives...</p></div>
+        <ul class="q-options">
+          <li data-key="A">Descending order</li>
+          <li data-key="B">Sorted ascending order</li>
+          <li data-key="C">Level order</li>
+          <li data-key="D">Random order</li>
+        </ul>
+        <div class="q-explain"><p>Left &lt; node &lt; right, so inorder is sorted.</p></div>
+      </div>
+      <div class="quiz" data-qid="c12_1-q2" data-topic="Trees &amp; Binary Search Trees" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which traversal visits the root first?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Inorder</li>
+          <li data-key="B">Preorder</li>
+          <li data-key="C">Postorder</li>
+          <li data-key="D">None</li>
+        </ul>
+        <div class="q-explain"><p>Preorder = node, left, right.</p></div>
+      </div>
+    </section>
+
+    <section id="c12_2" data-track>
+      <h2>Binary search trees: search, insert, delete</h2>
+      <p><span class="tag warn">Important</span> <span class="tag">Topic 12.2</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>A binary search tree (BST) keeps every left-subtree value smaller than the node and every right-subtree value larger. This lets you search by choosing left or right at each node.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>A balanced BST supports search, insert and delete in O(log n); it is the idea behind ordered maps.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>A guessing game where each question halves the options, except the "array" is a tree of questions.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>We want a structure that supports fast search, insert and delete, while keeping data ordered. Sorted arrays search fast but insert slowly. Linked lists insert fast but search slowly. A binary search tree combines the two ideas: each node is a decision 'smaller goes left, bigger goes right', so a search is a short walk down one path.</p>
+      <p>The BST rule is local but powerful: the rule at each node guarantees the global order. An inorder walk (left, node, right) therefore lists all values in sorted order for free.</p>
+      <p>The weakness is shape. The tree's speed depends on its height. Inserting 1, 2, 3, 4 in order produces a chain, so operations become O(n). The fix is balancing: AVL and Red-Black trees rotate nodes after changes to keep height near log n. Python's standard library has no built-in balanced tree; sorted lists with bisect or the sortedcontainers package fill that role.</p>
+      <p>Deletion is the hardest case: removing a node with two children breaks the ordering unless you replace it with the next value in order (the inorder successor), which is the smallest node of the right subtree.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="tree:search"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Search: if target == node.val found; if smaller go left; else go right; None means absent.</li><li>Insert: search for the position and attach a new leaf there.</li><li>Delete: leaf -&gt; remove; one child -&gt; replace by the child; two children -&gt; replace its value with the inorder successor (smallest in the right subtree) and delete that node.</li><li>Insert 8, 3, 10, 1, 6, 14 in order to get a balanced tree. Insert 1, 2, 3, 4 in order and you get a skewed "linked list" with O(n) operations.</li><li>Self-balancing trees (AVL, Red-Black) rotate to keep height O(log n). Python's sortedcontainers or sorted lists with bisect are alternatives.</li><li>The search mode in the visualiser shows the path from the root.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>A binary search tree (BST) follows one simple rule for EVERY node: everything in the left subtree is smaller, everything in the right subtree is bigger. That rule lets you search like binary search: compare with the current node and go left or right, throwing away a whole subtree each time.</p>
+      <p>Insert: search for where the value would be and attach a new leaf. Delete is the tricky one: a leaf is just removed, a node with one child is replaced by that child, and a node with two children is replaced by its inorder successor (the smallest value in the right subtree) after which that successor is deleted.</p>
+      <p>If you insert sorted data (1, 2, 3, 4, ...) the BST becomes a long line and every operation costs O(n). Self-balancing trees (AVL, Red-Black) rotate nodes to keep the height about log n. In Python we usually use a sorted list with bisect, or just a dictionary plus sorting.</p>
+      <p>Validating a BST is a classic trap. Checking only 'left child &lt; node &lt; right child' is not enough, because a deeper node may break the rule for an ancestor. Pass down the allowed range (low, high) as you recurse.</p>
+      <p>Useful facts: inorder of a BST is sorted; the smallest value is the left-most node; the largest is the right-most node; the k-th smallest is the k-th item of the inorder walk.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Validation needs bounds: every node must be inside (low, high) derived from its ancestors. Equivalently, an inorder traversal must be strictly increasing.</li><li>Red-Black trees guarantee height at most 2 log2(n + 1); AVL trees are more strictly balanced (faster lookups, slower updates).</li><li>Without balancing, random insertion order gives expected height about O(log n); sorted insertion gives O(n).</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Databases and file systems</td><td>Ordered indexes (B-trees, a cousin of BSTs) support range queries.</td></tr><tr><td>Language runtimes</td><td>Ordered maps and sets (TreeMap in Java, std::map in C++) are balanced BSTs.</td></tr><tr><td>Interviewers</td><td>BST validation, kth smallest, LCA in a BST and insertion/deletion are common.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>BST vs hash table</td><td>Hash: O(1) exact lookups, no order. BST: O(log n) with ordering, range queries, predecessor/successor.</td></tr><tr><td>BST vs sorted array</td><td>Array: O(log n) search, O(n) insert. Balanced BST: O(log n) for both.</td></tr><tr><td>BST vs heap</td><td>Heap: fast min/max only. BST: full ordered operations.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>def search(node, t): while node: if t == node.val: return True; node = node.left if t &lt; node.val else node.right.</li><li>Validate with bounds: def ok(node, lo=float('-inf'), hi=float('inf')).</li><li>Build a BST from a list by inserting values one by one.</li><li>For sorted data and range queries use bisect on a list.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c12_2.py">def bst_search(node, target):
+    while node:
+        if target == node.val:
+            return True
+        node = node.left if target &lt; node.val else node.right
+    return False
+
+def bst_insert(node, val):
+    if node is None:
+        return TreeNode(val)           # found the empty spot
+    if val &lt; node.val:
+        node.left = bst_insert(node.left, val)
+    elif val &gt; node.val:
+        node.right = bst_insert(node.right, val)
+    return node</code></pre>
+      <details class="box"><summary>Helper code used in these examples (ListNode, TreeNode and builders)</summary><div class="d-body">
+<pre><code class="lang-py" data-embed="solutions/preludes/tree.py">class TreeNode:
+    def __init__(self, val=0, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+    def __repr__(self):
+        return "Node(%r)" % (self.val,)
+
+def build_tree(vals):
+    """Build a binary tree from a level-order list; None means 'no node'."""
+    if not vals or vals[0] is None:
+        return None
+    root = TreeNode(vals[0])
+    queue, i = [root], 1
+    while queue and i &lt; len(vals):
+        node = queue.pop(0)
+        if i &lt; len(vals) and vals[i] is not None:
+            node.left = TreeNode(vals[i]); queue.append(node.left)
+        i += 1
+        if i &lt; len(vals) and vals[i] is not None:
+            node.right = TreeNode(vals[i]); queue.append(node.right)
+        i += 1
+    return root
+
+def find_node(root, val):
+    if not root:
+        return None
+    if root.val == val:
+        return root
+    return find_node(root.left, val) or find_node(root.right, val)</code></pre>
+</div></details>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - check parent and children only (WRONG idea)</h4>
+      <p>Looks right and even says True for this tree, but the tree is NOT a valid BST: 3 sits in the right subtree of 5. A deep node can break the rule for a far ancestor. Never stop here.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c12_2_stage1.py">def is_valid_bst(root):
+    if not root:
+        return True
+    if root.left and root.left.val &gt;= root.val:
+        return False
+    if root.right and root.right.val &lt;= root.val:
+        return False
+    return is_valid_bst(root.left) and is_valid_bst(root.right)</code></pre>
+      <p class="muted small">Check: <code>is_valid_bst(build_tree([5, 4, 6, None, None, 3, 7]))</code> returns <code>True</code></p>
+      <h4>Stage 2 - pass down allowed bounds</h4>
+      <p>Each node must lie inside (low, high) inherited from all ancestors. Correct and O(n).</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c12_2_stage2.py">def is_valid_bst(root, low=float('-inf'), high=float('inf')):
+    if not root:
+        return True
+    if not (low &lt; root.val &lt; high):
+        return False
+    return (is_valid_bst(root.left, low, root.val) and
+            is_valid_bst(root.right, root.val, high))</code></pre>
+      <p class="muted small">Check: <code>is_valid_bst(build_tree([5, 4, 6, None, None, 3, 7]))</code> returns <code>False</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>bst_search(build_tree([8, 3, 10, 1, 6, None, 14]), 6)</code>, returns <code>True</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>node (after)</th><th>target (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>while node:</code></td><td><strong><code>Node(8)</code></strong></td><td><strong><code>6</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>if target == node.val:</code></td><td><code>Node(8)</code></td><td><code>6</code></td></tr>
+<tr><td class="num">3</td><td class="num">5</td><td><code>node = node.left if target &lt; node.val else node.right</code></td><td><strong><code>Node(3)</code></strong></td><td><code>6</code></td></tr>
+<tr><td class="num">4</td><td class="num">2</td><td><code>while node:</code></td><td><code>Node(3)</code></td><td><code>6</code></td></tr>
+<tr><td class="num">5</td><td class="num">3</td><td><code>if target == node.val:</code></td><td><code>Node(3)</code></td><td><code>6</code></td></tr>
+<tr><td class="num">6</td><td class="num">5</td><td><code>node = node.left if target &lt; node.val else node.right</code></td><td><strong><code>Node(6)</code></strong></td><td><code>6</code></td></tr>
+<tr><td class="num">7</td><td class="num">2</td><td><code>while node:</code></td><td><code>Node(6)</code></td><td><code>6</code></td></tr>
+<tr><td class="num">8</td><td class="num">3</td><td><code>if target == node.val:</code></td><td><code>Node(6)</code></td><td><code>6</code></td></tr>
+<tr><td class="num">9</td><td class="num">4</td><td><code>return True</code></td><td><code>Node(6)</code></td><td><code>6</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>O(h): O(log n) when balanced, O(n) worst case (skewed). Space O(1) iterative search / O(h) recursive insert.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Assuming a BST is always balanced.</li><li>Forgetting to return the node in recursive insert.</li><li>Breaking the BST property when deleting.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"Sorted data with dynamic inserts/deletes", "kth smallest", "validate BST" -&gt; BST properties.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m12-problems.html#prob-inorder">Inorder Traversal</a></td><td><span class="tag ok">Easy</span></td><td>Tree traversal</td></tr><tr><td><a href="m12-problems.html#prob-is_valid_bst">Validate a Binary Search Tree</a> <span class="tag">LC 98</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>BST property with bounds</td></tr><tr><td><a href="m12-problems.html#prob-lca_bst">Lowest Common Ancestor of a BST</a> <span class="tag">LC 235</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>BST property</td></tr><tr><td><a href="m12-problems.html#prob-kth_smallest_bst">Kth Smallest in a BST</a> <span class="tag">LC 230</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Inorder traversal</td></tr><tr><td><a href="m12-problems.html#prob-lca">Lowest Common Ancestor</a> <span class="tag">LC 236</span></td><td><span class="tag warn">Medium</span></td><td>Tree recursion</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why does a BST give sorted order by inorder traversal?</summary><div class="answer"><p>Everything on the left is smaller and on the right larger, so left, node, right visits values in ascending order.</p></div></details>
+        <details class="recall"><summary>Why can a BST be slow?</summary><div class="answer"><p>Inserting sorted data creates a chain of height n, so operations take O(n).</p></div></details>
+        <details class="recall"><summary>Why validate with bounds instead of parent-child checks?</summary><div class="answer"><p>A node must respect ALL its ancestors, not only its parent.</p></div></details>
+        <details class="recall"><summary>Why replace a two-child node by its inorder successor?</summary><div class="answer"><p>The successor is the next larger value; swapping it in keeps the ordering valid.</p></div></details>
+        <details class="recall"><summary>Why not use a BST when only exact lookups are needed?</summary><div class="answer"><p>A hash table does exact lookups in O(1) average.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c12_2-q1" data-topic="Trees &amp; Binary Search Trees" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Worst-case search time in a BST?</p></div>
+        <ul class="q-options">
+          <li data-key="A">O(1)</li>
+          <li data-key="B">O(log n)</li>
+          <li data-key="C">O(n)</li>
+          <li data-key="D">O(n log n)</li>
+        </ul>
+        <div class="q-explain"><p>A skewed tree degenerates into a linked list.</p></div>
+      </div>
+      <div class="quiz" data-qid="c12_2-q2" data-topic="Trees &amp; Binary Search Trees" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which node replaces a deleted node with two children?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Its parent</li>
+          <li data-key="B">Inorder successor</li>
+          <li data-key="C">The root</li>
+          <li data-key="D">Any leaf</li>
+        </ul>
+        <div class="q-explain"><p>The smallest value of the right subtree keeps the BST ordering intact.</p></div>
+      </div>
+    </section>
+
+    <section id="c12_3" data-track>
+      <h2>Height, balance, lowest common ancestor and heaps as trees</h2>
+      <p><span class="tag warn">Important</span> <span class="tag">Topic 12.3</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>Many tree questions are solved by letting each recursive call return information about its subtree (height, size, whether it is balanced) and combining the answers from the left and right children.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>This "post-order information passing" pattern solves depth, diameter, balance, LCA, path sum and more in a single O(n) pass.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>A manager asks each team lead for a report (their team's height/size) and combines the reports into the department's report.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Many tree questions ask for a single fact about the whole tree: its height, whether it is balanced, its diameter, the maximum path sum. Looking at the whole tree at once is hard, but looking at one node with the facts about its two child subtrees is easy. The recursion lets you assume the children's facts are available and combine them.</p>
+      <p>This is the 'post-order information passing' pattern: each call returns a summary of its subtree (height, size, a boolean, a tuple). The parent combines the summaries and returns its own. Think of managers reporting up the chain.</p>
+      <p>A second pattern passes information DOWN: the allowed range for BST validation, the remaining sum for path sum, the current depth for level-based work. Many problems combine both: pass something down and return something up.</p>
+      <p>Sometimes the answer is not the return value. Diameter returns height but updates a best variable with left + right at each node. Recognising 'the quantity I need differs from what I return' is a key step in hard tree problems.</p>
+      <p>Lowest common ancestor uses the same shape: each call reports whether it found p or q in its subtree; the first node that receives reports from both sides is the LCA.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="tree:level"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Height: 1 + max(height(left), height(right)); empty tree = 0 (counting nodes).</li><li>Count nodes: 1 + count(left) + count(right).</li><li>Balanced: for every node the heights of its subtrees differ by at most 1. Compute heights bottom-up and return -1 early if unbalanced.</li><li>LCA in a binary tree: if the current node is p or q return it; if both sides return non-null the current node is the LCA. In a BST: go left if both are smaller, right if both bigger, else the current node is the LCA.</li><li>A (binary) heap is a complete binary tree stored in an array where the parent is always smaller (min-heap) or larger (max-heap) than its children - see Module 13.</li><li>Use the level-order mode in the visualiser to see levels.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>The most powerful tree pattern: let each recursive call RETURN something about its subtree, and combine results from the two children. Height: 1 + max(left, right). Size: 1 + left + right. Sum: val + left + right. Balanced: return height, or -1 if some subtree is unbalanced.</p>
+      <p>Sometimes the answer is not what you return. Diameter is the longest path between any two nodes. Each call returns its height, but while doing so it updates a 'best' variable with left_height + right_height (the longest path passing through that node). This 'return one thing, record another' trick is common.</p>
+      <p>Lowest common ancestor (LCA) in a general binary tree: if the current node is one of the targets return it; recurse on both sides; if both sides return something, this node is the LCA; otherwise return whichever side is not None. In a BST it is even simpler: walk down; if both targets are smaller go left, if both bigger go right, otherwise stop.</p>
+      <p>Path problems (root-to-leaf sum, longest path) pass a running value DOWN the recursion (remaining sum) and decide at the leaf.</p>
+      <p>Heaps are trees too: a complete binary tree stored in an array. You will use them in the next module.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>A global/nonlocal variable or a returned tuple carries side results out of the recursion. Python closures with nonlocal are the clean way.</li><li>Efficient balance checking returns -1 as a sentinel for 'unbalanced' to stop work early; calling height at every node would be O(n^2) on a skewed tree.</li><li>All these algorithms visit each node once: O(n) time and O(h) stack space.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>File system utilities</td><td>Folder sizes and depth computed bottom-up (du command).</td></tr><tr><td>Build and dependency tools</td><td>Computing results for a node from its children's results.</td></tr><tr><td>Interviewers</td><td>Medium and hard tree problems are this pattern in different clothes.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Return tuple vs global variable</td><td>Tuples are purer and easier to test; a nonlocal variable is shorter for 'best so far' problems.</td></tr><tr><td>Recursion vs level-order</td><td>Use level order when the answer is per level (right view, zigzag); use recursion for per-subtree facts.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>nonlocal best lets a nested function update an outer variable.</li><li>Return tuples from helpers when you need several facts: return height, is_balanced.</li><li>A leaf test: node.left is None and node.right is None.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c12_3.py">def height(node):
+    if node is None:
+        return 0
+    return 1 + max(height(node.left), height(node.right))
+
+def count_nodes(node):
+    if node is None:
+        return 0
+    return 1 + count_nodes(node.left) + count_nodes(node.right)
+
+def is_balanced(node):
+    def check(n):                       # returns height or -1 if unbalanced
+        if n is None:
+            return 0
+        l, r = check(n.left), check(n.right)
+        if l == -1 or r == -1 or abs(l - r) &gt; 1:
+            return -1
+        return 1 + max(l, r)
+    return check(node) != -1</code></pre>
+      <details class="box"><summary>Helper code used in these examples (ListNode, TreeNode and builders)</summary><div class="d-body">
+<pre><code class="lang-py" data-embed="solutions/preludes/tree.py">class TreeNode:
+    def __init__(self, val=0, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+    def __repr__(self):
+        return "Node(%r)" % (self.val,)
+
+def build_tree(vals):
+    """Build a binary tree from a level-order list; None means 'no node'."""
+    if not vals or vals[0] is None:
+        return None
+    root = TreeNode(vals[0])
+    queue, i = [root], 1
+    while queue and i &lt; len(vals):
+        node = queue.pop(0)
+        if i &lt; len(vals) and vals[i] is not None:
+            node.left = TreeNode(vals[i]); queue.append(node.left)
+        i += 1
+        if i &lt; len(vals) and vals[i] is not None:
+            node.right = TreeNode(vals[i]); queue.append(node.right)
+        i += 1
+    return root
+
+def find_node(root, val):
+    if not root:
+        return None
+    if root.val == val:
+        return root
+    return find_node(root.left, val) or find_node(root.right, val)</code></pre>
+</div></details>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - compute height at every node</h4>
+      <p>Easy to write but height() is called repeatedly, giving O(n^2) on a skewed tree.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c12_3_stage1.py">def height(n):
+    return 0 if not n else 1 + max(height(n.left), height(n.right))
+
+def is_balanced(root):
+    if not root:
+        return True
+    return (abs(height(root.left) - height(root.right)) &lt;= 1 and
+            is_balanced(root.left) and is_balanced(root.right))</code></pre>
+      <p class="muted small">Check: <code>is_balanced(build_tree([3, 9, 20, None, None, 15, 7]))</code> returns <code>True</code></p>
+      <h4>Stage 2 - return height or -1 in one pass</h4>
+      <p>Each node reports its height upward, or -1 if some subtree is unbalanced: O(n).</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c12_3_stage2.py">def is_balanced(root):
+    def check(n):
+        if not n:
+            return 0
+        l, r = check(n.left), check(n.right)
+        if l == -1 or r == -1 or abs(l - r) &gt; 1:
+            return -1
+        return 1 + max(l, r)
+    return check(root) != -1</code></pre>
+      <p class="muted small">Check: <code>is_balanced(build_tree([3, 9, 20, None, None, 15, 7]))</code> returns <code>True</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Dry run of the related problem "Maximum Depth of a Binary Tree": Call: <code>max_depth(build_tree([3, 9, 20, None, None, 15, 7]))</code>, returns <code>3</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">depth</th><th class="num">line</th><th>statement executed</th><th>root (after)</th><th>depth (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">1</td><td class="num">2</td><td><code>if root is None:</code></td><td><strong><code>Node(3)</code></strong></td><td>-</td></tr>
+<tr><td class="num">2</td><td class="num">1</td><td class="num">4</td><td><code>return 1 + max(max_depth(root.left), max_depth(root.right))</code></td><td><strong><code>Node(9)</code></strong></td><td>-</td></tr>
+<tr><td class="num">3</td><td class="num">2</td><td class="num">2</td><td><code>if root is None:</code></td><td><code>Node(9)</code></td><td>-</td></tr>
+<tr><td class="num">4</td><td class="num">2</td><td class="num">4</td><td><code>return 1 + max(max_depth(root.left), max_depth(root.right))</code></td><td><strong><code>None</code></strong></td><td>-</td></tr>
+<tr><td class="num">5</td><td class="num">3</td><td class="num">2</td><td><code>if root is None:</code></td><td><code>None</code></td><td>-</td></tr>
+<tr><td class="num">6</td><td class="num">3</td><td class="num">3</td><td><code>return 0</code></td><td><code>None</code></td><td>-</td></tr>
+<tr><td class="num">7</td><td class="num">3</td><td class="num">2</td><td><code>if root is None:</code></td><td><code>None</code></td><td>-</td></tr>
+<tr><td class="num">8</td><td class="num">3</td><td class="num">3</td><td><code>return 0</code></td><td><code>None</code></td><td>-</td></tr>
+<tr><td class="num">9</td><td class="num">2</td><td class="num">2</td><td><code>if root is None:</code></td><td><strong><code>Node(20)</code></strong></td><td>-</td></tr>
+<tr><td class="num">10</td><td class="num">2</td><td class="num">4</td><td><code>return 1 + max(max_depth(root.left), max_depth(root.right))</code></td><td><strong><code>Node(15)</code></strong></td><td>-</td></tr>
+<tr><td class="num">11</td><td class="num">3</td><td class="num">2</td><td><code>if root is None:</code></td><td><code>Node(15)</code></td><td>-</td></tr>
+<tr><td class="num">12</td><td class="num">3</td><td class="num">4</td><td><code>return 1 + max(max_depth(root.left), max_depth(root.right))</code></td><td><strong><code>None</code></strong></td><td>-</td></tr>
+<tr><td class="num">13</td><td class="num">4</td><td class="num">2</td><td><code>if root is None:</code></td><td><code>None</code></td><td>-</td></tr>
+<tr><td class="num">14</td><td class="num">4</td><td class="num">3</td><td><code>return 0</code></td><td><code>None</code></td><td>-</td></tr>
+<tr><td class="num">15</td><td class="num">4</td><td class="num">2</td><td><code>if root is None:</code></td><td><code>None</code></td><td>-</td></tr>
+<tr><td class="num">16</td><td class="num">4</td><td class="num">3</td><td><code>return 0</code></td><td><code>None</code></td><td>-</td></tr>
+<tr><td class="num">17</td><td class="num">3</td><td class="num">2</td><td><code>if root is None:</code></td><td><strong><code>Node(7)</code></strong></td><td>-</td></tr>
+<tr><td class="num">18</td><td class="num">3</td><td class="num">4</td><td><code>return 1 + max(max_depth(root.left), max_depth(root.right))</code></td><td><strong><code>None</code></strong></td><td>-</td></tr>
+<tr><td class="num">19</td><td class="num">4</td><td class="num">2</td><td><code>if root is None:</code></td><td><code>None</code></td><td>-</td></tr>
+<tr><td class="num">20</td><td class="num">4</td><td class="num">3</td><td><code>return 0</code></td><td><code>None</code></td><td>-</td></tr>
+<tr><td class="num">21</td><td class="num">4</td><td class="num">2</td><td><code>if root is None:</code></td><td><code>None</code></td><td>-</td></tr>
+<tr><td class="num">22</td><td class="num">4</td><td class="num">3</td><td><code>return 0</code></td><td><code>None</code></td><td>-</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>O(n) time, O(h) space for each of these.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Counting height in edges vs nodes inconsistently.</li><li>Calling height() inside every node of is_balanced (O(n^2)).</li><li>Assuming LCA of BST logic works for general trees.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>Compute something for the whole tree from its children's results -&gt; post-order recursion.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m12-problems.html#prob-max_depth">Maximum Depth of a Binary Tree</a> <span class="tag">LC 104</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Tree recursion</td></tr><tr><td><a href="m12-problems.html#prob-is_subtree">Subtree of Another Tree</a> <span class="tag">LC 572</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Tree recursion</td></tr><tr><td><a href="m12-problems.html#prob-has_path_sum">Path Sum</a> <span class="tag">LC 112</span></td><td><span class="tag ok">Easy</span></td><td>Tree recursion (DFS)</td></tr><tr><td><a href="m12-problems.html#prob-lca">Lowest Common Ancestor</a> <span class="tag">LC 236</span></td><td><span class="tag warn">Medium</span></td><td>Tree recursion</td></tr><tr><td><a href="m12-problems.html#prob-level_order">Level Order Traversal</a> <span class="tag">LC 102</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Tree BFS with a queue</td></tr><tr><td><a href="m12-problems.html#prob-good_nodes">Count Good Nodes in a Binary Tree</a> <span class="tag">LC 1448</span></td><td><span class="tag warn">Medium</span></td><td>Tree DFS with a running maximum</td></tr><tr><td><a href="m12-problems.html#prob-diameter_tree">Diameter of a Binary Tree</a> <span class="tag">LC 543</span></td><td><span class="tag bad">Hard</span></td><td>Tree recursion with a global</td></tr><tr><td><a href="m12-problems.html#prob-max_path_sum">Binary Tree Maximum Path Sum</a> <span class="tag">LC 124</span> <span class="tag accent">must-do</span></td><td><span class="tag bad">Hard</span></td><td>Tree recursion (gain + global best)</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why return values from children instead of using globals?</summary><div class="answer"><p>Returned values keep each call independent and easy to reason about.</p></div></details>
+        <details class="recall"><summary>Why does diameter use a separate best variable?</summary><div class="answer"><p>The longest path through a node is left + right height, but the function must still return only the height to its parent.</p></div></details>
+        <details class="recall"><summary>Why return -1 for unbalanced?</summary><div class="answer"><p>It is a sentinel that stops further work early and is distinguishable from valid heights.</p></div></details>
+        <details class="recall"><summary>Why does LCA return the node when both sides are non-null?</summary><div class="answer"><p>p and q were found in different subtrees, so this node is the lowest common ancestor.</p></div></details>
+        <details class="recall"><summary>Why not call height() repeatedly?</summary><div class="answer"><p>It re-walks subtrees and makes the algorithm O(n^2) on skewed trees.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c12_3-q1" data-topic="Trees &amp; Binary Search Trees" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A tree with only a root has height (in nodes)?</p></div>
+        <ul class="q-options">
+          <li data-key="A">0</li>
+          <li data-key="B">1</li>
+          <li data-key="C">2</li>
+          <li data-key="D">undefined</li>
+        </ul>
+        <div class="q-explain"><p>One node on the longest path.</p></div>
+      </div>
+      <div class="quiz" data-qid="c12_3-q2" data-topic="Trees &amp; Binary Search Trees" data-type="single" data-answer="A">
+        <div class="q-stem"><p>In an LCA search, both left and right recursive calls return non-null. What does that mean?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The current node is the LCA</li>
+          <li data-key="B">The tree is empty</li>
+          <li data-key="C">No LCA exists</li>
+          <li data-key="D">Search failed</li>
+        </ul>
+        <div class="q-explain"><p>p and q were found in different subtrees.</p></div>
+      </div>
+    </section>
+
+    <h2 id="practice-problems">Practice problems for this module</h2>
+
+    <p>17 problems with hints, approach, dry run and tested solutions on the <a href="m12-problems.html">problem set for this module</a>.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m12-problems.html#prob-max_depth">Maximum Depth of a Binary Tree</a> <span class="tag">LC 104</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Tree recursion</td></tr><tr><td><a href="m12-problems.html#prob-inorder">Inorder Traversal</a></td><td><span class="tag ok">Easy</span></td><td>Tree traversal</td></tr><tr><td><a href="m12-problems.html#prob-invert_tree">Invert a Binary Tree</a> <span class="tag">LC 226</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Tree recursion</td></tr><tr><td><a href="m12-problems.html#prob-has_path_sum">Path Sum</a> <span class="tag">LC 112</span></td><td><span class="tag ok">Easy</span></td><td>Tree recursion (DFS)</td></tr><tr><td><a href="m12-problems.html#prob-is_subtree">Subtree of Another Tree</a> <span class="tag">LC 572</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Tree recursion</td></tr><tr><td><a href="m12-problems.html#prob-level_order">Level Order Traversal</a> <span class="tag">LC 102</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Tree BFS with a queue</td></tr><tr><td><a href="m12-problems.html#prob-is_valid_bst">Validate a Binary Search Tree</a> <span class="tag">LC 98</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>BST property with bounds</td></tr><tr><td><a href="m12-problems.html#prob-lca">Lowest Common Ancestor</a> <span class="tag">LC 236</span></td><td><span class="tag warn">Medium</span></td><td>Tree recursion</td></tr><tr><td><a href="m12-problems.html#prob-kth_smallest_bst">Kth Smallest in a BST</a> <span class="tag">LC 230</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Inorder traversal</td></tr><tr><td><a href="m12-problems.html#prob-right_side_view">Right Side View of a Tree</a></td><td><span class="tag warn">Medium</span></td><td>Level order BFS</td></tr><tr><td><a href="m12-problems.html#prob-build_tree_pre_in">Construct Tree from Preorder and Inorder</a> <span class="tag">LC 105</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Tree recursion + hash map</td></tr><tr><td><a href="m12-problems.html#prob-zigzag_level_order">Binary Tree Zigzag Level Order</a> <span class="tag">LC 103</span></td><td><span class="tag warn">Medium</span></td><td>BFS with direction flag</td></tr><tr><td><a href="m12-problems.html#prob-lca_bst">Lowest Common Ancestor of a BST</a> <span class="tag">LC 235</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>BST property</td></tr><tr><td><a href="m12-problems.html#prob-good_nodes">Count Good Nodes in a Binary Tree</a> <span class="tag">LC 1448</span></td><td><span class="tag warn">Medium</span></td><td>Tree DFS with a running maximum</td></tr><tr><td><a href="m12-problems.html#prob-diameter_tree">Diameter of a Binary Tree</a> <span class="tag">LC 543</span></td><td><span class="tag bad">Hard</span></td><td>Tree recursion with a global</td></tr><tr><td><a href="m12-problems.html#prob-max_path_sum">Binary Tree Maximum Path Sum</a> <span class="tag">LC 124</span> <span class="tag accent">must-do</span></td><td><span class="tag bad">Hard</span></td><td>Tree recursion (gain + global best)</td></tr><tr><td><a href="m12-problems.html#prob-serialize_tree">Serialize and Deserialize Binary Tree</a> <span class="tag">LC 297</span> <span class="tag accent">must-do</span></td><td><span class="tag bad">Hard</span></td><td>Preorder with null markers</td></tr>
+</tbody>
+</table>
+</div>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Trees &amp; Binary Search Trees</h2>
+      <p class="muted">56 questions: try to answer aloud in under a minute, then reveal. All questions from every module are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Trees & Binary Search Trees">
+<details class="recall iq" data-level="basic" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What are the tree traversals and their orders?</summary><div class="answer"><p>Inorder: left, node, right. Preorder: node, left, right. Postorder: left, right, node. Level order: level by level with a queue.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What does inorder traversal of a BST give?</summary><div class="answer"><p>The values in sorted ascending order.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you find the height of a binary tree?</summary><div class="answer"><p>height(node) = 0 if None else 1 + max(height(left), height(right)). O(n).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Difference between depth and height?</summary><div class="answer"><p>Depth is measured from the root down to a node; height is measured from a node down to its deepest leaf.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you do level order traversal?</summary><div class="answer"><p>Use a queue. Process the number of nodes currently in the queue as one level and add their children for the next level.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the space complexity of recursive DFS on a tree?</summary><div class="answer"><p>O(h) for the call stack, where h is the height.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the maximum number of nodes in a binary tree of height h (counting edges)?</summary><div class="answer"><p>2^(h+1) - 1.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is a binary search tree?</summary><div class="answer"><p>A binary tree where for every node, all values in the left subtree are smaller and all values in the right subtree are larger.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Time complexity of BST operations?</summary><div class="answer"><p>O(h): O(log n) when balanced and O(n) when skewed.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you validate a BST?</summary><div class="answer"><p>Recurse with the allowed range: left child must be within (low, node.val) and right child within (node.val, high). Checking only the parent is wrong.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you delete a node with two children?</summary><div class="answer"><p>Replace its value with its inorder successor (smallest in the right subtree) and then delete that successor node.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you find the k-th smallest element in a BST?</summary><div class="answer"><p>Do an inorder traversal and stop at the k-th visited node (iterative stack solution is O(h + k)).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why can a BST become O(n)?</summary><div class="answer"><p>If values are inserted in sorted order the tree becomes a chain.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why can a BST degrade to O(n)?</summary><div class="answer"><p>Inserting sorted data produces a one-sided chain, so height is n and operations walk the whole chain. Self-balancing trees fix this.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you check if a tree is height balanced efficiently?</summary><div class="answer"><p>Compute heights bottom-up. A helper returns the height or -1 when unbalanced. This is O(n) instead of calling height at every node (O(n^2)).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the diameter of a binary tree and how do you compute it?</summary><div class="answer"><p>The number of edges on the longest path between any two nodes. For each node the longest path through it is height(left) + height(right); take the maximum while computing heights. O(n).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Find the lowest common ancestor of two nodes.</summary><div class="answer"><p>Recurse: if node is None or equals a target return node; get left and right answers; if both are non-null return node; else return whichever is non-null.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you check if a tree is symmetric?</summary><div class="answer"><p>Compare the left and right subtrees as mirrors: left.left with right.right and left.right with right.left, recursively.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you check if a root-to-leaf path has a given sum?</summary><div class="answer"><p>Subtract each node&#x27;s value from the target while going down; at a leaf the remaining target must be 0.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What does &#x27;post-order information passing&#x27; mean?</summary><div class="answer"><p>Each node computes its result after its children and returns it to its parent, combining the children&#x27;s results.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Iterative inorder traversal.</summary><div class="answer"><pre><code class="lang-py">def inorder(root):
+    res, st, cur = [], [], root
+    while st or cur:
+        while cur:
+            st.append(cur)
+            cur = cur.left
+        cur = st.pop()
+        res.append(cur.val)
+        cur = cur.right
+    return res</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> For the tree 1 with children 2 and 3, what are the preorder, inorder, postorder?</summary><div class="answer"><p>Preorder 1 2 3, inorder 2 1 3, postorder 2 3 1.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How does a browser use a tree?</summary><div class="answer"><p>It parses HTML into a DOM tree; styling and layout walk the tree, and events bubble up from child to parent.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use a tree instead of a list for hierarchies?</summary><div class="answer"><p>A list cannot express &#x27;belongs to&#x27;. A tree gives every item one parent and shows containment directly.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is tree recursion so short?</summary><div class="answer"><p>Every subtree is itself a tree, so one function handles the node and trusts recursive calls for the children.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why are there three DFS orders?</summary><div class="answer"><p>They differ in when the node is processed: before children (copy), between children (sorted order in a BST), after children (delete or evaluate).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does BFS need a queue?</summary><div class="answer"><p>It must serve the oldest discovered node first to go level by level.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why can recursion fail on a skewed tree?</summary><div class="answer"><p>Depth equals the number of nodes, which can exceed Python&#x27;s recursion limit. Use an iterative traversal.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not store a tree as a list of lists?</summary><div class="answer"><p>You can (heaps do, using index arithmetic), but for general trees node objects are clearer.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Count the leaf nodes of a binary tree.</summary><div class="answer"><pre><code class="lang-py">def leaves(n):
+    if not n:
+        return 0
+    if not n.left and not n.right:
+        return 1
+    return leaves(n.left) + leaves(n.right)</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> How many nodes does a full binary tree of height 3 (edges) have?</summary><div class="answer"><p>15 = 2^4 - 1.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Find the lowest common ancestor in a BST.</summary><div class="answer"><pre><code class="lang-py">def lca_bst(root, p, q):
+    while root:
+        if p &lt; root.val and q &lt; root.val:
+            root = root.left
+        elif p &gt; root.val and q &gt; root.val:
+            root = root.right
+        else:
+            return root</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> Is the tree [5, 1, 4, None, None, 3, 6] a valid BST?</summary><div class="answer"><p>No. Node 3 is in the right subtree of 5 but 3 &lt; 5, violating the ancestor rule.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How does a database answer a range query using a tree?</summary><div class="answer"><p>It searches to the first key in range (O(log n)) and then walks in order through the leaves until the end of the range.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does a BST give sorted order by inorder traversal?</summary><div class="answer"><p>Everything on the left is smaller and on the right larger, so left, node, right visits values in ascending order.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why can a BST be slow?</summary><div class="answer"><p>Inserting sorted data creates a chain of height n, so operations take O(n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why validate with bounds instead of parent-child checks?</summary><div class="answer"><p>A node must respect ALL its ancestors, not only its parent.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why replace a two-child node by its inorder successor?</summary><div class="answer"><p>The successor is the next larger value; swapping it in keeps the ordering valid.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use a BST when only exact lookups are needed?</summary><div class="answer"><p>A hash table does exact lookups in O(1) average.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why do databases use B-trees rather than binary search trees?</summary><div class="answer"><p>B-trees have many keys per node, so they are shallower and read fewer disk blocks.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Insert a value into a BST iteratively.</summary><div class="answer"><p>Walk down comparing with each node and attach a new node at the first empty child spot.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Maximum path sum in a binary tree (path may start and end anywhere).</summary><div class="answer"><pre><code class="lang-py">def max_path_sum(root):
+    best = float('-inf')
+    def gain(n):
+        nonlocal best
+        if not n:
+            return 0
+        l, r = max(gain(n.left), 0), max(gain(n.right), 0)
+        best = max(best, n.val + l + r)
+        return n.val + max(l, r)
+    gain(root)
+    return best</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> Why is calling height() in every node of is_balanced slow?</summary><div class="answer"><p>It re-walks subtrees repeatedly: O(n^2) for a skewed tree. Return height from one pass with -1 for unbalanced.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How might a tool compute folder sizes?</summary><div class="answer"><p>Post-order: size(folder) = sum(file sizes) + sum(size(subfolder)).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why return values from children instead of using globals?</summary><div class="answer"><p>Returned values keep each call independent and easy to reason about.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does diameter use a separate best variable?</summary><div class="answer"><p>The longest path through a node is left + right height, but the function must still return only the height to its parent.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why return -1 for unbalanced?</summary><div class="answer"><p>It is a sentinel that stops further work early and is distinguishable from valid heights.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does LCA return the node when both sides are non-null?</summary><div class="answer"><p>p and q were found in different subtrees, so this node is the lowest common ancestor.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not call height() repeatedly?</summary><div class="answer"><p>It re-walks subtrees and makes the algorithm O(n^2) on skewed trees.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is the BST LCA simpler than the general-tree LCA?</summary><div class="answer"><p>Order tells you which side to go; you need no search through both subtrees.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Check whether two trees are identical.</summary><div class="answer"><pre><code class="lang-py">def same(a, b):
+    if not a and not b:
+        return True
+    if not a or not b or a.val != b.val:
+        return False
+    return same(a.left, b.left) and same(a.right, b.right)</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What is the diameter (edges) of a single-node tree?</summary><div class="answer"><p>0.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Reconstruct a tree from preorder and inorder lists.</summary><div class="answer"><p>The first preorder value is the root; find it in inorder to split left and right subtrees and recurse. Use a dict from value to inorder index for O(n).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Convert a sorted array to a height-balanced BST.</summary><div class="answer"><p>Pick the middle element as root and recursively build left and right subtrees from the two halves. O(n).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Find the inorder successor of a node in a BST.</summary><div class="answer"><p>If it has a right child, take that subtree&#x27;s leftmost node; otherwise it is the nearest ancestor for which the node is in the left subtree.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Trees &amp; Binary Search Trees"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Check if a tree is symmetric.</summary><div class="answer"><p>Compare left and right subtrees as mirrors recursively: a.left with b.right and a.right with b.left.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="m11-problems.html"><span class="dir">Previous</span><span>Problems 11: Recursion & Backtracking</span></a>
+      <a class="next" href="m12-problems.html"><span class="dir">Next</span><span>Problems 12: Trees & Binary Search Trees</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

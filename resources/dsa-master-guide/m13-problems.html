@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="P13">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Problems 13: Heaps & Priority Queues | DSA Master Guide</title>
+<meta name="description" content="11 practice problems with hints, approach, dry run, tested Python solution and edge cases.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Practice 13</p>
+      <h1>Problems: Heaps &amp; Priority Queues</h1>
+      <p class="lede">Practice problems for module 13, ordered from easy to hard. Original or classic textbook problems; none claim to be real company questions.</p>
+      <div class="meta"><span class="tag ok">1 Easy</span><span class="tag warn">8 Medium</span><span class="tag bad">2 Hard</span></div>
+    </div>
+
+    <div class="callout tip"><p class="mb-0">Method for every problem: read the statement, work the sample by hand, then reveal hints one at a time. Write your own solution first, run it on the edge cases, and only then open the approach and solution. Every solution here was executed against its test cases (see <code>solutions/test_dsa.py</code>).</p></div>
+
+    <h2 id="problem-index">Problem index</h2>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="#prob-last_stone_weight">Last Stone Weight</a></td><td><span class="tag ok">Easy</span></td><td>Max-heap simulation</td></tr><tr><td><a href="#prob-kth_largest">Kth Largest Element</a></td><td><span class="tag warn">Medium</span></td><td>Min-heap of size k</td></tr><tr><td><a href="#prob-top_k_frequent">Top K Frequent Elements</a></td><td><span class="tag warn">Medium</span></td><td>Heap + hash map</td></tr><tr><td><a href="#prob-k_closest">K Closest Points to Origin</a></td><td><span class="tag warn">Medium</span></td><td>Heap with a key</td></tr><tr><td><a href="#prob-reorganize_string">Reorganize String</a></td><td><span class="tag warn">Medium</span></td><td>Max-heap (greedy)</td></tr><tr><td><a href="#prob-kth_smallest_matrix">Kth Smallest Element in a Sorted Matrix</a></td><td><span class="tag warn">Medium</span></td><td>Min-heap merge</td></tr><tr><td><a href="#prob-meeting_rooms_ii">Meeting Rooms II</a></td><td><span class="tag warn">Medium</span></td><td>Sort + min-heap of end times</td></tr><tr><td><a href="#prob-task_scheduler">Task Scheduler</a></td><td><span class="tag warn">Medium</span></td><td>Greedy counting / heap</td></tr><tr><td><a href="#prob-ugly_number_ii">Ugly Number II</a></td><td><span class="tag warn">Medium</span></td><td>Min-heap / three pointers</td></tr><tr><td><a href="#prob-merge_k_sorted">Merge K Sorted Lists</a></td><td><span class="tag bad">Hard</span></td><td>Heap merge</td></tr><tr><td><a href="#prob-running_median">Median of a Data Stream</a></td><td><span class="tag bad">Hard</span></td><td>Two heaps</td></tr>
+</tbody>
+</table>
+</div>
+
+    <section id="prob-last_stone_weight" data-track>
+      <h2>Last Stone Weight</h2>
+      <p><span class="tag ok">Easy</span> <span class="tag">Max-heap simulation</span> <span class="tag">LC 1046</span></p>
+      <p>Repeatedly smash the two heaviest stones: equal stones vanish, otherwise the difference stays. Return the weight of the last stone (0 if none).</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #1046). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Max-heap simulation (Heaps &amp; Priority Queues)</td></tr><tr><td>Input format</td><td>List of weights.</td></tr><tr><td>Output format</td><td>Integer.</td></tr><tr><td>Constraints</td><td>len &lt;= 30</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>[2,7,4,1,8,1]</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>1</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> Smash 8 and 7 -&gt; 1; 4 and 2 -&gt; 2; 2 and 1 -&gt; 1; 1 and 1 -&gt; 0; left 1.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Push -x, pop and negate.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Python only has a min-heap, so store negative weights to simulate a max-heap.</p></div></details>
+      <details class="box"><summary>Step-by-step dry run</summary><div class="d-body">
+<p class="muted small">Call: <code>last_stone_weight([2, 7, 4, 1, 8, 1])</code>, returns <code>1</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>a (after)</th><th>b (after)</th><th>heap (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">4</td><td><code>heap = [-s for s in stones]</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">2</td><td class="num">4</td><td><code>heap = [-s for s in stones]</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>heap = [-s for s in stones]</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">4</td><td class="num">4</td><td><code>heap = [-s for s in stones]</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">5</td><td class="num">4</td><td><code>heap = [-s for s in stones]</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">6</td><td class="num">4</td><td><code>heap = [-s for s in stones]</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">7</td><td class="num">4</td><td><code>heap = [-s for s in stones]</code></td><td>-</td><td>-</td><td><strong><code>[-2, -7, -4, -1, -8, -1]</code></strong></td></tr>
+<tr><td class="num">8</td><td class="num">5</td><td><code>heapq.heapify(heap)</code></td><td>-</td><td>-</td><td><strong><code>[-8, -7, -4, -1, -2, -1]</code></strong></td></tr>
+<tr><td class="num">9</td><td class="num">6</td><td><code>while len(heap) &gt; 1:</code></td><td>-</td><td>-</td><td><code>[-8, -7, -4, -1, -2, -1]</code></td></tr>
+<tr><td class="num">10</td><td class="num">7</td><td><code>a = -heapq.heappop(heap)       # heaviest</code></td><td><strong><code>8</code></strong></td><td>-</td><td><strong><code>[-7, -2, -4, -1, -1]</code></strong></td></tr>
+<tr><td class="num">11</td><td class="num">8</td><td><code>b = -heapq.heappop(heap)       # second heaviest</code></td><td><code>8</code></td><td><strong><code>7</code></strong></td><td><strong><code>[-4, -2, -1, -1]</code></strong></td></tr>
+<tr><td class="num">12</td><td class="num">9</td><td><code>if a != b:</code></td><td><code>8</code></td><td><code>7</code></td><td><code>[-4, -2, -1, -1]</code></td></tr>
+<tr><td class="num">13</td><td class="num">10</td><td><code>heapq.heappush(heap, -(a - b))</code></td><td><code>8</code></td><td><code>7</code></td><td><strong><code>[-4, -2, -1, -1, -1]</code></strong></td></tr>
+<tr><td class="num">14</td><td class="num">6</td><td><code>while len(heap) &gt; 1:</code></td><td><code>8</code></td><td><code>7</code></td><td><code>[-4, -2, -1, -1, -1]</code></td></tr>
+<tr><td class="num">15</td><td class="num">7</td><td><code>a = -heapq.heappop(heap)       # heaviest</code></td><td><strong><code>4</code></strong></td><td><code>7</code></td><td><strong><code>[-2, -1, -1, -1]</code></strong></td></tr>
+<tr><td class="num">16</td><td class="num">8</td><td><code>b = -heapq.heappop(heap)       # second heaviest</code></td><td><code>4</code></td><td><strong><code>2</code></strong></td><td><strong><code>[-1, -1, -1]</code></strong></td></tr>
+<tr><td class="num">17</td><td class="num">9</td><td><code>if a != b:</code></td><td><code>4</code></td><td><code>2</code></td><td><code>[-1, -1, -1]</code></td></tr>
+<tr><td class="num">18</td><td class="num">10</td><td><code>heapq.heappush(heap, -(a - b))</code></td><td><code>4</code></td><td><code>2</code></td><td><strong><code>[-2, -1, -1, -1]</code></strong></td></tr>
+<tr><td class="num">19</td><td class="num">6</td><td><code>while len(heap) &gt; 1:</code></td><td><code>4</code></td><td><code>2</code></td><td><code>[-2, -1, -1, -1]</code></td></tr>
+<tr><td class="num">20</td><td class="num">7</td><td><code>a = -heapq.heappop(heap)       # heaviest</code></td><td><strong><code>2</code></strong></td><td><code>2</code></td><td><strong><code>[-1, -1, -1]</code></strong></td></tr>
+<tr><td class="num">21</td><td class="num">8</td><td><code>b = -heapq.heappop(heap)       # second heaviest</code></td><td><code>2</code></td><td><strong><code>1</code></strong></td><td><strong><code>[-1, -1]</code></strong></td></tr>
+<tr><td class="num">22</td><td class="num">9</td><td><code>if a != b:</code></td><td><code>2</code></td><td><code>1</code></td><td><code>[-1, -1]</code></td></tr>
+<tr><td class="num">23</td><td class="num">10</td><td><code>heapq.heappush(heap, -(a - b))</code></td><td><code>2</code></td><td><code>1</code></td><td><strong><code>[-1, -1, -1]</code></strong></td></tr>
+<tr><td class="num">24</td><td class="num">6</td><td><code>while len(heap) &gt; 1:</code></td><td><code>2</code></td><td><code>1</code></td><td><code>[-1, -1, -1]</code></td></tr>
+<tr><td class="num">25</td><td class="num">7</td><td><code>a = -heapq.heappop(heap)       # heaviest</code></td><td><strong><code>1</code></strong></td><td><code>1</code></td><td><strong><code>[-1, -1]</code></strong></td></tr>
+<tr><td class="num">26</td><td class="num">8</td><td><code>b = -heapq.heappop(heap)       # second heaviest</code></td><td><code>1</code></td><td><code>1</code></td><td><strong><code>[-1]</code></strong></td></tr>
+<tr><td class="num">27</td><td class="num">9</td><td><code>if a != b:</code></td><td><code>1</code></td><td><code>1</code></td><td><code>[-1]</code></td></tr>
+<tr><td class="num">28</td><td class="num">6</td><td><code>while len(heap) &gt; 1:</code></td><td><code>1</code></td><td><code>1</code></td><td><code>[-1]</code></td></tr>
+<tr><td class="num">29</td><td class="num">11</td><td><code>return -heap[0] if heap else 0</code></td><td><code>1</code></td><td><code>1</code></td><td><code>[-1]</code></td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/last_stone_weight.py">import heapq
+
+def last_stone_weight(stones):
+    heap = [-s for s in stones]
+    heapq.heapify(heap)
+    while len(heap) &gt; 1:
+        a = -heapq.heappop(heap)       # heaviest
+        b = -heapq.heappop(heap)       # second heaviest
+        if a != b:
+            heapq.heappush(heap, -(a - b))
+    return -heap[0] if heap else 0</code></pre>
+      <p><strong>Complexity:</strong> Time O(n log n); Space O(n).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Single stone</li><li>All stones cancel out -&gt; 0</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>last_stone_weight([2,7,4,1,8,1])</code></td><td><code>1</code></td><td>pass</td></tr><tr><td><code>last_stone_weight([1])</code></td><td><code>1</code></td><td>pass</td></tr><tr><td><code>last_stone_weight([3,3])</code></td><td><code>0</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-kth_largest" data-track>
+      <h2>Kth Largest Element</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Min-heap of size k</span> <span class="tag">LC 215</span></p>
+      <p>Return the k-th largest element (counting duplicates) in an unsorted list.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #215). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Min-heap of size k (Heaps &amp; Priority Queues)</td></tr><tr><td>Input format</td><td>List nums, integer k.</td></tr><tr><td>Output format</td><td>Integer.</td></tr><tr><td>Constraints</td><td>1 &lt;= k &lt;= len &lt;= 10^5</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>[3,2,1,5,6,4], k=2</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>5</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> Sorted descending: 6, 5, 4... so the 2nd is 5.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>If the heap grows beyond k, pop the smallest.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Sorting is O(n log n). Keep a min-heap holding the k largest seen so far; its root is the k-th largest. Each push/pop costs O(log k).</p></div></details>
+      <details class="box"><summary>Step-by-step dry run</summary><div class="d-body">
+<p class="muted small">Call: <code>kth_largest([3, 2, 1, 5, 6, 4], 2)</code>, returns <code>5</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>x (after)</th><th>heap (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">4</td><td><code>heap = []                        # min-heap with the k largest values</code></td><td>-</td><td><strong><code>[]</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">5</td><td><code>for x in nums:</code></td><td><strong><code>3</code></strong></td><td><code>[]</code></td></tr>
+<tr><td class="num">3</td><td class="num">6</td><td><code>heapq.heappush(heap, x)</code></td><td><code>3</code></td><td><strong><code>[3]</code></strong></td></tr>
+<tr><td class="num">4</td><td class="num">7</td><td><code>if len(heap) &gt; k:</code></td><td><code>3</code></td><td><code>[3]</code></td></tr>
+<tr><td class="num">5</td><td class="num">5</td><td><code>for x in nums:</code></td><td><strong><code>2</code></strong></td><td><code>[3]</code></td></tr>
+<tr><td class="num">6</td><td class="num">6</td><td><code>heapq.heappush(heap, x)</code></td><td><code>2</code></td><td><strong><code>[2, 3]</code></strong></td></tr>
+<tr><td class="num">7</td><td class="num">7</td><td><code>if len(heap) &gt; k:</code></td><td><code>2</code></td><td><code>[2, 3]</code></td></tr>
+<tr><td class="num">8</td><td class="num">5</td><td><code>for x in nums:</code></td><td><strong><code>1</code></strong></td><td><code>[2, 3]</code></td></tr>
+<tr><td class="num">9</td><td class="num">6</td><td><code>heapq.heappush(heap, x)</code></td><td><code>1</code></td><td><strong><code>[1, 3, 2]</code></strong></td></tr>
+<tr><td class="num">10</td><td class="num">7</td><td><code>if len(heap) &gt; k:</code></td><td><code>1</code></td><td><code>[1, 3, 2]</code></td></tr>
+<tr><td class="num">11</td><td class="num">8</td><td><code>heapq.heappop(heap)      # drop the smallest</code></td><td><code>1</code></td><td><strong><code>[2, 3]</code></strong></td></tr>
+<tr><td class="num">12</td><td class="num">5</td><td><code>for x in nums:</code></td><td><strong><code>5</code></strong></td><td><code>[2, 3]</code></td></tr>
+<tr><td class="num">13</td><td class="num">6</td><td><code>heapq.heappush(heap, x)</code></td><td><code>5</code></td><td><strong><code>[2, 3, 5]</code></strong></td></tr>
+<tr><td class="num">14</td><td class="num">7</td><td><code>if len(heap) &gt; k:</code></td><td><code>5</code></td><td><code>[2, 3, 5]</code></td></tr>
+<tr><td class="num">15</td><td class="num">8</td><td><code>heapq.heappop(heap)      # drop the smallest</code></td><td><code>5</code></td><td><strong><code>[3, 5]</code></strong></td></tr>
+<tr><td class="num">16</td><td class="num">5</td><td><code>for x in nums:</code></td><td><strong><code>6</code></strong></td><td><code>[3, 5]</code></td></tr>
+<tr><td class="num">17</td><td class="num">6</td><td><code>heapq.heappush(heap, x)</code></td><td><code>6</code></td><td><strong><code>[3, 5, 6]</code></strong></td></tr>
+<tr><td class="num">18</td><td class="num">7</td><td><code>if len(heap) &gt; k:</code></td><td><code>6</code></td><td><code>[3, 5, 6]</code></td></tr>
+<tr><td class="num">19</td><td class="num">8</td><td><code>heapq.heappop(heap)      # drop the smallest</code></td><td><code>6</code></td><td><strong><code>[5, 6]</code></strong></td></tr>
+<tr><td class="num">20</td><td class="num">5</td><td><code>for x in nums:</code></td><td><strong><code>4</code></strong></td><td><code>[5, 6]</code></td></tr>
+<tr><td class="num">21</td><td class="num">6</td><td><code>heapq.heappush(heap, x)</code></td><td><code>4</code></td><td><strong><code>[4, 6, 5]</code></strong></td></tr>
+<tr><td class="num">22</td><td class="num">7</td><td><code>if len(heap) &gt; k:</code></td><td><code>4</code></td><td><code>[4, 6, 5]</code></td></tr>
+<tr><td class="num">23</td><td class="num">8</td><td><code>heapq.heappop(heap)      # drop the smallest</code></td><td><code>4</code></td><td><strong><code>[5, 6]</code></strong></td></tr>
+<tr><td class="num">24</td><td class="num">5</td><td><code>for x in nums:</code></td><td><code>4</code></td><td><code>[5, 6]</code></td></tr>
+<tr><td class="num">25</td><td class="num">9</td><td><code>return heap[0]</code></td><td><code>4</code></td><td><code>[5, 6]</code></td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/kth_largest.py">import heapq
+
+def kth_largest(nums, k):
+    heap = []                        # min-heap with the k largest values
+    for x in nums:
+        heapq.heappush(heap, x)
+        if len(heap) &gt; k:
+            heapq.heappop(heap)      # drop the smallest
+    return heap[0]</code></pre>
+      <p><strong>Complexity:</strong> Time O(n log k); Space O(k).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>k = 1 (maximum)</li><li>k = n (minimum)</li><li>Duplicates</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>kth_largest([3,2,1,5,6,4],2)</code></td><td><code>5</code></td><td>pass</td></tr><tr><td><code>kth_largest([3,2,3,1,2,4,5,5,6],4)</code></td><td><code>4</code></td><td>pass</td></tr><tr><td><code>kth_largest([1],1)</code></td><td><code>1</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-top_k_frequent" data-track>
+      <h2>Top K Frequent Elements</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Heap + hash map</span> <span class="tag">LC 347</span> <span class="tag accent">must-do</span></p>
+      <p>Return the k most frequent elements. Order the answer by frequency (descending), ties by smaller value.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #347, also on widely shared must-practise lists such as Blind 75). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Heap + hash map (Heaps &amp; Priority Queues)</td></tr><tr><td>Input format</td><td>List nums, integer k.</td></tr><tr><td>Output format</td><td>List of k values.</td></tr><tr><td>Constraints</td><td>len &lt;= 10^5</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>[1,1,1,2,2,3], k=2</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>[1, 2]</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> 1 appears 3 times, 2 appears twice.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>heapq.nsmallest(k, items, key=...) is a compact tool.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Count with Counter, then heapq.nsmallest/nlargest with a key (or a heap of (-freq, value)).</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/top_k_frequent.py">import heapq
+from collections import Counter
+
+def top_k_frequent(nums, k):
+    freq = Counter(nums)
+    return heapq.nsmallest(k, freq, key=lambda x: (-freq[x], x))</code></pre>
+      <p><strong>Complexity:</strong> Time O(n log k); Space O(n).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>k equals number of distinct values</li><li>Ties</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>top_k_frequent([1,1,1,2,2,3],2)</code></td><td><code>[1, 2]</code></td><td>pass</td></tr><tr><td><code>top_k_frequent([1],1)</code></td><td><code>[1]</code></td><td>pass</td></tr><tr><td><code>top_k_frequent([4,4,5,5,6],2)</code></td><td><code>[4, 5]</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-k_closest" data-track>
+      <h2>K Closest Points to Origin</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Heap with a key</span> <span class="tag">LC 973</span></p>
+      <p>Return the k points closest to (0, 0) (use squared distance), nearest first.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #973). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Heap with a key (Heaps &amp; Priority Queues)</td></tr><tr><td>Input format</td><td>Points and k.</td></tr><tr><td>Output format</td><td>List of points.</td></tr><tr><td>Constraints</td><td>n &lt;= 10^4</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>[[1,3],[-2,2]], k = 1</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>[[-2,2]]</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> Squared distances 10 and 8.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Smaller squared distance means closer.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Use heapq.nsmallest with key = x*x + y*y. No square root is needed to compare distances.</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/k_closest.py">import heapq
+
+def k_closest(points, k):
+    return heapq.nsmallest(k, points, key=lambda p: p[0] * p[0] + p[1] * p[1])</code></pre>
+      <p><strong>Complexity:</strong> Time O(n log k); Space O(k).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>k equals the number of points</li><li>Ties</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>k_closest([[1,3],[-2,2]],1)</code></td><td><code>[[-2, 2]]</code></td><td>pass</td></tr><tr><td><code>k_closest([[3,3],[5,-1],[-2,4]],2)</code></td><td><code>[[3, 3], [-2, 4]]</code></td><td>pass</td></tr><tr><td><code>k_closest([[0,1]],1)</code></td><td><code>[[0, 1]]</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-reorganize_string" data-track>
+      <h2>Reorganize String</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Max-heap (greedy)</span> <span class="tag">LC 767</span></p>
+      <p>Rearrange the letters so no two adjacent characters are the same. Return any valid arrangement or "".</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #767). The guide does not claim any company asked it.</p><p><strong>Why interviewers ask this:</strong> Combines counting with a heap and checks whether you reason about when an arrangement is impossible.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Max-heap (greedy) (Heaps &amp; Priority Queues)</td></tr><tr><td>Input format</td><td>String s.</td></tr><tr><td>Output format</td><td>String.</td></tr><tr><td>Constraints</td><td>len &lt;= 500</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>"aab"</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>"aba"</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> Place the most frequent letter first, alternating.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Impossible if one letter appears more than (n + 1) // 2 times.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Always place the most frequent remaining letter that is different from the previous one. A max-heap of counts does this; hold back the letter just used for one step.</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/reorganize_string.py">import heapq
+from collections import Counter
+
+def reorganize_string(s):
+    heap = [(-c, ch) for ch, c in Counter(s).items()]
+    heapq.heapify(heap)
+    out, prev = [], (0, "")
+    while heap:
+        c, ch = heapq.heappop(heap)
+        out.append(ch)
+        if prev[0] &lt; 0:
+            heapq.heappush(heap, prev)      # the held-back letter returns
+        prev = (c + 1, ch)
+    res = "".join(out)
+    return res if len(res) == len(s) else ""</code></pre>
+      <p><strong>Complexity:</strong> Time O(n log k); Space O(k).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Impossible input</li><li>Single letter</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>(lambda r: r != "" and all(a != b for a, b in zip(r, r[1:])) and sorted(r) == sorted("aab"))(reorganize_string("aab"))</code></td><td><code>True</code></td><td>pass</td></tr><tr><td><code>reorganize_string("aaab")</code></td><td><code>''</code></td><td>pass</td></tr><tr><td><code>reorganize_string("a")</code></td><td><code>'a'</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-kth_smallest_matrix" data-track>
+      <h2>Kth Smallest Element in a Sorted Matrix</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Min-heap merge</span> <span class="tag">LC 378</span></p>
+      <p>Each row and each column of an n x n matrix is sorted ascending. Return the k-th smallest element.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #378). The guide does not claim any company asked it.</p><p><strong>Why interviewers ask this:</strong> Shows if you can use a heap (or binary search on values) on a sorted matrix instead of flattening it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Min-heap merge (Heaps &amp; Priority Queues)</td></tr><tr><td>Input format</td><td>Matrix and k.</td></tr><tr><td>Output format</td><td>Integer.</td></tr><tr><td>Constraints</td><td>n &lt;= 300</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>[[1,5,9],[10,11,13],[12,13,15]], k=8</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>13</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> Sorted order: 1,5,9,10,11,12,13,13,15.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Heap entries: (value, row, col).</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Treat each row as a sorted list and merge with a heap: start with the first element of each row, pop k times, pushing the next element of the popped row.</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/kth_smallest_matrix.py">import heapq
+
+def kth_smallest_matrix(matrix, k):
+    heap = [(row[0], r, 0) for r, row in enumerate(matrix)]
+    heapq.heapify(heap)
+    for _ in range(k):
+        val, r, c = heapq.heappop(heap)
+        if c + 1 &lt; len(matrix[r]):
+            heapq.heappush(heap, (matrix[r][c + 1], r, c + 1))
+    return val</code></pre>
+      <p><strong>Complexity:</strong> Time O(k log n); Space O(n).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>k = 1</li><li>k = n*n</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>kth_smallest_matrix([[1,5,9],[10,11,13],[12,13,15]],8)</code></td><td><code>13</code></td><td>pass</td></tr><tr><td><code>kth_smallest_matrix([[-5]],1)</code></td><td><code>-5</code></td><td>pass</td></tr><tr><td><code>kth_smallest_matrix([[1,2],[1,3]],2)</code></td><td><code>1</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-meeting_rooms_ii" data-track>
+      <h2>Meeting Rooms II</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Sort + min-heap of end times</span> <span class="tag">LC 253</span></p>
+      <p>Given meeting intervals [start, end], return the minimum number of rooms needed.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #253). The guide does not claim any company asked it.</p><p><strong>Why interviewers ask this:</strong> The classic interval + heap question (meeting rooms).</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Sort + min-heap of end times (Heaps &amp; Priority Queues)</td></tr><tr><td>Input format</td><td>List of intervals.</td></tr><tr><td>Output format</td><td>Integer.</td></tr><tr><td>Constraints</td><td>len &lt;= 10^4</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>[[0,30],[5,10],[15,20]]</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>2</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> [0,30] overlaps both others.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>The heap size is the number of rooms.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Sort by start. Keep a min-heap of the end times of rooms in use. If the earliest ending room is free before the next meeting starts, reuse it; otherwise add a room.</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/meeting_rooms_ii.py">import heapq
+
+def meeting_rooms_ii(intervals):
+    rooms = []                              # end times of rooms in use
+    for start, end in sorted(intervals):
+        if rooms and rooms[0] &lt;= start:
+            heapq.heapreplace(rooms, end)   # reuse the room that frees first
+        else:
+            heapq.heappush(rooms, end)
+    return len(rooms)</code></pre>
+      <p><strong>Complexity:</strong> Time O(n log n); Space O(n).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>No meetings</li><li>Back-to-back meetings</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>meeting_rooms_ii([[0,30],[5,10],[15,20]])</code></td><td><code>2</code></td><td>pass</td></tr><tr><td><code>meeting_rooms_ii([[7,10],[2,4]])</code></td><td><code>1</code></td><td>pass</td></tr><tr><td><code>meeting_rooms_ii([])</code></td><td><code>0</code></td><td>pass</td></tr><tr><td><code>meeting_rooms_ii([[1,5],[5,9]])</code></td><td><code>1</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-task_scheduler" data-track>
+      <h2>Task Scheduler</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Greedy counting / heap</span> <span class="tag">LC 621</span></p>
+      <p>Tasks are letters. Identical tasks must be at least n intervals apart. Return the minimum number of intervals (idle slots allowed) to finish all tasks.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #621). The guide does not claim any company asked it.</p><p><strong>Why interviewers ask this:</strong> A scheduling puzzle that checks greedy thinking with counts (or a heap).</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Greedy counting / heap (Heaps &amp; Priority Queues)</td></tr><tr><td>Input format</td><td>Tasks and n.</td></tr><tr><td>Output format</td><td>Integer.</td></tr><tr><td>Constraints</td><td>len &lt;= 10^4</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>["A","A","A","B","B","B"], n=2</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>8</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> A B idle A B idle A B.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Count how many tasks have the maximum frequency.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>The most frequent task decides the frame: (max_count - 1) blocks of size n + 1 plus the number of tasks that share the maximum count. The answer is the larger of that and the total number of tasks.</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/task_scheduler.py">from collections import Counter
+
+def task_scheduler(tasks, n):
+    counts = Counter(tasks).values()
+    most = max(counts)
+    with_most = sum(1 for c in counts if c == most)
+    return max(len(tasks), (most - 1) * (n + 1) + with_most)</code></pre>
+      <p><strong>Complexity:</strong> Time O(n); Space O(1).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>n = 0</li><li>Many different tasks</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>task_scheduler(["A","A","A","B","B","B"],2)</code></td><td><code>8</code></td><td>pass</td></tr><tr><td><code>task_scheduler(["A","A","A","B","B","B"],0)</code></td><td><code>6</code></td><td>pass</td></tr><tr><td><code>task_scheduler(["A","A","A","A","A","A","B","C","D","E","F","G"],2)</code></td><td><code>16</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-ugly_number_ii" data-track>
+      <h2>Ugly Number II</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Min-heap / three pointers</span> <span class="tag">LC 264</span></p>
+      <p>Ugly numbers have only prime factors 2, 3 and 5 (1 counts). Return the n-th ugly number.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #264). The guide does not claim any company asked it.</p><p><strong>Why interviewers ask this:</strong> A heap (or three-pointer) generation problem: build numbers in increasing order.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Min-heap / three pointers (Heaps &amp; Priority Queues)</td></tr><tr><td>Input format</td><td>Integer n.</td></tr><tr><td>Output format</td><td>Integer.</td></tr><tr><td>Constraints</td><td>n &lt;= 1690</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>10</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>12</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> Sequence: 1,2,3,4,5,6,8,9,10,12.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Advance all pointers that equal the minimum to avoid duplicates.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Keep three pointers i2, i3, i5 into the list of ugly numbers; the next ugly number is the minimum of 2 x u[i2], 3 x u[i3], 5 x u[i5]; advance every pointer that produced it.</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/ugly_number_ii.py">def ugly_number_ii(n):
+    ugly = [1]
+    i2 = i3 = i5 = 0
+    while len(ugly) &lt; n:
+        nxt = min(ugly[i2] * 2, ugly[i3] * 3, ugly[i5] * 5)
+        ugly.append(nxt)
+        if nxt == ugly[i2] * 2: i2 += 1
+        if nxt == ugly[i3] * 3: i3 += 1
+        if nxt == ugly[i5] * 5: i5 += 1
+    return ugly[-1]</code></pre>
+      <p><strong>Complexity:</strong> Time O(n); Space O(n).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>n = 1</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>ugly_number_ii(10)</code></td><td><code>12</code></td><td>pass</td></tr><tr><td><code>ugly_number_ii(1)</code></td><td><code>1</code></td><td>pass</td></tr><tr><td><code>ugly_number_ii(15)</code></td><td><code>24</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-merge_k_sorted" data-track>
+      <h2>Merge K Sorted Lists</h2>
+      <p><span class="tag bad">Hard</span> <span class="tag">Heap merge</span> <span class="tag">LC 23</span> <span class="tag accent">must-do</span></p>
+      <p>Merge k sorted lists into one sorted list.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #23, also on widely shared must-practise lists such as Blind 75). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Heap merge (Heaps &amp; Priority Queues)</td></tr><tr><td>Input format</td><td>List of sorted lists.</td></tr><tr><td>Output format</td><td>One sorted list.</td></tr><tr><td>Constraints</td><td>total elements &lt;= 10^4</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>[[1,4,5],[1,3,4],[2,6]]</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>[1,1,2,3,4,4,5,6]</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> Always take the smallest front element.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Tuples compare element by element, so the heap orders by value first.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Put the first element of every list in a min-heap as (value, list_index, element_index). Pop the smallest, append, and push the next element from the same list.</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/merge_k_sorted.py">import heapq
+
+def merge_k_sorted(lists):
+    heap = [(lst[0], i, 0) for i, lst in enumerate(lists) if lst]
+    heapq.heapify(heap)
+    out = []
+    while heap:
+        val, i, j = heapq.heappop(heap)
+        out.append(val)
+        if j + 1 &lt; len(lists[i]):
+            heapq.heappush(heap, (lists[i][j + 1], i, j + 1))
+    return out</code></pre>
+      <p><strong>Complexity:</strong> Time O(N log k) for N total elements; Space O(k).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Empty lists inside the input</li><li>k = 1</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>merge_k_sorted([[1,4,5],[1,3,4],[2,6]])</code></td><td><code>[1, 1, 2, 3, 4, 4, 5, 6]</code></td><td>pass</td></tr><tr><td><code>merge_k_sorted([[],[1]])</code></td><td><code>[1]</code></td><td>pass</td></tr><tr><td><code>merge_k_sorted([])</code></td><td><code>[]</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-running_median" data-track>
+      <h2>Median of a Data Stream</h2>
+      <p><span class="tag bad">Hard</span> <span class="tag">Two heaps</span> <span class="tag">LC 295</span> <span class="tag accent">must-do</span></p>
+      <p>After each number arrives, report the median of all numbers so far.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #295, also on widely shared must-practise lists such as Blind 75). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Two heaps (Heaps &amp; Priority Queues)</td></tr><tr><td>Input format</td><td>List of numbers arriving in order.</td></tr><tr><td>Output format</td><td>List of medians.</td></tr><tr><td>Constraints</td><td>len &lt;= 10^5</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>[5,15,1,3]</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>[5, 10.0, 5, 4.0]</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> After [5,15] median is 10; after [1,5,15] is 5; after [1,3,5,15] is 4.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Push to low, move low's max to high, then rebalance.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Keep a max-heap <code>low</code> for the smaller half and a min-heap <code>high</code> for the bigger half, balanced so sizes differ by at most one. The median is the top of the bigger heap or the mean of both tops.</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/running_median.py">import heapq
+
+def running_median(nums):
+    low, high, out = [], [], []     # low: max-heap (negated), high: min-heap
+    for x in nums:
+        heapq.heappush(low, -x)
+        heapq.heappush(high, -heapq.heappop(low))   # keep halves ordered
+        if len(high) &gt; len(low):
+            heapq.heappush(low, -heapq.heappop(high))
+        if len(low) &gt; len(high):
+            out.append(-low[0])
+        else:
+            out.append((-low[0] + high[0]) / 2)
+    return out</code></pre>
+      <p><strong>Complexity:</strong> Time O(n log n); Space O(n).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Single number</li><li>Equal numbers</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>running_median([5,15,1,3])</code></td><td><code>[5, 10.0, 5, 4.0]</code></td><td>pass</td></tr><tr><td><code>running_median([2])</code></td><td><code>[2]</code></td><td>pass</td></tr><tr><td><code>running_median([1,1,1])</code></td><td><code>[1, 1.0, 1]</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="m13-heaps.html"><span class="dir">Previous</span><span>M13 Heaps & Priority Queues</span></a>
+      <a class="next" href="m14-graphs.html"><span class="dir">Next</span><span>M14 Graphs</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

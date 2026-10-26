@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD24">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Case studies 5: nearby search, maps routing, e-commerce checkout, flash sale, hotel booking | System Design</title>
+<meta name="description" content="Five more worked designs: a proximity service with geohashes, a maps and routing service, e-commerce inventory and checkout, a flash sale under extreme contention, and a hotel reservation system, each with estimates, data model, architecture and trade-offs.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD24</p>
+      <h1>Case studies 5: nearby search, maps routing, e-commerce checkout, flash sale, hotel booking</h1>
+      <p class="lede">These cases add geospatial indexing, graph routing, inventory under contention and reservations with overlapping time ranges, the patterns that appear in marketplace and logistics interviews. Design on paper first, then compare.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~4.5 hours</span></div>
+    </div>
+
+    <section id="howto" data-track>
+      <h2>How to use these cases</h2>
+<p>Same routine as <a href="sd13-case-1.html">SD13</a>: 35 minutes, requirements, numbers, API, data model, picture, two deep dives, failures. Building blocks come from <a href="sd1-estimation.html">SD1</a> to <a href="sd12-data-systems.html">SD12</a>.</p>
+    </section>
+
+    <section id="proximity" data-track>
+      <h2>Case 1: Nearby search (Yelp / proximity service)</h2>
+<h3>Requirements</h3>
+<ul><li>Find businesses within a radius of a location, filtered by category and sorted by distance or rating.</li><li>Owners add, update or remove businesses (changes may appear within minutes).</li><li>100M businesses, 100M daily users, 5 searches each: about 500M reads/day, mostly reads.</li></ul>
+<h3>Estimates</h3>
+<p>Reads: 500M / 86,400 = 5,800 QPS average, about 17,000 peak. Business data: 100M x 1 KB = 100 GB (fits on one big machine; shard for throughput and availability, not capacity). Location index: 100M x 16 bytes = 1.6 GB, fits in memory.</p>
+<h3>API</h3>
+<p><code>GET /v1/places?lat=..&amp;lng=..&amp;radius=5000&amp;category=cafe&amp;cursor=..</code>, <code>GET /v1/places/{id}</code>, <code>POST/PUT/DELETE /v1/places</code> (owner).</p>
+<h3>Geospatial indexing</h3>
+<p>You cannot scan 100M rows by distance. Index space so "nearby" becomes a key lookup.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Approach</th><th>Idea</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>Two-dimensional SQL index</td><td><code>lat BETWEEN</code>, <code>lng BETWEEN</code></td><td>Poor: intersects two big ranges</td></tr><tr><td><strong>Geohash</strong></td><td>Interleave latitude and longitude bits into a base32 string; longer prefix = smaller cell</td><td>Prefix lookups in any key-value or B-tree index</td></tr><tr><td><strong>Quadtree</strong></td><td>Recursively split a region into 4 until a cell holds at most N places</td><td>Adapts to density; held in memory</td></tr><tr><td><strong>S2 / H3</strong></td><td>Hierarchical cells on a sphere</td><td>Uniform cells, used by Google and Uber</td></tr>
+</tbody>
+</table>
+</div>
+<p>Geohash gotchas: cells at the same prefix are near, but two close points can sit in <strong>different</strong> cells across a boundary, so query the target cell <strong>and its 8 neighbours</strong>, then compute exact distance and filter. Choose the precision from the radius: 5 characters is a cell of about 5 km, 6 about 1.2 km x 0.6 km, 7 about 150 m.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd24-01.py">import math
+BASE32 = "0123456789bcdefghjkmnpqrstuvwxyz"
+def encode(lat, lng, precision=7):
+    lat_r, lng_r, bits, even, out, ch, n = [-90.0, 90.0], [-180.0, 180.0], [16, 8, 4, 2, 1], True, "", 0, 0
+    while len(out) &lt; precision:
+        rng, val = (lng_r, lng) if even else (lat_r, lat)
+        mid = (rng[0] + rng[1]) / 2
+        if val &gt;= mid: ch |= bits[n]; rng[0] = mid
+        else: rng[1] = mid
+        even = not even
+        if n &lt; 4: n += 1
+        else: out += BASE32[ch]; ch, n = 0, 0
+    return out
+def haversine(a, b):
+    R = 6371000
+    p1, p2 = math.radians(a[0]), math.radians(b[0])
+    dl, dp = math.radians(b[1] - a[1]), p2 - p1
+    h = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * R * math.asin(math.sqrt(h))
+print("geohash of (57.64911, 10.40744):", encode(57.64911, 10.40744, 11), "(the standard reference is u4pruydqqvj)")
+here = (37.7749, -122.4194)                       # San Francisco
+print("a 5 m move keeps the 6-char cell:", encode(*here, 6) == encode(37.77494, -122.41940, 6))
+for p in (4, 5, 6, 7):
+    print(f"precision {p}: {encode(*here, p)}")
+print("distance to Oakland:", round(haversine(here, (37.8044, -122.2712)) / 1000, 1), "km")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>geohash of (57.64911, 10.40744): u4pruydqqvj (the standard reference is u4pruydqqvj)
+a 5 m move keeps the 6-char cell: True
+precision 4: 9q8y
+precision 5: 9q8yy
+precision 6: 9q8yyk
+precision 7: 9q8yyk8
+distance to Oakland: 13.4 km</code></pre>
+<h3>Architecture</h3>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 1066 98" role="img" aria-label="Read path of a proximity service. The index is small enough to cache in memory on every search node." style="min-width:760px"><defs><marker id="ah50" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah50a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah50b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah50d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah50)"/><text x="212.0" y="44.0" text-anchor="middle" class="d-sm d-muted">query</text><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah50)"/><text x="426.0" y="44.0" text-anchor="middle" class="d-sm d-muted">nearby</text><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah50)"/><text x="640.0" y="44.0" text-anchor="middle" class="d-sm d-muted">ids</text><line x1="832.0" y1="49.0" x2="876.0" y2="49.0" class="d-line" marker-end="url(#ah50)"/><text x="854.0" y="44.0" text-anchor="middle" class="d-sm d-muted">details</text><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-e"/><text x="105.0" y="53.5" text-anchor="middle">Mobile client</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-b"/><text x="319.0" y="53.5" text-anchor="middle">Load balancer</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-c"/><text x="533.0" y="53.5" text-anchor="middle" class="d-sm">Search service (geo index in memory)</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-d"/><text x="747.0" y="53.5" text-anchor="middle">Place service</text><rect x="876.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="961.0" y="53.5" text-anchor="middle" class="d-sm">Places database (primary and replicas)</text></svg>
+</div>
+<figcaption>Read path of a proximity service. The index is small enough to cache in memory on every search node.</figcaption></figure>
+<ul><li><strong>Search service</strong>: holds a geohash (or quadtree) index; computes the 9 cells, merges candidates, filters by distance and category, ranks.</li><li><strong>Database</strong>: places table with replicas; shard by place id (or by region). Writes are rare, so refresh the index every few minutes or on change events.</li><li><strong>Rebuild strategy</strong>: quadtree in memory rebuilt on restart (about a minute for 100M entries) with a warm standby; or geohash rows in Redis (<code>GEOADD</code>/<code>GEOSEARCH</code>) or PostGIS.</li><li><strong>Dense areas</strong>: cap results per cell and expand search only when too few results.</li></ul>
+<div class="callout tip"><span class="callout-title">Deep dive: density</span><p>A fixed geohash precision gives 100 places in a city centre cell and 0 in a desert cell. Quadtrees split by count, so dense areas get small cells; for geohash, start at the target precision and shorten the prefix until enough results are found.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd24-q01" data-topic="Case studies 5" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why query a geohash cell and its 8 neighbours?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To use more memory <span class="q-why">No.</span></li>
+          <li data-key="B">Nearby points can sit on opposite sides of a cell boundary <span class="q-why">Correct.</span></li>
+          <li data-key="C">Geohash is random <span class="q-why">No.</span></li>
+          <li data-key="D">To reduce precision <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Then filter candidates by exact distance.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd24-q02" data-topic="Case studies 5" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A quadtree differs from a fixed-precision geohash because it:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Uses less data <span class="q-why">No.</span></li>
+          <li data-key="B">Subdivides cells by density, so crowded areas get smaller cells <span class="q-why">Correct.</span></li>
+          <li data-key="C">Needs no memory <span class="q-why">No.</span></li>
+          <li data-key="D">Is a database <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Adaptive resolution handles uneven density.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why does geohash need neighbour cells?</summary><div class="answer"><p>A boundary can split two close points into different cells, so search the cell and its 8 neighbours then filter by distance.</p></div></details>
+      </div>
+    </section>
+
+    <section id="maps" data-track>
+      <h2>Case 2: Maps and routing</h2>
+<h3>Requirements</h3>
+<p>Map display, search, and route computation with live traffic and ETA. Billions of map tile requests per day; hundreds of millions of route requests.</p>
+<h3>Key ideas</h3>
+<ul><li><strong>Map tiles</strong>: the world is pre-rendered (or vector-encoded) into tiles per zoom level (<code>z/x/y</code>). Serve them as static files from a <strong>CDN</strong>; clients fetch only visible tiles. Vector tiles are smaller and styleable.</li><li><strong>Road network = weighted graph</strong>: intersections are nodes, road segments are edges with weights of travel time. Plain Dijkstra on a continent-size graph (tens of millions of nodes) is too slow per request.</li><li><strong>Speed-ups</strong>: A* with a distance heuristic, <strong>bidirectional</strong> search, and above all <strong>hierarchical preprocessing</strong> (contraction hierarchies or hub labels) that precompute shortcuts so a query touches thousands of nodes instead of millions. Partition the graph into regions, with precomputed cross-region summaries.</li><li><strong>Traffic</strong>: location pings from phones are map-matched to road segments and aggregated in a stream processor into current speeds; edge weights are updated every minute or so. ETA = sum of predicted segment times, using historical patterns by time of day plus live data and ML.</li><li><strong>Re-routing</strong>: when a deviation or incident occurs, recompute from the current position.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd24-02.py">import heapq
+graph = {                     # node -&gt; [(neighbour, minutes)]
+    "A": [("B", 4), ("C", 2)], "B": [("D", 5)], "C": [("B", 1), ("D", 8), ("E", 10)],
+    "D": [("F", 2)], "E": [("F", 3)], "F": [],
+}
+def dijkstra(src, dst, g):
+    dist, prev, heap, pops = {src: 0}, {}, [(0, src)], 0
+    while heap:
+        d, u = heapq.heappop(heap); pops += 1
+        if d &gt; dist.get(u, 1e9): continue
+        if u == dst: break
+        for v, w in g[u]:
+            if d + w &lt; dist.get(v, 1e9):
+                dist[v], prev[v] = d + w, u
+                heapq.heappush(heap, (d + w, v))
+    path = [dst]
+    while path[-1] != src: path.append(prev[path[-1]])
+    return dist[dst], path[::-1], pops
+print("normal traffic:", dijkstra("A", "F", graph))
+graph["C"] = [("B", 1), ("D", 8), ("E", 10)]
+graph["B"] = [("D", 25)]                                           # an accident slows B-&gt;D, weights update
+print("after an incident on B-&gt;D:", dijkstra("A", "F", graph))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>normal traffic: (10, ['A', 'C', 'B', 'D', 'F'], 7)
+after an incident on B-&gt;D: (12, ['A', 'C', 'D', 'F'], 7)</code></pre>
+<h3>Trade-offs</h3>
+<p>Exactness versus preprocessing time (a changed edge weight invalidates shortcuts unless the preprocessing is traffic-aware, so many systems use a static hierarchy plus a dynamic penalty layer); storage of tiles (petabytes, tiered storage); freshness of map data.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd24-q03" data-topic="Case studies 5" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How are map tiles best delivered?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Rendered per request <span class="q-why">Too slow.</span></li>
+          <li data-key="B">Pre-rendered per zoom level and served from a CDN <span class="q-why">Correct.</span></li>
+          <li data-key="C">Streamed over WebSockets <span class="q-why">No.</span></li>
+          <li data-key="D">Stored on clients <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Tiles are static, cacheable files.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd24-q04" data-topic="Case studies 5" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is plain Dijkstra too slow for continental routing at scale?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is incorrect <span class="q-why">It is correct.</span></li>
+          <li data-key="B">It explores millions of nodes per query; hierarchical preprocessing cuts that to thousands <span class="q-why">Correct.</span></li>
+          <li data-key="C">It cannot handle weights <span class="q-why">It can.</span></li>
+          <li data-key="D">It needs negative edges <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Contraction hierarchies precompute shortcuts.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name two routing speed-ups.</summary><div class="answer"><p>A* with a heuristic or bidirectional search, and contraction hierarchies/hub labels from preprocessing.</p></div></details>
+      </div>
+    </section>
+
+    <section id="checkout" data-track>
+      <h2>Case 3: E-commerce inventory and checkout</h2>
+<h3>Requirements</h3>
+<p>Browse, cart, checkout, payment, order tracking. <strong>Never oversell</strong> stock, <strong>never double charge</strong>, survive retries. 10M orders/day with a Black Friday peak 10x.</p>
+<h3>Data model</h3>
+<p><code>products(id, price)</code>, <code>inventory(sku, available, reserved)</code>, <code>carts(user, items)</code>, <code>orders(id, user, status, total)</code>, <code>order_items</code>, <code>payments(id, order_id, idempotency_key, status)</code>. Order states: <code>created, payment_pending, paid, fulfilling, shipped, delivered, cancelled, refunded</code>.</p>
+<h3>Checkout flow</h3>
+<ol><li><strong>Cart</strong> in a fast store (Redis or the database); prices are re-validated at checkout.</li><li><strong>Reserve inventory</strong> with a TTL (for example 10 minutes) so a held item is not sold twice and is released if payment fails.</li><li><strong>Create the order</strong> (pending) and call the <strong>payment provider</strong> with an idempotency key.</li><li>On success mark paid, convert reservation to a sale, emit <code>OrderPaid</code> (outbox, <a href="sd19-event-driven.html">SD19</a>); fulfilment, email and analytics consume it.</li><li>On failure or timeout, a <strong>saga</strong> compensates: release stock, cancel the order.</li></ol>
+<h3>Preventing overselling</h3>
+<p>The correct primitive is an <strong>atomic conditional update</strong>, not read-then-write:</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd24-03.py">import sqlite3
+db = sqlite3.connect(":memory:", isolation_level=None)
+db.execute("CREATE TABLE inventory(sku TEXT PRIMARY KEY, available INT)")
+db.execute("INSERT INTO inventory VALUES('phone', 1)")
+# Racy read-modify-write, with the two buyers' steps interleaved exactly as concurrent requests can interleave
+a_read = db.execute("SELECT available FROM inventory").fetchone()[0]       # buyer A reads 1
+b_read = db.execute("SELECT available FROM inventory").fetchone()[0]       # buyer B reads 1
+db.execute("UPDATE inventory SET available = ?", (a_read - 1,))            # A writes 0 and succeeds
+db.execute("UPDATE inventory SET available = ?", (b_read - 1,))            # B also writes 0 and succeeds
+print("read-then-write: both buyers think they bought the last phone (A saw", a_read, ", B saw", b_read, ")")
+db.execute("UPDATE inventory SET available = 1")
+wins = []
+for buyer in ("A", "B"):                                                   # same two buyers, atomic conditional update
+    cur = db.execute("UPDATE inventory SET available = available - 1 WHERE sku = 'phone' AND available &gt; 0")
+    wins.append((buyer, cur.rowcount == 1))
+print("atomic conditional update:", wins, "| stock left:", db.execute("SELECT available FROM inventory").fetchone()[0])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>read-then-write: both buyers think they bought the last phone (A saw 1 , B saw 1 )
+atomic conditional update: [('A', True), ('B', False)] | stock left: 0</code></pre>
+<p>The <code>UPDATE ... WHERE available &gt; 0</code> runs inside the database as one atomic statement; check <code>rowcount</code> to see whether you won. Alternatives: <code>SELECT ... FOR UPDATE</code> row locks, optimistic version columns, or Redis <code>DECR</code> with a Lua script.</p>
+<h3>Other deep dives</h3>
+<ul><li><strong>Idempotent payments</strong>: store an idempotency key per order attempt; a timeout means "unknown", so reconcile by querying the provider rather than retrying blindly.</li><li><strong>Cart consistency</strong>: carts tolerate staleness (price changes caught at checkout).</li><li><strong>Search and catalogue</strong>: read-heavy, served from Elasticsearch plus cache (<a href="sd12-data-systems.html">SD12</a>); keep the system of record separate.</li><li><strong>Scaling</strong>: shard orders by user id; keep inventory per SKU on a strongly consistent store; use queues for fulfilment.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd24-q05" data-topic="Case studies 5" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you prevent overselling under concurrency?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Read stock, then write a new value <span class="q-why">Race condition.</span></li>
+          <li data-key="B">Use an atomic conditional update such as UPDATE ... SET available = available - 1 WHERE available &gt; 0 <span class="q-why">Correct.</span></li>
+          <li data-key="C">Trust the cart <span class="q-why">No.</span></li>
+          <li data-key="D">Cache the count <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Check rowcount to see if the decrement succeeded.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd24-q06" data-topic="Case studies 5" data-type="single" data-answer="B">
+        <div class="q-stem"><p>After a payment timeout, what should you do?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Charge again <span class="q-why">Might double charge.</span></li>
+          <li data-key="B">Treat the outcome as unknown and reconcile with the provider using the idempotency key <span class="q-why">Correct.</span></li>
+          <li data-key="C">Assume failure <span class="q-why">Might lose a paid order.</span></li>
+          <li data-key="D">Delete the order <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Idempotency keys make retries safe.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is a reservation TTL for?</summary><div class="answer"><p>To hold stock briefly during payment and release it automatically if the user abandons or payment fails.</p></div></details>
+      </div>
+    </section>
+
+    <section id="flash" data-track>
+      <h2>Case 4: Flash sale</h2>
+<h3>The problem</h3>
+<p>10,000 units of a product go on sale at noon; 5 million users arrive within a second. The danger is a <strong>thundering herd</strong> that melts the database, plus <strong>overselling</strong> and bots.</p>
+<h3>Design</h3>
+<ol><li><strong>Absorb at the edge</strong>: static page on a CDN; a <strong>waiting room / virtual queue</strong> admits users at a controlled rate; CAPTCHA and per-account limits filter bots; rate limit per IP and user.</li><li><strong>Pre-warm</strong>: load the stock count into Redis before the sale.</li><li><strong>Atomic decrement in Redis</strong> (Lua script or <code>DECR</code>): if the result is below zero, reject immediately. Only users who won a unit proceed. This turns 5M requests into at most 10,000 orders.</li><li><strong>Queue the winners</strong>: write a short-lived reservation, then process orders asynchronously through a queue at the database's pace; payment must happen within a time window or the unit returns to stock.</li><li><strong>Reconcile</strong> Redis against the database after the sale; the database remains the system of record.</li></ol>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd24-04.py">from collections import deque
+stock, queue, rejected = 10, deque(), 0
+requests = 40                                       # arrive in a burst
+for user in range(requests):
+    if stock &gt; 0:                                   # in production: one atomic Redis DECR / Lua script
+        stock -= 1
+        queue.append(f"user{user}")                 # winners get a reservation and go on to pay
+    else:
+        rejected += 1                               # everyone else is turned away cheaply at the edge
+print(f"{requests} requests -&gt; {len(queue)} reservations queued, {rejected} rejected without touching the database, stock left {stock}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>40 requests -&gt; 10 reservations queued, 30 rejected without touching the database, stock left 0</code></pre>
+<p>Trade-offs: fairness (first come versus lottery), perceived latency (queue position display), and graceful degradation (static "sold out" page when stock hits zero).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd24-q07" data-topic="Case studies 5" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How does a flash-sale design protect the database?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Bigger database <span class="q-why">Costly and insufficient.</span></li>
+          <li data-key="B">An edge waiting room, an atomic Redis decrement, and asynchronous order processing for the few winners <span class="q-why">Correct.</span></li>
+          <li data-key="C">Disabling checks <span class="q-why">No.</span></li>
+          <li data-key="D">Random sleeps <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Reject the losers cheaply before they reach the database.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What are the layers of flash-sale defence?</summary><div class="answer"><p>CDN and waiting room, rate limiting and bot checks, atomic stock decrement in Redis, queued order processing.</p></div></details>
+      </div>
+    </section>
+
+    <section id="hotel" data-track>
+      <h2>Case 5: Hotel reservation system</h2>
+<h3>Requirements</h3>
+<p>Search hotels by city and dates, view availability, book a room type for a date range, no double booking, cancellations, payments. Fewer writes than e-commerce (about 1M bookings/day), high search volume.</p>
+<h3>Data model</h3>
+<p><code>hotels</code>, <code>room_types(hotel, type, total_rooms)</code>, <code>room_inventory(hotel, room_type, date, total, reserved)</code> <strong>per night</strong>, <code>reservations(id, user, hotel, room_type, start, end, status)</code>. A booking for nights <code>[start, end)</code> must decrement availability for <strong>every</strong> night atomically.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd24-05.py">import sqlite3
+db = sqlite3.connect(":memory:", isolation_level=None)
+db.executescript("""CREATE TABLE inv(room_type TEXT, night INT, total INT, reserved INT, PRIMARY KEY(room_type, night));
+                    CREATE TABLE res(id INTEGER PRIMARY KEY AUTOINCREMENT, room_type TEXT, start INT, end INT);""")
+for n in range(1, 8): db.execute("INSERT INTO inv VALUES('double', ?, 2, 0)", (n,))
+def book(room_type, start, end):
+    db.execute("BEGIN IMMEDIATE")
+    nights = (end - start)
+    ok = db.execute("SELECT COUNT(*) FROM inv WHERE room_type=? AND night&gt;=? AND night&lt;? AND reserved &lt; total", (room_type, start, end)).fetchone()[0] == nights
+    if not ok:
+        db.execute("ROLLBACK"); return False
+    db.execute("UPDATE inv SET reserved = reserved + 1 WHERE room_type=? AND night&gt;=? AND night&lt;?", (room_type, start, end))
+    db.execute("INSERT INTO res(room_type, start, end) VALUES(?,?,?)", (room_type, start, end))
+    db.execute("COMMIT"); return True
+print([book("double", 2, 5), book("double", 3, 6), book("double", 4, 7), book("double", 1, 3), book("double", 5, 7)])
+print("reserved per night:", db.execute("SELECT night, reserved FROM inv ORDER BY night").fetchall())</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[True, True, False, True, True]
+reserved per night: [(1, 1), (2, 2), (3, 2), (4, 2), (5, 2), (6, 1), (7, 0)]</code></pre>
+<h3>Deep dives</h3>
+<ul><li><strong>Hold then confirm</strong>: lock the room for 10 to 15 minutes during payment (a reservation with an expiry), released by a TTL job.</li><li><strong>Overbooking</strong>: hotels deliberately sell a few more rooms than exist since cancellations are common; model as <code>total</code> greater than physical rooms.</li><li><strong>Concurrency</strong>: row locks or optimistic versions on inventory rows; partition by hotel so contention stays local.</li><li><strong>Search</strong>: availability is a join of dates and inventory; precompute per hotel and date in a search index and verify against the database at booking time (staleness is acceptable in search, not in booking).</li><li><strong>Idempotency</strong>: a client-supplied reservation id makes retries safe.</li></ul>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Turn space into keys (geohash, tiles), turn contention into a single atomic conditional update, protect the database behind queues and edge filters, and separate the fast, stale-tolerant search path from the strictly consistent booking path.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd24-q08" data-topic="Case studies 5" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is hotel inventory modelled per night?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To store less data <span class="q-why">No.</span></li>
+          <li data-key="B">A stay spans multiple nights and each night's availability must decrement atomically <span class="q-why">Correct.</span></li>
+          <li data-key="C">It simplifies pricing only <span class="q-why">No.</span></li>
+          <li data-key="D">Dates cannot be indexed otherwise <span class="q-why">They can.</span></li>
+        </ul>
+        <div class="q-explain"><p>Booking a range is all-or-nothing across its nights.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How can a hotel sell more rooms than it has?</summary><div class="answer"><p>Deliberate overbooking, since cancellations and no-shows are common; modelled by allowing reserved to exceed physical rooms up to a limit.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Case studies 5</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Case studies 5">
+<details class="recall iq" data-level="basic" data-topic="Case studies 5"><summary><span class="tag ok">Basic</span> Why is a geohash useful for nearby search?</summary><div class="answer"><p>It turns two-dimensional location into a string whose shared prefix means nearness, so proximity becomes a prefix lookup in a standard index.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 5"><summary><span class="tag warn">Medium</span> Why search neighbouring cells as well as the target cell?</summary><div class="answer"><p>Two close points can fall on opposite sides of a cell boundary, so query the cell and its eight neighbours, then filter by exact distance.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 5"><summary><span class="tag warn">Medium</span> Quadtree versus geohash?</summary><div class="answer"><p>A quadtree splits cells by density so crowded areas get finer cells; geohash cells are uniform per precision. Quadtrees live in memory; geohash works in any key-value store.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 5"><summary><span class="tag warn">Medium</span> How are map tiles served?</summary><div class="answer"><p>Pre-rendered or vector tiles per zoom level and x/y coordinates, stored as static files and served from a CDN.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 5"><summary><span class="tag warn">Medium</span> How do you prevent overselling in checkout?</summary><div class="answer"><p>Atomic conditional updates (UPDATE ... WHERE available &gt; 0 and check rows affected), row locks or compare-and-set, with reservations that expire.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 5"><summary><span class="tag warn">Medium</span> How do you make payment calls safe to retry?</summary><div class="answer"><p>Send an idempotency key per payment attempt; on timeout reconcile with the provider before retrying, since the true outcome is unknown.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 5"><summary><span class="tag warn">Medium</span> Why is hotel inventory modelled per night?</summary><div class="answer"><p>A stay spans nights; the booking must decrement availability for every night atomically, which a per-night inventory row allows with a transaction.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 5"><summary><span class="tag warn">Medium</span> What is overbooking and why do hotels use it?</summary><div class="answer"><p>Selling more than capacity, expecting cancellations and no-shows, with a policy for handling the rare overflow.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 5"><summary><span class="tag bad">Advanced</span> How do routing services avoid running Dijkstra on the whole road graph?</summary><div class="answer"><p>Preprocessing such as contraction hierarchies or hub labels, A* and bidirectional search, and regional partitioning, with live traffic as updated edge weights.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 5"><summary><span class="tag bad">Advanced</span> Design the checkout flow as a saga.</summary><div class="answer"><p>Reserve inventory, create order, charge payment, confirm; on failure, compensate by releasing stock and cancelling or refunding, each step idempotent and driven by events.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 5"><summary><span class="tag bad">Advanced</span> How do you handle a flash sale with 5 million users and 10,000 items?</summary><div class="answer"><p>CDN and waiting room, bot and rate limits, atomic Redis stock decrement so only winners continue, queued order processing, expiry of unpaid reservations, and reconciliation with the database.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 5"><summary><span class="tag bad">Advanced</span> How do you separate search from booking consistency in a hotel system?</summary><div class="answer"><p>Search uses a denormalised, slightly stale index; booking re-checks availability in the strongly consistent database under a transaction.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 5"><summary><span class="tag bad">Advanced</span> How would you shard a proximity service?</summary><div class="answer"><p>By region or geohash prefix so queries hit one or a few shards, balancing dense areas by splitting cells; replicate for availability.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 5"><summary><span class="tag bad">Advanced</span> How do you compute ETA?</summary><div class="answer"><p>Sum predicted traversal times of road segments using historical profiles and live speeds from map-matched location pings, refined by ML and updated while driving.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd23-ml-systems.html"><span class="dir">Previous</span><span>SD23 Designing ML and AI systems: feature stores, serving, recommendation, search and LLM applications</span></a>
+      <a class="next" href="sd25-case-6.html"><span class="dir">Next</span><span>SD25 Case studies 6: ID generator, distributed lock, job scheduler, order book, code judge, distributed file system</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

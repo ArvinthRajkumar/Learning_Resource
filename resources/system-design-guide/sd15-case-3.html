@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD15">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Case studies 3: video streaming, file sync, ride sharing, ticket booking, payments | System Design</title>
+<meta name="description" content="Adaptive-bitrate video pipelines and CDNs, chunked file sync with deduplication, geospatial driver matching, seat reservation without double booking, and an idempotent payment system with a ledger.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD15</p>
+      <h1>Case studies 3: video streaming, file sync, ride sharing, ticket booking, payments</h1>
+      <p class="lede">These cases add hard constraints: huge media bandwidth, many devices staying in sync, real-time location, scarce inventory and money. Each shows which part of the toolbox the constraint pulls into the design.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~4.5 hours</span></div>
+    </div>
+
+    <section id="video" data-track>
+      <h2>Case 1: Video streaming (YouTube or Netflix)</h2>
+<h3>Requirements</h3>
+<p>Users upload videos; millions watch with smooth playback on any device and network; search and recommendations exist but focus on upload, transcoding and delivery.</p>
+<h3>Estimates</h3>
+<p>500 hours of video uploaded per minute is 30,000 hours per hour. Raw uploads are large: 1 hour at 1080p is about 3 GB. Assume 10 million daily uploads of 5 minutes at 100 MB raw: 1 PB per day raw. Viewing is far larger: 1 billion hours watched per day at an average 3 Mbps is about 1.35 EB of egress per day, so <strong>delivery must come from CDNs</strong>, and storage keeps several renditions per video.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd15-01.py">hours_per_day = 1_000_000_000
+mbps = 3
+bytes_per_hour = mbps * 1e6 / 8 * 3600
+total_pb = hours_per_day * bytes_per_hour / 1e15
+print(round(bytes_per_hour / 1e9, 2), "GB per hour watched;", round(total_pb), "PB per day egress")
+print(round(total_pb * 8 / 86_400 * 1000), "Tbps average")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>1.35 GB per hour watched; 1350 PB per day egress
+125 Tbps average</code></pre>
+<h3>Upload and processing pipeline</h3>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 1280 294" role="img" aria-label="Upload goes directly to object storage; a workflow transcodes into many renditions and publishes manifests." style="min-width:760px"><defs><marker id="ah32" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah32a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah32b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah32d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="147.0" x2="234.0" y2="147.0" class="d-line" marker-end="url(#ah32)"/><text x="212.0" y="142.0" text-anchor="middle" class="d-sm d-muted">1. start</text><line x1="190.0" y1="127.5" x2="448.0" y2="68.5" class="d-line" marker-end="url(#ah32)"/><text x="319.0" y="93.0" text-anchor="middle" class="d-sm d-muted">2. upload chunks</text><line x1="533.0" y1="78.0" x2="533.0" y2="118.0" class="d-line" marker-end="url(#ah32)"/><text x="533.0" y="93.0" text-anchor="middle" class="d-sm d-muted">3. event</text><line x1="618.0" y1="147.0" x2="662.0" y2="147.0" class="d-line" marker-end="url(#ah32)"/><line x1="832.0" y1="147.0" x2="876.0" y2="147.0" class="d-line" marker-end="url(#ah32)"/><line x1="1046.0" y1="147.0" x2="1090.0" y2="147.0" class="d-line" marker-end="url(#ah32)"/><text x="1068.0" y="142.0" text-anchor="middle" class="d-sm d-muted">origin</text><line x1="319.0" y1="176.0" x2="319.0" y2="216.0" class="d-line" marker-end="url(#ah32)"/><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="151.5" text-anchor="middle">Uploader</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-c"/><text x="319.0" y="144.0" text-anchor="middle" class="d-sm">Upload API</text><text x="319.0" y="159.0" text-anchor="middle" class="d-sm">(metadata, presigned URL)</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-e"/><text x="533.0" y="53.5" text-anchor="middle">Raw object storage</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-e"/><text x="533.0" y="151.5" text-anchor="middle">Task queue</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-b"/><text x="747.0" y="144.0" text-anchor="middle">Transcoding workers</text><text x="747.0" y="159.0" text-anchor="middle">(many formats)</text><rect x="876.0" y="118.0" width="170" height="58" rx="8" class="d-e"/><text x="961.0" y="144.0" text-anchor="middle" class="d-sm">Processed storage</text><text x="961.0" y="159.0" text-anchor="middle" class="d-sm">(segments + manifests)</text><rect x="1090.0" y="118.0" width="170" height="58" rx="8" class="d-d"/><text x="1175.0" y="151.5" text-anchor="middle">CDN</text><rect x="234.0" y="216.0" width="170" height="58" rx="8" class="d-a"/><text x="319.0" y="249.5" text-anchor="middle">Metadata DB</text></svg>
+</div>
+<figcaption>Upload goes directly to object storage; a workflow transcodes into many renditions and publishes manifests.</figcaption></figure>
+<ol><li>The client asks the API for an upload and receives a <strong>presigned URL</strong>, then uploads the file in <strong>resumable chunks</strong> straight to object storage (never through app servers).</li><li>A completion event goes to a queue. A <strong>workflow</strong> splits the video into segments (about 2 to 10 seconds, at keyframes).</li><li>Workers transcode segments in <strong>parallel</strong> into several resolutions and bitrates (240p to 4K) and codecs (H.264, VP9, AV1), plus audio tracks, thumbnails and captions.</li><li>Segments and <strong>manifest files</strong> are written to storage, metadata is updated, and the video is marked ready.</li></ol>
+<p>Parallel segment transcoding makes a 2 hour film process in minutes. Use a DAG workflow engine so a failed segment is retried alone.</p>
+<h3>Playback: adaptive bitrate streaming</h3>
+<p>The video is stored as short segments at several quality levels. A <strong>manifest</strong> (HLS <code>.m3u8</code> or MPEG-DASH <code>.mpd</code>) lists them. The player downloads segments over plain HTTP, measures throughput and buffer level, and <strong>switches rendition between segments</strong>: higher quality when the network is good, lower when it drops. This avoids stalls and lets plain CDNs serve the content, since segments are ordinary cacheable files.</p>
+<h3>Delivery</h3>
+<ul><li><strong>CDN</strong> with multi-tier caching. Popular content is cached at edge locations; long-tail content falls back to regional or origin caches.</li><li>Large providers place cache appliances inside ISPs (Netflix Open Connect), moving traffic off the internet backbone.</li><li><strong>Pre-position</strong> (push) popular new releases to edges overnight.</li><li>Choose segment size as a trade-off: shorter segments adapt faster but add request overhead.</li></ul>
+<h3>Metadata and search</h3>
+<p>Metadata (title, owner, counts) in a sharded relational or NoSQL store with caches. View counts are high-write: aggregate in a stream and flush in batches. Search uses an inverted index (<a href="sd12-data-systems.html">SD12</a>); recommendations are a separate ML pipeline.</p>
+<h3>Trade-offs</h3>
+<p>Storage grows with every rendition, so use cold storage for rarely watched videos and encode extra renditions only after a video becomes popular. Protect content with signed URLs and DRM where needed.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd15-q01" data-topic="Case studies 3" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How does adaptive bitrate streaming avoid stalls?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It uploads faster <span class="q-why">No.</span></li>
+          <li data-key="B">Segments exist at several quality levels and the player switches between segments based on bandwidth <span class="q-why">Correct.</span></li>
+          <li data-key="C">It uses UDP only <span class="q-why">No.</span></li>
+          <li data-key="D">It stores one big file <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The manifest lists renditions and the player picks per segment.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd15-q02" data-topic="Case studies 3" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why are uploads sent directly to object storage with presigned URLs?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To avoid HTTPS <span class="q-why">No.</span></li>
+          <li data-key="B">To keep huge files off the application servers <span class="q-why">Correct.</span></li>
+          <li data-key="C">To skip transcoding <span class="q-why">No.</span></li>
+          <li data-key="D">To avoid metadata <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>App servers would otherwise become a bandwidth bottleneck.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why CDN and segments?</summary><div class="answer"><p>Segments are cacheable HTTP files, so CDNs serve them near users and the player adapts quality per segment.</p></div></details>
+      </div>
+    </section>
+
+    <section id="file-sync" data-track>
+      <h2>Case 2: File storage and sync (Dropbox or Google Drive)</h2>
+<h3>Requirements</h3>
+<p>Store files, sync them across devices automatically, share folders, keep version history, work offline and resolve conflicts. Files can be large; changes are usually small.</p>
+<h3>Key idea: blocks</h3>
+<p>Split each file into fixed or content-defined <strong>blocks</strong> (for example 4 MB). Give each block a hash. A file is an ordered <strong>list of block hashes</strong>.</p>
+<p>Benefits:</p>
+<ul><li><strong>Delta sync</strong>: after an edit only changed blocks are uploaded.</li><li><strong>Deduplication</strong>: blocks with an existing hash are not stored again, saving large amounts across users.</li><li><strong>Resumable uploads</strong> and parallel transfer.</li><li><strong>Version history</strong> is just a list of block hashes per version.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd15-02.py">import hashlib
+def blocks(data, size=4):
+    return [data[i:i + size] for i in range(0, len(data), size)]
+def hashes(data):
+    return [hashlib.sha1(b).hexdigest()[:6] for b in blocks(data)]
+v1 = b"AAAABBBBCCCCDDDD"
+v2 = b"AAAABBBBXXXXDDDD"          # only the third block changed
+h1, h2 = hashes(v1), hashes(v2)
+print(h1)
+print(h2)
+print("blocks to upload:", [i for i, (a, b) in enumerate(zip(h1, h2)) if a != b])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>['e25121', '4c55e5', '56900f', '4c4518']
+['e25121', '4c55e5', 'e3a880', '4c4518']
+blocks to upload: [2]</code></pre>
+<h3>Architecture</h3>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 638 294" role="img" aria-label="File sync. Metadata lives in a database; block bytes live in object storage; a notification channel tells clients about changes." style="min-width:638px"><defs><marker id="ah33" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah33a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah33b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah33d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="168.3" y1="118.0" x2="255.7" y2="78.0" class="d-line" marker-end="url(#ah33)"/><text x="212.0" y="93.0" text-anchor="middle" class="d-sm d-muted">commit file list</text><line x1="168.3" y1="176.0" x2="255.7" y2="216.0" class="d-line" marker-end="url(#ah33)"/><text x="212.0" y="191.0" text-anchor="middle" class="d-sm d-muted">upload blocks</text><line x1="404.0" y1="245.0" x2="448.0" y2="245.0" class="d-line" marker-end="url(#ah33)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah33)"/><line x1="382.3" y1="78.0" x2="469.7" y2="118.0" class="d-line" marker-end="url(#ah33)"/><text x="426.0" y="93.0" text-anchor="middle" class="d-sm d-muted">change event</text><line x1="448.0" y1="147.0" x2="190.0" y2="147.0" class="d-line" marker-end="url(#ah33)"/><text x="319.0" y="142.0" text-anchor="middle" class="d-sm d-muted">something changed</text><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="144.0" text-anchor="middle" class="d-sm">Desktop / mobile client</text><text x="105.0" y="159.0" text-anchor="middle" class="d-sm">(watcher, chunker)</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-c"/><text x="319.0" y="46.0" text-anchor="middle" class="d-sm">Metadata service</text><text x="319.0" y="61.0" text-anchor="middle" class="d-sm">(files, versions, blocks)</text><rect x="234.0" y="216.0" width="170" height="58" rx="8" class="d-c"/><text x="319.0" y="249.5" text-anchor="middle">Block service</text><rect x="448.0" y="216.0" width="170" height="58" rx="8" class="d-e"/><text x="533.0" y="242.0" text-anchor="middle">Object storage</text><text x="533.0" y="257.0" text-anchor="middle">(blocks)</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="533.0" y="46.0" text-anchor="middle">Metadata DB</text><text x="533.0" y="61.0" text-anchor="middle">(sharded SQL)</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-d"/><text x="533.0" y="144.0" text-anchor="middle">Notification service</text><text x="533.0" y="159.0" text-anchor="middle">(long poll / push)</text></svg>
+</div>
+<figcaption>File sync. Metadata lives in a database; block bytes live in object storage; a notification channel tells clients about changes.</figcaption></figure>
+<h3>Sync flow</h3>
+<ol><li>A <strong>client watcher</strong> detects a local change, splits the file, hashes blocks.</li><li>It asks the block service which hashes are <strong>missing</strong> and uploads only those.</li><li>It sends a <strong>commit</strong> to the metadata service with the new block list. The service writes a new version atomically and emits an event.</li><li>The notification service tells other devices (long poll or push). They fetch the metadata change, download missing blocks and reassemble.</li></ol>
+<h3>Conflicts</h3>
+<p>Two devices edit the same file offline. Detect with a <strong>base version</strong> check on commit: if the server's current version differs from the base, the commit conflicts. Typical resolution: keep both and rename one ("file (conflicted copy)"). Documents with real-time collaboration use operational transformation or CRDTs instead (<a href="sd16-case-4.html">SD16</a>).</p>
+<h3>Other concerns</h3>
+<p>Metadata needs strong consistency (relational, ACID) because of the folder tree and permissions. Blocks are immutable and eventually replicated. Encrypt blocks at rest, optionally client-side. Trash and retention windows. Sharing via ACLs. Large per-user quotas tracked in the metadata store.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd15-q03" data-topic="Case studies 3" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A 100 MB file changes in one 4 MB block. How much is uploaded with block-based delta sync?</p></div>
+        <ul class="q-options">
+          <li data-key="A">100 MB <span class="q-why">That is a full upload.</span></li>
+          <li data-key="B">About 4 MB <span class="q-why">Correct.</span></li>
+          <li data-key="C">0 MB <span class="q-why">The change must be sent.</span></li>
+          <li data-key="D">400 MB <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Only blocks whose hash changed are transferred.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What are the benefits of blocks and hashes?</summary><div class="answer"><p>Delta sync, deduplication, resumable parallel transfer and cheap versioning.</p></div></details>
+      </div>
+    </section>
+
+    <section id="ride" data-track>
+      <h2>Case 3: Ride sharing (Uber or Lyft)</h2>
+<h3>Requirements</h3>
+<p>Riders request a ride from their location; the system finds nearby available drivers, matches one, shows the driver's live location and ETA, tracks the trip and computes the fare. Low latency matching, high availability, live location updates.</p>
+<h3>Estimates</h3>
+<p>1 million concurrent drivers each sending a location update every 4 seconds is 250,000 writes per second. Updates are small (50 bytes) but frequent, and only the <strong>latest</strong> position matters, so keep it in memory rather than a durable log.</p>
+<h3>Location indexing</h3>
+<p>Divide the map into cells with a <strong>geospatial index</strong> (geohash, S2, H3) and keep, per cell, the set of available drivers. A ride request looks up the rider's cell plus neighbouring cells and ranks nearby drivers.</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 294" role="img" aria-label="Ride matching with a live location service." style="min-width:760px"><defs><marker id="ah34" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah34a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah34b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah34d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah34)"/><text x="212.0" y="44.0" text-anchor="middle" class="d-sm d-muted">location every 4s</text><line x1="190.0" y1="245.0" x2="234.0" y2="245.0" class="d-line" marker-end="url(#ah34)"/><text x="212.0" y="240.0" text-anchor="middle" class="d-sm d-muted">request ride</text><line x1="319.0" y1="216.0" x2="319.0" y2="78.0" class="d-line" marker-end="url(#ah34)"/><text x="319.0" y="142.0" text-anchor="middle" class="d-sm d-muted">nearby drivers</text><line x1="382.3" y1="216.0" x2="469.7" y2="176.0" class="d-line" marker-end="url(#ah34)"/><text x="426.0" y="191.0" text-anchor="middle" class="d-sm d-muted">rank by ETA</text><line x1="404.0" y1="245.0" x2="448.0" y2="245.0" class="d-line" marker-end="url(#ah34)"/><text x="426.0" y="240.0" text-anchor="middle" class="d-sm d-muted">create trip</text><line x1="618.0" y1="245.0" x2="662.0" y2="245.0" class="d-line" marker-end="url(#ah34)"/><text x="640.0" y="240.0" text-anchor="middle" class="d-sm d-muted">on completion</text><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">Driver app</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-d"/><text x="319.0" y="46.0" text-anchor="middle" class="d-sm">Location service</text><text x="319.0" y="61.0" text-anchor="middle" class="d-sm">(in-memory grid by cell)</text><rect x="20.0" y="216.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="249.5" text-anchor="middle">Rider app</text><rect x="234.0" y="216.0" width="170" height="58" rx="8" class="d-c"/><text x="319.0" y="249.5" text-anchor="middle">Matching service</text><rect x="448.0" y="216.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="242.0" text-anchor="middle">Trip service</text><text x="533.0" y="257.0" text-anchor="middle">(state machine, DB)</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-e"/><text x="533.0" y="151.5" text-anchor="middle">Routing / ETA service</text><rect x="662.0" y="216.0" width="170" height="58" rx="8" class="d-e"/><text x="747.0" y="249.5" text-anchor="middle">Payment service</text></svg>
+</div>
+<figcaption>Ride matching with a live location service.</figcaption></figure>
+<h3>Matching</h3>
+<ol><li>Find candidate drivers in the rider's cell and its neighbours, widening the radius if few are found.</li><li><strong>Rank by estimated time of arrival</strong> using a routing service, not straight-line distance.</li><li>Offer the trip to the best driver with a short timeout (about 10 to 15 seconds). If declined or timed out, offer to the next. Mark the driver <strong>reserved</strong> so two riders are not matched to one driver (atomic state change in the location store).</li><li>On acceptance, create the trip and stream live updates.</li></ol>
+<h3>Live tracking</h3>
+<p>The driver's updates go to the location service. The rider's app subscribes to its trip's updates through a WebSocket gateway or push. Throttle updates (every 4 seconds, more often near pickup). Persist a downsampled breadcrumb trail for fare and dispute purposes.</p>
+<h3>Trip state machine</h3>
+<p><code>requested -&gt; matched -&gt; driver_arriving -&gt; in_progress -&gt; completed</code> (or <code>cancelled</code>). Keep transitions in a strongly consistent store, publish each change as an event for pricing, notifications, analytics and payments. The fare combines route distance, time and <strong>dynamic (surge) pricing</strong> computed from supply and demand per cell.</p>
+<h3>Scaling</h3>
+<p>Shard the location service by cell (consistent hashing over geographic cells), so a city's traffic is spread but a cell's data is local. Hot cells (airports, events) may need finer cells. Keep matching regional; one region failing should not affect another.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd15-q04" data-topic="Case studies 3" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How are nearby drivers found quickly?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Scan all drivers <span class="q-why">Too slow.</span></li>
+          <li data-key="B">A geospatial index (geohash, S2, H3) with drivers grouped per cell <span class="q-why">Correct.</span></li>
+          <li data-key="C">Sort by name <span class="q-why">No.</span></li>
+          <li data-key="D">Ask riders <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Look up the rider's cell and its neighbours, then rank by ETA.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you prevent matching one driver to two riders?</summary><div class="answer"><p>Atomically reserve the driver in the location store at offer time.</p></div></details>
+      </div>
+    </section>
+
+    <section id="tickets" data-track>
+      <h2>Case 4: Ticket booking (concerts, flights)</h2>
+<h3>Requirements</h3>
+<p>Users browse events, pick seats, and pay. <strong>Never sell the same seat twice.</strong> Traffic spikes enormously when popular tickets open (hundreds of thousands arrive in seconds for a few thousand seats).</p>
+<h3>The core problem: contention on scarce inventory</h3>
+<p>Selling means "check the seat is free, then mark it sold". Without protection, two buyers both see it free and both succeed. This is the lost update problem (<a href="sd6-consistency.html">SD6</a>).</p>
+<h3>A seat reservation flow</h3>
+<p><code>available -&gt; held (with expiry) -&gt; sold</code>, and back to <code>available</code> when a hold expires.</p>
+<ol><li><strong>Hold</strong>: when the user selects a seat, atomically move it from <code>available</code> to <code>held</code> with an expiry (for example 10 minutes).</li><li>User pays within the hold window. Payment is initiated with an idempotency key.</li><li><strong>Confirm</strong>: on payment success move the seat to <code>sold</code>. On timeout a sweeper (or lazy check) releases it.</li></ol>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd15-03.py">import sqlite3, time
+db = sqlite3.connect(":memory:")
+db.execute("CREATE TABLE seats (id INTEGER PRIMARY KEY, status TEXT, held_by TEXT, hold_until REAL)")
+db.execute("INSERT INTO seats VALUES (1, 'available', NULL, NULL)")
+
+def hold(seat, user, now, ttl=600):
+    # one atomic statement: succeeds only if the seat is available or its hold expired
+    cur = db.execute("""UPDATE seats SET status='held', held_by=?, hold_until=?
+                        WHERE id=? AND (status='available' OR (status='held' AND hold_until &lt; ?))""",
+                     (user, now + ttl, seat, now))
+    return cur.rowcount == 1
+
+print("alice:", hold(1, "alice", now=0))
+print("bob  :", hold(1, "bob", now=100))        # still held by alice
+print("bob after expiry:", hold(1, "bob", now=700))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>alice: True
+bob  : False
+bob after expiry: True</code></pre>
+<p>The conditional <code>UPDATE ... WHERE</code> is atomic, so exactly one buyer wins. This is <strong>optimistic concurrency</strong>. Alternatives: <code>SELECT ... FOR UPDATE</code> row locks, or a Redis <code>SET seat NX EX</code> hold.</p>
+<h3>Handling the stampede</h3>
+<ul><li><strong>Virtual waiting room</strong>: put users in a queue and admit them at the rate the booking service can handle. This protects the system and is fair.</li><li><strong>Static pages and event data through a CDN</strong>; only the booking path hits the core.</li><li><strong>Rate limit</strong> per user and block bots (CAPTCHA, proof of work, purchase limits per account).</li><li><strong>Scale reads</strong> (seat maps) with caches, and let the seat map be slightly stale: the atomic hold is the source of truth, and a failed hold simply asks the user to pick another seat.</li><li>Partition inventory by event so one popular event does not slow others.</li></ul>
+<h3>Payment and failure cases</h3>
+<p>Payment can succeed after the hold expired, or the confirmation message can be lost. Use idempotent payment calls, a <strong>reconciliation</strong> job that compares payments with orders, and automatic refunds for orders that cannot be fulfilled. Keep the order as a state machine (<code>pending</code>, <code>paid</code>, <code>confirmed</code>, <code>refunded</code>).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd15-q05" data-topic="Case studies 3" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Two buyers click the last seat at the same moment. What guarantees only one succeeds?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A cache <span class="q-why">Does not serialise writes.</span></li>
+          <li data-key="B">An atomic conditional update (or row lock) on the seat <span class="q-why">Correct.</span></li>
+          <li data-key="C">Two retries <span class="q-why">No.</span></li>
+          <li data-key="D">Larger servers <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>UPDATE ... WHERE status = available changes at most one row for one buyer.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is a waiting room?</summary><div class="answer"><p>A queue that admits users at a sustainable rate during a ticket-sale spike.</p></div></details>
+      </div>
+    </section>
+
+    <section id="payments" data-track>
+      <h2>Case 5: Payment system</h2>
+<h3>Requirements</h3>
+<p>Accept payments, pay out to sellers, support refunds, integrate with card networks and banks through a <strong>payment service provider (PSP)</strong>, and above all <strong>never lose or duplicate money</strong>. Correctness and auditability matter more than raw speed.</p>
+<h3>Estimates</h3>
+<p>1 million transactions per day is only about 12 per second. The challenge is not volume but <strong>correctness, security and reliability</strong> of each one.</p>
+<h3>The flow</h3>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 294" role="img" aria-label="Payment flow with an idempotent payment service and a ledger." style="min-width:760px"><defs><marker id="ah35" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah35a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah35b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah35d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="147.0" x2="234.0" y2="147.0" class="d-line" marker-end="url(#ah35)"/><text x="212.0" y="142.0" text-anchor="middle" class="d-sm d-muted">pay (idempotency key)</text><line x1="382.3" y1="118.0" x2="469.7" y2="78.0" class="d-line" marker-end="url(#ah35)"/><text x="426.0" y="93.0" text-anchor="middle" class="d-sm d-muted">authorise / capture</text><line x1="448.0" y1="49.0" x2="404.0" y2="49.0" class="d-line" marker-end="url(#ah35)"/><text x="426.0" y="44.0" text-anchor="middle" class="d-sm d-muted">async result</text><line x1="319.0" y1="78.0" x2="319.0" y2="118.0" class="d-line" marker-end="url(#ah35)"/><line x1="404.0" y1="147.0" x2="448.0" y2="147.0" class="d-line" marker-end="url(#ah35)"/><text x="426.0" y="142.0" text-anchor="middle" class="d-sm d-muted">record entries</text><line x1="382.3" y1="176.0" x2="469.7" y2="216.0" class="d-line" marker-end="url(#ah35)"/><line x1="715.3" y1="216.0" x2="564.7" y2="78.0" class="d-line" marker-end="url(#ah35)"/><text x="640.0" y="142.0" text-anchor="middle" class="d-sm d-muted">compare daily</text><line x1="683.7" y1="216.0" x2="596.3" y2="176.0" class="d-line" marker-end="url(#ah35)"/><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="151.5" text-anchor="middle">Checkout</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-c"/><text x="319.0" y="144.0" text-anchor="middle">Payment service</text><text x="319.0" y="159.0" text-anchor="middle">(state machine)</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-e"/><text x="533.0" y="53.5" text-anchor="middle">PSP / card network</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-d"/><text x="533.0" y="144.0" text-anchor="middle">Ledger</text><text x="533.0" y="159.0" text-anchor="middle">(double-entry)</text><rect x="448.0" y="216.0" width="170" height="58" rx="8" class="d-a"/><text x="533.0" y="249.5" text-anchor="middle">Payments DB</text><rect x="662.0" y="216.0" width="170" height="58" rx="8" class="d-e"/><text x="747.0" y="249.5" text-anchor="middle">Reconciliation</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-b"/><text x="319.0" y="53.5" text-anchor="middle">Webhook handler</text></svg>
+</div>
+<figcaption>Payment flow with an idempotent payment service and a ledger.</figcaption></figure>
+<h3>Principles</h3>
+<ul><li><strong>Idempotency keys</strong> on every payment request (<a href="sd8-messaging.html">SD8</a>). A retry returns the stored result, not a second charge.</li><li><strong>State machine</strong> for each payment (<code>created</code>, <code>authorised</code>, <code>captured</code>, <code>failed</code>, <code>refunded</code>). Only allowed transitions, each persisted before side effects.</li><li><strong>Never store raw card numbers.</strong> Use the PSP's hosted fields or tokenisation, so you stay out of the heaviest PCI DSS scope. Store tokens.</li><li><strong>Double-entry ledger</strong>: every movement is recorded as two entries, a debit and a credit, which always sum to zero. The ledger is <strong>append-only</strong>; errors are corrected with new entries, never edits. Balances are derived from entries.</li><li><strong>Webhooks and asynchronous results</strong>: the PSP may confirm later. Verify signatures, dedupe by event id, and make handlers idempotent.</li><li><strong>Timeouts are unknown outcomes</strong>: if a call to the PSP times out you do not know whether it charged. <strong>Query the PSP</strong> by your idempotency key or reference rather than retrying blindly.</li><li><strong>Reconciliation</strong>: a daily job compares your records with the PSP and bank settlement files and flags mismatches. This is how real systems catch bugs.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd15-04.py"># Double-entry: every transfer is a debit and an equal credit; the ledger always balances.
+ledger = []
+def transfer(src, dst, amount, ref):
+    ledger.append((ref, src, -amount))
+    ledger.append((ref, dst, +amount))
+transfer("customer", "merchant", 100, "pay-1")
+transfer("merchant", "customer", 30, "refund-1")
+balances = {}
+for ref, acct, amt in ledger:
+    balances[acct] = balances.get(acct, 0) + amt
+print(balances, "sum =", sum(balances.values()))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>{'customer': -70, 'merchant': 70} sum = 0</code></pre>
+<h3>Consistency and transactions</h3>
+<p>Use a relational database with ACID transactions for the payment and ledger records. Cross-service workflows (order, inventory, payment) use <strong>sagas</strong> with compensations (refund) and the <strong>outbox</strong> pattern (<a href="sd6-consistency.html">SD6</a>, <a href="sd8-messaging.html">SD8</a>). Choose consistency over availability: it is better to reject a payment than to charge twice.</p>
+<h3>Security and compliance</h3>
+<p>Encrypt in transit and at rest, restrict access, audit every action, tokenise cards, use fraud detection (rules plus ML scoring) before capture, and follow PCI DSS and strong customer authentication (3-D Secure) requirements.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd15-q06" data-topic="Case studies 3" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A call to the payment provider times out. What should you do?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Retry immediately with a new request <span class="q-why">May double charge.</span></li>
+          <li data-key="B">Query the provider for the outcome using your idempotency key or reference, then act <span class="q-why">Correct.</span></li>
+          <li data-key="C">Assume failure <span class="q-why">May lose a charge record.</span></li>
+          <li data-key="D">Assume success <span class="q-why">May give goods for free.</span></li>
+        </ul>
+        <div class="q-explain"><p>A timeout is an unknown outcome; resolve it rather than guess.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd15-q07" data-topic="Case studies 3" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In a double-entry ledger, what is always true?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Debits exceed credits <span class="q-why">No.</span></li>
+          <li data-key="B">The sum of all entries is zero <span class="q-why">Correct.</span></li>
+          <li data-key="C">Entries may be edited <span class="q-why">Append-only: use correcting entries.</span></li>
+          <li data-key="D">Balances are stored only as totals <span class="q-why">Derive from entries.</span></li>
+        </ul>
+        <div class="q-explain"><p>Every transfer is a debit and an equal credit, so the ledger balances.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>List the payment safety principles.</summary><div class="answer"><p>Idempotency keys, state machine, tokenised cards, append-only double-entry ledger, reconciliation, resolve unknown outcomes.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Case studies 3</h2>
+      <p class="muted">8 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Case studies 3">
+<details class="recall iq" data-level="medium" data-topic="Case studies 3"><summary><span class="tag warn">Medium</span> Design video streaming: how does playback adapt to bandwidth?</summary><div class="answer"><p>Videos are transcoded into segments at several bitrates with a manifest; the player downloads segments over HTTP via a CDN and switches rendition per segment based on throughput and buffer.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 3"><summary><span class="tag warn">Medium</span> How do you speed up video processing?</summary><div class="answer"><p>Split into segments, transcode in parallel with a workflow engine, retry failed segments independently and write outputs to object storage.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 3"><summary><span class="tag warn">Medium</span> Design Dropbox: how do you sync large files efficiently?</summary><div class="answer"><p>Block-level chunking with hashes gives delta sync and deduplication; metadata in a relational store; clients notified of changes and conflicts resolved with versions.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 3"><summary><span class="tag warn">Medium</span> What is a double-entry ledger?</summary><div class="answer"><p>Each movement of money is two entries, a debit and a credit, summing to zero. Entries are append-only and balances are derived, giving auditability.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 3"><summary><span class="tag bad">Advanced</span> Design Uber: how do you match riders and drivers?</summary><div class="answer"><p>Maintain driver locations in a geospatial index in memory, query nearby cells, rank by ETA, reserve the driver atomically, and track the trip with a state machine.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 3"><summary><span class="tag bad">Advanced</span> Design ticket booking: how do you avoid double booking?</summary><div class="answer"><p>Atomic conditional updates or row locks on seats, a hold with expiry, a payment step and a waiting room to absorb spikes.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 3"><summary><span class="tag bad">Advanced</span> Design a payment system.</summary><div class="answer"><p>Idempotency keys, a payment state machine, tokenised cards via a PSP, a double-entry append-only ledger, webhook handling and reconciliation, with strong consistency.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 3"><summary><span class="tag bad">Advanced</span> A payment provider call times out. What now?</summary><div class="answer"><p>Treat the outcome as unknown: query the provider using the idempotency key or reference, then proceed. Never blindly retry with a new request.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd14-case-2.html"><span class="dir">Previous</span><span>SD14 Case studies 2: news feed, chat, notifications, typeahead, web crawler</span></a>
+      <a class="next" href="sd16-case-4.html"><span class="dir">Next</span><span>SD16 Case studies 4: metrics, ad click aggregation, leaderboard, message queue, collaborative editing</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

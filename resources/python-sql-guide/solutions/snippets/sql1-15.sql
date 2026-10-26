@@ -1,0 +1,6 @@
+SELECT city FROM customers WHERE city IS NOT NULL
+INTERSECT
+SELECT 'Paris'
+UNION
+SELECT 'Tokyo'
+ORDER BY 1;

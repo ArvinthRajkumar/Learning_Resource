@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="09">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>09 Questions I saw | AI/ML Engineer Prep</title>
+<meta name="description" content="The 17 non-coding assessment questions with verified answers, per-option explanations and the Python behind every number.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part 09</p>
+      <h1>Questions I saw</h1>
+      <p class="lede">The 17 non-coding questions from the assessment, rebuilt from memory. Answer each one before revealing it. Every numeric answer has its Python check beside it, and every question links to the section that teaches the concept.</p>
+      <div class="meta"><span class="tag accent">17 questions</span><span class="tag warn">2 flagged: options partly seen</span><span class="tag">Results feed the hub's weak-areas box</span></div>
+    </div>
+    <div class="callout note"><p class="mb-0">Answers are verified, either by computation (<code>solutions/verify_numbers.py</code>) or by the mechanism explained in the linked section. Where you only saw part of the options, the question is flagged <span class="tag warn">options partly seen</span>, and the reasoning is written so it holds for any wording of the remaining options.</p></div>
+
+    <section id="q1-kv-cache" data-track>
+      <h2>1. KV cache size</h2>
+      <div class="quiz" data-qid="seen-q1-kv-cache" data-topic="Inference" data-type="single" data-answer="D">
+        <div class="q-stem"><p>A model has 32 layers, 8 KV heads, head dimension 128 and an fp16 KV cache. You run a batch of 4 sequences of 8,192 tokens each. How much memory does the KV cache need?</p></div>
+        <ul class="q-options">
+          <li data-key="A">16 GiB <span class="q-why">Uses 32 heads instead of the 8 KV heads (4x too big).</span></li>
+          <li data-key="B">1 GiB <span class="q-why">One sequence only. The batch is 4.</span></li>
+          <li data-key="C">32 GiB <span class="q-why">32 heads and 4-byte elements: two mistakes.</span></li>
+          <li data-key="D">4 GiB <span class="q-why">2 x 32 x 8 x 128 x 8192 x 4 x 2 = 2^32 bytes = 4 GiB.</span></li>
+        </ul>
+        <div class="q-explain"><p>128 KiB per token (2 x 32 x 8 x 128 x 2 bytes) times 32,768 tokens = 4 GiB exactly (4.295 GB).</p></div>
+      </div>
+      <details class="box"><summary>Python check</summary><div class="d-body"><pre><code class="lang-py">kv = 2 * 32 * 8 * 128 * 8192 * 4 * 2
+print(kv, kv / 1024**3)   # 4294967296 4.0</code></pre></div></details>
+      <p class="small">Learn it: <a href="01-inference-and-memory.html#kv-cache">KV cache size</a></p>
+    </section>
+
+    <section id="q2-speculative" data-track>
+      <h2>2. Speculative decoding</h2>
+      <div class="quiz" data-qid="seen-q2-speculative" data-topic="Inference" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which statement about speculative decoding is correct?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Each rejected draft token costs a full extra target forward pass <span class="q-why">The target scores all drafted positions in one pass. The replacement token comes from that same pass.</span></li>
+          <li data-key="B">The output follows the same distribution as sampling from the target model alone <span class="q-why">Correct. Rejection sampling (accept with min(1, p/q), resample from max(0, p - q)) is exactly distribution-preserving.</span></li>
+          <li data-key="C">It only speeds things up at temperature 0 <span class="q-why">The acceptance rule works for any sampling distribution. Acceptance is often higher at low temperature, but not exclusively.</span></li>
+          <li data-key="D">Output quality is capped by the draft model <span class="q-why">The target decides every emitted token. The draft only affects speed.</span></li>
+        </ul>
+        <div class="q-explain"><p>Speculative decoding is lossless with respect to the target distribution. The speedup depends on the acceptance rate, the draft's cost and k: E[tokens per target pass] = (1 - a^(k+1))/(1 - a).</p></div>
+      </div>
+      <p class="small">Learn it: <a href="01-inference-and-memory.html#speculative-decoding">Speculative decoding</a></p>
+    </section>
+
+    <section id="q3-rag-diagnosis" data-track>
+      <h2>3. RAG: high recall, low accuracy</h2>
+      <div class="quiz" data-qid="seen-q3-rag-diagnosis" data-topic="RAG" data-type="single" data-answer="A">
+        <div class="q-stem"><p>Your RAG system has recall@20 = 0.93 but answer accuracy = 0.61, and wrong answers quote the wrong chunk. What is the best next change?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Add a cross-encoder reranker and pass only the top 3 to 5 chunks <span class="q-why">Retrieval already finds the chunk. Precision at the top and less distraction fix the generation stage.</span></li>
+          <li data-key="B">Raise the temperature <span class="q-why">Randomness does not help pick the right evidence. It usually lowers factual accuracy.</span></li>
+          <li data-key="C">Retrieve 50 chunks instead of 20 <span class="q-why">Recall is already 0.93. More chunks mean more distractors, more cost and worse lost-in-the-middle effects.</span></li>
+          <li data-key="D">Use an embedding model with bigger dimensions <span class="q-why">Targets first-stage recall, which is not the failing stage, and forces a full re-embed.</span></li>
+        </ul>
+        <div class="q-explain"><p>Diagnose by stage: high recall@k plus low accuracy points past retrieval to ranking or generation. A reranker scores (question, chunk) jointly, and trimming to the top few removes look-alike distractors.</p></div>
+      </div>
+      <p class="small">Learn it: <a href="03-rag-and-retrieval.html#diagnosis">Diagnose a RAG system by stage</a></p>
+    </section>
+
+    <section id="q4-embedding-upgrade" data-track>
+      <h2>4. New embedding model, same dimension</h2>
+      <div class="quiz" data-qid="seen-q4-embedding-upgrade" data-topic="RAG" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Your provider releases a new 1,536-dimension embedding model (the same dimension as your current one). What should you do with the existing index?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Nothing, the dimensions match <span class="q-why">Same shape, different meaning: each model has its own vector space.</span></li>
+          <li data-key="B">Embed only new documents with the new model <span class="q-why">Mixes two incompatible spaces in one index. Query-to-old-doc similarities become meaningless.</span></li>
+          <li data-key="C">Re-embed the entire corpus with the new model <span class="q-why">Correct. Queries must use the new model too. Do it blue/green: dual-write, backfill, evaluate, switch reads.</span></li>
+          <li data-key="D">Normalize the old vectors <span class="q-why">Normalization changes length, not direction in a foreign space.</span></li>
+        </ul>
+        <div class="q-explain"><p>Vectors are only comparable within the model that produced them, even at equal dimension.</p></div>
+      </div>
+      <p class="small">Learn it: <a href="03-rag-and-retrieval.html#embeddings-migration">Embedding migrations</a></p>
+    </section>
+
+    <section id="q5-prompt-caching" data-track>
+      <h2>5. Prompt order for prefix caching</h2>
+      <div class="quiz" data-qid="seen-q5-prompt-caching" data-topic="Inference" data-type="single" data-answer="A" data-flag="options partly seen">
+        <div class="q-stem"><p>A prompt contains: a system prompt plus tool definitions (never change), a 20k-token product manual (updated weekly) and the user's question. With longest-repeated-prefix caching, which order maximizes cache hits?</p></div>
+        <ul class="q-options">
+          <li data-key="A">System + tools, then manual, then user question <span class="q-why">Static, then semi-static, then dynamic. The shared prefix covers about 22k tokens.</span></li>
+          <li data-key="B">User question, then system + tools, then manual <span class="q-why">The first tokens change on every request, so nothing is reusable.</span></li>
+          <li data-key="C">Manual, then system + tools, then user question <span class="q-why">Works within a week, but the manual's weekly change invalidates the never-changing system and tools part behind it.</span></li>
+          <li data-key="D">System + tools, then user question, then manual <span class="q-why">The question in the middle blocks reuse of the 20k-token manual.</span></li>
+        </ul>
+        <div class="q-explain"><p>KV at position i depends on all earlier tokens, so only an identical prefix can be reused. Put content in order of how rarely it changes. These option wordings are reconstructed. The rule decides any variant: the most stable content goes first.</p></div>
+      </div>
+      <details class="box"><summary>Python check</summary><div class="d-body"><pre><code class="lang-py">static, manual, question = 2000, 20000, 100   # illustrative token counts
+print((static + manual) / (static + manual + question))   # 0.9955 of the prompt is cacheable</code></pre></div></details>
+      <p class="small">Learn it: <a href="01-inference-and-memory.html#prompt-caching">Prompt caching</a></p>
+    </section>
+
+    <section id="q6-quantization" data-track>
+      <h2>6. Why 4-bit weight quantization speeds up decoding</h2>
+      <div class="quiz" data-qid="seen-q6-quantization" data-topic="Inference" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why does 4-bit weight-only quantization (AWQ, GPTQ) speed up single-user decoding?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Fewer layers run per token <span class="q-why">Every layer still runs. Only the storage format of the weights changes.</span></li>
+          <li data-key="B">Decoding is memory-bandwidth bound, so reading about 4x fewer weight bytes per token is the win <span class="q-why">Correct. At batch 1 each weight byte supports about 1 FLOP, far below the GPU's ridge point (about 150 to 300 FLOP/byte).</span></li>
+          <li data-key="C">Attention becomes linear <span class="q-why">The attention algorithm is unchanged by the weight format.</span></li>
+          <li data-key="D">Matmuls run in int4 <span class="q-why">Weights are dequantized to fp16/bf16 in registers (W4A16). The arithmetic is still 16-bit.</span></li>
+        </ul>
+        <div class="q-explain"><p>Decode time per token is roughly weight bytes / bandwidth. An 8B model on an H100 (~3.35 TB/s, approximate vendor figure): 4.78 ms per token in bf16 versus 1.23 ms at about 4.125 bits per weight.</p></div>
+      </div>
+      <details class="box"><summary>Python check</summary><div class="d-body"><pre><code class="lang-py">bw = 3.35e12                       # H100 SXM HBM bandwidth, approximate
+print(16e9 / bw * 1e3)             # 4.78 ms/token, bf16 8B
+print(8e9 * 4.125 / 8 / bw * 1e3)  # 1.23 ms/token, int4 + group scales
+print(16 / 4.125)                  # 3.88x fewer bytes</code></pre></div></details>
+      <p class="small">Learn it: <a href="01-inference-and-memory.html#roofline-quantization">Roofline and quantization</a></p>
+    </section>
+
+    <section id="q7-throughput" data-track>
+      <h2>7. What raises throughput for many concurrent requests</h2>
+      <div class="quiz" data-qid="seen-q7-throughput" data-topic="Inference" data-type="multi" data-answer="B,C,D">
+        <div class="q-stem"><p>Which techniques raise throughput for many concurrent requests? Select all that apply.</p></div>
+        <ul class="q-options">
+          <li data-key="A">Raise max_new_tokens for every request <span class="q-why">Requests occupy slots and KV memory longer, so fewer fit and useful throughput drops.</span></li>
+          <li data-key="B">Continuous batching <span class="q-why">Refills batch slots every step, so there are no idle slots behind long requests.</span></li>
+          <li data-key="C">PagedAttention <span class="q-why">Block-allocated KV cache: almost no fragmentation, more concurrent sequences.</span></li>
+          <li data-key="D">Prefix caching of a shared system prompt <span class="q-why">Skips repeated prefill and stores shared KV blocks once.</span></li>
+          <li data-key="E">Disabling the KV cache <span class="q-why">Forces recomputation of all previous tokens at every step. Far slower.</span></li>
+        </ul>
+        <div class="q-explain"><p>Throughput comes from keeping the batch full (continuous batching) and fitting more sequences in memory (PagedAttention, prefix sharing, quantized KV).</p></div>
+      </div>
+      <p class="small">Learn it: <a href="01-inference-and-memory.html#throughput">Throughput techniques</a></p>
+    </section>
+
+    <section id="q8-constrained" data-track>
+      <h2>8. Grammar-constrained decoding</h2>
+      <div class="quiz" data-qid="seen-q8-constrained" data-topic="Inference" data-type="multi" data-answer="B,C,E">
+        <div class="q-stem"><p>You use grammar-constrained decoding against a JSON schema. Which statements are true? Select all.</p></div>
+        <ul class="q-options">
+          <li data-key="A">It removes the need for an eval set <span class="q-why">Structure is guaranteed, correctness is not. You still measure accuracy.</span></li>
+          <li data-key="B">A short reasoning field placed before the answer field can improve accuracy <span class="q-why">Generation is left to right, so the answer tokens can condition on the reasoning tokens.</span></li>
+          <li data-key="C">An overly strict enum can force a wrong value <span class="q-why">If the truth is not among the options, the mask forces one of them anyway. Add an unknown option.</span></li>
+          <li data-key="D">Field values are guaranteed correct <span class="q-why">Only syntax and schema shape are guaranteed.</span></li>
+          <li data-key="E">The output always parses as schema-valid JSON <span class="q-why">That is the guarantee (assuming generation is not cut off by the token limit).</span></li>
+        </ul>
+        <div class="q-explain"><p>Constrained decoding masks illegal tokens at each step. It controls form, not truth.</p></div>
+      </div>
+      <p class="small">Learn it: <a href="01-inference-and-memory.html#constrained-decoding">Constrained decoding</a></p>
+    </section>
+
+    <section id="q9-lora" data-track>
+      <h2>9. LoRA r = 16, alpha = 32 on q and v</h2>
+      <div class="quiz" data-qid="seen-q9-lora" data-topic="Fine-tuning" data-type="multi" data-answer="A,C,D">
+        <div class="q-stem"><p>LoRA with r = 16 and alpha = 32 is applied to the q and v projections. Which statements are true? Select all.</p></div>
+        <ul class="q-options">
+          <li data-key="A">The adapter can be merged into the base weights for no extra inference latency <span class="q-why">W' = W + (alpha/r) BA has the original shape.</span></li>
+          <li data-key="B">It removes activation memory <span class="q-why">Activations are still needed to backpropagate through the frozen layers. LoRA saves gradient and optimizer memory.</span></li>
+          <li data-key="C">The scale is alpha / r = 2 <span class="q-why">32 / 16 = 2.</span></li>
+          <li data-key="D">Only the A and B matrices are trained <span class="q-why">The base weights are frozen.</span></li>
+          <li data-key="E">Higher rank is always better <span class="q-why">Returns diminish, and overfitting risk and cost grow. Rank is a hyperparameter.</span></li>
+        </ul>
+        <div class="q-explain"><p>For a 4096 x 4096 projection: 16 x (4096 + 4096) = 131,072 trainable parameters per module. q + v over 32 layers gives 8,388,608.</p></div>
+      </div>
+      <details class="box"><summary>Python check</summary><div class="d-body"><pre><code class="lang-py">r, alpha, d, layers = 16, 32, 4096, 32
+print(alpha / r)                  # 2.0
+print(r * (d + d) * 2 * layers)   # 8388608 trainable params (q and v)</code></pre></div></details>
+      <p class="small">Learn it: <a href="02-fine-tuning.html#lora">LoRA</a></p>
+    </section>
+
+    <section id="q10-significance" data-track>
+      <h2>10. Prompt A vs Prompt B: is 3 points real?</h2>
+      <div class="quiz" data-qid="seen-q10-significance" data-topic="Evaluation" data-type="single" data-answer="D" data-flag="options partly seen">
+        <div class="q-stem"><p>On the same 200 questions, Prompt A gets 156 right (78%) and Prompt B gets 162 right (81%). They disagree on 30 questions: B is right on 18, A on 12. What is the right conclusion?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A is better <span class="q-why">A scored lower, and there is no evidence for A.</span></li>
+          <li data-key="B">They cannot be compared <span class="q-why">Shared questions make a paired comparison ideal. It is just not conclusive here.</span></li>
+          <li data-key="C">B is significantly better <span class="q-why">Exact sign test: p = 0.36, far above 0.05.</span></li>
+          <li data-key="D">The difference is not statistically significant (p about 0.36) <span class="q-why">Exact two-sided binomial test on the 30 discordant pairs gives 0.3616. McNemar with continuity correction gives 0.361.</span></li>
+        </ul>
+        <div class="q-explain"><p>Only the 30 disagreements carry information: the 144 both-right and 26 both-wrong cancel out of the difference. Under 'no difference', each disagreement is a fair coin, and 18 or more heads (or 12 or fewer) out of 30 happens 36% of the time. The unpaired z-test (p = 0.457) is the wrong tool because it ignores the pairing. With 30 disagreements you would need at least 21 to 9 for p &lt; 0.05.</p></div>
+      </div>
+      <details class="box"><summary>Python check</summary><div class="d-body"><pre><code class="lang-py">from math import comb, erfc, sqrt
+p = 2 * sum(comb(30, k) for k in range(18, 31)) / 2**30
+print(round(p, 4))                              # 0.3616  exact sign test
+print(round(erfc(sqrt(((18-12)**2/30) / 2)), 4))  # 0.2733  McNemar, no correction
+print(round(erfc(sqrt(((6-1)**2/30) / 2)), 4))    # 0.3613  McNemar, continuity corrected</code></pre></div></details>
+      <p class="small">Learn it: <a href="04-evaluation-and-statistics.html#paired-tests">Paired tests</a></p>
+    </section>
+
+    <section id="q11-tokenization" data-track>
+      <h2>11. Tamil costs about 3x the tokens</h2>
+      <div class="quiz" data-qid="seen-q11-tokenization" data-topic="Inference" data-type="single" data-answer="D">
+        <div class="q-stem"><p>The same message uses about 3x more tokens in Tamil than in English with a byte-level BPE tokenizer. Why?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The model translates Tamil to English internally <span class="q-why">There is no hidden translation step. Tokens are counted on the input as given.</span></li>
+          <li data-key="B">Tokenizers count characters <span class="q-why">They segment bytes into learned subword units.</span></li>
+          <li data-key="C">The provider adds a surcharge for non-English text <span class="q-why">Billing is per token. The token count is genuinely higher.</span></li>
+          <li data-key="D">Tamil characters are 3 bytes each in UTF-8, and BPE merges were learned mostly from English <span class="q-why">Correct: 3x more starting symbols and few learned merges for Tamil byte sequences.</span></li>
+        </ul>
+        <div class="q-explain"><p>Byte-level BPE starts from UTF-8 bytes and only compresses patterns frequent in its training data. Exact token counts depend on the tokenizer. Byte counts are exact.</p></div>
+      </div>
+      <details class="box"><summary>Python check</summary><div class="d-body"><pre><code class="lang-py">word = "வணக்கம்"
+print(len(word), len(word.encode("utf-8")))   # 7 code points, 21 bytes
+print(all(len(chr(c).encode()) == 3 for c in range(0x0B80, 0x0C00)))  # True: the whole Tamil block</code></pre></div></details>
+      <p class="small">Learn it: <a href="01-inference-and-memory.html#tokenization">Tokenization</a></p>
+    </section>
+
+    <section id="q12-dpo" data-track>
+      <h2>12. DPO blanks</h2>
+      <div class="quiz" data-qid="seen-q12-dpo" data-topic="Fine-tuning" data-type="fill" data-answer="reference|ref|reference policy|sft||reward|reward model">
+        <div class="q-stem"><p>DPO uses a frozen <input class="q-input" aria-label="blank 1"> model, and needs no separately trained <input class="q-input" aria-label="blank 2"> model.</p></div>
+        <div class="q-explain"><p>Reference (usually the SFT checkpoint) and reward. The loss is -log sigmoid(beta x [(log pi(y_w) - log pi_ref(y_w)) - (log pi(y_l) - log pi_ref(y_l))]). The reward is implicit in the log-ratios.</p></div>
+      </div>
+      <p class="small">Learn it: <a href="02-fine-tuning.html#preference-optimization">DPO</a></p>
+    </section>
+
+    <section id="q13-weights" data-track>
+      <h2>13. 8B weights in bf16</h2>
+      <div class="quiz" data-qid="seen-q13-weights" data-topic="Inference" data-type="fill" data-answer="16|16 gb|16gb">
+        <div class="q-stem"><p>An 8B-parameter model's weights in bf16 take about <input class="q-input" aria-label="answer"> GB.</p></div>
+        <div class="q-explain"><p>8 x 10^9 parameters x 2 bytes = 16 x 10^9 bytes = 16 GB (14.9 GiB).</p></div>
+      </div>
+      <details class="box"><summary>Python check</summary><div class="d-body"><pre><code class="lang-py">print(8e9 * 2 / 1e9, 8e9 * 2 / 1024**3)   # 16.0 GB, 14.9 GiB</code></pre></div></details>
+      <p class="small">Learn it: <a href="01-inference-and-memory.html#weight-memory">Weight memory</a></p>
+    </section>
+
+    <section id="q14-rrf" data-track>
+      <h2>14. RRF formula</h2>
+      <div class="quiz" data-qid="seen-q14-rrf" data-topic="RAG" data-type="fill" data-answer="rank|rank of the document|position|rank(d)||60">
+        <div class="q-stem"><p>Reciprocal Rank Fusion: score = sum over ranked lists of 1 / (k + <input class="q-input" aria-label="blank 1">), with k conventionally <input class="q-input" aria-label="blank 2">.</p></div>
+        <div class="q-explain"><p>The document's 1-based rank in each list, and k = 60 (Cormack et al., 2009).</p></div>
+      </div>
+      <details class="box"><summary>Python check</summary><div class="d-body"><pre><code class="lang-py">bm25, dense = ["D3", "D1", "D7"], ["D1", "D9", "D3"]
+score = {}
+for lst in (bm25, dense):
+    for rank, d in enumerate(lst, start=1):
+        score[d] = score.get(d, 0) + 1 / (60 + rank)
+print(sorted(score, key=lambda d: -score[d]))   # ['D1', 'D3', 'D9', 'D7']</code></pre></div></details>
+      <p class="small">Learn it: <a href="03-rag-and-retrieval.html#rrf-hybrid">RRF</a></p>
+    </section>
+
+    <section id="q15-ndcg" data-track>
+      <h2>15. Name the metric</h2>
+      <div class="quiz" data-qid="seen-q15-ndcg" data-topic="RAG" data-type="fill" data-answer="ndcg|ndcg@k|normalized discounted cumulative gain|normalised discounted cumulative gain">
+        <div class="q-stem"><p>The ranking metric that discounts gain by log2(1 + position) and normalizes by the ideal ordering is <input class="q-input" aria-label="answer">.</p></div>
+        <div class="q-explain"><p>nDCG: DCG@k = sum of gain_i / log2(i + 1), divided by the DCG of the ideal ordering of all judged documents.</p></div>
+      </div>
+      <details class="box"><summary>Python check</summary><div class="d-body"><pre><code class="lang-py">import math
+dcg  = 3/math.log2(2) + 2/math.log2(4) + 1/math.log2(6)                 # ranked: rel 3, 0, 2, 0, 1
+idcg = 3/math.log2(2) + 2/math.log2(3) + 2/math.log2(4) + 1/math.log2(5)  # ideal: 3, 2, 2, 1
+print(round(dcg / idcg, 4))   # 0.7706</code></pre></div></details>
+      <p class="small">Learn it: <a href="03-rag-and-retrieval.html#metrics">Ranking metrics</a></p>
+    </section>
+
+    <section id="q16-draft" data-track>
+      <h2>16. Speculative decoding blank</h2>
+      <div class="quiz" data-qid="seen-q16-draft" data-topic="Inference" data-type="fill" data-answer="draft|draft model|assistant|assistant model">
+        <div class="q-stem"><p>In speculative decoding, a small <input class="q-input" aria-label="answer"> model proposes tokens that the large target model verifies.</p></div>
+        <div class="q-explain"><p>Draft model (Hugging Face calls it the assistant model in assisted generation).</p></div>
+      </div>
+      <p class="small">Learn it: <a href="01-inference-and-memory.html#speculative-decoding">Speculative decoding</a></p>
+    </section>
+
+    <section id="q17-idempotency" data-track>
+      <h2>17. The refund that timed out</h2>
+      <div class="quiz" data-qid="seen-q17-idempotency" data-topic="Agents" data-type="single" data-answer="A">
+        <div class="q-stem"><p>An agent's create_refund tool call times out after the refund was actually created. What is the safest design?</p></div>
+        <ul class="q-options">
+          <li data-key="A">An idempotency key generated once per logical refund and reused on every retry <span class="q-why">Retries become safe: the server sees the same key and returns the original refund instead of creating a second one.</span></li>
+          <li data-key="B">A 5-minute timeout and no retries <span class="q-why">The ambiguity remains (timeouts still happen), real failures are never recovered, and users wait minutes.</span></li>
+          <li data-key="C">Exponential backoff alone <span class="q-why">Backoff decides when to retry, not whether a retry duplicates the refund.</span></li>
+          <li data-key="D">Let the LLM decide whether to retry <span class="q-why">The model cannot observe whether the refund happened. Money handling must be deterministic.</span></li>
+        </ul>
+        <div class="q-explain"><p>At-least-once delivery (retries) plus idempotent processing (server-side dedup by key, enforced atomically) gives an exactly-once effect. Generate the key in code, persist it with the agent state, never let the model invent it.</p></div>
+      </div>
+      <p class="small">Learn it: <a href="05-agents-and-tool-use.html#idempotency">Idempotency</a></p>
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="08-extra-coding-patterns.html"><span class="dir">Previous</span><span>08 Extra coding patterns</span></a>
+      <a class="next" href="13-interview-questions.html"><span class="dir">Next</span><span>13 Interview question bank</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

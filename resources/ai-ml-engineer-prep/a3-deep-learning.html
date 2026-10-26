@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="A3">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Deep learning training in depth: backprop, initialisation, normalisation, CNNs and RNNs | AI/ML Prep</title>
+<meta name="description" content="Build an automatic differentiation engine and train a network on XOR, then initialisation, activations, normalisation, dropout, optimisers and schedules, convolutions, recurrent networks and a practical debugging checklist.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part A3</p>
+      <h1>Deep learning training in depth: backprop, initialisation, normalisation, CNNs and RNNs</h1>
+      <p class="lede">This part opens the black box: a working autograd engine in 40 lines trains a neural network, and the experiments that follow show why initialisation, normalisation and optimiser choices decide whether training works at all.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~7 hours</span></div>
+    </div>
+
+    <section id="backprop" data-track>
+      <h2>Backpropagation by building it</h2>
+<h3>What a neural network computes</h3>
+<p>A network is a composition of simple differentiable operations. To train it we need <code>d loss / d parameter</code> for every parameter. <strong>Reverse-mode automatic differentiation</strong> (backpropagation) computes all of them in one backward sweep, at about the cost of one forward pass.</p>
+<ol><li><strong>Forward pass</strong>: compute and record each operation's inputs and output.</li><li><strong>Backward pass</strong>: starting with <code>d loss / d loss = 1</code>, visit operations in reverse; each passes <code>gradient x local derivative</code> to its inputs, <strong>accumulating</strong> (summing) when a value is used more than once.</li></ol>
+<h3>A complete engine and a trained network</h3>
+<p>Below is a tiny autograd engine (the idea behind PyTorch, minus tensors) followed by a 2-4-1 network trained on <strong>XOR</strong>, a problem no single linear layer can solve.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a3-01.py">import math, random
+
+class V:
+    def __init__(self, data, parents=()):
+        self.data, self.grad, self._parents, self._backward = data, 0.0, parents, lambda: None
+    def __add__(self, o):
+        o = o if isinstance(o, V) else V(o)
+        out = V(self.data + o.data, (self, o))
+        def bw():
+            self.grad += out.grad
+            o.grad += out.grad
+        out._backward = bw
+        return out
+    def __mul__(self, o):
+        o = o if isinstance(o, V) else V(o)
+        out = V(self.data * o.data, (self, o))
+        def bw():
+            self.grad += o.data * out.grad
+            o.grad += self.data * out.grad
+        out._backward = bw
+        return out
+    __radd__ = __add__
+    __rmul__ = __mul__
+    def __neg__(self): return self * -1
+    def __sub__(self, o): return self + (-o if isinstance(o, V) else V(-o))
+    def tanh(self):
+        t = math.tanh(self.data)
+        out = V(t, (self,))
+        def bw(): self.grad += (1 - t * t) * out.grad
+        out._backward = bw
+        return out
+    def backward(self):
+        order, seen = [], set()
+        def visit(v):
+            if v not in seen:
+                seen.add(v)
+                for p in v._parents: visit(p)
+                order.append(v)
+        visit(self)
+        self.grad = 1.0
+        for v in reversed(order): v._backward()
+
+random.seed(1)
+class Neuron:
+    def __init__(self, n_in):
+        self.w = [V(random.uniform(-1, 1)) for _ in range(n_in)]
+        self.b = V(0.0)
+    def __call__(self, x):
+        return (sum((wi * xi for wi, xi in zip(self.w, x)), self.b)).tanh()
+    def params(self): return self.w + [self.b]
+class MLP:
+    def __init__(self, sizes):
+        self.layers = [[Neuron(sizes[i]) for _ in range(sizes[i + 1])] for i in range(len(sizes) - 1)]
+    def __call__(self, x):
+        for layer in self.layers:
+            x = [n(x) for n in layer]
+        return x[0]
+    def params(self): return [p for layer in self.layers for n in layer for p in n.params()]
+
+net = MLP([2, 4, 1])
+X = [[0, 0], [0, 1], [1, 0], [1, 1]]
+Y = [-1, 1, 1, -1]                         # XOR with targets in {-1, +1}
+for epoch in range(301):
+    loss = sum(((net(x) - y) * (net(x) - y) for x, y in zip(X, Y)), V(0.0))
+    for p in net.params(): p.grad = 0.0
+    loss.backward()
+    for p in net.params(): p.data -= 0.05 * p.grad
+    if epoch in (0, 100, 300):
+        print("epoch %3d loss %.4f" % (epoch, loss.data))
+print([round(net(x).data, 2) for x in X], "targets", Y)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>epoch   0 loss 4.1022
+epoch 100 loss 0.0862
+epoch 300 loss 0.0177
+[-0.95, 0.93, 0.93, -0.93] targets [-1, 1, 1, -1]</code></pre>
+<p>The loss falls and the four outputs approach the XOR targets: a hidden layer with a non-linearity solves what a linear model cannot. Every framework works this way, with tensors instead of scalars and fused kernels instead of Python closures.</p>
+<h3>Key facts about backprop</h3>
+<ul><li><strong>Cost</strong>: backward costs about <strong>2x</strong> forward; memory must store activations (hence activation checkpointing).</li><li><strong>Accumulation</strong>: a value used twice gets gradient contributions <strong>summed</strong>. Forgetting <code>+=</code> is a classic bug.</li><li><strong>Zero the gradients</strong> each step (frameworks accumulate by default).</li><li><strong>Gradient check</strong>: compare to finite differences (<a href="a2-math-for-ml.html">A2</a>).</li><li><strong>Vanishing and exploding gradients</strong>: products of many small or large factors.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/a3-02.py"># Vanishing gradients: the sigmoid's derivative is at most 0.25, so gradients shrink geometrically with depth.
+for depth in (2, 5, 10, 20):
+    print("depth %2d: gradient factor at most %.2e" % (depth, 0.25 ** depth))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>depth  2: gradient factor at most 6.25e-02
+depth  5: gradient factor at most 9.77e-04
+depth 10: gradient factor at most 9.54e-07
+depth 20: gradient factor at most 9.09e-13</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a3-q01" data-topic="Deep learning" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why must gradients be accumulated (summed) in backprop?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To save memory <span class="q-why">No.</span></li>
+          <li data-key="B">A value used in several places receives gradient contributions from each use <span class="q-why">Correct.</span></li>
+          <li data-key="C">To normalise them <span class="q-why">No.</span></li>
+          <li data-key="D">Because of tanh <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The chain rule's total derivative sums over all paths.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a3-q02" data-topic="Deep learning" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Roughly how much more costly is the backward pass than the forward pass?</p></div>
+        <ul class="q-options">
+          <li data-key="A">About the same <span class="q-why">A bit more.</span></li>
+          <li data-key="B">About twice <span class="q-why">Correct.</span></li>
+          <li data-key="C">100 times <span class="q-why">No.</span></li>
+          <li data-key="D">Free <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The backward pass computes gradients for activations and weights, about 2x forward.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Describe reverse-mode autodiff.</summary><div class="answer"><p>Forward pass records operations; backward pass starts from d loss = 1 and propagates gradient times local derivative to inputs, summing contributions.</p></div></details>
+      </div>
+    </section>
+
+    <section id="init" data-track>
+      <h2>Initialisation and activations</h2>
+<h3>Why initialisation matters</h3>
+<p>If weights are too small, signals shrink layer by layer to zero; if too large, they explode. Good initialisation keeps the <strong>variance of activations and gradients roughly constant</strong> across layers.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a3-03.py">import math, random
+random.seed(0)
+def forward_std(scale_fn, layers=20, width=256):
+    x = [random.gauss(0, 1) for _ in range(width)]
+    for _ in range(layers):
+        s = scale_fn(width)
+        x = [math.tanh(sum(random.gauss(0, s) * xi for xi in x)) for _ in range(width)]
+    m = sum(x) / len(x)
+    return math.sqrt(sum((v - m) ** 2 for v in x) / len(x))
+print("std 0.01          :", round(forward_std(lambda n: 0.01, width=64), 6))
+print("std 1.0           :", round(forward_std(lambda n: 1.0, width=64), 3))
+print("Xavier 1/sqrt(n)  :", round(forward_std(lambda n: 1 / math.sqrt(n), width=64), 3))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>std 0.01          : 0.0
+std 1.0           : 0.971
+Xavier 1/sqrt(n)  : 0.125</code></pre>
+<p>With a tiny scale the activations collapse to zero (std 0.00); with scale 1 the <code>tanh</code> units saturate near plus or minus 1 (std 0.97, gradients vanish there); the <strong>Xavier/Glorot</strong> scale <code>1 / sqrt(n)</code> shrinks the signal only gradually (0.13 after 20 layers) and stays in the responsive range of <code>tanh</code>.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Scheme</th><th>Variance</th><th>For</th></tr></thead>
+<tbody>
+<tr><td>Xavier / Glorot</td><td><code>2 / (n_in + n_out)</code></td><td>tanh, sigmoid</td></tr><tr><td>He / Kaiming</td><td><code>2 / n_in</code></td><td>ReLU and variants</td></tr><tr><td>Zero for biases</td><td></td><td>Usually fine</td></tr><tr><td>Zero or small for the last layer or residual branch</td><td></td><td>Starts as identity (stability)</td></tr><tr><td>Never all-equal weights</td><td></td><td>Symmetry: neurons would stay identical</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Activation functions</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Activation</th><th>Formula</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>Sigmoid</td><td><code>1 / (1 + e^-x)</code></td><td>Output as probability; saturates; avoid in hidden layers</td></tr><tr><td>Tanh</td><td><code>(e^x - e^-x) / (e^x + e^-x)</code></td><td>Zero-centred, saturates</td></tr><tr><td>ReLU</td><td><code>max(0, x)</code></td><td>Cheap, no saturation for positives; "dead ReLU" for negatives</td></tr><tr><td>Leaky ReLU / PReLU</td><td>small slope for negatives</td><td>Fixes dead units</td></tr><tr><td>GELU, SiLU (Swish)</td><td>smooth gated forms</td><td>Standard in transformers</td></tr><tr><td>SwiGLU</td><td><code>SiLU(xW) * (xV)</code></td><td>Gated MLP in LLaMA-style models</td></tr><tr><td>Softmax</td><td>normalised exponentials</td><td>Multi-class output</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a3-q03" data-topic="Deep learning" data-type="single" data-answer="B">
+        <div class="q-stem"><p>He (Kaiming) initialisation uses variance 2 / n_in. It is designed for:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Sigmoid <span class="q-why">Xavier suits tanh and sigmoid.</span></li>
+          <li data-key="B">ReLU networks <span class="q-why">Correct.</span></li>
+          <li data-key="C">Embeddings only <span class="q-why">No.</span></li>
+          <li data-key="D">Bias terms <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>ReLU zeroes half the activations, so the variance factor 2 compensates.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why not initialise all weights to zero?</summary><div class="answer"><p>Neurons in a layer would receive identical gradients and stay identical (symmetry), so they could not learn different features.</p></div></details>
+      </div>
+    </section>
+
+    <section id="norm" data-track>
+      <h2>Normalisation and regularisation</h2>
+<h3>Normalisation layers</h3>
+<p>Normalising activations stabilises and speeds up training.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Layer</th><th>Normalises over</th><th>Used in</th></tr></thead>
+<tbody>
+<tr><td>BatchNorm</td><td>The batch, per feature</td><td>CNNs; depends on batch statistics (train versus eval differ)</td></tr><tr><td>LayerNorm</td><td>Features of one example</td><td>Transformers</td></tr><tr><td>RMSNorm</td><td>Features, no mean subtraction</td><td>Modern LLMs (cheaper)</td></tr><tr><td>GroupNorm</td><td>Groups of channels</td><td>Small batches, diffusion U-Nets</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/a3-04.py">import math
+def layernorm(x, eps=1e-5):
+    m = sum(x) / len(x)
+    v = sum((a - m) ** 2 for a in x) / len(x)
+    return [(a - m) / math.sqrt(v + eps) for a in x]
+def rmsnorm(x, eps=1e-5):
+    r = math.sqrt(sum(a * a for a in x) / len(x) + eps)
+    return [a / r for a in x]
+x = [10.0, 12.0, 8.0, 14.0]
+y = layernorm(x)
+print("layernorm:", [round(v, 3) for v in y], "mean %.3f" % (sum(y) / len(y)))
+print("rmsnorm  :", [round(v, 3) for v in rmsnorm(x)])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>layernorm: [-0.447, 0.447, -1.342, 1.342] mean 0.000
+rmsnorm  : [0.891, 1.069, 0.713, 1.247]</code></pre>
+<p>Both then apply a learned scale (and, for LayerNorm, shift). <strong>Pre-norm</strong> (normalise before each sub-layer) trains more stably for deep transformers than post-norm.</p>
+<h3>Dropout and weight decay</h3>
+<p><strong>Dropout</strong> randomly zeroes a fraction <code>p</code> of activations during training and rescales by <code>1 / (1 - p)</code> (inverted dropout) so the expected activation is unchanged; at inference it is off. It prevents co-adaptation. <strong>Weight decay</strong> shrinks weights each step (decoupled in AdamW). Other regularisers: <strong>early stopping</strong>, <strong>data augmentation</strong>, <strong>label smoothing</strong>, <strong>stochastic depth</strong>, smaller models and more data.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a3-05.py">import random
+random.seed(2)
+p = 0.5
+acts = [1.0] * 10
+mask_scaled = [a / (1 - p) if random.random() &gt; p else 0.0 for a in acts]
+print(mask_scaled, "mean %.2f (expected 1.0 on average)" % (sum(mask_scaled) / 10))
+avg = sum(sum(a / (1 - p) if random.random() &gt; p else 0.0 for a in acts) / 10 for _ in range(2000)) / 2000
+print("average over many masks: %.3f" % avg)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[2.0, 2.0, 0.0, 0.0, 2.0, 2.0, 2.0, 0.0, 2.0, 2.0] mean 1.40 (expected 1.0 on average)
+average over many masks: 0.996</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a3-q04" data-topic="Deep learning" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why do transformers use LayerNorm instead of BatchNorm?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is older <span class="q-why">No.</span></li>
+          <li data-key="B">It normalises per example, independent of batch size and identical in training and inference <span class="q-why">Correct.</span></li>
+          <li data-key="C">It has no parameters <span class="q-why">No.</span></li>
+          <li data-key="D">It is faster on GPUs always <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Batch statistics are unreliable for variable-length sequences and small batches.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Pre-norm versus post-norm?</summary><div class="answer"><p>Pre-norm normalises before each sub-layer, keeping a clean residual path and training deep transformers more stably.</p></div></details>
+      </div>
+    </section>
+
+    <section id="opt" data-track>
+      <h2>Optimisers and schedules in practice</h2>
+<h3>What to use</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Situation</th><th>Choice</th></tr></thead>
+<tbody>
+<tr><td>Transformers and most deep nets</td><td>AdamW, <code>betas = (0.9, 0.95 or 0.999)</code>, weight decay 0.01 to 0.1</td></tr><tr><td>Vision with large batches, classic CNNs</td><td>SGD with momentum 0.9 and a schedule</td></tr><tr><td>Memory-constrained</td><td>8-bit Adam, Adafactor</td></tr><tr><td>Huge batch training</td><td>LAMB, LARS</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Learning-rate schedules</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/a3-06.py">import math
+def schedule(step, total, warmup, peak=1.0, floor=0.1):
+    if step &lt; warmup:
+        return peak * step / warmup                      # linear warm-up
+    progress = (step - warmup) / max(1, total - warmup)
+    return floor * peak + (peak - floor * peak) * 0.5 * (1 + math.cos(math.pi * progress))   # cosine decay
+for s in (0, 50, 100, 500, 900, 1000):
+    print("step %4d lr %.3f" % (s, schedule(s, 1000, 100)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>step    0 lr 0.000
+step   50 lr 0.500
+step  100 lr 1.000
+step  500 lr 0.628
+step  900 lr 0.127
+step 1000 lr 0.100</code></pre>
+<p>Batch size and learning rate interact: a common rule is to scale the learning rate with the <strong>square root</strong> (Adam) or <strong>linearly</strong> (SGD) of the batch size, with warm-up. <strong>Gradient clipping</strong> (norm 1.0) protects against spikes.</p>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why warm up the learning rate?</summary><div class="answer"><p>Early gradients and Adam's second-moment estimates are unreliable, so large steps can destabilise training.</p></div></details>
+      </div>
+    </section>
+
+    <section id="architectures" data-track>
+      <h2>Convolutional and recurrent networks</h2>
+<h3>Convolution</h3>
+<p>A <strong>convolution</strong> slides a small kernel over the input, computing a dot product at each position. Benefits: <strong>weight sharing</strong> (few parameters), <strong>locality</strong>, <strong>translation equivariance</strong>. Output size: <code>(n + 2p - k) / s + 1</code> for input <code>n</code>, kernel <code>k</code>, padding <code>p</code>, stride <code>s</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a3-07.py">def conv2d(img, kernel):
+    kh, kw = len(kernel), len(kernel[0])
+    return [[sum(img[i + a][j + b] * kernel[a][b] for a in range(kh) for b in range(kw))
+             for j in range(len(img[0]) - kw + 1)] for i in range(len(img) - kh + 1)]
+img = [[0, 0, 0, 9, 9],
+       [0, 0, 0, 9, 9],
+       [0, 0, 0, 9, 9],
+       [0, 0, 0, 9, 9]]
+vertical_edge = [[-1, 1], [-1, 1]]
+for row in conv2d(img, vertical_edge):
+    print(row)
+n, k, p, s = 32, 3, 1, 1
+print("output size:", (n + 2 * p - k) // s + 1, " parameters for 3x3 kernel, 64 in, 128 out channels:", 3 * 3 * 64 * 128 + 128)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[0, 0, 18, 0]
+[0, 0, 18, 0]
+[0, 0, 18, 0]
+output size: 32  parameters for 3x3 kernel, 64 in, 128 out channels: 73856</code></pre>
+<p>The kernel responds only where the intensity jumps (a vertical edge). Stacking layers builds from edges to textures to parts to objects (the <strong>receptive field</strong> grows). Pooling downsamples; <strong>ResNets</strong> add skip connections <code>x + f(x)</code> so very deep networks train (<a href="a8-vision.html">A8</a>).</p>
+<h3>Recurrent networks</h3>
+<p>An <strong>RNN</strong> processes a sequence step by step, carrying a hidden state: <code>h_t = tanh(W x_t + U h_(t-1) + b)</code>. Training uses <strong>backpropagation through time</strong>, which suffers vanishing and exploding gradients over long sequences. <strong>LSTM</strong> and <strong>GRU</strong> add <strong>gates</strong> (forget, input, output) and an additive cell state so gradients flow further. They are sequential (slow on GPUs) and were largely replaced by transformers, whose attention connects any two positions directly (<a href="f2-deep-learning-transformers.html">F2</a>).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a3-08.py">import math
+sig = lambda z: 1 / (1 + math.exp(-z))
+def lstm_step(x, h, c, W):
+    f = sig(W["f"][0] * x + W["f"][1] * h)       # forget gate
+    i = sig(W["i"][0] * x + W["i"][1] * h)       # input gate
+    g = math.tanh(W["g"][0] * x + W["g"][1] * h) # candidate
+    o = sig(W["o"][0] * x + W["o"][1] * h)       # output gate
+    c = f * c + i * g                            # additive cell update
+    return o * math.tanh(c), c
+W = {k: (0.5, 0.3) for k in "figo"}
+h = c = 0.0
+for x in (1.0, 0.0, 0.0, 0.0):
+    h, c = lstm_step(x, h, c, W)
+    print("h %.3f c %.3f" % (h, c))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>h 0.174 c 0.288
+h 0.089 c 0.174
+h 0.051 c 0.102
+h 0.030 c 0.059</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a3-q05" data-topic="Deep learning" data-type="numeric" data-answer="16" data-tol="0">
+        <div class="q-stem"><p>A 32 x 32 input, 3 x 3 kernel, padding 1, stride 2. What is the output side length (integer division)?</p></div>
+        <div class="q-explain"><p>(32 + 2 - 3) // 2 + 1 = 15 + 1 = 16.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a3-q06" data-topic="Deep learning" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What problem do LSTM gates address?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Slow GPUs <span class="q-why">No.</span></li>
+          <li data-key="B">Vanishing gradients over long sequences, via an additive cell state controlled by gates <span class="q-why">Correct.</span></li>
+          <li data-key="C">Overfitting <span class="q-why">No.</span></li>
+          <li data-key="D">Tokenization <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The cell state gives gradients a more direct path through time.</p></div>
+      </div>
+    </section>
+
+    <section id="debug" data-track>
+      <h2>Debugging and diagnosing training</h2>
+<h3>A systematic checklist</h3>
+<ol><li><strong>Overfit one small batch.</strong> If the loss will not go to about zero, there is a bug (shapes, labels, loss, learning rate).</li><li><strong>Check the initial loss.</strong> For <code>K</code> classes with a sensible init it should be <code>ln K</code> (e.g. 2.30 for 10 classes).</li><li><strong>Verify data</strong>: view samples and labels, check normalisation, confirm train and validation use the same preprocessing, no leakage.</li><li><strong>Track</strong> training and validation loss, gradient norm, update-to-weight ratio (about <code>1e-3</code>), learning rate, and activation statistics.</li><li><strong>Change one thing at a time</strong>, with fixed seeds.</li></ol>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Symptom</th><th>Likely cause</th></tr></thead>
+<tbody>
+<tr><td>Loss is <code>nan</code> or inf</td><td>Learning rate too high, division by zero, log of zero, fp16 overflow</td></tr><tr><td>Loss stuck at <code>ln K</code></td><td>Learning rate too low, dead activations, labels shuffled, gradients not flowing, frozen layers</td></tr><tr><td>Train loss falls, val loss rises</td><td>Overfitting: regularise, augment, more data, early stop</td></tr><tr><td>Both losses high</td><td>Underfitting: bigger model, train longer, better features, lower regularisation</td></tr><tr><td>Val much better than train</td><td>Dropout active in training only, or leakage in val</td></tr><tr><td>Accuracy chance-level</td><td>Label misalignment, wrong loss, <code>model.eval()</code> mismatch</td></tr><tr><td>Unstable late in training</td><td>Lower the rate, clip gradients, check data outliers</td></tr><tr><td>Slow</td><td>Data loading, small batches, no mixed precision, CPU-GPU copies</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/a3-09.py">import math
+K = 10
+print("expected initial cross-entropy for %d classes: %.3f" % (K, math.log(K)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>expected initial cross-entropy for 10 classes: 2.303</code></pre>
+<div class="callout key"><span class="callout-title">Key idea</span><p>A neural network is a differentiable program trained by gradient descent. Most failures come from scale: initialisation, learning rate, normalisation and data preprocessing. Make the pipeline overfit a tiny batch before scaling up.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a3-q07" data-topic="Deep learning" data-type="single" data-answer="B">
+        <div class="q-stem"><p>For a 10-class classifier at initialisation, the expected cross-entropy loss is about:</p></div>
+        <ul class="q-options">
+          <li data-key="A">0 <span class="q-why">No.</span></li>
+          <li data-key="B">2.30 <span class="q-why">Correct: ln 10.</span></li>
+          <li data-key="C">10 <span class="q-why">No.</span></li>
+          <li data-key="D">1 <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>A uniform prediction over K classes gives ln K.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a3-q08" data-topic="Deep learning" data-type="single" data-answer="B">
+        <div class="q-stem"><p>The model cannot overfit a single small batch. What does that tell you?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It needs more data <span class="q-why">No.</span></li>
+          <li data-key="B">There is a bug in the pipeline: shapes, labels, loss or learning rate <span class="q-why">Correct.</span></li>
+          <li data-key="C">It is regularised well <span class="q-why">No.</span></li>
+          <li data-key="D">Training is finished <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Any reasonable network should memorise a handful of examples.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>First thing to try when training fails?</summary><div class="answer"><p>Overfit a tiny batch and check the initial loss equals ln K.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Deep learning</h2>
+      <p class="muted">13 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Deep learning">
+<details class="recall iq" data-level="basic" data-topic="Deep learning"><summary><span class="tag ok">Basic</span> Explain backpropagation.</summary><div class="answer"><p>A forward pass computes the loss while storing intermediate values; a backward pass applies the chain rule from the loss to every parameter, accumulating gradients where values are reused.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Deep learning"><summary><span class="tag ok">Basic</span> Why do we need non-linear activation functions?</summary><div class="answer"><p>Without them a stack of linear layers collapses to a single linear map and cannot model complex functions.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Deep learning"><summary><span class="tag ok">Basic</span> What is overfitting and how do you reduce it?</summary><div class="answer"><p>Fitting noise: low training error but high validation error. Use more data, augmentation, dropout, weight decay, early stopping, smaller models.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Deep learning"><summary><span class="tag warn">Medium</span> What causes vanishing and exploding gradients and how are they handled?</summary><div class="answer"><p>Products of many small or large factors through depth. Use ReLU-family activations, good initialisation (He, Xavier), normalisation, residual connections, gradient clipping and gated units (LSTM).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Deep learning"><summary><span class="tag warn">Medium</span> BatchNorm versus LayerNorm?</summary><div class="answer"><p>BatchNorm normalises over the batch per feature and depends on batch statistics; LayerNorm normalises over the features of each example, suiting transformers and variable batch sizes.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Deep learning"><summary><span class="tag warn">Medium</span> How does dropout work at training and test time?</summary><div class="answer"><p>It randomly zeroes activations with probability p during training, scaling the rest by 1/(1-p); at test time it is off, so the network acts like an ensemble average.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Deep learning"><summary><span class="tag warn">Medium</span> Why is the learning rate the most important hyperparameter?</summary><div class="answer"><p>Too high diverges or oscillates, too low is slow or stuck. Use warm-up and decay schedules, and tune it first.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Deep learning"><summary><span class="tag warn">Medium</span> What is weight initialisation and why does it matter?</summary><div class="answer"><p>Starting weights set the scale of activations and gradients. Xavier (tanh) and He (ReLU) scale variance by layer width to keep signals stable; all-zero init breaks symmetry.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Deep learning"><summary><span class="tag warn">Medium</span> What do convolutions provide over fully connected layers?</summary><div class="answer"><p>Weight sharing, locality and translation equivariance, giving far fewer parameters and better generalisation for grid-like data.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Deep learning"><summary><span class="tag bad">Advanced</span> Why do residual connections help?</summary><div class="answer"><p>They give gradients a direct path, so very deep networks train; each block learns a correction to the identity.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Deep learning"><summary><span class="tag bad">Advanced</span> How would you debug a network that does not train?</summary><div class="answer"><p>Overfit a tiny batch, check the initial loss equals ln K, verify data and labels, check the learning rate and gradient norms, test with and without regularisation, and change one thing at a time.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Deep learning"><summary><span class="tag bad">Advanced</span> AdamW versus Adam with L2 regularisation?</summary><div class="answer"><p>In Adam, L2 added to the gradient is scaled by the adaptive step, weakening regularisation. AdamW decouples weight decay from the gradient update, which generalises better.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Deep learning"><summary><span class="tag bad">Advanced</span> Why did transformers replace RNNs?</summary><div class="answer"><p>Attention connects any two positions directly, avoiding long gradient paths, and processes sequences in parallel on GPUs, scaling to far more data.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="a2-math-for-ml.html"><span class="dir">Previous</span><span>A2 Math for machine learning: linear algebra, calculus, probability and information theory</span></a>
+      <a class="next" href="a4-nlp-embeddings.html"><span class="dir">Next</span><span>A4 NLP, tokenisation, embeddings and vector search</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

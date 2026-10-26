@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="M08">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>M8 Two Pointers & Sliding Window | DSA Master Guide</title>
+<meta name="description" content="Two patterns that replace O(n^2) loops with O(n) scans over arrays and strings.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<link rel="stylesheet" href="viz.css">
+<script src="viz.js" defer></script>
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Module 8</p>
+      <h1>Two Pointers &amp; Sliding Window</h1>
+      <p class="lede">Two patterns that replace O(n^2) loops with O(n) scans over arrays and strings. Topics in this module: Two pointers: opposite and same direction; fixed-size sliding window; variable-size sliding window.</p>
+      <div class="meta"><span class="tag ok">Essential</span><span class="tag">3 topics</span><span class="tag">11 problems</span><span class="tag">54 interview questions</span></div>
+    </div>
+
+    <section id="why-this-module" data-track>
+      <h2>Start from scratch: why this module exists</h2>
+      <p>Many array and string problems look like they need two nested loops. Two pointers and sliding windows show that moving two indices carefully, each only forward, gives the same answer in one pass because every move provably discards possibilities.</p>
+      <p>The skill is spotting when the structure (sortedness, contiguous ranges, monotonic validity) allows it.</p>
+      <p><strong>Who needs it:</strong> Streaming and monitoring systems (moving windows), text tools, database merge joins and interviewers.</p>
+      <p><strong>Before you start:</strong> Modules 3 and 4.</p>
+      <h3>After this module you can</h3>
+      <ul><li>Apply opposite-end and same-direction pointers.</li><li>Write fixed and variable sliding windows.</li><li>Recognise when the technique is valid.</li><li>Prove O(n) by the 'each pointer moves forward only' argument.</li></ul>
+      <p><strong>Common pitfalls:</strong> Using windows with negative numbers and sum targets, forgetting to skip duplicates, moving the wrong pointer.</p>
+      <p><strong>Typical interview questions here:</strong> Pair sum, 3Sum, container with most water, remove duplicates, max sum of k elements, longest substring without repeats, minimum window substring.</p>
+    </section>
+
+    <section id="c8_1" data-track>
+      <h2>Two pointers: opposite and same direction</h2>
+      <p><span class="tag ok">Essential</span> <span class="tag">Topic 8.1</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>Two pointers means keeping two indices that move through the data according to a rule. Opposite-direction pointers start at both ends; same-direction pointers (slow/fast, reader/writer) both start near the left.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Checking every pair costs O(n^2). Moving pointers cleverly examines each element a constant number of times: O(n).</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Two people walking toward each other along a corridor until they meet, adjusting their pace depending on what they see.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Take the sorted pair-sum problem. A beginner checks all pairs. But sortedness gives free information: if the sum of the smallest and the largest is too big, the largest number can never be part of any valid pair (it is too big even with the smallest partner). So discard it. If the sum is too small, the smallest number can never work (too small even with the largest partner). Discard that.</p>
+      <p>Every comparison therefore eliminates one element permanently, so after at most n steps the pointers meet. That is the key reasoning behind two pointers: each step proves some candidate can be dropped. If you cannot justify a drop, the technique does not apply.</p>
+      <p>Same-direction pointers come from a different observation: when filtering an array in place, you read faster than you write. A write pointer that never overtakes the read pointer lets you overwrite already-processed cells safely, so no extra array is needed.</p>
+      <p>Why is this a big deal in interviews? It converts O(n^2) to O(n) and O(n) space to O(1) using only logic, no extra data structure. Interviewers love problems where a short, clean pointer loop beats a heavy solution.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="two_ptr"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Sorted pair sum: lo = 0, hi = n - 1. If nums[lo] + nums[hi] is too small, lo += 1; too big, hi -= 1; equal -&gt; found.</li><li>Why it is correct: if the sum is too small, nums[lo] cannot pair with any smaller hi, so it can be discarded.</li><li>Same direction: a write pointer w marks where the next kept element goes while r scans (remove duplicates, move zeroes).</li><li>Fast/slow pointers: used for linked lists and for finding the middle.</li><li>Watch the pair-sum animation: lo and hi move inwards.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Two pointers means you use two index variables instead of one nested loop. The trick is to move them smartly so you never look at the same pair twice. There are two common shapes: pointers that start at opposite ends and walk toward each other, and pointers that both start on the left and move at different speeds (reader and writer, slow and fast).</p>
+      <p>Opposite ends works when the data is sorted or when the answer depends on both ends (palindrome, pair sum, container with most water). Rule of thumb: if the current choice is too small, move the pointer that can make it bigger; if too big, move the other one. Each move permanently rules out some pairs, so the total steps are at most n.</p>
+      <p>Reader/writer works for in-place filtering: the reader scans every item, the writer marks the next place to store a kept item. Examples: remove duplicates, move zeroes, remove a value, partition. At the end the writer index is the new length.</p>
+      <p>Three pointers (like Dutch flag) split the array into regions: items already placed at the front, items still unknown in the middle and items placed at the back.</p>
+      <p>To use it for sums with three numbers (3Sum): sort, fix one number, then run the pair-sum two pointers on the rest. Skip duplicates to avoid repeated answers. Time O(n^2).</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Correctness proofs use an invariant: 'all pairs involving elements outside [lo, hi] have been proven not to work'. Each move keeps the invariant true.</li><li>Sorting first costs O(n log n) and dominates; the pointer pass itself is O(n). 3Sum becomes O(n log n + n^2) = O(n^2).</li><li>Reader/writer: the writer index always satisfies w &lt;= r, so no unread element is overwritten.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Database engines</td><td>Merge joins scan two sorted tables with two pointers.</td></tr><tr><td>Text and DNA tools</td><td>Comparing from both ends (palindromes) or aligning two sequences.</td></tr><tr><td>Interviewers</td><td>A standard tool: pair sum, 3Sum, container with most water, palindromes, partitioning, merging.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Two pointers vs hash map</td><td>Hash map handles unsorted data and returns original indices; two pointers use O(1) memory but need sorted data (so indices change).</td></tr><tr><td>Two pointers vs binary search</td><td>For each element, binary search for its partner is O(n log n); two pointers do it in O(n) after sorting.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>lo, hi = 0, len(nums) - 1; while lo &lt; hi: ...</li><li>Skip duplicates: while lo &lt; hi and nums[lo] == nums[lo - 1]: lo += 1.</li><li>Sorting first: nums.sort() is O(n log n); the whole solution is then dominated by the sort or the scan.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c8_1.py">def is_pair_sum(nums, target):      # nums must be sorted
+    lo, hi = 0, len(nums) - 1
+    while lo &lt; hi:
+        s = nums[lo] + nums[hi]
+        if s == target:
+            return True
+        if s &lt; target:
+            lo += 1                 # need a bigger sum
+        else:
+            hi -= 1                 # need a smaller sum
+    return False</code></pre>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - all pairs</h4>
+      <p>O(n^2).</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c8_1_stage1.py">def has_pair(nums, target):
+    for i in range(len(nums)):
+        for j in range(i + 1, len(nums)):
+            if nums[i] + nums[j] == target:
+                return True
+    return False</code></pre>
+      <p class="muted small">Check: <code>has_pair([1, 3, 4, 6, 9], 10)</code> returns <code>True</code></p>
+      <h4>Stage 2 - binary search for the partner</h4>
+      <p>Because the list is sorted, the partner can be found in O(log n): O(n log n) total.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c8_1_stage2.py">from bisect import bisect_left
+
+def has_pair(nums, target):
+    for i, x in enumerate(nums):
+        j = bisect_left(nums, target - x, i + 1)
+        if j &lt; len(nums) and nums[j] == target - x:
+            return True
+    return False</code></pre>
+      <p class="muted small">Check: <code>has_pair([1, 3, 4, 6, 9], 10)</code> returns <code>True</code></p>
+      <h4>Stage 3 - two pointers</h4>
+      <p>Each comparison discards one element for good, so one pass is enough: O(n), O(1) space.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c8_1_stage3.py">def has_pair(nums, target):
+    lo, hi = 0, len(nums) - 1
+    while lo &lt; hi:
+        s = nums[lo] + nums[hi]
+        if s == target:
+            return True
+        if s &lt; target:
+            lo += 1
+        else:
+            hi -= 1
+    return False</code></pre>
+      <p class="muted small">Check: <code>has_pair([1, 3, 4, 6, 9], 10)</code> returns <code>True</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>is_pair_sum([1, 3, 4, 6, 9], 10)</code>, returns <code>True</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>lo (after)</th><th>hi (after)</th><th>s (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>lo, hi = 0, len(nums) - 1</code></td><td><strong><code>0</code></strong></td><td><strong><code>4</code></strong></td><td>-</td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>while lo &lt; hi:</code></td><td><code>0</code></td><td><code>4</code></td><td>-</td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>s = nums[lo] + nums[hi]</code></td><td><code>0</code></td><td><code>4</code></td><td><strong><code>10</code></strong></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>if s == target:</code></td><td><code>0</code></td><td><code>4</code></td><td><code>10</code></td></tr>
+<tr><td class="num">5</td><td class="num">6</td><td><code>return True</code></td><td><code>0</code></td><td><code>4</code></td><td><code>10</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>O(n) time (each step discards one element), O(1) space.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Using it on unsorted data without sorting.</li><li>while lo &lt;= hi when pairs must be different indices.</li><li>Not skipping duplicates in triplet problems.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>Sorted array + pair/triplet with a condition; palindrome; merging; partitioning in place.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m08-problems.html#prob-two_sum_sorted">Pair Sum in a Sorted Array</a> <span class="tag">LC 167</span></td><td><span class="tag ok">Easy</span></td><td>Two pointers (opposite ends)</td></tr><tr><td><a href="m04-problems.html#prob-valid_palindrome">Valid Palindrome (ignore punctuation)</a> <span class="tag">LC 125</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Strings, two pointers</td></tr><tr><td><a href="m08-problems.html#prob-remove_element">Remove Element</a> <span class="tag">LC 27</span></td><td><span class="tag ok">Easy</span></td><td>Reader / writer pointers</td></tr><tr><td><a href="m04-problems.html#prob-is_subsequence">Is Subsequence</a> <span class="tag">LC 392</span></td><td><span class="tag ok">Easy</span></td><td>Two pointers on strings</td></tr><tr><td><a href="m08-problems.html#prob-max_area">Container With Most Water</a> <span class="tag">LC 11</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Two pointers (greedy shrink)</td></tr><tr><td><a href="m08-problems.html#prob-three_sum_closest">3Sum Closest</a> <span class="tag">LC 16</span></td><td><span class="tag warn">Medium</span></td><td>Sort + two pointers</td></tr><tr><td><a href="m08-problems.html#prob-three_sum">Three Sum</a> <span class="tag">LC 15</span> <span class="tag accent">must-do</span></td><td><span class="tag bad">Hard</span></td><td>Sort + two pointers</td></tr><tr><td><a href="m03-problems.html#prob-trapping_rain">Trapping Rain Water</a> <span class="tag">LC 42</span></td><td><span class="tag bad">Hard</span></td><td>Two pointers (running maximums)</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why can you discard an element when the pair sum is too small?</summary><div class="answer"><p>In a sorted list the left value is the smallest, so even paired with the largest it is too small; it can never be part of an answer.</p></div></details>
+        <details class="recall"><summary>Why does two pointers need a sorted array?</summary><div class="answer"><p>Sortedness tells you which pointer to move to increase or decrease the sum.</p></div></details>
+        <details class="recall"><summary>Why not use a nested loop?</summary><div class="answer"><p>It checks pairs that were already ruled out, costing O(n^2).</p></div></details>
+        <details class="recall"><summary>Why skip duplicates in 3Sum?</summary><div class="answer"><p>Otherwise the same triplet is reported more than once.</p></div></details>
+        <details class="recall"><summary>Why does the reader/writer pointer never overwrite unread data?</summary><div class="answer"><p>The writer index is always less than or equal to the reader index.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c8_1-q1" data-topic="Two Pointers &amp; Sliding Window" data-type="single" data-answer="A">
+        <div class="q-stem"><p>Pair-sum two pointers needs the array to be...</p></div>
+        <ul class="q-options">
+          <li data-key="A">Sorted</li>
+          <li data-key="B">Unique</li>
+          <li data-key="C">Positive</li>
+          <li data-key="D">Even length</li>
+        </ul>
+        <div class="q-explain"><p>Sortedness tells you which pointer to move.</p></div>
+      </div>
+      <div class="quiz" data-qid="c8_1-q2" data-topic="Two Pointers &amp; Sliding Window" data-type="single" data-answer="B">
+        <div class="q-stem"><p>If nums[lo] + nums[hi] &lt; target you should...</p></div>
+        <ul class="q-options">
+          <li data-key="A">Move hi left</li>
+          <li data-key="B">Move lo right</li>
+          <li data-key="C">Stop</li>
+          <li data-key="D">Move both</li>
+        </ul>
+        <div class="q-explain"><p>You need a larger sum; only moving lo right can increase it.</p></div>
+      </div>
+    </section>
+
+    <section id="c8_2" data-track>
+      <h2>Fixed-size sliding window</h2>
+      <p><span class="tag ok">Essential</span> <span class="tag">Topic 8.2</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>A sliding window is a range of elements that moves across the data. In a fixed-size window of size k you add the element entering on the right and remove the element leaving on the left.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>It avoids recomputing the whole window each time: O(n*k) becomes O(n).</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Looking through a train window at a fixed-width stretch of scenery: as the train moves, one tree enters and one leaves.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>A weather station wants the hottest 7-day stretch in a year of daily readings. Summing 7 numbers for each of 358 stretches repeats most of the work: consecutive stretches share 6 days. The new stretch is the old one minus one day plus one day.</p>
+      <p>That observation is the whole technique. Reuse the previous answer and fix only what changed. It is the same instinct as prefix sums (reuse partial totals) and dynamic programming (reuse subproblem answers).</p>
+      <p>Cost drops from O(n x k) to O(n). The saving grows with k: for k = 10^4 and n = 10^5 you avoid 10^9 operations.</p>
+      <p>Fixed windows fit questions with a defined length: averages, counts of vowels in every length-k substring, k consecutive days, permutations in a string (window length = pattern length).</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="win_fixed"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Compute the first window sum of k elements.</li><li>For each next index i: window += nums[i] - nums[i - k]. Update the best.</li><li>Example [2,1,5,1,3,2] with k=3: windows 8, 7, 9, 6 -&gt; max 9.</li><li>Works for sums, counts of vowels in a substring, number of distinct values in each window (with a dict), averages...</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>A sliding window is a range of fixed size k that moves one step at a time across the data. Instead of re-adding k numbers every step, you update the total: add the new number that just entered and subtract the old number that just left. That makes each step O(1).</p>
+      <p>Typical questions: maximum sum of k consecutive numbers, maximum average, number of vowels in every substring of length k, count windows with at least m distinct values, whether any window contains a permutation of a pattern.</p>
+      <p>Setup in three steps: (1) build the first window, (2) record its answer, (3) slide: add nums[i], remove nums[i - k], update the answer. Test k equal to 1 and k equal to n, where bugs hide.</p>
+      <p>For text windows keep a Counter (or 26-slot list) of letters inside the window. Add the new letter, subtract the leaving letter and compare maps.</p>
+      <p>If the window size changes, you need the variable window technique (next topic).</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>The window sum update window += a[i] - a[i - k] touches two elements per step, so total work is 2n. Keeping a Counter for characters is similar: add the incoming letter, decrement the outgoing letter.</li><li>For window maximum a plain sum update does not work (max is not invertible); a monotonic deque keeps candidates in decreasing order.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Finance</td><td>Moving averages over a fixed number of days are fixed windows.</td></tr><tr><td>Network monitoring</td><td>Rate limiting counts requests in the last N seconds.</td></tr><tr><td>Signal processing</td><td>Smoothing filters average the last k samples.</td></tr><tr><td>Interviewers</td><td>A clean test of incremental thinking before introducing variable windows.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Window vs prefix sums</td><td>For fixed-length sums either works. Prefix sums support arbitrary ranges; windows save memory (O(1)).</td></tr><tr><td>Window vs recomputation</td><td>Recomputation is simpler but O(nk). Use windows when k is large.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>window = sum(nums[:k]) builds the first window in O(k).</li><li>for i in range(k, len(nums)): window += nums[i] - nums[i - k].</li><li>Counter equality: window_counter == need_counter.</li><li>deque is used for sliding window MAXIMUM (monotonic deque).</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c8_2.py">def max_window_sum(nums, k):
+    window = sum(nums[:k])
+    best = window
+    for i in range(k, len(nums)):
+        window += nums[i] - nums[i - k]   # slide: add new, drop old
+        best = max(best, window)
+    return best</code></pre>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - re-sum every window</h4>
+      <p>O(n * k): the same numbers are added again and again.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c8_2_stage1.py">def best_window(nums, k):
+    return max(sum(nums[i:i + k]) for i in range(len(nums) - k + 1))</code></pre>
+      <p class="muted small">Check: <code>best_window([2, 1, 5, 1, 3, 2], 3)</code> returns <code>9</code></p>
+      <h4>Stage 2 - slide</h4>
+      <p>Consecutive windows share k - 1 numbers. Add the new one, subtract the old one: O(n).</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c8_2_stage2.py">def best_window(nums, k):
+    w = sum(nums[:k])
+    best = w
+    for i in range(k, len(nums)):
+        w += nums[i] - nums[i - k]
+        best = max(best, w)
+    return best</code></pre>
+      <p class="muted small">Check: <code>best_window([2, 1, 5, 1, 3, 2], 3)</code> returns <code>9</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>max_window_sum([2, 1, 5, 1, 3, 2], 3)</code>, returns <code>9</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>i (after)</th><th>window (after)</th><th>best (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>window = sum(nums[:k])</code></td><td>-</td><td><strong><code>8</code></strong></td><td>-</td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>best = window</code></td><td>-</td><td><code>8</code></td><td><strong><code>8</code></strong></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>for i in range(k, len(nums)):</code></td><td><strong><code>3</code></strong></td><td><code>8</code></td><td><code>8</code></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>window += nums[i] - nums[i - k]   # slide: add new, drop old</code></td><td><code>3</code></td><td><strong><code>7</code></strong></td><td><code>8</code></td></tr>
+<tr><td class="num">5</td><td class="num">6</td><td><code>best = max(best, window)</code></td><td><code>3</code></td><td><code>7</code></td><td><code>8</code></td></tr>
+<tr><td class="num">6</td><td class="num">4</td><td><code>for i in range(k, len(nums)):</code></td><td><strong><code>4</code></strong></td><td><code>7</code></td><td><code>8</code></td></tr>
+<tr><td class="num">7</td><td class="num">5</td><td><code>window += nums[i] - nums[i - k]   # slide: add new, drop old</code></td><td><code>4</code></td><td><strong><code>9</code></strong></td><td><code>8</code></td></tr>
+<tr><td class="num">8</td><td class="num">6</td><td><code>best = max(best, window)</code></td><td><code>4</code></td><td><code>9</code></td><td><strong><code>9</code></strong></td></tr>
+<tr><td class="num">9</td><td class="num">4</td><td><code>for i in range(k, len(nums)):</code></td><td><strong><code>5</code></strong></td><td><code>9</code></td><td><code>9</code></td></tr>
+<tr><td class="num">10</td><td class="num">5</td><td><code>window += nums[i] - nums[i - k]   # slide: add new, drop old</code></td><td><code>5</code></td><td><strong><code>6</code></strong></td><td><code>9</code></td></tr>
+<tr><td class="num">11</td><td class="num">6</td><td><code>best = max(best, window)</code></td><td><code>5</code></td><td><code>6</code></td><td><code>9</code></td></tr>
+<tr><td class="num">12</td><td class="num">4</td><td><code>for i in range(k, len(nums)):</code></td><td><code>5</code></td><td><code>6</code></td><td><code>9</code></td></tr>
+<tr><td class="num">13</td><td class="num">7</td><td><code>return best</code></td><td><code>5</code></td><td><code>6</code></td><td><code>9</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>O(n) time, O(1) space.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>k &gt; len(nums).</li><li>Rebuilding the sum with sum(nums[i:i+k]) inside the loop (O(nk)).</li><li>Index nums[i - k] off by one.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"Every subarray/substring of size k" -&gt; fixed window.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m08-problems.html#prob-max_sum_window">Maximum Sum of K Consecutive Elements</a></td><td><span class="tag ok">Easy</span></td><td>Fixed-size sliding window</td></tr><tr><td><a href="m08-problems.html#prob-min_subarray_len">Smallest Subarray With Sum &gt;= Target</a> <span class="tag">LC 209</span></td><td><span class="tag warn">Medium</span></td><td>Variable-size sliding window</td></tr><tr><td><a href="m08-problems.html#prob-check_inclusion">Permutation in String</a> <span class="tag">LC 567</span></td><td><span class="tag warn">Medium</span></td><td>Fixed window + frequency</td></tr><tr><td><a href="m10-problems.html#prob-sliding_window_max">Sliding Window Maximum</a> <span class="tag">LC 239</span></td><td><span class="tag bad">Hard</span></td><td>Monotonic deque</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why is the sliding window faster than re-summing?</summary><div class="answer"><p>Consecutive windows share k - 1 elements, so only one number enters and one leaves.</p></div></details>
+        <details class="recall"><summary>Why build the first window separately?</summary><div class="answer"><p>The update rule subtracts nums[i - k], which exists only after k elements have been added.</p></div></details>
+        <details class="recall"><summary>Why check k &gt; n first?</summary><div class="answer"><p>No window of size k exists, and slicing or indexing would give a wrong or empty result.</p></div></details>
+        <details class="recall"><summary>Why does a plain sum update not work for window maximum?</summary><div class="answer"><p>You cannot 'subtract' a maximum. A monotonic deque is used instead.</p></div></details>
+        <details class="recall"><summary>Why is the answer O(1) space?</summary><div class="answer"><p>Only the running window value and the best value are stored.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c8_2-q1" data-topic="Two Pointers &amp; Sliding Window" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Slide step for window sum is...</p></div>
+        <ul class="q-options">
+          <li data-key="A">sum(window) again</li>
+          <li data-key="B">add new element, subtract old element</li>
+          <li data-key="C">multiply by k</li>
+          <li data-key="D">sort the window</li>
+        </ul>
+        <div class="q-explain"><p>Only two elements change: one enters, one leaves.</p></div>
+      </div>
+      <div class="quiz" data-qid="c8_2-q2" data-topic="Two Pointers &amp; Sliding Window" data-type="single" data-answer="A">
+        <div class="q-stem"><p>Complexity of the fixed window solution?</p></div>
+        <ul class="q-options">
+          <li data-key="A">O(n)</li>
+          <li data-key="B">O(nk)</li>
+          <li data-key="C">O(n^2)</li>
+          <li data-key="D">O(k)</li>
+        </ul>
+        <div class="q-explain"><p>Each element is added once and removed once.</p></div>
+      </div>
+    </section>
+
+    <section id="c8_3" data-track>
+      <h2>Variable-size sliding window</h2>
+      <p><span class="tag ok">Essential</span> <span class="tag">Topic 8.3</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>A variable window expands on the right until a condition breaks (or is satisfied), then shrinks from the left until the condition is valid again.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Longest/shortest substring or subarray satisfying a rule are classic questions; the window method solves them in O(n).</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>An accordion: you stretch it to the right, and when it gets too wide you squeeze it from the left.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>What if the window length is not given and you must find the longest stretch with a property, like 'no repeated letters'? You cannot slide a fixed window. But notice two facts: if a window is valid, shrinking it keeps it valid (a smaller piece of a no-repeat substring has no repeats); if a window is invalid, making it bigger keeps it invalid.</p>
+      <p>That monotonic behaviour allows a two-finger strategy: extend the right end while valid; when it becomes invalid, advance the left end until valid again. Both fingers only move forward, so you never re-examine the same pair of positions.</p>
+      <p>Contrast with sum targets: for 'subarray sum equal to k' with negative numbers, extending a window can raise OR lower the sum, so validity is not monotonic and the window method breaks. Understanding the monotonic requirement tells you when this technique is allowed.</p>
+      <p>The mental template: right expands (adds data), a while loop on left restores validity (removes data), and the answer is updated at the right moment (after restoring for 'longest', inside the loop for 'shortest').</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="win_var"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Longest substring without repeating characters: expand right; if s[right] already inside the window, move left past its previous index.</li><li>Template for "longest": for right in range(n): add s[right]; while window invalid: remove s[left]; left += 1; record right - left + 1.</li><li>Template for "shortest": for right: add; while window valid: record length; remove s[left]; left += 1.</li><li>Each index enters once and leaves once, so the total is O(n) despite the nested while.</li><li>The animation shows left, right and the dictionary of last seen indices.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>A variable window grows and shrinks. The right edge moves forward one step at a time (expanding). Whenever the window breaks a rule, the left edge moves forward until the window is valid again (shrinking). The best length seen along the way is the answer.</p>
+      <p>Two templates. For LONGEST valid window: expand right, shrink left while invalid, then record the length. For SHORTEST window that satisfies a condition: expand right, and while the condition is satisfied record the length and shrink left.</p>
+      <p>Why it is O(n): the left pointer never moves backwards and the right pointer never moves backwards. Each can move at most n times, so the total moves are at most 2n even though there is a while loop inside a for loop.</p>
+      <p>What you store inside the window depends on the rule: a set or dictionary of letters (no repeats), a running sum (sum at least target), a count of zeros (at most k flips), a Counter and a 'missing count' (minimum window substring).</p>
+      <p>When it fails: window logic needs 'removing an item always moves you toward valid'. With negative numbers and sum targets that is false, so use prefix sums with a hash map instead.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Amortised analysis: left moves at most n times in total and right moves exactly n times, so the whole thing is O(n) even though a while loop sits inside a for loop.</li><li>The state kept in the window depends on the rule: last seen index (no repeats), counts (at most k distinct), running sum (&gt;= target), count of zeros (at most k flips).</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Search and text analytics</td><td>Finding the shortest span of text containing all query words (minimum window substring).</td></tr><tr><td>Streaming systems</td><td>Keeping the last N seconds of events that satisfy a rule.</td></tr><tr><td>Interviewers</td><td>Medium-level favourite: longest substring without repeats, smallest subarray with sum, minimum window substring, fruits in baskets.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Window vs prefix sum + hash map</td><td>Windows need monotonic validity (non-negative numbers for sum problems). Prefix+hash works with negatives.</td></tr><tr><td>Window vs DP</td><td>DP can solve some of these but needs more memory; windows are O(1)-O(k) space.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>last = {} to store the last index of each character for 'no repeats' windows.</li><li>left = 0; for right, x in enumerate(nums): ... while bad: left += 1.</li><li>Window length is right - left + 1.</li><li>Use a Counter and a variable 'formed' to count how many required letters are satisfied.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c8_3.py">def longest_without_repeat(s):
+    last = {}                       # char -&gt; last index
+    left = best = 0
+    for right, ch in enumerate(s):
+        if ch in last and last[ch] &gt;= left:
+            left = last[ch] + 1     # jump past the duplicate
+        last[ch] = right
+        best = max(best, right - left + 1)
+    return best</code></pre>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - try every start</h4>
+      <p>From each start extend until a repeat appears. O(n^2) in the worst case.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c8_3_stage1.py">def longest(s):
+    best = 0
+    for i in range(len(s)):
+        seen = set()
+        for j in range(i, len(s)):
+            if s[j] in seen:
+                break
+            seen.add(s[j])
+        best = max(best, len(seen))
+    return best</code></pre>
+      <p class="muted small">Check: <code>longest('abcabcbb')</code> returns <code>3</code></p>
+      <h4>Stage 2 - window with a set</h4>
+      <p>Grow right; when a repeat appears shrink from the left until it is gone. O(n) because each index enters and leaves once.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c8_3_stage2.py">def longest(s):
+    seen, left, best = set(), 0, 0
+    for right, ch in enumerate(s):
+        while ch in seen:
+            seen.remove(s[left])
+            left += 1
+        seen.add(ch)
+        best = max(best, right - left + 1)
+    return best</code></pre>
+      <p class="muted small">Check: <code>longest('abcabcbb')</code> returns <code>3</code></p>
+      <h4>Stage 3 - jump the left pointer</h4>
+      <p>Remember the last index of each letter and move left straight past the duplicate instead of one step at a time.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c8_3_stage3.py">def longest(s):
+    last, left, best = {}, 0, 0
+    for right, ch in enumerate(s):
+        if ch in last and last[ch] &gt;= left:
+            left = last[ch] + 1
+        last[ch] = right
+        best = max(best, right - left + 1)
+    return best</code></pre>
+      <p class="muted small">Check: <code>longest('abcabcbb')</code> returns <code>3</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>longest_without_repeat("abcabcbb")</code>, returns <code>3</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>right (after)</th><th>ch (after)</th><th>left (after)</th><th>best (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>last = {}                       # char -&gt; last index</code></td><td>-</td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>left = best = 0</code></td><td>-</td><td>-</td><td><strong><code>0</code></strong></td><td><strong><code>0</code></strong></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>for right, ch in enumerate(s):</code></td><td><strong><code>0</code></strong></td><td><strong><code>'a'</code></strong></td><td><code>0</code></td><td><code>0</code></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>if ch in last and last[ch] &gt;= left:</code></td><td><code>0</code></td><td><code>'a'</code></td><td><code>0</code></td><td><code>0</code></td></tr>
+<tr><td class="num">5</td><td class="num">7</td><td><code>last[ch] = right</code></td><td><code>0</code></td><td><code>'a'</code></td><td><code>0</code></td><td><code>0</code></td></tr>
+<tr><td class="num">6</td><td class="num">8</td><td><code>best = max(best, right - left + 1)</code></td><td><code>0</code></td><td><code>'a'</code></td><td><code>0</code></td><td><strong><code>1</code></strong></td></tr>
+<tr><td class="num">7</td><td class="num">4</td><td><code>for right, ch in enumerate(s):</code></td><td><strong><code>1</code></strong></td><td><strong><code>'b'</code></strong></td><td><code>0</code></td><td><code>1</code></td></tr>
+<tr><td class="num">8</td><td class="num">5</td><td><code>if ch in last and last[ch] &gt;= left:</code></td><td><code>1</code></td><td><code>'b'</code></td><td><code>0</code></td><td><code>1</code></td></tr>
+<tr><td class="num">9</td><td class="num">7</td><td><code>last[ch] = right</code></td><td><code>1</code></td><td><code>'b'</code></td><td><code>0</code></td><td><code>1</code></td></tr>
+<tr><td class="num">10</td><td class="num">8</td><td><code>best = max(best, right - left + 1)</code></td><td><code>1</code></td><td><code>'b'</code></td><td><code>0</code></td><td><strong><code>2</code></strong></td></tr>
+<tr><td class="num">11</td><td class="num">4</td><td><code>for right, ch in enumerate(s):</code></td><td><strong><code>2</code></strong></td><td><strong><code>'c'</code></strong></td><td><code>0</code></td><td><code>2</code></td></tr>
+<tr><td class="num">12</td><td class="num">5</td><td><code>if ch in last and last[ch] &gt;= left:</code></td><td><code>2</code></td><td><code>'c'</code></td><td><code>0</code></td><td><code>2</code></td></tr>
+<tr><td class="num">13</td><td class="num">7</td><td><code>last[ch] = right</code></td><td><code>2</code></td><td><code>'c'</code></td><td><code>0</code></td><td><code>2</code></td></tr>
+<tr><td class="num">14</td><td class="num">8</td><td><code>best = max(best, right - left + 1)</code></td><td><code>2</code></td><td><code>'c'</code></td><td><code>0</code></td><td><strong><code>3</code></strong></td></tr>
+<tr><td class="num">15</td><td class="num">4</td><td><code>for right, ch in enumerate(s):</code></td><td><strong><code>3</code></strong></td><td><strong><code>'a'</code></strong></td><td><code>0</code></td><td><code>3</code></td></tr>
+<tr><td class="num">16</td><td class="num">5</td><td><code>if ch in last and last[ch] &gt;= left:</code></td><td><code>3</code></td><td><code>'a'</code></td><td><code>0</code></td><td><code>3</code></td></tr>
+<tr><td class="num">17</td><td class="num">6</td><td><code>left = last[ch] + 1     # jump past the duplicate</code></td><td><code>3</code></td><td><code>'a'</code></td><td><strong><code>1</code></strong></td><td><code>3</code></td></tr>
+<tr><td class="num">18</td><td class="num">7</td><td><code>last[ch] = right</code></td><td><code>3</code></td><td><code>'a'</code></td><td><code>1</code></td><td><code>3</code></td></tr>
+<tr><td class="num">19</td><td class="num">8</td><td><code>best = max(best, right - left + 1)</code></td><td><code>3</code></td><td><code>'a'</code></td><td><code>1</code></td><td><code>3</code></td></tr>
+<tr><td class="num">20</td><td class="num">4</td><td><code>for right, ch in enumerate(s):</code></td><td><strong><code>4</code></strong></td><td><strong><code>'b'</code></strong></td><td><code>1</code></td><td><code>3</code></td></tr>
+<tr><td class="num">21</td><td class="num">5</td><td><code>if ch in last and last[ch] &gt;= left:</code></td><td><code>4</code></td><td><code>'b'</code></td><td><code>1</code></td><td><code>3</code></td></tr>
+<tr><td class="num">22</td><td class="num">6</td><td><code>left = last[ch] + 1     # jump past the duplicate</code></td><td><code>4</code></td><td><code>'b'</code></td><td><strong><code>2</code></strong></td><td><code>3</code></td></tr>
+<tr><td class="num">23</td><td class="num">7</td><td><code>last[ch] = right</code></td><td><code>4</code></td><td><code>'b'</code></td><td><code>2</code></td><td><code>3</code></td></tr>
+<tr><td class="num">24</td><td class="num">8</td><td><code>best = max(best, right - left + 1)</code></td><td><code>4</code></td><td><code>'b'</code></td><td><code>2</code></td><td><code>3</code></td></tr>
+<tr><td class="num">25</td><td class="num">4</td><td><code>for right, ch in enumerate(s):</code></td><td><strong><code>5</code></strong></td><td><strong><code>'c'</code></strong></td><td><code>2</code></td><td><code>3</code></td></tr>
+<tr><td class="num">26</td><td class="num">5</td><td><code>if ch in last and last[ch] &gt;= left:</code></td><td><code>5</code></td><td><code>'c'</code></td><td><code>2</code></td><td><code>3</code></td></tr>
+<tr><td class="num">27</td><td class="num">6</td><td><code>left = last[ch] + 1     # jump past the duplicate</code></td><td><code>5</code></td><td><code>'c'</code></td><td><strong><code>3</code></strong></td><td><code>3</code></td></tr>
+<tr><td class="num">28</td><td class="num">7</td><td><code>last[ch] = right</code></td><td><code>5</code></td><td><code>'c'</code></td><td><code>3</code></td><td><code>3</code></td></tr>
+<tr><td class="num">29</td><td class="num">8</td><td><code>best = max(best, right - left + 1)</code></td><td><code>5</code></td><td><code>'c'</code></td><td><code>3</code></td><td><code>3</code></td></tr>
+<tr><td class="num">30</td><td class="num">4</td><td><code>for right, ch in enumerate(s):</code></td><td><strong><code>6</code></strong></td><td><strong><code>'b'</code></strong></td><td><code>3</code></td><td><code>3</code></td></tr>
+<tr><td class="num">31</td><td class="num">5</td><td><code>if ch in last and last[ch] &gt;= left:</code></td><td><code>6</code></td><td><code>'b'</code></td><td><code>3</code></td><td><code>3</code></td></tr>
+<tr><td class="num">32</td><td class="num">6</td><td><code>left = last[ch] + 1     # jump past the duplicate</code></td><td><code>6</code></td><td><code>'b'</code></td><td><strong><code>5</code></strong></td><td><code>3</code></td></tr>
+<tr><td class="num">33</td><td class="num">7</td><td><code>last[ch] = right</code></td><td><code>6</code></td><td><code>'b'</code></td><td><code>5</code></td><td><code>3</code></td></tr>
+<tr><td class="num">34</td><td class="num">8</td><td><code>best = max(best, right - left + 1)</code></td><td><code>6</code></td><td><code>'b'</code></td><td><code>5</code></td><td><code>3</code></td></tr>
+<tr><td class="num">35</td><td class="num">4</td><td><code>for right, ch in enumerate(s):</code></td><td><strong><code>7</code></strong></td><td><code>'b'</code></td><td><code>5</code></td><td><code>3</code></td></tr>
+<tr><td class="num">36</td><td class="num">5</td><td><code>if ch in last and last[ch] &gt;= left:</code></td><td><code>7</code></td><td><code>'b'</code></td><td><code>5</code></td><td><code>3</code></td></tr>
+<tr><td class="num">37</td><td class="num">6</td><td><code>left = last[ch] + 1     # jump past the duplicate</code></td><td><code>7</code></td><td><code>'b'</code></td><td><strong><code>7</code></strong></td><td><code>3</code></td></tr>
+<tr><td class="num">38</td><td class="num">7</td><td><code>last[ch] = right</code></td><td><code>7</code></td><td><code>'b'</code></td><td><code>7</code></td><td><code>3</code></td></tr>
+<tr><td class="num">39</td><td class="num">8</td><td><code>best = max(best, right - left + 1)</code></td><td><code>7</code></td><td><code>'b'</code></td><td><code>7</code></td><td><code>3</code></td></tr>
+<tr><td class="num">40</td><td class="num">4</td><td><code>for right, ch in enumerate(s):</code></td><td><code>7</code></td><td><code>'b'</code></td><td><code>7</code></td><td><code>3</code></td></tr>
+<tr><td class="num">41</td><td class="num">9</td><td><code>return best</code></td><td><code>7</code></td><td><code>'b'</code></td><td><code>7</code></td><td><code>3</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>O(n) time, O(min(n, alphabet)) space.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Moving left backwards.</li><li>Not checking last[ch] &gt;= left (stale entries outside the window).</li><li>Using this for arrays with negative numbers when the condition is a sum.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"Longest/shortest substring/subarray such that..." with all-positive values or character constraints -&gt; variable window.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m08-problems.html#prob-longest_unique_substring">Longest Substring Without Repeating Characters</a> <span class="tag">LC 3</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Variable sliding window + hash map</td></tr><tr><td><a href="m08-problems.html#prob-min_subarray_len">Smallest Subarray With Sum &gt;= Target</a> <span class="tag">LC 209</span></td><td><span class="tag warn">Medium</span></td><td>Variable-size sliding window</td></tr><tr><td><a href="m04-problems.html#prob-longest_repeating_replace">Longest Repeating Character Replacement</a> <span class="tag">LC 424</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Variable window</td></tr><tr><td><a href="m08-problems.html#prob-fruit_baskets">Fruit Into Baskets</a> <span class="tag">LC 904</span></td><td><span class="tag warn">Medium</span></td><td>Variable window (at most 2 distinct)</td></tr><tr><td><a href="m08-problems.html#prob-longest_ones">Longest Run of 1s With K Flips</a> <span class="tag">LC 1004</span></td><td><span class="tag warn">Medium</span></td><td>Variable sliding window</td></tr><tr><td><a href="m04-problems.html#prob-min_window">Minimum Window Substring</a> <span class="tag">LC 76</span> <span class="tag accent">must-do</span></td><td><span class="tag bad">Hard</span></td><td>Variable sliding window + counters</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why is a variable window O(n) despite a nested while?</summary><div class="answer"><p>Left and right only move forward, so together they move at most 2n steps.</p></div></details>
+        <details class="recall"><summary>Why use while and not if for shrinking?</summary><div class="answer"><p>One new element may require removing several old ones before the window is valid again.</p></div></details>
+        <details class="recall"><summary>Why does the last-index dictionary jump straight past a duplicate?</summary><div class="answer"><p>Everything before the earlier copy of that character must be excluded, so left can move directly beyond it.</p></div></details>
+        <details class="recall"><summary>Why does window fail with negative numbers for sums?</summary><div class="answer"><p>Removing a number might increase the sum, so shrinking no longer moves toward validity.</p></div></details>
+        <details class="recall"><summary>Why record the answer after restoring validity (for longest)?</summary><div class="answer"><p>Only valid windows count, so measure after the shrink loop.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c8_3-q1" data-topic="Two Pointers &amp; Sliding Window" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Time complexity of variable window with a nested while shrinking left?</p></div>
+        <ul class="q-options">
+          <li data-key="A">O(n^2)</li>
+          <li data-key="B">O(n)</li>
+          <li data-key="C">O(n log n)</li>
+          <li data-key="D">O(2^n)</li>
+        </ul>
+        <div class="q-explain"><p>Left and right each move at most n steps in total.</p></div>
+      </div>
+      <div class="quiz" data-qid="c8_3-q2" data-topic="Two Pointers &amp; Sliding Window" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Window technique for a sum condition needs array values that are...</p></div>
+        <ul class="q-options">
+          <li data-key="A">Negative</li>
+          <li data-key="B">Non-negative / positive</li>
+          <li data-key="C">Sorted</li>
+          <li data-key="D">Distinct</li>
+        </ul>
+        <div class="q-explain"><p>Shrinking must reduce the sum for the logic to work.</p></div>
+      </div>
+    </section>
+
+    <h2 id="practice-problems">Practice problems for this module</h2>
+
+    <p>11 problems with hints, approach, dry run and tested solutions on the <a href="m08-problems.html">problem set for this module</a>.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m08-problems.html#prob-two_sum_sorted">Pair Sum in a Sorted Array</a> <span class="tag">LC 167</span></td><td><span class="tag ok">Easy</span></td><td>Two pointers (opposite ends)</td></tr><tr><td><a href="m08-problems.html#prob-max_sum_window">Maximum Sum of K Consecutive Elements</a></td><td><span class="tag ok">Easy</span></td><td>Fixed-size sliding window</td></tr><tr><td><a href="m08-problems.html#prob-remove_element">Remove Element</a> <span class="tag">LC 27</span></td><td><span class="tag ok">Easy</span></td><td>Reader / writer pointers</td></tr><tr><td><a href="m08-problems.html#prob-max_area">Container With Most Water</a> <span class="tag">LC 11</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Two pointers (greedy shrink)</td></tr><tr><td><a href="m08-problems.html#prob-min_subarray_len">Smallest Subarray With Sum &gt;= Target</a> <span class="tag">LC 209</span></td><td><span class="tag warn">Medium</span></td><td>Variable-size sliding window</td></tr><tr><td><a href="m08-problems.html#prob-longest_unique_substring">Longest Substring Without Repeating Characters</a> <span class="tag">LC 3</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Variable sliding window + hash map</td></tr><tr><td><a href="m08-problems.html#prob-longest_ones">Longest Run of 1s With K Flips</a> <span class="tag">LC 1004</span></td><td><span class="tag warn">Medium</span></td><td>Variable sliding window</td></tr><tr><td><a href="m08-problems.html#prob-check_inclusion">Permutation in String</a> <span class="tag">LC 567</span></td><td><span class="tag warn">Medium</span></td><td>Fixed window + frequency</td></tr><tr><td><a href="m08-problems.html#prob-three_sum_closest">3Sum Closest</a> <span class="tag">LC 16</span></td><td><span class="tag warn">Medium</span></td><td>Sort + two pointers</td></tr><tr><td><a href="m08-problems.html#prob-fruit_baskets">Fruit Into Baskets</a> <span class="tag">LC 904</span></td><td><span class="tag warn">Medium</span></td><td>Variable window (at most 2 distinct)</td></tr><tr><td><a href="m08-problems.html#prob-three_sum">Three Sum</a> <span class="tag">LC 15</span> <span class="tag accent">must-do</span></td><td><span class="tag bad">Hard</span></td><td>Sort + two pointers</td></tr>
+</tbody>
+</table>
+</div>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Two Pointers &amp; Sliding Window</h2>
+      <p class="muted">54 questions: try to answer aloud in under a minute, then reveal. All questions from every module are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Two Pointers & Sliding Window">
+<details class="recall iq" data-level="basic" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> When can you use the two pointer technique?</summary><div class="answer"><p>When the data is sorted or has structure that tells you which pointer to move: pair sums in sorted arrays, palindromes, merging sorted lists, removing items in place, partitioning.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Explain pair sum in a sorted array with two pointers.</summary><div class="answer"><p>Put lo at the start and hi at the end. If nums[lo] + nums[hi] equals the target you are done; if it is smaller move lo right; if bigger move hi left. O(n) time, O(1) space.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Solve 3Sum.</summary><div class="answer"><p>Sort, then for each i skip duplicates and use two pointers lo = i + 1, hi = n - 1 to find pairs summing to -nums[i]. Skip duplicates after a hit. O(n^2).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How does Container With Most Water work?</summary><div class="answer"><p>Start with the widest container. Area = width x min(height). Move the pointer at the shorter line inward, because moving the taller one can never improve the area.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the difference between two pointers and sliding window?</summary><div class="answer"><p>Two pointers is the general idea of two moving indices. Sliding window is a special case where the two pointers define a contiguous range (a window) whose contents you keep track of.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why does the container-with-most-water pointer move the shorter side?</summary><div class="answer"><p>The area is limited by the shorter line. Moving the taller line can only shrink the width without improving the height limit, so the shorter side is the only move that might increase the area.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the sliding window technique?</summary><div class="answer"><p>Maintain a window (range) over the data and move it step by step, updating the result incrementally instead of recomputing from scratch.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Maximum sum of k consecutive elements - complexity?</summary><div class="answer"><p>O(n) time and O(1) space using the sliding window. Brute force would be O(n k).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you check if s2 contains a permutation of s1?</summary><div class="answer"><p>Slide a window of size len(s1) over s2 and compare letter counts with s1 (Counter equality). Update counts by adding the entering letter and removing the leaving one.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you find the maximum in every window of size k?</summary><div class="answer"><p>Use a monotonic deque of indices whose values decrease. The front is the maximum; pop from the back while the back is smaller than the new element; pop from the front when it leaves the window. O(n).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What edge cases should you test for fixed windows?</summary><div class="answer"><p>k = 1, k = n, k &gt; n, negative numbers, and an empty list.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why does the sliding window avoid recomputing?</summary><div class="answer"><p>Consecutive windows share k - 1 elements, so only the entering and leaving elements change the result.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Find the length of the longest substring without repeating characters.</summary><div class="answer"><pre><code class="lang-py">def longest(s):
+    last, left, best = {}, 0, 0
+    for right, ch in enumerate(s):
+        if ch in last and last[ch] &gt;= left:
+            left = last[ch] + 1
+        last[ch] = right
+        best = max(best, right - left + 1)
+    return best</code></pre></div></details>
+<details class="recall iq" data-level="basic" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Smallest subarray with sum at least target (all positive numbers)?</summary><div class="answer"><p>Expand right adding to a sum; while sum &gt;= target record the length and subtract nums[left], left += 1. O(n).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why is the complexity O(n) with a nested while?</summary><div class="answer"><p>Both pointers only move forward, so in total they move at most 2n steps.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Longest run of 1s if you may flip at most k zeros?</summary><div class="answer"><p>Keep a window with at most k zeros: when zeros exceed k, move left until a zero leaves the window. Answer is the maximum window length.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> When does the window method not work?</summary><div class="answer"><p>When values can be negative and the condition is about a sum, because shrinking does not necessarily reduce the sum. Use prefix sums + hash map.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Give a case where sliding window fails.</summary><div class="answer"><p>Longest subarray with sum exactly k when numbers can be negative; use prefix sums with a hash map.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Check whether a sorted array has a pair with difference exactly d (d &gt;= 0).</summary><div class="answer"><pre><code class="lang-py">def has_diff(a, d):
+    i = 0
+    for j in range(len(a)):
+        while a[j] - a[i] &gt; d:
+            i += 1
+        if i != j and a[j] - a[i] == d:
+            return True
+    return False</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> Why should 3Sum skip duplicates after finding a triplet?</summary><div class="answer"><p>Otherwise the same triplet values would be reported multiple times.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> Where is a two-pointer merge used in databases?</summary><div class="answer"><p>Sort-merge joins walk two sorted inputs together to find matching keys in one pass.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why can you discard an element when the pair sum is too small?</summary><div class="answer"><p>In a sorted list the left value is the smallest, so even paired with the largest it is too small; it can never be part of an answer.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does two pointers need a sorted array?</summary><div class="answer"><p>Sortedness tells you which pointer to move to increase or decrease the sum.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use a nested loop?</summary><div class="answer"><p>It checks pairs that were already ruled out, costing O(n^2).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why skip duplicates in 3Sum?</summary><div class="answer"><p>Otherwise the same triplet is reported more than once.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does the reader/writer pointer never overwrite unread data?</summary><div class="answer"><p>The writer index is always less than or equal to the reader index.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why can&#x27;t two pointers solve pair sum on an unsorted array directly?</summary><div class="answer"><p>Without order you cannot tell which pointer to move. Sort first (O(n log n)) or use a hash map.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Merge two sorted arrays in place when the first has extra space at the end.</summary><div class="answer"><p>Fill from the back using three pointers (last of each array and the write position) so no unread element is overwritten.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> For [1, 2, 3, 4, 5] and target 9, which pair do two pointers find?</summary><div class="answer"><p>(4, 5) at indices 3 and 4: starting at 1 + 5 = 6 (too small) the left pointer moves until 4 + 5.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Find the maximum average of any k consecutive numbers.</summary><div class="answer"><pre><code class="lang-py">def max_avg(a, k):
+    w = sum(a[:k])
+    best = w
+    for i in range(k, len(a)):
+        w += a[i] - a[i - k]
+        best = max(best, w)
+    return best / k</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What is the answer if k &gt; len(a)?</summary><div class="answer"><p>Undefined for the problem; handle it explicitly (return -1 or raise) before the loop. This is a common hidden test.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How does an API rate limiter implement &#x27;at most 100 requests per minute&#x27;?</summary><div class="answer"><p>A sliding window of timestamps (deque): drop timestamps older than 60 seconds and reject if the remaining count is 100.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is the sliding window faster than re-summing?</summary><div class="answer"><p>Consecutive windows share k - 1 elements, so only one number enters and one leaves.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why build the first window separately?</summary><div class="answer"><p>The update rule subtracts nums[i - k], which exists only after k elements have been added.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why check k &gt; n first?</summary><div class="answer"><p>No window of size k exists, and slicing or indexing would give a wrong or empty result.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does a plain sum update not work for window maximum?</summary><div class="answer"><p>You cannot &#x27;subtract&#x27; a maximum. A monotonic deque is used instead.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is the answer O(1) space?</summary><div class="answer"><p>Only the running window value and the best value are stored.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use prefix sums for fixed windows?</summary><div class="answer"><p>You can: window sum = prefix[i + k] - prefix[i]. It costs O(n) memory but supports any range; the window uses O(1) memory.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Count the number of windows of size k with sum at least t.</summary><div class="answer"><p>Slide the window and increment a counter whenever the running sum &gt;= t.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> For nums = [1, 2, 3] and k = 3, how many windows exist?</summary><div class="answer"><p>Exactly one: n - k + 1 = 1.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Find the length of the longest substring with at most k distinct characters.</summary><div class="answer"><pre><code class="lang-py">from collections import defaultdict
+def longest_k_distinct(s, k):
+    cnt, left, best = defaultdict(int), 0, 0
+    for right, ch in enumerate(s):
+        cnt[ch] += 1
+        while len(cnt) &gt; k:
+            cnt[s[left]] -= 1
+            if cnt[s[left]] == 0:
+                del cnt[s[left]]
+            left += 1
+        best = max(best, right - left + 1)
+    return best</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> Why is the answer for &#x27;abba&#x27; 2, not 3, in no-repeat substring?</summary><div class="answer"><p>When the second &#x27;a&#x27; arrives, its previous index is before the window&#x27;s left edge, so left must not move backwards; the window stays [b, a] length 2.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How would you find the busiest 5-minute window in a server log?</summary><div class="answer"><p>Sort timestamps, move a left pointer so the window spans at most 5 minutes, and track the maximum number of events in the window.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is a variable window O(n) despite a nested while?</summary><div class="answer"><p>Left and right only move forward, so together they move at most 2n steps.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use while and not if for shrinking?</summary><div class="answer"><p>One new element may require removing several old ones before the window is valid again.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does the last-index dictionary jump straight past a duplicate?</summary><div class="answer"><p>Everything before the earlier copy of that character must be excluded, so left can move directly beyond it.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does window fail with negative numbers for sums?</summary><div class="answer"><p>Removing a number might increase the sum, so shrinking no longer moves toward validity.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why record the answer after restoring validity (for longest)?</summary><div class="answer"><p>Only valid windows count, so measure after the shrink loop.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why check last[ch] &gt;= left?</summary><div class="answer"><p>Old entries from before the current window must be ignored; otherwise left could jump backwards.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Longest subarray of 1s after deleting one element.</summary><div class="answer"><p>Keep a window with at most one zero; answer is the longest window length minus 1.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> How do you solve 4Sum?</summary><div class="answer"><p>Sort, fix two numbers with two loops and use two pointers for the rest: O(n^3). Skip duplicates at every level.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> How do you find the maximum in every window of size k?</summary><div class="answer"><p>Monotonic deque of indices with decreasing values; O(n).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Minimum window substring: smallest part of s containing all letters of t.</summary><div class="answer"><p>Counter of needed letters, a &#x27;formed&#x27; counter of satisfied letters, expand right until formed equals required, then shrink left while still valid, recording the smallest window. O(n).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Two Pointers &amp; Sliding Window"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Smallest window containing all characters of t?</summary><div class="answer"><p>Counter of needed letters and a &#x27;formed&#x27; counter; expand right until satisfied, then shrink left while still satisfied.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="m07-problems.html"><span class="dir">Previous</span><span>Problems 7: Hashing</span></a>
+      <a class="next" href="m08-problems.html"><span class="dir">Next</span><span>Problems 8: Two Pointers & Sliding Window</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

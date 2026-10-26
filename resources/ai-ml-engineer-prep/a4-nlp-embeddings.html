@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="A4">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>NLP, tokenisation, embeddings and vector search | AI/ML Prep</title>
+<meta name="description" content="Text preprocessing, byte-pair encoding built from scratch, bag of words and TF-IDF, word and sentence embeddings, contrastive training, similarity search with LSH, IVF and HNSW, and how to evaluate NLP systems.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part A4</p>
+      <h1>NLP, tokenisation, embeddings and vector search</h1>
+      <p class="lede">Language models turn text into numbers twice: first by splitting it into tokens, then by mapping tokens to vectors. This part builds both steps, then the machinery that searches millions of vectors fast.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~6 hours</span></div>
+    </div>
+
+    <section id="tokens" data-track>
+      <h2>From text to tokens</h2>
+<h3>Why tokenisation exists</h3>
+<p>Models work on integers. Splitting text into <strong>words</strong> gives a huge vocabulary and cannot handle new words; splitting into <strong>characters</strong> is tiny but makes sequences very long. <strong>Subword tokenisation</strong> sits between: common words are single tokens, rare words are built from pieces, and any text can be represented (down to bytes).</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Granularity</th><th>Vocabulary</th><th>Sequence length</th><th>Problem</th></tr></thead>
+<tbody>
+<tr><td>Characters</td><td>~100 to 300</td><td>Very long</td><td>Hard to learn long-range meaning, slow</td></tr><tr><td>Words</td><td>100k+</td><td>Short</td><td>Out-of-vocabulary words, huge embedding table</td></tr><tr><td>Subwords (BPE, WordPiece, Unigram)</td><td>32k to 256k</td><td>Moderate</td><td>Compromise; used by all modern LLMs</td></tr><tr><td>Bytes</td><td>256</td><td>Longest</td><td>Universal, but expensive</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Byte-pair encoding (BPE) from scratch</h3>
+<p>Start from characters. Repeatedly find the <strong>most frequent adjacent pair</strong> of symbols and merge it into a new symbol. The list of merges is the tokenizer; to encode new text, apply the merges in the order they were learned.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a4-01.py">from collections import Counter
+
+def learn_bpe(words, merges):
+    vocab = Counter(tuple(w) + ("&lt;/w&gt;",) for w in words)      # each word as a tuple of symbols
+    learned = []
+    for _ in range(merges):
+        pairs = Counter()
+        for word, freq in vocab.items():
+            for a, b in zip(word, word[1:]):
+                pairs[(a, b)] += freq
+        if not pairs:
+            break
+        best = max(pairs, key=lambda p: (pairs[p], p))         # most frequent, ties broken deterministically
+        learned.append(best)
+        new_vocab = Counter()
+        for word, freq in vocab.items():
+            out, i = [], 0
+            while i &lt; len(word):
+                if i &lt; len(word) - 1 and (word[i], word[i + 1]) == best:
+                    out.append(word[i] + word[i + 1]); i += 2
+                else:
+                    out.append(word[i]); i += 1
+            new_vocab[tuple(out)] += freq
+        vocab = new_vocab
+    return learned
+
+def encode(word, merges):
+    symbols = list(word) + ["&lt;/w&gt;"]
+    for a, b in merges:
+        i = 0
+        while i &lt; len(symbols) - 1:
+            if symbols[i] == a and symbols[i + 1] == b:
+                symbols[i:i + 2] = [a + b]
+            else:
+                i += 1
+    return symbols
+
+corpus = ["low"] * 5 + ["lower"] * 2 + ["newest"] * 6 + ["widest"] * 3
+merges = learn_bpe(corpus, 10)
+print(merges[:5])
+print(encode("lowest", merges))
+print(encode("newer", merges))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[('t', '&lt;/w&gt;'), ('s', 't&lt;/w&gt;'), ('e', 'st&lt;/w&gt;'), ('o', 'w'), ('l', 'ow')]
+['low', 'est&lt;/w&gt;']
+['ne', 'w', 'e', 'r', '&lt;/w&gt;']</code></pre>
+<p>Words that were seen often (<code>low</code>, <code>newest</code>) become one or two tokens; the unseen word <code>lowest</code> is assembled from known pieces. Real tokenizers (GPT, LLaMA) run BPE on <strong>bytes</strong> so nothing is out of vocabulary, with vocabularies of 32k to 200k and special tokens (<code>&lt;|endoftext|&gt;</code>, chat markers).</p>
+<h3>Consequences you must know</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Effect</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>Cost and limits</td><td>Pricing and context windows count tokens, not words (English about 0.75 words per token, code and non-English text use more)</td></tr><tr><td>Arithmetic and spelling</td><td>Numbers split inconsistently, so character-level tasks (counting letters, reversing) are hard</td></tr><tr><td>Multilingual fairness</td><td>Languages with less training text get more tokens per sentence, so they are slower and costlier</td></tr><tr><td>Whitespace and case</td><td><code>" the"</code> and <code>"the"</code> are different tokens</td></tr><tr><td>Glitch tokens</td><td>Rare strings seen in tokenizer training but not model training behave strangely</td></tr><tr><td>Vocabulary size trade-off</td><td>A bigger vocabulary shortens sequences but enlarges the embedding and output matrices</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a4-q01" data-topic="NLP and embeddings" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why do LLMs use subword tokens?</p></div>
+        <ul class="q-options">
+          <li data-key="A">They are required by GPUs <span class="q-why">No.</span></li>
+          <li data-key="B">They balance vocabulary size and sequence length and avoid out-of-vocabulary words <span class="q-why">Correct.</span></li>
+          <li data-key="C">They make text lowercase <span class="q-why">No.</span></li>
+          <li data-key="D">They encrypt text <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Rare words are built from known pieces, common words are single tokens.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a4-q02" data-topic="NLP and embeddings" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In BPE training, what do you merge at each step?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The rarest pair <span class="q-why">No.</span></li>
+          <li data-key="B">The most frequent adjacent pair of symbols <span class="q-why">Correct.</span></li>
+          <li data-key="C">A random pair <span class="q-why">No.</span></li>
+          <li data-key="D">The longest word <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Repeating this builds a vocabulary of useful pieces.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why can LLMs struggle to count letters?</summary><div class="answer"><p>They see subword tokens, not characters, so character-level structure is hidden inside tokens.</p></div></details>
+      </div>
+    </section>
+
+    <section id="classic" data-track>
+      <h2>Classical text representations</h2>
+<h3>Preprocessing</h3>
+<p>Lowercase, strip punctuation, split into tokens, remove stop words, stem or lemmatise. Modern neural models mostly skip heavy preprocessing; classical models rely on it.</p>
+<h3>Bag of words and TF-IDF</h3>
+<p>A <strong>bag of words</strong> counts how often each term appears and ignores order. <strong>TF-IDF</strong> reweights: <strong>term frequency</strong> (how often a term appears in the document) times <strong>inverse document frequency</strong> <code>log(N / df)</code> (rare terms are more informative).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a4-02.py">import math
+docs = ["the cat sat on the mat", "the dog sat on the log", "cats and dogs are pets"]
+tokens = [d.split() for d in docs]
+N = len(docs)
+vocab = sorted({w for t in tokens for w in t})
+df = {w: sum(w in t for t in tokens) for w in vocab}
+def tfidf(t):
+    return {w: (t.count(w) / len(t)) * math.log(N / df[w]) for w in sorted(set(t))}
+for d, t in zip(docs, tokens):
+    top = sorted(tfidf(t).items(), key=lambda kv: (-round(kv[1], 6), kv[0]))[:3]
+    print(d, "-&gt;", [(w, round(s, 2)) for w, s in top])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>the cat sat on the mat -&gt; [('cat', 0.18), ('mat', 0.18), ('the', 0.14)]
+the dog sat on the log -&gt; [('dog', 0.18), ('log', 0.18), ('the', 0.14)]
+cats and dogs are pets -&gt; [('and', 0.22), ('are', 0.22), ('cats', 0.22)]</code></pre>
+<p>The word <code>the</code> appears everywhere and scores low; distinctive words score high. TF-IDF vectors with cosine similarity were the backbone of search for decades, and <strong>BM25</strong> refines it with term-frequency saturation and length normalisation (<a href="03-rag-and-retrieval.html">03</a>). Limits: no semantics (<code>car</code> and <code>automobile</code> are unrelated), huge sparse vectors.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a4-q03" data-topic="NLP and embeddings" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why does TF-IDF weight rare terms more?</p></div>
+        <ul class="q-options">
+          <li data-key="A">They are longer <span class="q-why">No.</span></li>
+          <li data-key="B">Inverse document frequency makes terms appearing in few documents more informative <span class="q-why">Correct.</span></li>
+          <li data-key="C">They are stop words <span class="q-why">No.</span></li>
+          <li data-key="D">It is a bug <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>A word in every document cannot discriminate between documents.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>TF-IDF formula?</summary><div class="answer"><p>term frequency times log(N / document frequency).</p></div></details>
+      </div>
+    </section>
+
+    <section id="embeddings" data-track>
+      <h2>Embeddings</h2>
+<h3>The idea</h3>
+<p>An <strong>embedding</strong> maps a token (or sentence, image...) to a dense vector, usually 128 to 4,096 numbers, so that <strong>similar things are close</strong>. It is a learned lookup table: row <code>i</code> of a matrix holds the vector for token <code>i</code>.</p>
+<h3>Word2vec in one paragraph</h3>
+<p>The distributional hypothesis: <strong>words that appear in similar contexts have similar meanings</strong>. <strong>Skip-gram</strong> trains a model to predict neighbouring words from a centre word. As a by-product the input vectors capture meaning, giving relations like <code>king - man + woman</code> close to <code>queen</code>. Training uses <strong>negative sampling</strong>: raise the score of real (word, context) pairs, lower it for random pairs.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a4-03.py">import random, math
+random.seed(0)
+sentences = ["cats like milk", "dogs like bones", "cats chase mice", "dogs chase cats", "kings rule lands", "queens rule lands"]
+vocab = sorted({w for s in sentences for w in s.split()})
+idx = {w: i for i, w in enumerate(vocab)}
+dim = 8
+W = [[random.uniform(-0.5, 0.5) for _ in range(dim)] for _ in vocab]      # centre vectors
+C = [[random.uniform(-0.5, 0.5) for _ in range(dim)] for _ in vocab]      # context vectors
+sig = lambda z: 1 / (1 + math.exp(-z))
+pairs = []
+for s in sentences:
+    ws = s.split()
+    for i, w in enumerate(ws):
+        for j in range(max(0, i - 1), min(len(ws), i + 2)):
+            if i != j:
+                pairs.append((idx[w], idx[ws[j]]))
+for epoch in range(400):
+    for c, o in pairs:
+        for target, label in ((o, 1), (random.randrange(len(vocab)), 0)):      # one positive, one random negative
+            score = sum(W[c][k] * C[target][k] for k in range(dim))
+            g = (sig(score) - label) * 0.1
+            for k in range(dim):
+                wk, ck = W[c][k], C[target][k]
+                W[c][k] -= g * ck; C[target][k] -= g * wk
+cos = lambda a, b: sum(x * y for x, y in zip(a, b)) / math.sqrt(sum(x * x for x in a) * sum(y * y for y in b))
+for a, b in (("cats", "dogs"), ("kings", "queens"), ("cats", "kings")):
+    print("%-6s %-7s similarity %.2f" % (a, b, cos(W[idx[a]], W[idx[b]])))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>cats   dogs    similarity 0.99
+kings  queens  similarity 0.96
+cats   kings   similarity 0.32</code></pre>
+<p><code>cats</code> and <code>dogs</code> share contexts (<code>like</code>, <code>chase</code>), as do <code>kings</code> and <code>queens</code>, so each pair ends up more similar to each other than to unrelated words. This is the core of every embedding method.</p>
+<h3>Static versus contextual</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>Static (word2vec, GloVe, fastText)</th><th>Contextual (BERT, GPT hidden states)</th></tr></thead>
+<tbody>
+<tr><td>One vector per</td><td>Word</td><td>Word <strong>in context</strong></td></tr><tr><td><code>bank</code> (river) versus <code>bank</code> (money)</td><td>Same vector</td><td>Different vectors</td></tr><tr><td>Cost</td><td>Lookup</td><td>A full forward pass</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Sentence and document embeddings</h3>
+<p>Retrieval and RAG need a vector for a whole passage. Approaches: average word vectors (weak baseline); use the <code>[CLS]</code> token or <strong>mean-pooled</strong> token vectors of a transformer; and, best, models <strong>trained for the task</strong> (Sentence-BERT, E5, BGE, OpenAI and Cohere embedding models).</p>
+<h3>Contrastive training</h3>
+<p>Train an encoder so that <strong>matching pairs</strong> (a question and its answer; an image and its caption) have high similarity and <strong>non-matching pairs</strong> low. With a batch of <code>B</code> pairs, the other <code>B - 1</code> items in the batch serve as negatives and the loss is cross-entropy over the similarity matrix (<strong>InfoNCE</strong>).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a4-04.py">import math
+sim = [[0.9, 0.2, 0.1],      # row i: similarity of query i to documents 0..2 (document i is the match)
+       [0.3, 0.8, 0.2],
+       [0.1, 0.4, 0.7]]
+temp = 0.1
+loss = 0
+for i, row in enumerate(sim):
+    logits = [s / temp for s in row]
+    m = max(logits)
+    lse = m + math.log(sum(math.exp(l - m) for l in logits))
+    loss += -(logits[i] - lse)                # -log softmax at the correct document
+print("InfoNCE loss: %.4f" % (loss / len(sim)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>InfoNCE loss: 0.0205</code></pre>
+<p><strong>Hard negatives</strong> (confusing non-matches) and large batches make the model sharper. <strong>Matryoshka</strong> embeddings are trained so that the first <code>k</code> dimensions are usable alone, allowing cheaper truncated vectors.</p>
+<h3>Choosing and using embeddings</h3>
+<ul><li>Pick by your task and language; check a retrieval benchmark such as MTEB, then <strong>test on your data</strong>.</li><li><strong>Normalise</strong> vectors to unit length so cosine similarity equals the dot product.</li><li>Embed queries and documents with the <strong>same</strong> model and its recommended prefixes.</li><li>Chunk long documents sensibly (<a href="a12-llm-apps.html">A12</a>); embedding models have a maximum input length.</li><li>Changing the embedding model means <strong>re-embedding everything</strong>: version your indexes.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a4-q04" data-topic="NLP and embeddings" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the distributional hypothesis?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Words are random <span class="q-why">No.</span></li>
+          <li data-key="B">Words with similar contexts have similar meanings <span class="q-why">Correct.</span></li>
+          <li data-key="C">Long words are rare <span class="q-why">No.</span></li>
+          <li data-key="D">Meaning comes from spelling <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It underlies word2vec and its successors.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a4-q05" data-topic="NLP and embeddings" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In contrastive training with a batch of B pairs, what serves as negatives?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Nothing <span class="q-why">No.</span></li>
+          <li data-key="B">The other B - 1 items in the batch (plus mined hard negatives) <span class="q-why">Correct.</span></li>
+          <li data-key="C">Random noise <span class="q-why">No.</span></li>
+          <li data-key="D">The test set <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>In-batch negatives are cheap and effective.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why normalise embeddings?</summary><div class="answer"><p>With unit vectors, cosine similarity equals the dot product, simplifying and speeding search.</p></div></details>
+      </div>
+    </section>
+
+    <section id="ann" data-track>
+      <h2>Vector search at scale</h2>
+<h3>The problem</h3>
+<p>Given a query vector, find the nearest <code>k</code> among millions. <strong>Exact</strong> search compares to every vector: <code>O(N d)</code> per query. For 100 million vectors of 768 dimensions that is 77 billion multiply-adds, too slow, so we use <strong>approximate nearest neighbour (ANN)</strong> search, trading a little recall for large speedups.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a4-05.py">import random, math
+random.seed(1)
+d, N = 16, 3000
+data = [[random.gauss(0, 1) for _ in range(d)] for _ in range(N)]
+q = [random.gauss(0, 1) for _ in range(d)]
+dist = lambda a, b: math.dist(a, b)
+exact = sorted(range(N), key=lambda i: dist(q, data[i]))[:5]
+print("exact top-5:", exact, "(comparisons:", N, ")")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>exact top-5: [2372, 692, 2774, 1848, 1629] (comparisons: 3000 )</code></pre>
+<h3>The main index types</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Index</th><th>Idea</th><th>Pros</th><th>Cons</th></tr></thead>
+<tbody>
+<tr><td>Flat</td><td>Compare to all</td><td>Exact, simple</td><td>Slow at scale</td></tr><tr><td><strong>IVF</strong> (inverted file)</td><td>Cluster with k-means; at query time search only the few nearest clusters (<code>nprobe</code>)</td><td>Fast, memory-friendly</td><td>Recall depends on <code>nprobe</code></td></tr><tr><td><strong>PQ</strong> (product quantisation)</td><td>Split each vector into pieces and replace each with a short code</td><td>10 to 50 times less memory</td><td>Lossy distances</td></tr><tr><td><strong>HNSW</strong></td><td>Layered proximity graph: greedy walk from sparse top layers down to dense bottom</td><td>Best speed-recall trade-off, no training</td><td>High memory, slow build, deletions awkward</td></tr><tr><td><strong>LSH</strong></td><td>Random hyperplane hashing so similar vectors collide</td><td>Simple, theoretical guarantees</td><td>Weaker recall than graphs in practice</td></tr><tr><td>DiskANN, ScaNN</td><td>Graph or quantised search tuned for SSD or SIMD</td><td>Billion-scale</td><td>More complex</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Locality-sensitive hashing: random hyperplanes</h3>
+<p>Pick random vectors; the sign of the dot product with each gives one bit. Nearby vectors agree on most bits, so they land in the same bucket. The check below measures how many true neighbours share the query's bucket.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a4-06.py">import random, math
+random.seed(2)
+d, N, bits = 16, 3000, 10
+data = [[random.gauss(0, 1) for _ in range(d)] for _ in range(N)]
+planes = [[random.gauss(0, 1) for _ in range(d)] for _ in range(bits)]
+sig = lambda v: tuple(sum(a * b for a, b in zip(p, v)) &gt; 0 for p in planes)
+buckets = {}
+for i, v in enumerate(data):
+    buckets.setdefault(sig(v), []).append(i)
+q = [x + random.gauss(0, 0.2) for x in data[0]]            # a query close to data[0]
+cands = buckets.get(sig(q), [])
+best = min(cands, key=lambda i: math.dist(q, data[i])) if cands else None
+print("candidates checked:", len(cands), "of", N, "| found the true neighbour:", best == 0)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>candidates checked: 3 of 3000 | found the true neighbour: True</code></pre>
+<p>Only a few dozen candidates are compared instead of thousands.</p>
+<h3>Recall, latency and memory</h3>
+<ul><li><strong>Recall@k</strong>: the fraction of the true top-<code>k</code> that the ANN index returns. Tune index parameters (<code>nprobe</code>, <code>efSearch</code>) to a recall target (for example 95 percent) and measure latency at that point.</li><li>Memory: 100 million vectors of 768 float32 values is 307 GB raw; PQ or int8 quantisation or <strong>Matryoshka truncation</strong> cuts it by 4x to 64x.</li><li><strong>Filtering</strong> by metadata (tenant, date) is tricky in graph indexes: pre-filter, post-filter, or use filtered-HNSW; test recall under filters.</li><li><strong>Hybrid search</strong> combines keyword (BM25) and vector results with reciprocal rank fusion (<a href="03-rag-and-retrieval.html">03</a>); <strong>reranking</strong> with a cross-encoder improves the top results.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a4-q06" data-topic="NLP and embeddings" data-type="numeric" data-answer="307.2" data-tol="1">
+        <div class="q-stem"><p>100 million vectors, 768 dimensions, float32. How many GB raw? (decimal GB)</p></div>
+        <div class="q-explain"><p>100e6 x 768 x 4 bytes = 3.072e11 bytes = 307.2 GB.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a4-q07" data-topic="NLP and embeddings" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does the nprobe parameter control in an IVF index?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Vector dimension <span class="q-why">No.</span></li>
+          <li data-key="B">How many clusters are searched at query time, trading recall for speed <span class="q-why">Correct.</span></li>
+          <li data-key="C">The number of training samples <span class="q-why">No.</span></li>
+          <li data-key="D">The distance metric <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>More probes check more clusters, raising recall and latency.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>IVF versus HNSW?</summary><div class="answer"><p>IVF clusters vectors and probes a few clusters; HNSW walks a layered neighbour graph, giving better recall-latency at higher memory.</p></div></details>
+      </div>
+    </section>
+
+    <section id="eval" data-track>
+      <h2>Evaluating NLP systems</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Task</th><th>Metrics</th></tr></thead>
+<tbody>
+<tr><td>Classification</td><td>Accuracy, precision, recall, F1, macro F1 for imbalance, confusion matrix</td></tr><tr><td>Retrieval</td><td>Recall@k, MRR, nDCG (<a href="03-rag-and-retrieval.html">03</a>)</td></tr><tr><td>Sequence labelling (NER)</td><td>Entity-level F1</td></tr><tr><td>Summarisation, translation</td><td>ROUGE, BLEU (surface overlap, weak), BERTScore, and LLM or human judges (<a href="04-evaluation-and-statistics.html">04</a>)</td></tr><tr><td>Language modelling</td><td>Perplexity (not comparable across tokenizers)</td></tr><tr><td>Generation quality</td><td>Human preference, pairwise LLM judging with bias controls</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Practical rules:</strong> build a small, representative, labelled <strong>evaluation set early</strong>; read errors by hand (error analysis finds more than metrics); split by document or user to avoid leakage; track slices (language, length, topic); compare against a simple baseline such as TF-IDF plus logistic regression.</p>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Tokenisation fixes what the model can see; embeddings fix what it considers similar; the index fixes how fast you can find it. Weakness in any of the three limits the whole system, so measure each separately.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a4-q08" data-topic="NLP and embeddings" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is perplexity not comparable across different tokenizers?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is always the same <span class="q-why">No.</span></li>
+          <li data-key="B">It is per token, and tokenizers split text into different numbers of tokens <span class="q-why">Correct.</span></li>
+          <li data-key="C">It needs labels <span class="q-why">No.</span></li>
+          <li data-key="D">It is defined only for images <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use bits per character or byte for cross-tokenizer comparison.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>First step to evaluate an NLP system?</summary><div class="answer"><p>Build a small representative labelled set and a simple baseline, then do error analysis by hand.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: NLP and embeddings</h2>
+      <p class="muted">12 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="NLP and embeddings">
+<details class="recall iq" data-level="basic" data-topic="NLP and embeddings"><summary><span class="tag ok">Basic</span> What is tokenisation and why subwords?</summary><div class="answer"><p>Splitting text into units the model processes. Subwords balance vocabulary size and sequence length and handle unseen words by composing known pieces.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="NLP and embeddings"><summary><span class="tag ok">Basic</span> TF-IDF in one sentence?</summary><div class="answer"><p>A term&#x27;s weight is its frequency in the document times the log of how rare it is across documents, so distinctive words score high.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="NLP and embeddings"><summary><span class="tag ok">Basic</span> What is an embedding?</summary><div class="answer"><p>A dense learned vector for a token or item such that similar things are close together.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="NLP and embeddings"><summary><span class="tag warn">Medium</span> Describe how BPE is trained.</summary><div class="answer"><p>Start from characters, repeatedly merge the most frequent adjacent pair into a new symbol, and record the merges; encoding applies the merges in order.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="NLP and embeddings"><summary><span class="tag warn">Medium</span> How does word2vec learn?</summary><div class="answer"><p>Skip-gram predicts context words from a centre word, using negative sampling to push real pairs together and random pairs apart; words sharing contexts end up with similar vectors.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="NLP and embeddings"><summary><span class="tag warn">Medium</span> Static versus contextual embeddings?</summary><div class="answer"><p>Static embeddings give one vector per word type; contextual embeddings (BERT, GPT hidden states) give different vectors depending on the surrounding words.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="NLP and embeddings"><summary><span class="tag warn">Medium</span> How are text embedding models trained?</summary><div class="answer"><p>Contrastively: matching pairs (question and answer, query and document) are pulled together and in-batch or hard negatives pushed apart using an InfoNCE loss.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="NLP and embeddings"><summary><span class="tag warn">Medium</span> Why normalise embeddings?</summary><div class="answer"><p>Unit-length vectors make cosine similarity equal the dot product and remove length effects, simplifying and speeding search.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="NLP and embeddings"><summary><span class="tag bad">Advanced</span> Explain IVF, PQ and HNSW.</summary><div class="answer"><p>IVF clusters vectors and searches the nearest clusters; PQ compresses vectors into short codes; HNSW is a layered neighbour graph searched greedily, giving the best recall-latency trade-off at higher memory.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="NLP and embeddings"><summary><span class="tag bad">Advanced</span> How do you evaluate an ANN index?</summary><div class="answer"><p>Recall@k against exact search at a given latency and memory, tuning parameters like nprobe or efSearch to a target recall, and testing under metadata filters.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="NLP and embeddings"><summary><span class="tag bad">Advanced</span> Why can LLMs fail at character-level tasks?</summary><div class="answer"><p>They process subword tokens rather than characters, so letter-level structure is hidden inside tokens.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="NLP and embeddings"><summary><span class="tag bad">Advanced</span> How would you choose an embedding model?</summary><div class="answer"><p>Shortlist by benchmark (MTEB) and language, test recall@k on your own labelled queries, consider dimension, cost, latency and max length, and plan for re-embedding when you change models.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="a3-deep-learning.html"><span class="dir">Previous</span><span>A3 Deep learning training in depth: backprop, initialisation, normalisation, CNNs and RNNs</span></a>
+      <a class="next" href="a5-llm-architectures.html"><span class="dir">Next</span><span>A5 LLM architectures and efficiency: attention variants, RoPE, MoE, quantisation and long context</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

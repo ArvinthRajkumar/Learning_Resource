@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="SQL2">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Advanced SQL: CTEs, window functions, recursion and upserts | Python + SQL</title>
+<meta name="description" content="Common table expressions, recursive queries for hierarchies, window functions (ranking, running totals, LAG and LEAD, frames), gaps and islands, pivoting, JSON functions and upserts.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SQL2</p>
+      <h1>Advanced SQL: CTEs, window functions, recursion and upserts</h1>
+      <p class="lede">These features turn multi-step reports and hard interview questions into short, readable queries. Window functions in particular are the single biggest step up in SQL skill.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="cte" data-track>
+      <h2>Common table expressions (CTEs)</h2>
+<h3>Intuition</h3>
+<p>A <strong>CTE</strong> is a named temporary result, defined with <code>WITH</code>, that later parts of the query can use. It lets you write a query as a sequence of readable steps instead of nesting subqueries.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql2-01.sql">WITH paid_totals AS (
+    SELECT o.customer_id, SUM(i.qty * p.price) AS spent
+    FROM orders o
+    JOIN order_items i ON i.order_id = o.id
+    JOIN products p    ON p.id = i.product_id
+    WHERE o.status = 'paid'
+    GROUP BY o.customer_id
+),
+averages AS (
+    SELECT AVG(spent) AS avg_spent FROM paid_totals
+)
+SELECT c.name, t.spent
+FROM paid_totals t
+JOIN customers c ON c.id = t.customer_id
+CROSS JOIN averages a
+WHERE t.spent &gt; a.avg_spent
+ORDER BY t.spent DESC;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>spent</th></tr></thead>
+<tbody><tr><td>Ben</td><td>2000.0</td></tr><tr><td>Ada</td><td>1590.0</td></tr><tr><td>Dev</td><td>950.0</td></tr></tbody>
+</table>
+</div>
+<p>Benefits: readability, reuse of a step several times, easy debugging (run each CTE alone). Many engines inline CTEs like views; some (older PostgreSQL) materialise them, which can affect performance. Name CTEs for what they contain.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql2-q01" data-topic="SQL advanced" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the main benefit of a CTE?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It always makes the query faster <span class="q-why">Not guaranteed.</span></li>
+          <li data-key="B">It names an intermediate result so the query reads as clear steps <span class="q-why">Correct.</span></li>
+          <li data-key="C">It stores data permanently <span class="q-why">Temporary only.</span></li>
+          <li data-key="D">It replaces indexes <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>CTEs improve readability and allow reuse of a step.</p></div>
+      </div>
+    </section>
+
+    <section id="windows" data-track>
+      <h2>Window functions</h2>
+<h3>The big idea</h3>
+<p>An aggregate with <code>GROUP BY</code> <strong>collapses</strong> rows. A <strong>window function</strong> computes over a set of related rows <strong>without collapsing</strong>: every row stays, and gains a new column.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql2-02.sql">SELECT name, dept_id, salary,
+       AVG(salary) OVER (PARTITION BY dept_id) AS dept_avg,
+       salary - AVG(salary) OVER (PARTITION BY dept_id) AS vs_avg
+FROM employees
+WHERE dept_id IS NOT NULL
+ORDER BY dept_id, salary DESC;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>dept_id</th><th>salary</th><th>dept_avg</th><th>vs_avg</th></tr></thead>
+<tbody><tr><td>Alice</td><td>1</td><td>150000</td><td>130000.0</td><td>20000.0</td></tr><tr><td>Bob</td><td>1</td><td>120000</td><td>130000.0</td><td>-10000.0</td></tr><tr><td>Carol</td><td>1</td><td>120000</td><td>130000.0</td><td>-10000.0</td></tr><tr><td>Eve</td><td>2</td><td>95000</td><td>90000.0</td><td>5000.0</td></tr><tr><td>Dan</td><td>2</td><td>90000</td><td>90000.0</td><td>0.0</td></tr><tr><td>Frank</td><td>2</td><td>85000</td><td>90000.0</td><td>-5000.0</td></tr><tr><td>Grace</td><td>3</td><td>110000</td><td>106666.666667</td><td>3333.333333</td></tr><tr><td>Heidi</td><td>3</td><td>105000</td><td>106666.666667</td><td>-1666.666667</td></tr><tr><td>Ivan</td><td>3</td><td>105000</td><td>106666.666667</td><td>-1666.666667</td></tr></tbody>
+</table>
+</div>
+<p>Syntax: <code>function(...) OVER (PARTITION BY ... ORDER BY ... frame)</code>.</p>
+<ul><li><code>PARTITION BY</code>: split rows into independent groups (like GROUP BY, but rows remain).</li><li><code>ORDER BY</code>: the order inside each partition.</li><li><strong>Frame</strong>: which rows around the current one to include.</li></ul>
+<h3>Ranking functions</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql2-03.sql">SELECT name, dept_id, salary,
+       ROW_NUMBER() OVER (PARTITION BY dept_id ORDER BY salary DESC) AS row_num,
+       RANK()       OVER (PARTITION BY dept_id ORDER BY salary DESC) AS rnk,
+       DENSE_RANK() OVER (PARTITION BY dept_id ORDER BY salary DESC) AS dense_rnk,
+       NTILE(2)     OVER (PARTITION BY dept_id ORDER BY salary DESC) AS half
+FROM employees
+WHERE dept_id IN (1, 3)
+ORDER BY dept_id, salary DESC, name;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>dept_id</th><th>salary</th><th>row_num</th><th>rnk</th><th>dense_rnk</th><th>half</th></tr></thead>
+<tbody><tr><td>Alice</td><td>1</td><td>150000</td><td>1</td><td>1</td><td>1</td><td>1</td></tr><tr><td>Bob</td><td>1</td><td>120000</td><td>2</td><td>2</td><td>2</td><td>1</td></tr><tr><td>Carol</td><td>1</td><td>120000</td><td>3</td><td>2</td><td>2</td><td>2</td></tr><tr><td>Grace</td><td>3</td><td>110000</td><td>1</td><td>1</td><td>1</td><td>1</td></tr><tr><td>Heidi</td><td>3</td><td>105000</td><td>2</td><td>2</td><td>2</td><td>1</td></tr><tr><td>Ivan</td><td>3</td><td>105000</td><td>3</td><td>2</td><td>2</td><td>2</td></tr></tbody>
+</table>
+</div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Function</th><th>Ties</th><th>Gaps</th></tr></thead>
+<tbody>
+<tr><td><code>ROW_NUMBER</code></td><td>Arbitrary distinct numbers</td><td>No</td></tr><tr><td><code>RANK</code></td><td>Same rank</td><td>Yes (1, 1, 3)</td></tr><tr><td><code>DENSE_RANK</code></td><td>Same rank</td><td>No (1, 1, 2)</td></tr><tr><td><code>NTILE(n)</code></td><td>Splits into n buckets</td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h3>Top N per group</h3>
+<p>Window functions cannot be filtered in <code>WHERE</code> (they run after it), so wrap them.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql2-04.sql">SELECT dept_id, name, salary
+FROM (
+    SELECT dept_id, name, salary,
+           DENSE_RANK() OVER (PARTITION BY dept_id ORDER BY salary DESC) AS r
+    FROM employees WHERE dept_id IS NOT NULL
+) t
+WHERE r &lt;= 2
+ORDER BY dept_id, salary DESC, name;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>dept_id</th><th>name</th><th>salary</th></tr></thead>
+<tbody><tr><td>1</td><td>Alice</td><td>150000</td></tr><tr><td>1</td><td>Bob</td><td>120000</td></tr><tr><td>1</td><td>Carol</td><td>120000</td></tr><tr><td>2</td><td>Eve</td><td>95000</td></tr><tr><td>2</td><td>Dan</td><td>90000</td></tr><tr><td>3</td><td>Grace</td><td>110000</td></tr><tr><td>3</td><td>Heidi</td><td>105000</td></tr><tr><td>3</td><td>Ivan</td><td>105000</td></tr></tbody>
+</table>
+</div>
+<h3>Running totals, moving averages and frames</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql2-05.sql">SELECT day, amount,
+       SUM(amount) OVER (ORDER BY day) AS running_total,
+       ROUND(AVG(amount) OVER (ORDER BY day ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 1) AS moving_avg_3,
+       amount - LAG(amount) OVER (ORDER BY day) AS change_vs_prev,
+       LEAD(amount) OVER (ORDER BY day) AS next_day
+FROM daily_sales
+ORDER BY day;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>day</th><th>amount</th><th>running_total</th><th>moving_avg_3</th><th>change_vs_prev</th><th>next_day</th></tr></thead>
+<tbody><tr><td>2024-03-01</td><td>100</td><td>100</td><td>100.0</td><td>NULL</td><td>120</td></tr><tr><td>2024-03-02</td><td>120</td><td>220</td><td>110.0</td><td>20</td><td>90</td></tr><tr><td>2024-03-03</td><td>90</td><td>310</td><td>103.3</td><td>-30</td><td>150</td></tr><tr><td>2024-03-04</td><td>150</td><td>460</td><td>120.0</td><td>60</td><td>130</td></tr><tr><td>2024-03-05</td><td>130</td><td>590</td><td>123.3</td><td>-20</td><td>170</td></tr><tr><td>2024-03-06</td><td>170</td><td>760</td><td>150.0</td><td>40</td><td>160</td></tr><tr><td>2024-03-07</td><td>160</td><td>920</td><td>153.3</td><td>-10</td><td>NULL</td></tr></tbody>
+</table>
+</div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Frame</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>ROWS BETWEEN 2 PRECEDING AND CURRENT ROW</code></td><td>This row and the two before it</td></tr><tr><td><code>ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW</code></td><td>From the start up to here (the default when ORDER BY is present is <code>RANGE</code>, which treats ties as peers)</td></tr><tr><td><code>ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING</code></td><td>From here to the end</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>LAG(col, n, default)</code> and <code>LEAD(col, n, default)</code> read previous and next rows. <code>FIRST_VALUE</code>, <code>LAST_VALUE</code> and <code>NTH_VALUE</code> read other rows in the frame (note <code>LAST_VALUE</code> needs a frame to the end to be useful). <code>PERCENT_RANK</code>, <code>CUME_DIST</code> give relative positions.</p>
+<h3>Percent of total</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql2-06.sql">SELECT category, SUM(price) AS total,
+       ROUND(100.0 * SUM(price) / SUM(SUM(price)) OVER (), 1) AS pct_of_all
+FROM products
+GROUP BY category
+ORDER BY total DESC;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>category</th><th>total</th><th>pct_of_all</th></tr></thead>
+<tbody><tr><td>electronics</td><td>2150.0</td><td>81.5</td></tr><tr><td>furniture</td><td>480.0</td><td>18.2</td></tr><tr><td>stationery</td><td>7.0</td><td>0.3</td></tr></tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql2-q02" data-topic="SQL advanced" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How does a window function differ from GROUP BY aggregation?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It cannot compute averages <span class="q-why">It can.</span></li>
+          <li data-key="B">It keeps every row and adds a computed column <span class="q-why">Correct.</span></li>
+          <li data-key="C">It needs a join <span class="q-why">No.</span></li>
+          <li data-key="D">It only works on dates <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>OVER (...) computes across related rows without collapsing them.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-sql2-q03" data-topic="SQL advanced" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Salaries 100, 100, 90 ordered descending. What are RANK and DENSE_RANK of 90?</p></div>
+        <ul class="q-options">
+          <li data-key="A">2 and 2 <span class="q-why">RANK leaves a gap.</span></li>
+          <li data-key="B">3 and 2 <span class="q-why">Correct.</span></li>
+          <li data-key="C">2 and 3 <span class="q-why">No.</span></li>
+          <li data-key="D">3 and 3 <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>RANK gives 1,1,3; DENSE_RANK gives 1,1,2.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-sql2-q04" data-topic="SQL advanced" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why do you wrap a window function in a subquery to filter on it?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Syntax requirement for JOIN <span class="q-why">No.</span></li>
+          <li data-key="B">Window functions are evaluated after WHERE, so WHERE cannot see them <span class="q-why">Correct.</span></li>
+          <li data-key="C">They are slow in WHERE <span class="q-why">Not the reason.</span></li>
+          <li data-key="D">They are not supported in WHERE by choice of vendor <span class="q-why">It follows from evaluation order.</span></li>
+        </ul>
+        <div class="q-explain"><p>Compute in an inner query or CTE, then filter in the outer one.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Write the window function syntax.</summary><div class="answer"><p>function() OVER (PARTITION BY ... ORDER BY ... frame).</p></div></details>
+        <details class="recall"><summary>How do you get top N per group?</summary><div class="answer"><p>Rank with ROW_NUMBER or DENSE_RANK partitioned by group in a subquery or CTE, then filter rank &lt;= N.</p></div></details>
+      </div>
+    </section>
+
+    <section id="recursive" data-track>
+      <h2>Recursive CTEs</h2>
+<h3>Hierarchies and sequences</h3>
+<p>A <strong>recursive CTE</strong> has an <strong>anchor</strong> (starting rows) and a <strong>recursive part</strong> that joins back to the CTE itself, repeating until no new rows appear. Use it for trees (org charts, categories), graphs (paths) and generated sequences.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql2-07.sql">WITH RECURSIVE org AS (
+    SELECT id, name, manager_id, 0 AS depth, name AS path
+    FROM employees WHERE manager_id IS NULL
+    UNION ALL
+    SELECT e.id, e.name, e.manager_id, o.depth + 1, o.path || ' &gt; ' || e.name
+    FROM employees e
+    JOIN org o ON e.manager_id = o.id
+)
+SELECT depth, path FROM org ORDER BY path;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>depth</th><th>path</th></tr></thead>
+<tbody><tr><td>0</td><td>Alice</td></tr><tr><td>1</td><td>Alice &gt; Bob</td></tr><tr><td>1</td><td>Alice &gt; Carol</td></tr><tr><td>1</td><td>Alice &gt; Dan</td></tr><tr><td>2</td><td>Alice &gt; Dan &gt; Eve</td></tr><tr><td>2</td><td>Alice &gt; Dan &gt; Frank</td></tr><tr><td>1</td><td>Alice &gt; Grace</td></tr><tr><td>2</td><td>Alice &gt; Grace &gt; Heidi</td></tr><tr><td>2</td><td>Alice &gt; Grace &gt; Ivan</td></tr><tr><td>1</td><td>Alice &gt; Judy</td></tr></tbody>
+</table>
+</div>
+<h3>Generating a calendar</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql2-08.sql">WITH RECURSIVE days(d) AS (
+    SELECT '2024-03-01'
+    UNION ALL
+    SELECT date(d, '+1 day') FROM days WHERE d &lt; '2024-03-09'
+)
+SELECT d, COALESCE(s.amount, 0) AS amount
+FROM days
+LEFT JOIN daily_sales s ON s.day = d
+ORDER BY d;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>d</th><th>amount</th></tr></thead>
+<tbody><tr><td>2024-03-01</td><td>100</td></tr><tr><td>2024-03-02</td><td>120</td></tr><tr><td>2024-03-03</td><td>90</td></tr><tr><td>2024-03-04</td><td>150</td></tr><tr><td>2024-03-05</td><td>130</td></tr><tr><td>2024-03-06</td><td>170</td></tr><tr><td>2024-03-07</td><td>160</td></tr><tr><td>2024-03-08</td><td>0</td></tr><tr><td>2024-03-09</td><td>0</td></tr></tbody>
+</table>
+</div>
+<p>Filling gaps with a generated calendar is a standard technique for reports that must show zero for days without data.</p>
+<div class="callout warn"><span class="callout-title">Guard against infinite loops</span><p>A recursive part that never runs out of rows loops forever. Include a terminating condition (as above) or a depth limit. PostgreSQL and others support <code>CYCLE</code> detection or you can track visited ids.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql2-q05" data-topic="SQL advanced" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What are the two parts of a recursive CTE?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Select and delete <span class="q-why">No.</span></li>
+          <li data-key="B">An anchor query and a recursive query joined with UNION ALL <span class="q-why">Correct.</span></li>
+          <li data-key="C">A view and a trigger <span class="q-why">No.</span></li>
+          <li data-key="D">Two joins <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The anchor seeds rows; the recursive part generates more until none are produced.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>When use a recursive CTE?</summary><div class="answer"><p>For hierarchies, graph paths and generated sequences; always include a stopping condition.</p></div></details>
+      </div>
+    </section>
+
+    <section id="islands" data-track>
+      <h2>Gaps and islands</h2>
+<h3>The problem</h3>
+<p>Given a sorted series with missing values, find consecutive runs ("islands"). For example, consecutive login days.</p>
+<h3>The row-number trick</h3>
+<p>For consecutive days, <code>day - row_number</code> is <strong>constant</strong> inside an island. Group on that.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql2-09.sql">WITH numbered AS (
+    SELECT user_id, day,
+           julianday(day) - ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY day) AS grp
+    FROM logins
+)
+SELECT user_id, MIN(day) AS streak_start, MAX(day) AS streak_end, COUNT(*) AS days
+FROM numbered
+GROUP BY user_id, grp
+ORDER BY user_id, streak_start;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>user_id</th><th>streak_start</th><th>streak_end</th><th>days</th></tr></thead>
+<tbody><tr><td>1</td><td>2024-03-01</td><td>2024-03-03</td><td>3</td></tr><tr><td>1</td><td>2024-03-06</td><td>2024-03-07</td><td>2</td></tr><tr><td>2</td><td>2024-03-01</td><td>2024-03-01</td><td>1</td></tr><tr><td>2</td><td>2024-03-03</td><td>2024-03-05</td><td>3</td></tr><tr><td>2</td><td>2024-03-09</td><td>2024-03-09</td><td>1</td></tr></tbody>
+</table>
+</div>
+<p>Finding the <strong>longest streak per user</strong> is then one more aggregation or a ranking over this result. Another approach: <code>LAG</code> to mark where a new streak starts, then a running sum of those flags.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql2-q06" data-topic="SQL advanced" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In gaps and islands, why is date minus ROW_NUMBER constant within a streak?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Because dates are random <span class="q-why">No.</span></li>
+          <li data-key="B">Both increase by one each consecutive step, so their difference stays the same <span class="q-why">Correct.</span></li>
+          <li data-key="C">Because of NULLs <span class="q-why">No.</span></li>
+          <li data-key="D">It is a SQL rule <span class="q-why">It is arithmetic.</span></li>
+        </ul>
+        <div class="q-explain"><p>A break in the dates changes the difference and starts a new group.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Describe the gaps and islands trick.</summary><div class="answer"><p>Subtract a ROW_NUMBER from the sequence value (or use LAG flags with a running sum) to get a group id for each consecutive run.</p></div></details>
+      </div>
+    </section>
+
+    <section id="pivot" data-track>
+      <h2>Pivoting and JSON</h2>
+<h3>Pivot with conditional aggregation</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql2-10.sql">SELECT strftime('%Y-%m', order_date) AS month,
+       SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) AS paid,
+       SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+       SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled
+FROM orders
+GROUP BY month
+ORDER BY month;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>month</th><th>paid</th><th>pending</th><th>cancelled</th></tr></thead>
+<tbody><tr><td>2024-01</td><td>2</td><td>0</td><td>0</td></tr><tr><td>2024-02</td><td>2</td><td>0</td><td>1</td></tr><tr><td>2024-03</td><td>3</td><td>1</td><td>0</td></tr><tr><td>2024-04</td><td>1</td><td>0</td><td>0</td></tr></tbody>
+</table>
+</div>
+<p>SQL Server and Oracle have a <code>PIVOT</code> keyword; conditional aggregation works everywhere.</p>
+<h3>Rows to a string (and back)</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql2-11.sql">SELECT c.city, GROUP_CONCAT(c.name, ', ') AS customers
+FROM customers c
+WHERE c.city IS NOT NULL
+GROUP BY c.city
+ORDER BY c.city;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>city</th><th>customers</th></tr></thead>
+<tbody><tr><td>Berlin</td><td>Gus</td></tr><tr><td>London</td><td>Ada, Chloe</td></tr><tr><td>Mumbai</td><td>Dev, Hana</td></tr><tr><td>Paris</td><td>Ben, Fay</td></tr></tbody>
+</table>
+</div>
+<p><code>STRING_AGG(col, ', ')</code> in PostgreSQL and SQL Server, <code>GROUP_CONCAT</code> in MySQL and SQLite, <code>LISTAGG</code> in Oracle.</p>
+<h3>JSON in SQL</h3>
+<p>Modern databases store and query JSON (<code>JSONB</code> in PostgreSQL, <code>JSON</code> in MySQL, SQLite JSON functions).</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql2-12.sql">CREATE TABLE events (id INTEGER PRIMARY KEY, payload TEXT);
+INSERT INTO events VALUES
+ (1, '{"type":"click","user":{"id":7,"plan":"pro"},"tags":["a","b"]}'),
+ (2, '{"type":"view","user":{"id":9,"plan":"free"},"tags":[]}');
+SELECT id,
+       json_extract(payload, '$.type') AS type,
+       json_extract(payload, '$.user.plan') AS plan,
+       json_array_length(payload, '$.tags') AS n_tags
+FROM events
+WHERE json_extract(payload, '$.user.id') = 7;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>id</th><th>type</th><th>plan</th><th>n_tags</th></tr></thead>
+<tbody><tr><td>1</td><td>click</td><td>pro</td><td>2</td></tr></tbody>
+</table>
+</div>
+<p>PostgreSQL syntax: <code>payload-&gt;'user'-&gt;&gt;'plan'</code>, <code>payload @&gt; '{"type":"click"}'</code>, with GIN indexes for fast containment queries. Use JSON for genuinely flexible attributes; keep core fields in real columns so they can be typed, indexed and constrained.</p>
+    </section>
+
+    <section id="upsert" data-track>
+      <h2>Upserts, returning and bulk changes</h2>
+<h3>Insert or update in one statement</h3>
+<p>An <strong>upsert</strong> inserts a row, or updates it if the key already exists, atomically (no race between "check" and "write").</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql2-13.sql">CREATE TABLE stock (sku TEXT PRIMARY KEY, qty INTEGER NOT NULL);
+INSERT INTO stock VALUES ('pen', 10);
+INSERT INTO stock (sku, qty) VALUES ('pen', 5), ('book', 3)
+ON CONFLICT (sku) DO UPDATE SET qty = stock.qty + excluded.qty;
+SELECT * FROM stock ORDER BY sku;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>sku</th><th>qty</th></tr></thead>
+<tbody><tr><td>book</td><td>3</td></tr><tr><td>pen</td><td>15</td></tr></tbody>
+</table>
+</div>
+<p>Dialects: PostgreSQL and SQLite <code>ON CONFLICT ... DO UPDATE</code>, MySQL <code>ON DUPLICATE KEY UPDATE</code>, SQL Server and Oracle <code>MERGE</code>.</p>
+<h3>RETURNING and set-based updates</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql2-14.sql">CREATE TABLE tasks (id INTEGER PRIMARY KEY, title TEXT, done INTEGER DEFAULT 0);
+INSERT INTO tasks (title) VALUES ('write'), ('test'), ('ship');
+UPDATE tasks SET done = 1 WHERE title IN ('write', 'test') RETURNING id, title, done;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>id</th><th>title</th><th>done</th></tr></thead>
+<tbody><tr><td>1</td><td>write</td><td>1</td></tr><tr><td>2</td><td>test</td><td>1</td></tr></tbody>
+</table>
+</div>
+<p><code>RETURNING</code> (PostgreSQL, SQLite; <code>OUTPUT</code> in SQL Server) gives back the affected rows, saving a second query and avoiding races.</p>
+<h3>Think in sets, not loops</h3>
+<p>Write one <code>UPDATE ... FROM</code> or <code>INSERT ... SELECT</code> that changes many rows at once instead of looping row by row from application code. Batches are faster, fewer round trips, and are easier to make atomic.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql2-15.sql">CREATE TABLE customer_totals AS
+SELECT c.id AS customer_id, COALESCE(SUM(i.qty * p.price), 0) AS spent
+FROM customers c
+LEFT JOIN orders o ON o.customer_id = c.id AND o.status = 'paid'
+LEFT JOIN order_items i ON i.order_id = o.id
+LEFT JOIN products p ON p.id = i.product_id
+GROUP BY c.id;
+SELECT COUNT(*) AS rows_created, SUM(spent) AS total FROM customer_totals;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>rows_created</th><th>total</th></tr></thead>
+<tbody><tr><td>8</td><td>5190.0</td></tr></tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql2-q07" data-topic="SQL advanced" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does an upsert guarantee?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Two statements in a row <span class="q-why">It is a single statement.</span></li>
+          <li data-key="B">Atomic insert-or-update without a check-then-write race <span class="q-why">Correct.</span></li>
+          <li data-key="C">Deleting rows <span class="q-why">No.</span></li>
+          <li data-key="D">Faster scans <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The database resolves the conflict inside the statement.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name the upsert syntax in PostgreSQL, MySQL, SQL Server.</summary><div class="answer"><p>ON CONFLICT DO UPDATE, ON DUPLICATE KEY UPDATE and MERGE.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: SQL advanced</h2>
+      <p class="muted">10 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="SQL advanced">
+<details class="recall iq" data-level="basic" data-topic="SQL advanced"><summary><span class="tag ok">Basic</span> What is a CTE?</summary><div class="answer"><p>A named temporary result defined with WITH, used to structure a query into readable steps.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL advanced"><summary><span class="tag warn">Medium</span> Window function versus GROUP BY?</summary><div class="answer"><p>GROUP BY collapses rows into one per group; a window function computes across related rows and keeps every row.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL advanced"><summary><span class="tag warn">Medium</span> ROW_NUMBER, RANK and DENSE_RANK?</summary><div class="answer"><p>ROW_NUMBER gives unique numbers; RANK gives ties the same rank and leaves gaps; DENSE_RANK gives ties the same rank without gaps.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL advanced"><summary><span class="tag warn">Medium</span> How do you get the top N rows per group?</summary><div class="answer"><p>Rank rows with a window function partitioned by the group in a subquery or CTE, then filter rank &lt;= N.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL advanced"><summary><span class="tag warn">Medium</span> What do LAG and LEAD do?</summary><div class="answer"><p>Return a value from a previous or following row in the window order, useful for differences and period over period change.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL advanced"><summary><span class="tag warn">Medium</span> How do you compute a running total or moving average?</summary><div class="answer"><p>SUM or AVG as a window function with ORDER BY and a frame such as ROWS BETWEEN 2 PRECEDING AND CURRENT ROW.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SQL advanced"><summary><span class="tag bad">Advanced</span> Explain recursive CTEs.</summary><div class="answer"><p>An anchor query seeds rows and a recursive query joined with UNION ALL generates more until none appear. Used for hierarchies, paths and sequences; include a stopping condition.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SQL advanced"><summary><span class="tag bad">Advanced</span> Explain the gaps and islands technique.</summary><div class="answer"><p>Subtract ROW_NUMBER from the sequence value (or use LAG flags with a running sum) to create a constant group id per consecutive run, then aggregate by it.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SQL advanced"><summary><span class="tag bad">Advanced</span> What is an upsert?</summary><div class="answer"><p>A single atomic statement that inserts or updates on conflict: ON CONFLICT DO UPDATE (PostgreSQL, SQLite), ON DUPLICATE KEY UPDATE (MySQL), MERGE (SQL Server, Oracle).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SQL advanced"><summary><span class="tag bad">Advanced</span> How do you pivot rows to columns?</summary><div class="answer"><p>Conditional aggregation with SUM(CASE WHEN ...) per output column, or the PIVOT operator where available.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sql1-joins.html"><span class="dir">Previous</span><span>SQL1 Joins, subqueries, set operations and expressions</span></a>
+      <a class="next" href="sql3-design.html"><span class="dir">Next</span><span>SQL3 Database design: normalisation, keys, views, transactions and programmability</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

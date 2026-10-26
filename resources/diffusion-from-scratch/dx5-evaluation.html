@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en" data-resource="diffusion-from-scratch" data-page="DX5">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Evaluation, data, safety and ethics of image generators | Diffusion from scratch</title>
+<meta name="description" content="How generative image models are measured (FID, Inception Score, precision and recall, CLIPScore, human evaluation), how training data is built, memorisation and privacy, safety filters, watermarking, bias and copyright.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Diffusion from scratch</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part DX5</p>
+      <h1>Evaluation, data, safety and ethics of image generators</h1>
+      <p class="lede">A model that produces beautiful images can still be wrong in ways a single sample hides. This part covers how to measure quality and diversity honestly, how data shapes behaviour, and the safety and legal questions every practitioner is asked.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~4 hours</span></div>
+    </div>
+
+    <section id="metrics" data-track>
+      <h2>Measuring generative models</h2>
+<h3>Why it is hard</h3>
+<p>There is no single correct output, so we compare <strong>distributions</strong>: generated images against real ones, and generated images against prompts. We care about three things at once: <strong>fidelity</strong> (each sample looks real), <strong>diversity</strong> (samples cover the data), and <strong>alignment</strong> (the image matches the prompt). One number cannot capture all three.</p>
+<h3>Fréchet Inception Distance (FID)</h3>
+<p>Pass real and generated images through a pretrained Inception network, take the penultimate features, fit a Gaussian to each set, and measure the <strong>Fréchet distance</strong> between the two Gaussians. Lower is better.</p>
+<div class="formula"><div class="f-title">FID</div><div class="f-body">FID = norm(mu_r - mu_g)^2 + Tr( S_r + S_g - 2 (S_r S_g)^(1/2) )</div><dl class="f-defs"><dt>mu</dt><dd>mean of the features</dd><dt>S</dt><dd>covariance of the features</dd><dt>r</dt><dd>real images</dd><dt>g</dt><dd>generated images</dd></dl></div>
+<p>In one dimension the covariances are variances and the formula becomes <code>(mu_r - mu_g)^2 + (s_r - s_g)^2</code>. The check computes it for toy feature sets.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx5-01.py">import math, random
+random.seed(0)
+def stats(xs):
+    m = sum(xs) / len(xs)
+    return m, math.sqrt(sum((x - m) ** 2 for x in xs) / len(xs))
+def fid_1d(a, b):
+    (ma, sa), (mb, sb) = stats(a), stats(b)
+    return (ma - mb) ** 2 + (sa - sb) ** 2
+real = [random.gauss(0, 1) for _ in range(5000)]
+good = [random.gauss(0.05, 1.0) for _ in range(5000)]       # close to real
+shifted = [random.gauss(1.0, 1.0) for _ in range(5000)]     # wrong mean
+collapsed = [random.gauss(0, 0.2) for _ in range(5000)]     # mode collapse: too little spread
+print("good      FID %.3f" % fid_1d(real, good))
+print("shifted   FID %.3f" % fid_1d(real, shifted))
+print("collapsed FID %.3f" % fid_1d(real, collapsed))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>good      FID 0.002
+shifted   FID 1.022
+collapsed FID 0.647</code></pre>
+<p>FID penalises both a shifted mean (wrong content) and a shrunken spread (lost diversity). Cautions: it needs thousands of samples (10,000 to 50,000), depends on the feature network (Inception was trained on ImageNet), is blind to prompt alignment, is biased for small sample sizes, and can be gamed. Values are only comparable with identical settings. Variants: <strong>KID</strong> (unbiased), <strong>FD-DINOv2</strong> (stronger features), <strong>CMMD</strong>.</p>
+<h3>Other automatic metrics</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Metric</th><th>Measures</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>Inception Score (IS)</td><td>Confidence and variety of class predictions</td><td>Ignores real data; weak for text-to-image</td></tr><tr><td>Precision and recall (for distributions)</td><td>Fidelity (precision) versus coverage (recall) separately</td><td>Helps diagnose mode collapse</td></tr><tr><td>CLIPScore</td><td>Cosine similarity of CLIP image and text embeddings</td><td>Prompt alignment, but CLIP's own biases and blind spots</td></tr><tr><td>LPIPS</td><td>Perceptual distance between two images</td><td>Diversity (between samples) and reconstruction</td></tr><tr><td>Aesthetic predictors</td><td>Learned estimate of attractiveness</td><td>Used for data filtering and as a reward</td></tr><tr><td>Compositional benchmarks (T2I-CompBench, GenEval, DrawBench)</td><td>Counting, colours, spatial relations</td><td>Test the failures users notice</td></tr><tr><td>Human preference models (PickScore, HPS, ImageReward)</td><td>Predicted human preference</td><td>Proxy for human evaluation</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Human evaluation</h3>
+<p>The final judge. Show raters pairs of images for the same prompt (<strong>side-by-side, randomised order</strong>) and ask which is better for quality and for prompt match. Use many prompts across categories, several raters per item, and report win rates with <strong>confidence intervals</strong> (a sign test or bootstrap, as in the AI/ML guide). Use <strong>Elo</strong> or Bradley-Terry scores to rank several models; arenas collect live votes.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx5-02.py">import math
+def wilson(wins, n, z=1.96):
+    p = wins / n
+    d = 1 + z * z / n
+    centre = (p + z * z / (2 * n)) / d
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d
+    return round(centre - half, 3), round(centre + half, 3)
+print("model A preferred in 62 of 100 comparisons -&gt;", wilson(62, 100))
+print("model A preferred in 620 of 1000 comparisons -&gt;", wilson(620, 1000))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>model A preferred in 62 of 100 comparisons -&gt; (0.522, 0.709)
+model A preferred in 620 of 1000 comparisons -&gt; (0.59, 0.65)</code></pre>
+<p>Sixty-two of 100 wins is <strong>not</strong> convincing (the interval contains 0.5); 620 of 1000 is. Sample size matters as much as the win rate.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx5-q01" data-topic="Diffusion evaluation" data-type="single" data-answer="B">
+        <div class="q-stem"><p>FID compares:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Single images pixel by pixel <span class="q-why">No.</span></li>
+          <li data-key="B">Gaussian fits to Inception features of real and generated image sets <span class="q-why">Correct.</span></li>
+          <li data-key="C">Prompts only <span class="q-why">No.</span></li>
+          <li data-key="D">Training losses <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It is a Fréchet distance between two feature distributions.</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx5-q02" data-topic="Diffusion evaluation" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A model collapses to a few similar images. Which is most likely to reveal it?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Very low precision <span class="q-why">Fidelity can be high.</span></li>
+          <li data-key="B">Low recall (coverage) and a worse FID <span class="q-why">Correct.</span></li>
+          <li data-key="C">High CLIPScore only <span class="q-why">Does not measure diversity.</span></li>
+          <li data-key="D">Fewer parameters <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Mode collapse shrinks the spread of the generated distribution.</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx5-q03" data-topic="Diffusion evaluation" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Model A wins 62 of 100 human comparisons. What can you say?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A is clearly better <span class="q-why">The interval includes 50 percent.</span></li>
+          <li data-key="B">The evidence is weak; more comparisons are needed <span class="q-why">Correct.</span></li>
+          <li data-key="C">B is better <span class="q-why">No.</span></li>
+          <li data-key="D">The raters were wrong <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>A 95 percent interval around 0.62 with n = 100 spans roughly 0.52 to 0.71 and is borderline; always report intervals.</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx5-q04" data-topic="Diffusion evaluation" data-type="fill" data-answer="prompt|text|caption">
+        <div class="q-stem"><p>CLIPScore measures how well an image matches its <input class="q-input" aria-label="blank 1">.</p></div>
+        <div class="q-explain"><p>It is the similarity of CLIP image and text embeddings.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does FID capture and miss?</summary><div class="answer"><p>It captures fidelity and diversity of a distribution in feature space; it misses prompt alignment and is sensitive to sample size and the feature extractor.</p></div></details>
+        <details class="recall"><summary>Why add human evaluation?</summary><div class="answer"><p>Automatic metrics are proxies; humans judge quality and prompt match directly, with intervals reported.</p></div></details>
+      </div>
+    </section>
+
+    <section id="data" data-track>
+      <h2>Training data</h2>
+<h3>What goes in</h3>
+<p>Foundation image models train on billions of image-text pairs scraped from the web (for example LAION-5B, a list of links and captions), plus licensed and synthetic data. Quality of data affects the model more than most architecture choices.</p>
+<h3>The data pipeline</h3>
+<ol><li><strong>Collect</strong> image-URL and alt-text pairs; download.</li><li><strong>Deduplicate</strong> exact and near-duplicate images (perceptual hashing, embeddings): duplicates cause memorisation.</li><li><strong>Filter for quality</strong>: resolution, aspect ratio, aesthetic score, CLIP image-text similarity (drop mismatched captions), watermark detection, language.</li><li><strong>Filter for safety</strong>: NSFW classifiers, violence, child safety hash matching, removal requests, personal data.</li><li><strong>Re-caption</strong>: replace noisy alt-text with detailed synthetic captions from a vision-language model; this strongly improves prompt following (used by DALL-E 3 and SD3).</li><li><strong>Bucket</strong> by resolution and aspect ratio so batches have uniform shape without cropping everything square.</li></ol>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Data problem</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td>Short or wrong captions</td><td>Poor prompt following</td></tr><tr><td>Duplicates</td><td>Memorisation and privacy leakage</td></tr><tr><td>Biased sources</td><td>Stereotypes in outputs</td></tr><tr><td>Watermarks and text overlays</td><td>Watermarks appear in generations</td></tr><tr><td>Low-quality images</td><td>Washed-out, noisy results</td></tr><tr><td>Narrow style mix</td><td>Poor diversity</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx5-q05" data-topic="Diffusion evaluation" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why re-caption images with a vision-language model?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To reduce image size <span class="q-why">No.</span></li>
+          <li data-key="B">Detailed captions improve prompt following compared with noisy alt-text <span class="q-why">Correct.</span></li>
+          <li data-key="C">To remove watermarks <span class="q-why">No.</span></li>
+          <li data-key="D">To speed up the VAE <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Better text supervision teaches the model to follow detailed prompts.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>List data pipeline stages.</summary><div class="answer"><p>Collect, deduplicate, quality filter, safety filter, re-caption, bucket by size.</p></div></details>
+      </div>
+    </section>
+
+    <section id="memorisation" data-track>
+      <h2>Memorisation, privacy and copyright</h2>
+<h3>Memorisation</h3>
+<p>Models can reproduce training images, especially duplicated ones, with few images per concept, or with rare prompts. Studies extracted near-copies of training images from Stable Diffusion by generating many samples for prompts matching duplicated captions and checking for near-duplicates. Mitigations: <strong>deduplication</strong>, training on more diverse data, limiting overfitting (early stopping, regularisation), <strong>differential privacy</strong> (costly) and output-side checks.</p>
+<h3>Copyright and licensing</h3>
+<p>Legal questions are unsettled and differ by country: whether training on copyrighted images is permitted (fair use or text-and-data-mining exceptions), who owns outputs, and liability for outputs that resemble protected work. Practical approaches: license data (Adobe Firefly, Getty), honour <strong>opt-out</strong> signals (robots.txt, Do Not Train registries), provide <strong>attribution and compensation</strong> schemes, filter known characters and logos, and keep documentation of data sources ("datasheets", model cards). State clearly that this is guidance on practice, not legal advice.</p>
+<h3>Personal likeness and deepfakes</h3>
+<p>Fine-tuning on a person's photos can produce convincing images of them without consent. Risks: harassment, fraud, non-consensual imagery, misinformation. Responses: consent requirements for likeness training, detection tools, provenance, platform policies and law.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx5-q06" data-topic="Diffusion evaluation" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which most increases the chance of memorising a training image?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Deduplication <span class="q-why">Reduces it.</span></li>
+          <li data-key="B">Many duplicates of the same image with the same caption <span class="q-why">Correct.</span></li>
+          <li data-key="C">More diverse data <span class="q-why">Reduces it.</span></li>
+          <li data-key="D">Lower learning rate <span class="q-why">Not the main factor.</span></li>
+        </ul>
+        <div class="q-explain"><p>Repetition during training makes reproduction easy.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How to reduce memorisation?</summary><div class="answer"><p>Deduplicate, diversify data, limit overfitting, consider differential privacy, check outputs.</p></div></details>
+      </div>
+    </section>
+
+    <section id="safety" data-track>
+      <h2>Safety and responsible release</h2>
+<h3>Layers of defence</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Layer</th><th>Examples</th></tr></thead>
+<tbody>
+<tr><td>Data</td><td>Remove unsafe content before training</td></tr><tr><td>Model</td><td>Concept erasure, safety fine-tuning, refusal of harmful prompts</td></tr><tr><td>Input filters</td><td>Prompt classifiers, blocklists, prompt rewriting</td></tr><tr><td>Output filters</td><td>Image safety classifiers (the Stable Diffusion safety checker), face and minors detectors</td></tr><tr><td>Provenance</td><td>Invisible watermarks and signed metadata</td></tr><tr><td>Access</td><td>Rate limits, accounts, API terms, abuse monitoring</td></tr><tr><td>Governance</td><td>Red teaming, model cards, staged release, incident response</td></tr>
+</tbody>
+</table>
+</div>
+<p>No layer is perfect; open weights can have filters removed, so open-model safety relies on data and training choices and on downstream platforms.</p>
+<h3>Provenance and watermarking</h3>
+<ul><li><strong>Invisible watermarks</strong> embedded in pixels or in the generation process (SynthID, Tree-Ring watermarks) survive some edits, but can be removed by aggressive transformations.</li><li><strong>C2PA content credentials</strong> attach signed metadata describing how an image was made; they are lost if metadata is stripped.</li><li>Detection classifiers are unreliable and arms-race prone.</li></ul>
+<p>Combine methods and be honest about their limits.</p>
+<h3>Bias and representation</h3>
+<p>Generators reflect the data: prompts such as "a doctor" or "a CEO" skew by gender and race, and many cultures are underrepresented. Measure with audits across prompt sets and demographic attributes, diversify and rebalance data, add prompt-level interventions with care (they can backfire), and publish limitations. Evaluation should include fairness and harm categories, not only image quality.</p>
+<h3>Red teaming</h3>
+<p>Test the system adversarially: jailbreak prompts, misspellings, indirect descriptions, languages, image-to-image and inpainting routes around text filters, and combinations of benign concepts. Record failures, fix, and retest regularly.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx5-q07" data-topic="Diffusion evaluation" data-type="multi" data-answer="A,B,C">
+        <div class="q-stem"><p>Which are layers of safety for image generators? Select all.</p></div>
+        <ul class="q-options">
+          <li data-key="A">Filtering training data</li>
+          <li data-key="B">Prompt and output classifiers</li>
+          <li data-key="C">Invisible watermarks and provenance metadata</li>
+          <li data-key="D">Ignoring misuse</li>
+        </ul>
+        <div class="q-explain"><p>Defence in depth is needed because no single layer is reliable.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How does watermarking help and where does it fail?</summary><div class="answer"><p>It marks AI content for provenance; it can be removed by edits and does not stop misuse by itself.</p></div></details>
+      </div>
+    </section>
+
+    <section id="reporting" data-track>
+      <h2>Reporting results honestly</h2>
+<ol><li>State the <strong>model, checkpoint, sampler, steps, guidance, resolution and seed policy</strong>.</li><li>Report metrics on a <strong>fixed, public prompt set</strong> with enough samples, plus confidence intervals.</li><li>Show <strong>uncurated</strong> samples alongside favourites; say how many images were tried.</li><li>Compare at <strong>equal compute</strong> (network evaluations), not equal steps.</li><li>Include failure cases: text rendering, hands, counting, spatial relations.</li><li>Document data sources, filtering and known biases in a <strong>model card</strong>.</li></ol>
+<div class="callout key"><span class="callout-title">Key idea</span><p>A good evaluation combines a distribution metric (FID or a stronger variant), a prompt-alignment metric, compositional tests and human preference, with intervals, on a fixed prompt set.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx5-q08" data-topic="Diffusion evaluation" data-type="numeric" data-answer="50" data-tol="0">
+        <div class="q-stem"><p>A sampler uses 25 steps with classifier-free guidance. How many network evaluations per image?</p></div>
+        <div class="q-explain"><p>25 steps x 2 passes = 50.</p></div>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Diffusion evaluation</h2>
+      <p class="muted">12 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Diffusion evaluation">
+<details class="recall iq" data-level="basic" data-topic="Diffusion evaluation"><summary><span class="tag ok">Basic</span> What does FID measure?</summary><div class="answer"><p>The Fréchet distance between Gaussian fits of Inception features of real and generated images: lower means the generated distribution is closer to the real one.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Diffusion evaluation"><summary><span class="tag ok">Basic</span> What does CLIPScore measure?</summary><div class="answer"><p>How well an image matches its text prompt, as the cosine similarity of CLIP embeddings.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Diffusion evaluation"><summary><span class="tag warn">Medium</span> What are the limits of FID?</summary><div class="answer"><p>It needs many samples, depends on the ImageNet-trained feature network, ignores prompt alignment, is biased for small sample sizes and can be gamed. Use KID, FD-DINOv2 and human evaluation alongside it.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Diffusion evaluation"><summary><span class="tag warn">Medium</span> How do you run a human evaluation?</summary><div class="answer"><p>Show randomised side-by-side pairs for the same prompt, ask about quality and prompt match, use many prompts and raters, and report win rates with confidence intervals or Elo scores.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Diffusion evaluation"><summary><span class="tag warn">Medium</span> Why re-caption training images?</summary><div class="answer"><p>Web alt-text is short and noisy; detailed synthetic captions improve prompt following and compositional accuracy.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Diffusion evaluation"><summary><span class="tag warn">Medium</span> What does a data pipeline for image generation involve?</summary><div class="answer"><p>Collection, deduplication, quality and aesthetic filtering, safety filtering, re-captioning and bucketing by resolution.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Diffusion evaluation"><summary><span class="tag bad">Advanced</span> How can a diffusion model memorise training images and how do you reduce it?</summary><div class="answer"><p>Duplicated images and captions make near-copies likely. Deduplicate, diversify data, limit overfitting, apply output checks and consider differential privacy.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Diffusion evaluation"><summary><span class="tag bad">Advanced</span> What layers of safety do image generators use?</summary><div class="answer"><p>Data filtering, model-level safety training, prompt classifiers, output classifiers, provenance watermarking, access controls and red teaming. No single layer is sufficient.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Diffusion evaluation"><summary><span class="tag bad">Advanced</span> How does watermarking help and what are its limits?</summary><div class="answer"><p>Invisible watermarks and C2PA credentials signal AI origin, but they can be stripped by edits or metadata removal, so they supplement rather than replace other controls.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Diffusion evaluation"><summary><span class="tag bad">Advanced</span> How would you test for bias?</summary><div class="answer"><p>Audit prompt sets across occupations, attributes and cultures, measure demographic distributions of outputs, compare with references, and iterate on data and training rather than only prompt rewriting.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Diffusion evaluation"><summary><span class="tag bad">Advanced</span> What belongs in a good evaluation report?</summary><div class="answer"><p>Model, sampler, steps, guidance, seeds, a fixed public prompt set, enough samples, uncurated samples, metrics with intervals, compute-matched comparisons and failure cases.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Diffusion evaluation"><summary><span class="tag bad">Advanced</span> Why compare samplers or models at equal network evaluations?</summary><div class="answer"><p>Steps are not equal cost: Heun doubles evaluations and guidance doubles them again, so equal steps can hide large compute differences.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="dx4-control.html"><span class="dir">Previous</span><span>DX4 Fine-tuning and control: LoRA, DreamBooth, ControlNet, inpainting and editing</span></a>
+      <a class="next" href="dx6-beyond-images.html"><span class="dir">Next</span><span>DX6 Beyond images: video, audio, 3D, science, robotics and discrete diffusion</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

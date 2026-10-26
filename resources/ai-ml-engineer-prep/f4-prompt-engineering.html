@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="F4">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>F4 Prompt engineering | AI/ML Engineer Prep</title>
+<meta name="description" content="Prompt anatomy, zero-shot and few-shot, chain of thought and self-consistency, structured outputs and function calling, ReAct, prompt reliability and eval-driven iteration.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Foundations F4</p>
+      <h1>Prompt engineering</h1>
+      <p class="lede">Prompting is the cheapest lever you have, and interviewers check that you use it systematically: clear structure, examples, reasoning, structured outputs, tools, and measuring every change against an eval set instead of by gut feel.</p>
+      <div class="meta"><span class="tag ok">Basic</span><span class="tag warn">Medium</span><span class="tag">~1.5 hours</span></div>
+    </div>
+
+    <!-- ============================================================ 1 -->
+    <section id="prompt-anatomy" data-track>
+      <h2>Anatomy of a good prompt</h2>
+
+      <h3>Intuition</h3>
+      <p>Treat the model like a brilliant new colleague with no context. Tell it who it is serving, what the task is, what it can use, what good output looks like, and what to do when unsure. Most "the model is dumb" problems are really "the instructions were ambiguous" problems.</p>
+
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 230" role="img" aria-label="Prompt layout: system message with role, rules and output format; then context or documents in delimiters; then examples; then the user task; the assistant replies">
+          <rect x="20" y="14" width="680" height="48" rx="6" class="d-a"/><text x="36" y="34" class="d-bold">system</text><text x="36" y="52" class="d-sm">role, goal, rules, tone, output format, what to do when unsure ("say you don't know")</text>
+          <rect x="20" y="70" width="680" height="40" rx="6" class="d-c"/><text x="36" y="95" class="d-sm">context: &lt;documents&gt; ... &lt;/documents&gt;   (clearly delimited, cite by id)</text>
+          <rect x="20" y="118" width="680" height="40" rx="6" class="d-e"/><text x="36" y="143" class="d-sm">examples: 2 to 5 input/output pairs covering edge cases (optional)</text>
+          <rect x="20" y="166" width="680" height="40" rx="6" class="d-b"/><text x="36" y="191" class="d-sm">user: the actual task / question (dynamic part last, which also helps prompt caching)</text>
+          <text x="20" y="225" class="d-sm d-muted">Static first, dynamic last. Same order that maximizes prefix-cache hits (part 01).</text>
+        </svg>
+        </div>
+        <figcaption>A reliable prompt layout. Each block has one job.</figcaption>
+      </figure>
+
+      <h3>Principles</h3>
+      <ul>
+        <li><strong>Be specific</strong>: length, audience, format, constraints ("3 bullet points, under 20 words each, for a non-technical manager").</li>
+        <li><strong>Say what to do, not only what to avoid</strong>: "Answer only from the documents; if the answer is not there, reply 'Not in the provided documents.'"</li>
+        <li><strong>Delimit inputs</strong> (XML-style tags, triple quotes) so the model knows what is instruction and what is data. This also helps against prompt injection, but is not a full defense.</li>
+        <li><strong>Give the "why"</strong>: a reason behind a rule helps the model generalize it.</li>
+        <li><strong>Roles</strong>: the system prompt carries durable instructions, user messages carry requests, and assistant messages are prior model turns (you can also pre-fill one to steer the format).</li>
+        <li><strong>Long documents</strong>: put long context before the question, and ask for relevant quotes first, then the answer.</li>
+      </ul>
+
+      <h3>Common traps</h3>
+      <div class="callout trap"><ul class="mb-0">
+        <li>Contradictory instructions ("be concise" and "explain thoroughly").</li>
+        <li>Implicit formats: the parser expects JSON but the prompt never says so.</li>
+        <li>Burying the key instruction in the middle of a long prompt.</li>
+        <li>No escape hatch: forcing an answer when the information is missing invites hallucination.</li>
+      </ul></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="f4-anat-1" data-topic="Foundations" data-type="single" data-answer="D">
+        <div class="q-stem"><p>A support bot invents policy details when the answer is not in the retrieved docs. Best prompt change?</p></div>
+        <ul class="q-options">
+          <li data-key="A">"Be accurate." <span class="q-why">Too vague to change behavior.</span></li>
+          <li data-key="B">Raise the temperature <span class="q-why">Makes it worse.</span></li>
+          <li data-key="C">Remove the documents to shorten the prompt <span class="q-why">Removes the grounding.</span></li>
+          <li data-key="D">Instruct it to answer only from the delimited documents, cite them, and reply with a fixed fallback phrase when the answer is absent <span class="q-why">Correct: a specific rule with an escape hatch.</span></li>
+        </ul>
+        <div class="q-explain"><p>Grounding rules plus an allowed "I don't know" path reduce fabrication. Measure the change with a faithfulness eval.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What belongs in the system prompt?</summary><div class="answer"><p>Durable instructions: role, rules, format, safety constraints and fallback behavior.</p></div></details>
+        <details class="recall"><summary>Why delimit documents?</summary><div class="answer"><p>To separate data from instructions, enable citations, and reduce (not eliminate) injection risk.</p></div></details>
+        <details class="recall"><summary>Why put the dynamic question last?</summary><div class="answer"><p>Prefix caching reuses static parts, and models attend well to the end of the prompt.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 2 -->
+    <section id="few-shot-cot" data-track>
+      <h2>Zero-shot, few-shot, chain of thought, self-consistency</h2>
+
+      <h3>Intuition</h3>
+      <p>Examples show the model exactly what you want, which is often clearer than any description. This is <strong>in-context learning</strong>: no weights change. For multi-step problems, letting the model write out its reasoning before the answer gives it "scratch space". Each reasoning token is computation the answer can build on.</p>
+
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Technique</th><th>How</th><th>When it helps</th></tr></thead>
+        <tbody>
+          <tr><td>Zero-shot</td><td>instructions only</td><td>simple, well-specified tasks</td></tr>
+          <tr><td>Few-shot</td><td>2 to 5 input/output examples</td><td>format, style, labeling conventions, edge cases</td></tr>
+          <tr><td>Chain of thought (CoT)</td><td>"think step by step" or worked reasoning in the examples</td><td>math, logic, multi-hop questions</td></tr>
+          <tr><td>Self-consistency</td><td>sample several reasoning paths (T about 0.7), majority-vote the final answers</td><td>problems with a single checkable answer</td></tr>
+          <tr><td>Decomposition / prompt chaining</td><td>split into sub-tasks, one prompt each</td><td>complex pipelines, easier debugging and evals</td></tr>
+          <tr><td>Reflection / self-critique</td><td>ask the model to check and revise its draft</td><td>writing, code (works best with external feedback such as tests)</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <div class="worked">
+        <span class="w-title">Why self-consistency helps (idealized)</span>
+        <ol class="steps">
+          <li>Suppose each sampled reasoning path is right with probability 0.6, independently, and wrong answers do not all agree.</li>
+          <li>Majority of 5: P(at least 3 right) = sum over k = 3..5 of C(5,k) 0.6^k 0.4^(5-k) = 0.6826.</li>
+          <li>Majority of 9: 0.7334. Accuracy rises with more samples, but so does cost (n times the tokens).</li>
+          <li>Reality is less rosy: errors are correlated, so gains are smaller. This is the same intuition as ensembling.</li>
+        </ol>
+        <span class="result">0.60 to 0.68 to 0.73 (5 and 9 votes, independent-errors assumption)</span>
+      </div>
+
+      <ul>
+        <li><strong>Example selection matters</strong>: diverse and representative examples, covering edge cases. Order and label balance can bias outputs (models can over-copy the last example's label). Retrieve similar examples dynamically for big example pools.</li>
+        <li><strong>Reasoning models</strong> are trained to think before answering. For them, explicit "think step by step" adds little. Give clear goals and constraints instead. Hidden reasoning tokens still cost latency and money.</li>
+        <li>For extraction or classification with structured output, put a short reasoning field <em>before</em> the answer field (part 01, constrained decoding).</li>
+      </ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="f4-cot-1" data-topic="Foundations" data-type="multi" data-answer="A,C">
+        <div class="q-stem"><p>Select all true statements.</p></div>
+        <ul class="q-options">
+          <li data-key="A">Few-shot prompting does not update model weights <span class="q-why">True: in-context learning.</span></li>
+          <li data-key="B">Self-consistency uses greedy decoding for every sample <span class="q-why">False: greedy would give the same path each time. It needs sampling.</span></li>
+          <li data-key="C">Chain of thought tends to help multi-step reasoning more than simple lookups <span class="q-why">True.</span></li>
+          <li data-key="D">More examples always improve accuracy <span class="q-why">False: there are diminishing returns, cost and length effects, and possible bias.</span></li>
+        </ul>
+        <div class="q-explain"><p>Self-consistency = sample diverse paths, then aggregate.</p></div>
+      </div>
+      <div class="quiz" data-qid="f4-cot-2" data-topic="Foundations" data-type="numeric" data-answer="0.6826" data-tol="0.001">
+        <div class="q-stem"><p>Each of 5 independent samples is correct with probability 0.6. Probability the majority vote is correct? (4 decimals)</p></div>
+        <div class="q-explain"><p>sum over k = 3..5 of C(5,k) 0.6^k 0.4^(5-k) = 0.3456 + 0.2592 + 0.07776 = 0.6826.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is in-context learning?</summary><div class="answer"><p>The model adapts to the examples or instructions in its prompt, without any weight updates.</p></div></details>
+        <details class="recall"><summary>Self-consistency in one line?</summary><div class="answer"><p>Sample several chains of thought and take the majority final answer.</p></div></details>
+        <details class="recall"><summary>Why might CoT be unnecessary for reasoning models?</summary><div class="answer"><p>They already generate internal reasoning by training. Extra instructions add little.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 3 -->
+    <section id="structured-output" data-track>
+      <h2>Structured outputs and function calling</h2>
+
+      <h3>Intuition</h3>
+      <p>Applications need machine-readable outputs, not prose. You can ask for JSON in the prompt (works mostly), use a provider's JSON or structured-output mode (constrained decoding guarantees the schema), or use <strong>function (tool) calling</strong>: you describe functions with JSON Schemas, and the model returns which function to call with what arguments. Your code executes it and feeds the result back.</p>
+
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 200" role="img" aria-label="Function calling loop: app sends messages and tool schemas; model returns a tool call; app executes and returns the result; model writes the final answer">
+          <defs><marker id="f4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker></defs>
+          <rect x="20" y="70" width="150" height="56" rx="6" class="d-a"/><text x="95" y="94" text-anchor="middle" class="d-sm">your app</text><text x="95" y="110" text-anchor="middle" class="d-sm">(executes tools)</text>
+          <rect x="550" y="70" width="150" height="56" rx="6" class="d-c"/><text x="625" y="102" text-anchor="middle" class="d-sm">model</text>
+          <line x1="172" y1="80" x2="548" y2="80" class="d-line" marker-end="url(#f4)"/><text x="360" y="72" text-anchor="middle" class="d-sm">1. messages + tool schemas</text>
+          <line x1="548" y1="100" x2="172" y2="100" class="d-line" marker-end="url(#f4)"/><text x="360" y="96" text-anchor="middle" class="d-sm">2. tool_call: get_weather({"city": "Chennai"})</text>
+          <line x1="172" y1="118" x2="548" y2="118" class="d-line" marker-end="url(#f4)"/><text x="360" y="136" text-anchor="middle" class="d-sm">3. tool result: {"temp_c": 31}</text>
+          <line x1="548" y1="150" x2="172" y2="150" class="d-line-b" marker-end="url(#f4)"/><text x="360" y="168" text-anchor="middle" class="d-sm d-tb">4. final answer: "It's 31 C in Chennai."</text>
+          <text x="20" y="30" class="d-sm d-muted">The model never runs code; it proposes calls. Validation, authorization and execution are yours.</text>
+        </svg>
+        </div>
+        <figcaption>The function-calling loop. Repeat steps 2 and 3 until the model answers without a tool call (bounded by a step limit).</figcaption>
+      </figure>
+      <ul>
+        <li>Write tool descriptions as documentation for the model: purpose, when to use it, argument meanings and units.</li>
+        <li>Validate arguments and permissions in code before executing anything (part 05).</li>
+        <li>Schema guarantees concern syntax, not correctness (part 01). Keep evals for field accuracy.</li>
+      </ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="f4-fc-1" data-topic="Foundations" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In function calling, who executes the function?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The model, inside the provider's servers <span class="q-why">For user-defined tools, the model only emits the call.</span></li>
+          <li data-key="B">Your application code, which then sends the result back to the model <span class="q-why">Correct.</span></li>
+          <li data-key="C">The tokenizer <span class="q-why">No.</span></li>
+          <li data-key="D">Nobody, the arguments are the answer <span class="q-why">Results are fed back for the final answer.</span></li>
+        </ul>
+        <div class="q-explain"><p>Some providers offer built-in server-side tools (for example web search), but user-defined functions run in your code.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Prompted JSON vs constrained JSON mode?</summary><div class="answer"><p>Prompted JSON usually works but can break. Constrained decoding guarantees schema-valid syntax.</p></div></details>
+        <details class="recall"><summary>Steps of the function-calling loop?</summary><div class="answer"><p>Send messages and tools, receive a tool call, execute it, return the result, receive the final answer (repeat as needed).</p></div></details>
+        <details class="recall"><summary>Why validate tool arguments?</summary><div class="answer"><p>The model can choose wrong or unsafe values. Business rules and permissions must be enforced in code.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 4 -->
+    <section id="react-agents-prompting" data-track>
+      <h2>ReAct and agentic prompting</h2>
+
+      <h3>Intuition</h3>
+      <p>ReAct (Yao et al., 2022) interleaves <strong>Re</strong>asoning and <strong>Act</strong>ing: think about what to do, call a tool, observe the result, think again, until done. It is the conceptual core of most agent frameworks (LangChain agents, LangGraph tool nodes, CrewAI agents), which you already use.</p>
+      <pre class="no-enhance" style="white-space:pre-wrap">Thought: I need the order status before answering.
+Action: get_order(order_id="42")
+Observation: {"status": "shipped", "eta": "2026-10-28"}
+Thought: I can answer now.
+Final Answer: Your order shipped and should arrive on Oct 28.</pre>
+      <ul>
+        <li>Planning variants: plan-and-execute (plan first, then run the steps), reflection loops, and multi-agent setups (a supervisor routing to specialists).</li>
+        <li>Give agents explicit stopping criteria, step limits, and tool-error handling guidance (part 05).</li>
+        <li>Simpler is often better: a fixed workflow (prompt chain) beats an open-ended agent when the steps are known.</li>
+      </ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="f4-react-1" data-topic="Foundations" data-type="single" data-answer="A">
+        <div class="q-stem"><p>When should you prefer a fixed prompt chain (workflow) over an autonomous agent?</p></div>
+        <ul class="q-options">
+          <li data-key="A">When the steps are known in advance, for predictability, lower cost and easier evals <span class="q-why">Correct.</span></li>
+          <li data-key="B">Always, agents never work <span class="q-why">Agents help when steps are open-ended.</span></li>
+          <li data-key="C">When you need the model to choose tools dynamically <span class="q-why">That is when agents help.</span></li>
+          <li data-key="D">Only for chat UIs <span class="q-why">Unrelated.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use the least autonomy that solves the task.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does ReAct stand for?</summary><div class="answer"><p>Reasoning + Acting: interleaved thoughts, tool actions and observations.</p></div></details>
+        <details class="recall"><summary>Plan-and-execute vs ReAct?</summary><div class="answer"><p>Plan-and-execute plans all steps up front. ReAct decides step by step from observations.</p></div></details>
+        <details class="recall"><summary>Why prefer workflows when possible?</summary><div class="answer"><p>They are predictable, cheaper and easier to test and debug.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 5 -->
+    <section id="prompt-reliability" data-track>
+      <h2>Prompt reliability: versioning, evals, iteration</h2>
+      <ol>
+        <li><strong>Write the eval first</strong>: 50 to 200 representative inputs with expected outputs or rubrics, including edge cases and past failures.</li>
+        <li><strong>Baseline</strong>: run the current prompt and record accuracy, format-error rate, latency and cost.</li>
+        <li><strong>Change one thing at a time</strong> (an instruction, examples, model, temperature) and re-run.</li>
+        <li><strong>Compare with paired tests</strong> on the same items (part 04). A 3-point gain on 200 items is often noise.</li>
+        <li><strong>Version prompts</strong> like code (in git, with IDs logged per request) so production behavior is traceable and reversible.</li>
+        <li><strong>Watch for regressions</strong> when the provider updates a model. Pin model versions where possible.</li>
+      </ol>
+      <div class="callout key"><p class="mb-0">Prompting is software engineering: specs, tests, version control, and statistics for comparisons.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="f4-rel-1" data-topic="Foundations" data-type="single" data-answer="C">
+        <div class="q-stem"><p>You tweak a prompt and five hand-picked examples look better. What should happen before shipping?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Ship, the examples look better <span class="q-why">Cherry-picked anecdotes.</span></li>
+          <li data-key="B">Ask the model whether the new prompt is better <span class="q-why">Biased and unvalidated.</span></li>
+          <li data-key="C">Run both prompts on a representative eval set and compare with a paired test <span class="q-why">Correct.</span></li>
+          <li data-key="D">Increase max tokens <span class="q-why">Unrelated.</span></li>
+        </ul>
+        <div class="q-explain"><p>Measure on a fixed set, analyze correctly, and keep the old version to roll back to.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>First step of prompt iteration?</summary><div class="answer"><p>Build an eval set and a baseline.</p></div></details>
+        <details class="recall"><summary>Why version prompts?</summary><div class="answer"><p>Traceability, rollback, and attributing changes in metrics.</p></div></details>
+        <details class="recall"><summary>Why pin model versions?</summary><div class="answer"><p>Provider updates can silently change behavior and break prompts.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ interview -->
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: prompt engineering</h2>
+      <p class="muted">Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Prompt engineering">
+<details class="recall iq" data-level="basic" data-topic="Prompt engineering"><summary><span class="tag ok">Basic</span> What makes a good prompt?</summary><div class="answer"><p>A clear role and task, relevant context in delimiters, an explicit output format, constraints, examples for tricky cases, and a fallback instruction for when the answer is unknown.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Prompt engineering"><summary><span class="tag ok">Basic</span> Zero-shot vs few-shot prompting?</summary><div class="answer"><p>Zero-shot gives only instructions. Few-shot adds a few input/output examples in the prompt (in-context learning), which helps with format and edge cases without changing weights.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Prompt engineering"><summary><span class="tag ok">Basic</span> What is chain-of-thought prompting?</summary><div class="answer"><p>Asking the model to reason step by step before answering (or showing reasoning in examples). It gives the model intermediate computation, which helps multi-step problems.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Prompt engineering"><summary><span class="tag ok">Basic</span> What is a system prompt?</summary><div class="answer"><p>Instructions with higher priority that set the model&#x27;s role, rules, tone and format for the whole conversation, separate from user messages.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Prompt engineering"><summary><span class="tag warn">Medium</span> What is self-consistency?</summary><div class="answer"><p>Sample multiple reasoning paths at non-zero temperature and take the majority final answer. With independent errors, accuracy improves (0.6 per sample gives 0.68 for majority-of-5). Costs scale with the number of samples.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Prompt engineering"><summary><span class="tag warn">Medium</span> How do you get reliable JSON output from an LLM?</summary><div class="answer"><p>Use structured-output or JSON-schema mode (constrained decoding) or function calling. Validate with a parser, keep the schema simple, include an unknown option, and keep evals for value correctness.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Prompt engineering"><summary><span class="tag warn">Medium</span> What is ReAct?</summary><div class="answer"><p>A prompting and agent pattern that interleaves reasoning (thoughts), actions (tool calls) and observations (tool results) until the task is solved. It is the basis of most tool-using agents.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Prompt engineering"><summary><span class="tag warn">Medium</span> How do you iterate on prompts systematically?</summary><div class="answer"><p>Build an eval set and a baseline, change one thing at a time, measure on the same items with a paired comparison, version prompts in git, and log prompt versions in production.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Prompt engineering"><summary><span class="tag warn">Medium</span> How does example order or selection affect few-shot prompting?</summary><div class="answer"><p>Models can be biased toward the most recent or most frequent labels in the examples. Use diverse, balanced, representative examples, and retrieve similar examples dynamically for large pools.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Prompt engineering"><summary><span class="tag bad">Advanced</span> How would you defend a prompt against injection from retrieved documents?</summary><div class="answer"><p>Delimit untrusted content and tell the model to treat it as data, but rely on architecture: least-privilege tools, no actions triggered directly by retrieved text, human approval for risky actions, output filtering, and allowlisted links. Prompts alone are not a security boundary.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Prompt engineering"><summary><span class="tag bad">Advanced</span> When would prompting not be enough, and what would you do?</summary><div class="answer"><p>When the task needs a consistent style or format at scale, domain behavior the model lacks, lower latency or cost, or knowledge that changes. Then add RAG for knowledge, fine-tune for behavior or distill for cost, measured against the prompt baseline.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="f3-llm-training-scaling.html"><span class="dir">Previous</span><span>F3 LLM training and scaling</span></a>
+      <a class="next" href="01-inference-and-memory.html"><span class="dir">Next</span><span>01 Inference and memory</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en" data-resource="diffusion-from-scratch" data-page="D2">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Python package reference | Diffusion from scratch</title>
+<meta name="description" content="The torch, torch.nn, optim, autograd, amp, torchvision, numpy, matplotlib, tqdm, einops and diffusers functions you will call.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Diffusion from scratch</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part D2</p>
+      <h1>Python package reference</h1>
+      <p class="lede">Every library from Phase 1, broken down into the specific functions and classes you'll actually call, what each one does, what arguments it takes, and a tiny example of it in use.</p>
+      <div class="meta"><span class="tag ok">Basic</span><span class="tag warn">Medium</span><span class="tag">~1.5 hours</span></div>
+    </div>
+
+    <section id="pkg-torch-core" data-track>
+      <h2>torch: core tensor operations</h2>
+<p>
+        This is the foundation everything else sits on: creating tensors, moving them
+        to the GPU, and doing basic math on them.
+      </p>
+<div class="panel"><h4><code>torch.tensor(data)</code></h4>
+        
+        <p>Converts ordinary Python data (a list, or nested lists) into a PyTorch tensor. This is the most basic way to manually create a tensor from scratch, mostly used for quick tests rather than real training data (which comes from torchvision datasets instead).</p>
+        <p><strong>Example:</strong> <code>x = torch.tensor([1.0, 2.0, 3.0])</code> creates a 1-dimensional tensor holding those three numbers.</p>
+      </div>
+<div class="panel"><h4><code>torch.zeros(shape) / torch.ones(shape) / torch.randn(shape)</code></h4>
+        
+        <p>Three ways to create a new tensor of a given shape, filled a specific way:</p>
+        <ul class="func-args">
+          <li><code>torch.zeros((3, 64, 64))</code>, every value set to 0. Useful for initializing placeholders.</li>
+          <li><code>torch.ones((3, 64, 64))</code>, every value set to 1.</li>
+          <li><code>torch.randn((3, 64, 64))</code>, every value randomly sampled from a standard Gaussian (bell-curve) distribution, mean 0, spread 1. <strong>This is exactly the function you use to generate the random noise tensors described throughout Phase 2</strong>, both the noise added during training and the starting point for sampling.</li>
+        </ul>
+      </div>
+<div class="panel"><h4><code>tensor.shape</code></h4>
+        
+        <p>Not a function you call with parentheses, a property you read. Tells you the exact dimensions of a tensor. You will check this constantly while debugging, since the single most common bug in any deep learning code is a tensor being the wrong shape somewhere.</p>
+        <p><strong>Example:</strong> a batch of 16 RGB 64×64 images has <code>tensor.shape</code> equal to <code>torch.Size([16, 3, 64, 64])</code>.</p>
+      </div>
+<div class="panel"><h4><code>tensor.to(device)</code></h4>
+        
+        <p>Moves a tensor to a specific device, either the CPU or the GPU. Every tensor involved in a computation must live on the same device, or PyTorch will raise an error. You'll typically define <code>device = torch.device("cuda")</code> once near the top of your script, and call <code>.to(device)</code> on your model and on every batch of data as it's loaded.</p>
+        <p><strong>Example:</strong> <code>images = images.to(device)</code> moves a batch of images from CPU memory (where they were loaded) onto your RTX 2050's VRAM.</p>
+      </div>
+<div class="panel"><h4><code>torch.device("cuda") / torch.device("cpu")</code></h4>
+        
+        <p>Creates a device object representing where computation should happen. Best practice is to detect automatically: <code>device = torch.device("cuda" if torch.cuda.is_available() else "cpu")</code>, this way your code doesn't crash if run on a machine with no GPU, it just falls back to (much slower) CPU execution.</p>
+      </div>
+<div class="panel"><h4><code>torch.cat(tensors, dim)</code></h4>
+        
+        <p>Concatenates (joins end-to-end) a list of tensors along a chosen dimension. This is exactly the operation used to implement <strong>skip connections</strong> in the U-Net, the encoder's saved output and the decoder's current output are concatenated along the channel dimension before continuing.</p>
+        <ul class="func-args">
+          <li><code>tensors</code>, a list of tensors to join, which must match in every dimension except the one you're joining along.</li>
+          <li><code>dim</code>, which dimension to join along. For skip connections, this is the channel dimension, <code>dim=1</code> (since shape order is batch, channel, height, width).</li>
+        </ul>
+        <p><strong>Example:</strong> <code>torch.cat([encoder_output, decoder_output], dim=1)</code>, if <code>encoder_output</code> has 64 channels and <code>decoder_output</code> has 64 channels, the result has 128 channels, same height and width.</p>
+      </div>
+<div class="panel"><h4><code>tensor.view(shape) / tensor.reshape(shape)</code></h4>
+        
+        <p>Both change a tensor's shape without changing its actual data, just how it's organized into dimensions. <code>reshape</code> is the safer default (it works even in cases where <code>view</code> would fail due to how the tensor is laid out in memory). You'll use this occasionally, for example when preparing a timestep embedding vector to be added onto a 4-dimensional feature grid.</p>
+      </div>
+<div class="panel"><h4><code>torch.sqrt(x) / torch.exp(x) / torch.sin(x) / torch.cos(x)</code></h4>
+        
+        <p>Standard mathematical functions applied element-by-element across an entire tensor at once. Directly used in: the one-step shortcut formula (<code>torch.sqrt(alpha_bar_t)</code>), and the sinusoidal timestep embedding (<code>torch.sin</code>, <code>torch.cos</code>, <code>torch.exp</code> for the frequency scaling).</p>
+      </div>
+<div class="panel"><h4><code>torch.save(obj, path) / torch.load(path)</code></h4>
+        
+        <p>Saves a Python object (almost always your model's weights, via <code>model.state_dict()</code>) to a file on disk, and loads it back later. This is how you avoid retraining from scratch every time you restart your notebook, you save a checkpoint periodically during training, and can resume or run inference later from that saved file. With 200GB free, saving frequent checkpoints is not a space concern.</p>
+        <p><strong>Example:</strong> <code>torch.save(model.state_dict(), "checkpoint.pt")</code> then later <code>model.load_state_dict(torch.load("checkpoint.pt"))</code>.</p>
+      </div>
+<div class="panel"><h4><code>torch.no_grad()</code></h4>
+        
+        <p>Used as a context manager (with a <code>with</code> block) to temporarily turn off gradient tracking. During sampling/inference, you're not training, so there's no need for PyTorch to record how to compute gradients, skipping this bookkeeping saves both memory and time. You will wrap your entire sampling loop in this.</p>
+        <p><strong>Example:</strong></p>
+        <pre><code class="lang-py">with torch.no_grad():
+    predicted_noise = model(noisy_image, timestep)</code></pre>
+      </div>
+<div class="panel"><h4><code>torch.manual_seed(n)</code></h4>
+        
+        <p>Fixes the randomness generator to a specific starting point, so random operations (noise generation, weight initialization, data shuffling) become reproducible, running the same code twice gives identical results. Extremely useful while debugging, so you can tell whether a change you made actually changed the outcome, rather than it just being different random luck.</p>
+      </div>
+<div class="panel"><h4><code>torch.randint(low, high, size, device=None)</code></h4>
+        
+        <p>Generates random whole numbers (integers), each one at least <code>low</code> and strictly less than <code>high</code>, arranged into a tensor of the given <code>size</code>. This is exactly how you sample a random timestep per image in the training loop.</p>
+        <ul class="func-args">
+          <li><code>low</code>, smallest possible value, inclusive.</li>
+          <li><code>high</code>, upper bound, exclusive (so <code>torch.randint(0, 1000, ...)</code> can produce 0 through 999, never 1000).</li>
+          <li><code>size</code>, a tuple giving the output shape, e.g. <code>(batch_size,)</code> for one random integer per image in a batch.</li>
+        </ul>
+        <p><strong>Example:</strong> <code>torch.randint(0, 1000, (16,), device=device)</code> gives 16 random timesteps, one per image in a batch of 16.</p>
+      </div>
+<div class="panel"><h4><code>torch.full(size, fill_value, device=None, dtype=None)</code></h4>
+        
+        <p>Creates a tensor of the given shape where every single value is the same, specified number. Used in sampling to create a batch where every image is being processed at the identical current timestep.</p>
+        <p><strong>Example:</strong> <code>torch.full((8,), 500, dtype=torch.long)</code> gives a tensor of 8 copies of the number 500.</p>
+      </div>
+<div class="panel"><h4><code>torch.randn_like(tensor) / torch.zeros_like(tensor)</code></h4>
+        
+        <p>Shortcut versions of <code>torch.randn(...)</code> and <code>torch.zeros(...)</code> that automatically copy the shape (and device, and dtype) of an existing tensor, instead of you having to type the shape out manually. <code>torch.randn_like(clean_images)</code> generates fresh noise exactly matching the batch of images it's shaped after.</p>
+      </div>
+<div class="panel"><h4><code>tensor.clamp(min, max)</code></h4>
+        
+        <p>Forces every value in a tensor into a given range, any value below <code>min</code> becomes <code>min</code>, any value above <code>max</code> becomes <code>max</code>, everything in between is left unchanged. Used at the end of sampling to force pixel values back into a valid, displayable range after many steps of arithmetic that could otherwise drift slightly outside it.</p>
+      </div>
+<div class="panel"><h4><code>tensor.item()</code></h4>
+        
+        <p>Pulls a single number out of a tensor that contains exactly one value, returning it as a plain Python float (or int) instead of a tensor. Loss values are tensors (so they can support gradient tracking), but you can't directly print or log a tensor as cleanly as a plain number, <code>loss.item()</code> is the standard way to get a printable number out of a loss tensor.</p>
+      </div>
+<div class="panel"><h4><code>model.eval() / model.train()</code></h4>
+        
+        <p>Switches a model between evaluation mode and training mode. Some layer types (not used in this project's specific U-Net, but common enough elsewhere to know about, like Dropout, or certain normalization variants) behave differently depending on this setting. Calling <code>.eval()</code> before sampling and <code>.train()</code> before resuming training is good, safe habit regardless of whether your specific layers are affected.</p>
+      </div>
+<div class="panel"><h4><code>model.state_dict() / model.load_state_dict(state_dict)</code></h4>
+        
+        <p><code>state_dict()</code> returns a Python dictionary containing every learnable weight in the model, each paired with a name describing where it belongs (e.g. <code>"down_blocks.0.conv1.weight"</code>). This is what you actually pass to <code>torch.save()</code>, you save the weights, not the model object itself. <code>load_state_dict(state_dict)</code> does the reverse: given a matching dictionary of weights (usually just loaded back with <code>torch.load()</code>), it copies every value into the correct place inside an already-created model of the same architecture.</p>
+        <div class="callout trap"><span class="callout-title">Watch out</span><p>You must create a model with the exact same architecture (<code>UNet()</code>, with the same config settings used during training) before calling <code>load_state_dict</code>, it fills in an existing model's weights, it does not reconstruct the architecture from scratch.</p></div>
+      </div>
+<div class="panel"><h4><code>torch.load(path, map_location=device)</code></h4>
+        
+        <p>Loads a previously saved file back into memory. <code>map_location</code> tells PyTorch which device to put the loaded tensors on, important if, for example, you trained on a GPU but are later loading the checkpoint on a machine with no GPU (or a different GPU), since without this argument PyTorch would try to place the weights back on the exact original device and could error if that device isn't available.</p>
+      </div>
+<div class="panel"><h4><code>sum(p.numel() for p in model.parameters())</code></h4>
+        
+        <p>A common one-liner (not a single PyTorch function, but a standard combination) for counting a model's total number of learnable numbers. <code>model.parameters()</code> gives every weight tensor; <code>.numel()</code> ("number of elements") counts how many individual numbers are in one tensor; wrapping the whole thing in a generator expression and <code>sum()</code> (both plain Python) adds them all up across every weight tensor in the model.</p>
+      </div>
+    </section>
+
+    <section id="pkg-torch-nn" data-track>
+      <h2>torch.nn: the building blocks of your network</h2>
+<p>
+        This sub-package contains every ready-made layer type you'll assemble into
+        your U-Net. You will not write the internal math of a convolution or an
+        activation function by hand, you create one of these classes and PyTorch
+        handles the computation (and, importantly, the gradient calculation for it).
+      </p>
+<div class="panel"><h4><code>class MyNetwork(torch.nn.Module): ...</code></h4>
+        
+        <p>The base class every custom network or layer inherits from. Explained fully in its own dedicated section below (<a href="d3-how-diffusion-works.html#p2-nn-module">nn.Module, how every PyTorch network is built</a>) since it's central enough to deserve a full walkthrough rather than a quick card.</p>
+      </div>
+<div class="panel"><h4><code>nn.Conv2d(in_channels, out_channels, kernel_size, stride=1, padding=0)</code></h4>
+        
+        <p>A 2D convolution layer, the fundamental operation inside every U-Net block. Slides a learnable kernel across the input grid, producing an output grid.</p>
+        <ul class="func-args">
+          <li><code>in_channels</code>, how many channels the input has (e.g. 3 for an RGB image, or however many channels the previous layer output).</li>
+          <li><code>out_channels</code>, how many channels you want the output to have. This is a design choice, more channels means more capacity to learn different patterns, at the cost of more compute and VRAM.</li>
+          <li><code>kernel_size</code>, the size of the sliding kernel, almost always <code>3</code> (meaning 3×3) in modern U-Nets.</li>
+          <li><code>stride</code>, how many pixels the kernel moves at each step. <code>stride=1</code> keeps the same spatial size (with proper padding); <code>stride=2</code> roughly halves height and width, this is exactly how <strong>downsampling</strong> is implemented.</li>
+          <li><code>padding</code>, how many extra zero-value pixels to add around the border before sliding the kernel, so the output size comes out to a clean, predictable value. <code>padding=1</code> with <code>kernel_size=3</code> and <code>stride=1</code> keeps height and width unchanged.</li>
+        </ul>
+        <p><strong>Example:</strong> <code>nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)</code> takes a 64-channel feature grid and outputs a 128-channel grid of the same height and width.</p>
+      </div>
+<div class="panel"><h4><code>nn.ConvTranspose2d(in_channels, out_channels, kernel_size, stride=2, padding=1)</code></h4>
+        
+        <p>A "transposed" convolution, the most common way to implement <strong>upsampling</strong> (growing spatial size back up) in the decoder half of the U-Net. With <code>stride=2</code>, it roughly doubles height and width, the mirror opposite of a stride-2 <code>Conv2d</code>. An alternative approach some U-Nets use instead is <code>nn.Upsample</code> (simple resizing) followed by a regular <code>Conv2d</code>, both are valid; transposed convolution is slightly more common in diffusion U-Nets.</p>
+      </div>
+<div class="panel"><h4><code>nn.GroupNorm(num_groups, num_channels)</code></h4>
+        
+        <p>The normalization layer discussed in the U-Net section, rescales values to a stable range. It splits the channels into <code>num_groups</code> groups and normalizes within each group separately.</p>
+        <ul class="func-args">
+          <li><code>num_groups</code>, how many groups to split channels into. A common default is 32, though it must evenly divide <code>num_channels</code>; for smaller channel counts (e.g. 32 or 64 total channels) you might use 8 or 16 groups instead.</li>
+          <li><code>num_channels</code>, the number of channels in the input, must match whatever layer feeds into it.</li>
+        </ul>
+        <p><strong>Example:</strong> <code>nn.GroupNorm(8, 64)</code> normalizes a 64-channel feature grid by splitting it into 8 groups of 8 channels each.</p>
+      </div>
+<div class="panel"><h4><code>nn.SiLU()</code></h4>
+        
+        <p>The activation function layer (also known as Swish). Takes no meaningful arguments, you just create one and reuse it, or make a fresh one per block. Applies the same smooth non-linear function to every number in its input, without changing its shape.</p>
+      </div>
+<div class="panel"><h4><code>nn.Linear(in_features, out_features)</code></h4>
+        
+        <p>A fully-connected ("dense") layer, every input number is connected to every output number through a learnable weight. Not used on the image grid itself (that's what convolutions are for), but used for the small "time MLP" that processes the sinusoidal timestep embedding vector into a richer representation before injecting it into the U-Net's blocks.</p>
+        <ul class="func-args">
+          <li><code>in_features</code>, length of the input vector.</li>
+          <li><code>out_features</code>, length of the output vector.</li>
+        </ul>
+      </div>
+<div class="panel"><h4><code>nn.Sequential(layer1, layer2, ...)</code></h4>
+        
+        <p>A convenience container that chains a list of layers together, automatically feeding each layer's output into the next layer's input. Useful for defining a simple straight-line stack (like the time MLP: Linear → SiLU → Linear) without writing a full custom class for it.</p>
+        <p><strong>Example:</strong></p>
+        <pre><code class="lang-py">time_mlp = nn.Sequential(
+    nn.Linear(32, 128),
+    nn.SiLU(),
+    nn.Linear(128, 128),
+)</code></pre>
+      </div>
+<div class="panel"><h4><code>nn.MultiheadAttention(embed_dim, num_heads) / manual attention</code></h4>
+        
+        <p>PyTorch provides a ready-made attention layer, though many diffusion U-Net implementations write a small custom attention block by hand (it's a short amount of code once you understand the Q/K/V mechanics covered in the dedicated attention section below) so it integrates cleanly with the image-shaped tensors flowing through the U-Net. Either approach is valid; using the built-in layer is perfectly reasonable for your first version.</p>
+      </div>
+<div class="panel"><h4><code>nn.functional.mse_loss(input, target)</code></h4>
+        
+        <p>Computes Mean Squared Error between two tensors of the same shape, this is your entire training loss, comparing predicted noise to real noise. Usually accessed via the shorthand import <code>import torch.nn.functional as F</code>, then called as <code>F.mse_loss(predicted_noise, real_noise)</code>.</p>
+      </div>
+    </section>
+
+    <section id="pkg-torch-optim" data-track>
+      <h2>torch.optim: optimizers</h2>
+<div class="panel"><h4><code>torch.optim.AdamW(model.parameters(), lr=1e-4)</code></h4>
+        
+        <p>Creates the optimizer object responsible for updating your model's weights during training.</p>
+        <ul class="func-args">
+          <li><code>model.parameters()</code>, a built-in method every <code>nn.Module</code> provides, returning every learnable weight in the model. This is how the optimizer knows which numbers it's allowed to adjust.</li>
+          <li><code>lr</code>, the learning rate, discussed in the training loop section. <code>1e-4</code> (0.0001) is a reasonable starting point for a small diffusion U-Net.</li>
+        </ul>
+        <p>Once created, you call two methods on it repeatedly during training: <code>optimizer.zero_grad()</code> and <code>optimizer.step()</code>, both explained in detail in the dedicated <a href="d3-how-diffusion-works.html#p2-autograd-detail">backward() and step()</a> section, since understanding what they do requires first understanding autograd.</p>
+      </div>
+<div class="panel"><h4><code>torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max)</code></h4>
+        
+        <p>An optional add-on that gradually changes the learning rate over the course of training, typically starting higher and smoothly decreasing (following a cosine curve) toward the end. This is a refinement you can add after your first version trains successfully with a fixed learning rate, not required to get a first working model, but a common improvement once things are stable.</p>
+      </div>
+    </section>
+
+    <section id="pkg-torch-autograd" data-track>
+      <h2>Autograd: the functions behind automatic learning</h2>
+<p>
+        These three calls, always used together in this exact order, are what makes
+        training actually work, full mechanical explanation is in the
+        <a href="d3-how-diffusion-works.html#p2-autograd-detail">dedicated section</a> further down, once you've
+        seen the full training loop. Quick reference here:
+      </p>
+<div class="panel"><h4><code>loss.backward()</code></h4>
+        
+        <p>Called on the final loss tensor. Triggers PyTorch to automatically compute how much every single weight in the model contributed to this loss (called the <strong>gradient</strong> for each weight), by working backward through every operation that was used to compute the loss.</p>
+      </div>
+<div class="panel"><h4><code>optimizer.step()</code></h4>
+        
+        <p>Called right after <code>loss.backward()</code>. Uses the gradients just computed to actually update every weight, according to the optimizer's rule (AdamW's adaptive rule, in this project).</p>
+      </div>
+<div class="panel"><h4><code>optimizer.zero_grad()</code></h4>
+        
+        <p>Clears out the gradients from the previous step. PyTorch <strong>accumulates</strong> (adds to) gradients by default rather than replacing them, so if you forget this call, gradients from old batches would incorrectly pile up on top of new ones. Called once per batch, typically right before <code>loss.backward()</code>.</p>
+      </div>
+    </section>
+
+    <section id="pkg-torch-amp" data-track>
+      <h2>Mixed precision functions</h2>
+<p>The specific calls that implement the mixed-precision VRAM savings discussed in the hardware-fitting section.</p>
+<div class="panel"><h4><code>torch.autocast(device_type="cuda", dtype=torch.float16)</code></h4>
+        
+        <p>A context manager wrapped around your forward pass (the model computing its output). Inside this block, PyTorch automatically picks which operations are safe to run in the smaller float16 format and which need to stay in float32 for numerical stability, you don't have to decide this yourself, it's handled automatically per-operation.</p>
+        <p><strong>Example:</strong></p>
+        <pre><code class="lang-py">with torch.autocast(device_type="cuda", dtype=torch.float16):
+    predicted_noise = model(noisy_image, timestep)
+    loss = F.mse_loss(predicted_noise, real_noise)</code></pre>
+      </div>
+<div class="panel"><h4><code>torch.cuda.amp.GradScaler()</code></h4>
+        
+        <p>float16 numbers have a much smaller representable range than float32, so gradients computed in float16 can sometimes underflow to zero and vanish. A <code>GradScaler</code> temporarily multiplies ("scales up") the loss by a large factor before calling <code>backward()</code>, so gradients stay in a safe numeric range, then un-scales them back down before the optimizer applies them. You create one scaler object before your training loop starts, and call <code>scaler.scale(loss).backward()</code>, <code>scaler.step(optimizer)</code>, and <code>scaler.update()</code> in place of the plain versions of those calls.</p>
+      </div>
+    </section>
+
+    <section id="pkg-torchvision" data-track>
+      <h2>torchvision</h2>
+<p>Tools specifically for working with image data and standard datasets.</p>
+<div class="panel"><h4><code>torchvision.transforms.Compose([...])</code></h4>
+        
+        <p>Chains together a list of image transformations, applied in order to every image as it's loaded. This is where you define your entire image preprocessing pipeline in one place.</p>
+        <p><strong>Example:</strong></p>
+        <pre><code class="lang-py">transform = transforms.Compose([
+    transforms.Resize((64, 64)),
+    transforms.ToTensor(),
+])</code></pre>
+      </div>
+<div class="panel"><h4><code>transforms.Resize((height, width))</code></h4>
+        
+        <p>Resizes every image to a fixed size. Necessary because your dataset likely has images of varying original sizes, but your U-Net expects a single fixed input size (32×32 or 64×64, per the hardware-fitting recommendations).</p>
+      </div>
+<div class="panel"><h4><code>transforms.ToTensor()</code></h4>
+        
+        <p>Converts a loaded image (originally in a raw pixel format, values 0-255) into a PyTorch tensor with values rescaled to the 0-1 range, and reorders the dimensions into PyTorch's expected <code>(channels, height, width)</code> order. You'll use this in nearly every image pipeline you ever write, not just this project.</p>
+      </div>
+<div class="panel"><h4><code>transforms.Normalize(mean, std)</code></h4>
+        
+        <p>Rescales tensor values further, typically from the 0-1 range to a -1 to 1 range, which many diffusion model implementations use as their working range for the "clean image" (matching the roughly-zero-centered range that Gaussian noise naturally occupies, so image and noise are on comparable scales when mixed by the shortcut formula).</p>
+        <p><strong>Example:</strong> <code>transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])</code> maps 0-1 values to roughly -1 to 1, applied per RGB channel.</p>
+      </div>
+<div class="panel"><h4><code>torchvision.datasets.ImageFolder(root, transform)</code></h4>
+        
+        <p>A ready-made dataset class that automatically loads every image inside a folder (optionally organized into subfolders by class label) and applies your transform pipeline to each one. If you're training on your own custom collection of images (rather than a standard built-in dataset), this is likely the class you'll use, just point <code>root</code> at your image folder.</p>
+      </div>
+<div class="panel"><h4><code>torchvision.datasets.MNIST / CIFAR10 (etc.)</code></h4>
+        
+        <p>Ready-made classes for well-known standard datasets, calling them automatically downloads the dataset (if not already present) and gives you a dataset object. Recommended for your very first end-to-end test, per the Phase 2 hardware guidance, since they need no manual data collection at all.</p>
+        <p><strong>Example:</strong> <code>torchvision.datasets.MNIST(root="./data", download=True, transform=transform)</code>.</p>
+      </div>
+<div class="panel"><h4><code>torch.utils.data.DataLoader(dataset, batch_size, shuffle=True)</code></h4>
+        
+        <p>Technically part of core <code>torch</code> rather than torchvision, but always used together with a dataset object, so covered here. Wraps a dataset object and automatically handles splitting it into batches, shuffling the order each epoch, and (optionally) loading data in parallel using background worker processes.</p>
+        <ul class="func-args">
+          <li><code>dataset</code>, the dataset object (from ImageFolder, MNIST, etc).</li>
+          <li><code>batch_size</code>, how many images per batch, per the hardware-fitting guidance (8-16 to start).</li>
+          <li><code>shuffle=True</code>, randomizes image order each epoch, important so the network doesn't learn any accidental pattern from a fixed ordering.</li>
+        </ul>
+        <p>Once created, you loop over it directly in your training loop: <code>for images, labels in dataloader: ...</code>, each iteration hands you one ready-to-use batch tensor.</p>
+      </div>
+<div class="panel"><h4><code>torchvision.utils.save_image(tensor, path)</code></h4>
+        
+        <p>Saves a tensor (or batch of tensors, arranged into a grid automatically) directly as a viewable image file. Extremely useful for periodically saving what your model generates during training, so you can watch its progress across epochs without writing your own image-saving code.</p>
+      </div>
+    </section>
+
+    <section id="pkg-numpy" data-track>
+      <h2>numpy</h2>
+<p>
+        A general numerical array library that predates and partly inspired PyTorch's
+        tensor design. You'll use it far less than <code>torch</code> itself in this
+        project, mainly for small precomputations before anything touches the GPU.
+      </p>
+<div class="panel"><h4><code>numpy.linspace(start, stop, num)</code></h4>
+        
+        <p>Generates <code>num</code> evenly spaced values between <code>start</code> and <code>stop</code>, inclusive. This is exactly how you'll build a <strong>linear noise schedule</strong>, generating the list of β values evenly spaced between a small starting value and a larger ending value, one per timestep.</p>
+        <p><strong>Example:</strong> <code>np.linspace(0.0001, 0.02, 1000)</code> produces 1000 beta values, evenly spaced from 0.0001 up to 0.02, a standard linear schedule range used in the original DDPM paper.</p>
+      </div>
+<div class="panel"><h4><code>numpy.cumprod(array)</code></h4>
+        
+        <p>Computes the running (cumulative) product of an array, element <em>i</em> of the output is the product of all elements from index 0 through <em>i</em> of the input. This is precisely how you compute <strong>alpha-bar</strong> from the list of individual alphas: <code>alpha_bar = np.cumprod(alphas)</code>.</p>
+      </div>
+<div class="panel"><h4><code>torch.from_numpy(array)</code></h4>
+        
+        <p>Converts a numpy array into a PyTorch tensor (sharing the same underlying memory, so it's an efficient, cheap conversion). You'll use this once, right after precomputing your beta/alpha/alpha-bar schedule with numpy, to bring those values into PyTorch so they can be used directly in tensor formulas alongside your image tensors.</p>
+      </div>
+    </section>
+
+    <section id="pkg-matplotlib" data-track>
+      <h2>matplotlib</h2>
+<p>For visually inspecting what's happening, noisy images, generated samples, and loss curves.</p>
+<div class="panel"><h4><code>matplotlib.pyplot.imshow(image)</code></h4>
+        
+        <p>Displays an image directly in your notebook. Expects a numpy array (or array-like) in <code>(height, width, channels)</code> order, the opposite channel order from PyTorch's <code>(channels, height, width)</code>, so you'll typically need to rearrange a tensor's dimensions before displaying it (commonly with <code>.permute(1, 2, 0)</code>, and moving it off the GPU first with <code>.cpu()</code>, plus <code>.numpy()</code> to convert from tensor to array).</p>
+        <p><strong>Example:</strong> <code>plt.imshow(image_tensor.permute(1, 2, 0).cpu().numpy())</code>.</p>
+      </div>
+<div class="panel"><h4><code>matplotlib.pyplot.plot(values)</code></h4>
+        
+        <p>Draws a line graph from a list of numbers. You'll use this to plot your loss value over training steps or epochs, watching whether the loss trends downward over time is your main signal that training is actually working.</p>
+      </div>
+<div class="panel"><h4><code>matplotlib.pyplot.show() / plt.savefig(path)</code></h4>
+        
+        <p><code>show()</code> renders whatever you've plotted so far. <code>savefig(path)</code> saves the current plot to an image file on disk instead of (or as well as) displaying it, useful for keeping a permanent record of a loss curve from a specific training run.</p>
+      </div>
+    </section>
+
+    <section id="pkg-tqdm" data-track>
+      <h2>tqdm</h2>
+<p>A single-purpose library: progress bars for loops.</p>
+<div class="panel"><h4><code>tqdm(iterable)</code></h4>
+        
+        <p>Wraps any loop you're iterating over, and automatically displays a live progress bar with a percentage, elapsed time, and estimated time remaining. You wrap it directly around your DataLoader loop.</p>
+        <p><strong>Example:</strong> <code>for images, labels in tqdm(dataloader): ...</code>, replacing <code>tqdm(dataloader)</code> for plain <code>dataloader</code> is the entire change needed; everything else about the loop stays identical.</p>
+      </div>
+<div class="panel"><h4><code>progress_bar.set_description(text) / set_postfix(dict)</code></h4>
+        
+        <p>If you assign the tqdm-wrapped loop to a variable, you can update the text shown alongside the bar live during training, commonly used to show the current loss value updating in real time next to the progress bar.</p>
+        <p><strong>Example:</strong></p>
+        <pre><code class="lang-py">loop = tqdm(dataloader)
+for images, labels in loop:
+    ...
+    loop.set_postfix(loss=loss.item())</code></pre>
+      </div>
+    </section>
+
+    <section id="pkg-einops" data-track>
+      <h2>einops</h2>
+<p>
+        Makes tensor reshaping and rearranging readable, by naming dimensions instead
+        of remembering their numeric position.
+      </p>
+<div class="panel"><h4><code>einops.rearrange(tensor, pattern)</code></h4>
+        
+        <p>Reshapes/transposes a tensor according to a pattern string written using letters for each dimension, rather than numeric indices, reads much more like a description of what you want than <code>tensor.permute(...).reshape(...)</code> chains would.</p>
+        <p><strong>Example:</strong> preparing a feature grid for the attention layer often requires flattening the height and width into one dimension: <code>rearrange(x, "b c h w -> b (h w) c")</code>, read literally as "take a tensor with batch, channel, height, width, and rearrange it into batch, (height times width combined), channel." This single readable line replaces several harder-to-read manual reshape/transpose calls.</p>
+      </div>
+<div class="panel"><h4><code>einops.repeat(tensor, pattern, **sizes)</code></h4>
+        
+        <p>Repeats a tensor's values along new or existing dimensions, again described with a readable pattern string. Occasionally useful when you need to broadcast a per-batch value (like a timestep embedding) across every spatial position of a feature grid explicitly, though PyTorch's automatic broadcasting (covered in the tensor operations section) often handles this without needing an explicit repeat.</p>
+      </div>
+    </section>
+
+    <section id="pkg-diffusers" data-track>
+      <h2>diffusers (reference library)</h2>
+<p>
+        Recall from Phase 1: you're building your own U-Net and training loop by hand
+        to actually learn this, not using this library's pre-built pipeline directly.
+        Still, two things from it are worth knowing how to find, purely as reference
+        material while you build your own version.
+      </p>
+<div class="panel"><h4><code>diffusers.UNet2DModel</code></h4>
+        
+        <p>The library's own ready-made U-Net class, built specifically for diffusion models. Reading its source code (available on GitHub, or via <code>import inspect; print(inspect.getsource(UNet2DModel))</code> in a notebook) is a good way to compare your own hand-built version against a well-tested professional implementation, once yours is working, a good sanity check, not a starting template to copy from directly.</p>
+      </div>
+<div class="panel"><h4><code>diffusers.DDPMScheduler</code></h4>
+        
+        <p>The library's ready-made implementation of exactly the noise schedule and forward/reverse formulas covered in Phase 2. Useful as a reference to check your own hand-written schedule code produces the same beta/alpha/alpha-bar numbers, if you ever want to double-check your implementation against a trusted source.</p>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="d1-setup.html"><span class="dir">Previous</span><span>D1 Phase 1: Setup</span></a>
+      <a class="next" href="d3-how-diffusion-works.html"><span class="dir">Next</span><span>D3 Phase 2: How diffusion works</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

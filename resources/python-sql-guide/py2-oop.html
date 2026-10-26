@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="PY2">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Classes, dataclasses, typing and modules | Python + SQL</title>
+<meta name="description" content="Classes and objects, dunder methods, properties, inheritance and MRO, abstract classes, dataclasses, enums, type hints, modules, packages and imports.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part PY2</p>
+      <h1>Classes, dataclasses, typing and modules</h1>
+      <p class="lede">Object-oriented programming bundles data with the behaviour that works on it. Python's object model is simple and very flexible. This part covers it fully, plus type hints and how code is organised into modules and packages.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag">~4 hours</span></div>
+    </div>
+
+    <section id="classes" data-track>
+      <h2>Classes and objects</h2>
+<h3>Intuition</h3>
+<p>A <strong>class</strong> is a blueprint; an <strong>object</strong> (instance) is something built from it. A bank account has data (owner, balance) and actions (deposit, withdraw). A class keeps both together.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py2-01.py">class Account:
+    bank = "PyBank"                       # class attribute, shared by all instances
+
+    def __init__(self, owner, balance=0): # initialiser, runs on creation
+        self.owner = owner                # instance attributes
+        self.balance = balance
+
+    def deposit(self, amount):
+        if amount &lt;= 0:
+            raise ValueError("amount must be positive")
+        self.balance += amount
+        return self.balance
+
+    def __repr__(self):
+        return f"Account({self.owner!r}, {self.balance})"
+
+a = Account("Ada", 100)
+a.deposit(50)
+print(a, a.bank, Account.bank, a.balance)
+b = Account("Ben")
+print(b, a is b)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>Account('Ada', 150) PyBank PyBank 150
+Account('Ben', 0) False</code></pre>
+<p><code>self</code> is the instance the method is called on. <code>a.deposit(50)</code> is shorthand for <code>Account.deposit(a, 50)</code>.</p>
+<h3>Instance, class and static methods</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/py2-02.py">class Temp:
+    unit = "C"
+    def __init__(self, deg): self.deg = deg
+    def to_f(self):                       # needs the instance
+        return self.deg * 9 / 5 + 32
+    @classmethod
+    def from_f(cls, f):                   # alternative constructor; gets the class
+        return cls((f - 32) * 5 / 9)
+    @staticmethod
+    def is_valid(deg):                    # no self or cls; just grouped here
+        return deg &gt;= -273.15
+
+t = Temp.from_f(212)
+print(t.deg, t.to_f(), Temp.is_valid(-300))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>100.0 212.0 False</code></pre>
+<h3>Properties: controlled attributes</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/py2-03.py">class Circle:
+    def __init__(self, r): self._r = r
+    @property
+    def radius(self): return self._r
+    @radius.setter
+    def radius(self, v):
+        if v &lt; 0: raise ValueError("radius must be non-negative")
+        self._r = v
+    @property
+    def area(self): return 3.14159 * self._r ** 2     # computed on access
+
+c = Circle(2)
+c.radius = 3
+print(c.radius, round(c.area, 2))
+try:
+    c.radius = -1
+except ValueError as e:
+    print("error:", e)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>3 28.27
+error: radius must be non-negative</code></pre>
+<p>Python has no <code>private</code> keyword. A leading underscore (<code>_r</code>) means "internal, please do not touch". A double underscore (<code>__x</code>) triggers <strong>name mangling</strong> to avoid accidental clashes in subclasses.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py2-q01" data-topic="Python OOP" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is <code>self</code>?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The class itself <span class="q-why">That is cls in a classmethod.</span></li>
+          <li data-key="B">The instance the method was called on <span class="q-why">Correct.</span></li>
+          <li data-key="C">A keyword <span class="q-why">It is only a convention.</span></li>
+          <li data-key="D">The parent class <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Methods receive the instance as their first argument; by convention it is named self.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-py2-q02" data-topic="Python OOP" data-type="fill" data-answer="classmethod">
+        <div class="q-stem"><p>A method decorated with @<input class="q-input" aria-label="blank 1"> receives the class as its first argument.</p></div>
+        <div class="q-explain"><p>classmethod is used for alternative constructors.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Instance, class and static methods?</summary><div class="answer"><p>Instance methods get self, classmethods get cls, staticmethods get neither.</p></div></details>
+      </div>
+    </section>
+
+    <section id="dunder" data-track>
+      <h2>Special (dunder) methods</h2>
+<h3>Making objects behave like built-ins</h3>
+<p>Methods with double underscores let your class plug into Python syntax.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py2-04.py">class Vector:
+    def __init__(self, x, y): self.x, self.y = x, y
+    def __repr__(self): return f"Vector({self.x}, {self.y})"
+    def __add__(self, o): return Vector(self.x + o.x, self.y + o.y)
+    def __mul__(self, k): return Vector(self.x * k, self.y * k)
+    def __eq__(self, o): return isinstance(o, Vector) and (self.x, self.y) == (o.x, o.y)
+    def __hash__(self): return hash((self.x, self.y))
+    def __len__(self): return 2
+    def __iter__(self): yield self.x; yield self.y
+    def __bool__(self): return bool(self.x or self.y)
+    def __getitem__(self, i): return (self.x, self.y)[i]
+
+v = Vector(1, 2) + Vector(3, 4)
+print(v, v * 2, v == Vector(4, 6), len(v), list(v), v[0], bool(Vector(0, 0)))
+print({v: "ok"}[Vector(4, 6)])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>Vector(4, 6) Vector(8, 12) True 2 [4, 6] 4 False
+ok</code></pre>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Method</th><th>Used by</th></tr></thead>
+<tbody>
+<tr><td><code>__repr__</code>, <code>__str__</code></td><td><code>repr(x)</code>, <code>print(x)</code></td></tr><tr><td><code>__eq__</code>, <code>__lt__</code>, ...</td><td><code>==</code>, <code>&lt;</code>; <code>functools.total_ordering</code> fills in the rest</td></tr><tr><td><code>__hash__</code></td><td><code>hash(x)</code>, dict keys and sets (define with <code>__eq__</code>)</td></tr><tr><td><code>__len__</code>, <code>__getitem__</code>, <code>__iter__</code>, <code>__contains__</code></td><td><code>len</code>, indexing, loops, <code>in</code></td></tr><tr><td><code>__enter__</code>, <code>__exit__</code></td><td><code>with</code> statements</td></tr><tr><td><code>__call__</code></td><td>calling the object like a function</td></tr><tr><td><code>__getattr__</code>, <code>__setattr__</code></td><td>dynamic attribute access</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py2-q03" data-topic="Python OOP" data-type="single" data-answer="B">
+        <div class="q-stem"><p>You define __eq__ on a class and want its instances usable as dict keys. What else must you define?</p></div>
+        <ul class="q-options">
+          <li data-key="A">__len__ <span class="q-why">No.</span></li>
+          <li data-key="B">__hash__ <span class="q-why">Correct.</span></li>
+          <li data-key="C">__iter__ <span class="q-why">No.</span></li>
+          <li data-key="D">Nothing <span class="q-why">Defining __eq__ alone sets __hash__ to None.</span></li>
+        </ul>
+        <div class="q-explain"><p>Equal objects must have equal hashes.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name five dunder methods and their uses.</summary><div class="answer"><p>__init__ (create), __repr__ (debug text), __eq__ (equality), __iter__ (loops), __enter__/__exit__ (with).</p></div></details>
+      </div>
+    </section>
+
+    <section id="inheritance" data-track>
+      <h2>Inheritance and composition</h2>
+<h3>Inheritance and super</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/py2-05.py">class Animal:
+    def __init__(self, name): self.name = name
+    def speak(self): return "..."
+    def intro(self): return f"{self.name} says {self.speak()}"
+
+class Dog(Animal):
+    def speak(self): return "Woof"
+
+class Puppy(Dog):
+    def __init__(self, name, age):
+        super().__init__(name)            # call the parent initialiser
+        self.age = age
+    def speak(self): return super().speak() + "!"
+
+for pet in (Animal("Generic"), Dog("Rex"), Puppy("Bit", 1)):
+    print(pet.intro())
+print(isinstance(Puppy("a", 1), Animal), issubclass(Puppy, Dog))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>Generic says ...
+Rex says Woof
+Bit says Woof!
+True True</code></pre>
+<p>This is <strong>polymorphism</strong>: <code>intro</code> works for any <code>Animal</code> and calls the right <code>speak</code>.</p>
+<h3>Multiple inheritance and the MRO</h3>
+<p>A class can have several parents. Python resolves which method to use by the <strong>method resolution order (MRO)</strong>, computed with the C3 linearisation: children before parents, parents in the listed order.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py2-06.py">class A:
+    def who(self): return "A"
+class B(A):
+    def who(self): return "B&gt;" + super().who()
+class C(A):
+    def who(self): return "C&gt;" + super().who()
+class D(B, C):
+    pass
+print(D().who())
+print([k.__name__ for k in D.__mro__])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>B&gt;C&gt;A
+['D', 'B', 'C', 'A', 'object']</code></pre>
+<p><code>super()</code> follows the MRO, not only the direct parent. Prefer <strong>composition</strong> (an object that has other objects) and <strong>mixins</strong> (small classes adding one capability) to deep hierarchies.</p>
+<h3>Abstract base classes</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/py2-07.py">from abc import ABC, abstractmethod
+
+class Shape(ABC):
+    @abstractmethod
+    def area(self): ...
+
+class Square(Shape):
+    def __init__(self, s): self.s = s
+    def area(self): return self.s ** 2
+
+try:
+    Shape()
+except TypeError:
+    print("cannot instantiate an abstract class")
+print(Square(3).area())</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>cannot instantiate an abstract class
+9</code></pre>
+<h3>Duck typing and protocols</h3>
+<p>Python cares about <strong>behaviour, not declared type</strong>: "if it walks like a duck and quacks like a duck". Any object with the needed methods works. <code>typing.Protocol</code> lets you describe such an interface for type checkers.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py2-q04" data-topic="Python OOP" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does <code>super()</code> follow in multiple inheritance?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Only the first parent <span class="q-why">No.</span></li>
+          <li data-key="B">The method resolution order (MRO) <span class="q-why">Correct.</span></li>
+          <li data-key="C">Alphabetical order <span class="q-why">No.</span></li>
+          <li data-key="D">Random order <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>super() proceeds to the next class in the MRO of the instance's type.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Composition versus inheritance?</summary><div class="answer"><p>Composition (has-a) is more flexible and less coupled; inheritance (is-a) should model genuine specialisation.</p></div></details>
+      </div>
+    </section>
+
+    <section id="dataclasses" data-track>
+      <h2>Dataclasses and enums</h2>
+<h3>Dataclasses</h3>
+<p><code>@dataclass</code> generates <code>__init__</code>, <code>__repr__</code> and <code>__eq__</code> from annotated fields.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py2-08.py">from dataclasses import dataclass, field, replace
+
+@dataclass(order=True, frozen=True)
+class Item:
+    name: str
+    price: float
+    tags: tuple = ()
+
+@dataclass
+class Cart:
+    items: list = field(default_factory=list)    # never use [] directly
+    def total(self): return sum(i.price for i in self.items)
+
+a, b = Item("pen", 2.5), Item("book", 12.0, ("paper",))
+cart = Cart([a, b])
+print(a, cart.total(), a &lt; b, replace(a, price=3))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>Item(name='pen', price=2.5, tags=()) 14.5 False Item(name='pen', price=3, tags=())</code></pre>
+<p><code>frozen=True</code> makes instances immutable and hashable; <code>order=True</code> adds comparisons; <code>slots=True</code> saves memory.</p>
+<h3>Enums</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/py2-09.py">from enum import Enum, auto
+
+class Status(Enum):
+    PENDING = auto()
+    PAID = auto()
+    SHIPPED = auto()
+
+s = Status.PAID
+print(s, s.name, s.value, Status["SHIPPED"], [m.name for m in Status])
+print(s is Status.PAID, s == Status.PENDING)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>Status.PAID PAID 2 Status.SHIPPED ['PENDING', 'PAID', 'SHIPPED']
+True False</code></pre>
+<p>Enums give named constants that cannot be confused with plain numbers or strings.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py2-q05" data-topic="Python OOP" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why does <code>field(default_factory=list)</code> exist?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is faster <span class="q-why">Not the reason.</span></li>
+          <li data-key="B">A literal [] default would be shared by all instances <span class="q-why">Correct.</span></li>
+          <li data-key="C">It freezes the list <span class="q-why">No.</span></li>
+          <li data-key="D">It sorts the list <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Mutable defaults are shared, so a factory creates a fresh one each time.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does @dataclass generate?</summary><div class="answer"><p>__init__, __repr__ and __eq__ (and optionally ordering, hashing and slots) from annotated fields.</p></div></details>
+      </div>
+    </section>
+
+    <section id="typing" data-track>
+      <h2>Type hints</h2>
+<h3>What they are</h3>
+<p><strong>Type hints</strong> annotate expected types. Python does <strong>not</strong> enforce them at runtime. Tools such as <strong>mypy</strong> and <strong>pyright</strong> and editors check them, catching bugs early and documenting intent.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py2-10.py">from typing import Optional, Callable, Iterable, TypeVar, Protocol
+
+T = TypeVar("T")
+
+def first(items: Iterable[T]) -&gt; Optional[T]:
+    for x in items:
+        return x
+    return None
+
+def apply(fn: Callable[[int], int], xs: list[int]) -&gt; list[int]:
+    return [fn(x) for x in xs]
+
+class Drawable(Protocol):
+    def draw(self) -&gt; str: ...
+
+class Box:
+    def draw(self) -&gt; str: return "[]"
+
+def render(d: Drawable) -&gt; str: return d.draw()
+
+print(first([]), first("abc"), apply(lambda n: n + 1, [1, 2]), render(Box()))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>None a [2, 3] []</code></pre>
+<p>Common forms (Python 3.10+): <code>int | None</code>, <code>list[str]</code>, <code>dict[str, int]</code>, <code>tuple[int, ...]</code>, <code>Callable[[int], str]</code>, <code>Literal["a", "b"]</code>, <code>TypedDict</code>, generics with <code>TypeVar</code>. Add hints to public functions first, run a checker in CI.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py2-q06" data-topic="Python OOP" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Does Python enforce type hints at runtime?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Yes, always <span class="q-why">No.</span></li>
+          <li data-key="B">No, they are for tools and readers (unless a library like pydantic checks them) <span class="q-why">Correct.</span></li>
+          <li data-key="C">Only for ints <span class="q-why">No.</span></li>
+          <li data-key="D">Only in functions <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Hints are annotations; checkers like mypy verify them separately.</p></div>
+      </div>
+    </section>
+
+    <section id="modules" data-track>
+      <h2>Modules, packages and imports</h2>
+<h3>Modules</h3>
+<p>A <strong>module</strong> is a <code>.py</code> file. <code>import</code> runs it once, caches it in <code>sys.modules</code>, and gives you its names.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py2-11.py">import math
+import json as j
+from collections import Counter
+from os.path import join, basename as bn
+print(math.sqrt(16), j.dumps([1]), Counter("aab"), bn(join("a", "b.txt")))
+import sys
+print("math" in sys.modules, type(math).__name__)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>4.0 [1] Counter({'a': 2, 'b': 1}) b.txt
+True module</code></pre>
+<h3>Packages</h3>
+<p>A <strong>package</strong> is a directory of modules (with <code>__init__.py</code>, or a namespace package without it).</p>
+<pre><code>shop/
+  __init__.py          # makes it a package; can re-export names
+  models.py
+  services/
+    __init__.py
+    billing.py         # from shop.services.billing import charge</code></pre>
+<p>Inside a package prefer <strong>absolute imports</strong> (<code>from shop.models import Order</code>) and use relative imports (<code>from .models import Order</code>) sparingly. Avoid circular imports by moving shared code to a third module or importing inside a function.</p>
+<h3>The <code>__main__</code> guard</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/py2-12.py">def main():
+    print("running as a script")
+
+if __name__ == "__main__":     # true only when run directly, not when imported
+    main()</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>running as a script</code></pre>
+<h3>Where Python looks for modules</h3>
+<p><code>sys.path</code>: the script's directory, then <code>PYTHONPATH</code>, the standard library and site-packages (installed packages). Use a <strong>virtual environment</strong> per project (<a href="py5-engineering.html">PY5</a>).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py2-q07" data-topic="Python OOP" data-type="multi" data-answer="A,C">
+        <div class="q-stem"><p>Which are true about <code>if __name__ == '__main__':</code>? Select all.</p></div>
+        <ul class="q-options">
+          <li data-key="A">The block runs when the file is executed as a script</li>
+          <li data-key="B">The block runs when the file is imported</li>
+          <li data-key="C">It lets a file be both importable and runnable</li>
+          <li data-key="D">It is required in every file</li>
+        </ul>
+        <div class="q-explain"><p>On import, __name__ is the module's name, not '__main__'.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is the difference between a module and a package?</summary><div class="answer"><p>A module is a single .py file; a package is a directory of modules.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Python OOP</h2>
+      <p class="muted">10 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Python OOP">
+<details class="recall iq" data-level="basic" data-topic="Python OOP"><summary><span class="tag ok">Basic</span> What is self?</summary><div class="answer"><p>The instance the method is called on, passed automatically as the first argument.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Python OOP"><summary><span class="tag ok">Basic</span> Class attribute versus instance attribute?</summary><div class="answer"><p>Class attributes are shared by all instances; instance attributes belong to one object. Assigning through an instance creates an instance attribute that shadows the class one.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python OOP"><summary><span class="tag warn">Medium</span> Explain @staticmethod, @classmethod and instance methods.</summary><div class="answer"><p>Instance methods receive self, classmethods receive the class (alternative constructors), staticmethods receive neither and are just namespaced functions.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python OOP"><summary><span class="tag warn">Medium</span> What are dunder methods? Give examples.</summary><div class="answer"><p>Special methods that integrate classes with the language: __init__, __repr__, __eq__, __hash__, __len__, __iter__, __enter__ and __exit__, __call__.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python OOP"><summary><span class="tag warn">Medium</span> What does @dataclass give you?</summary><div class="answer"><p>Generated __init__, __repr__ and __eq__ from annotated fields, plus options for ordering, immutability (frozen) and slots. Use field(default_factory=...) for mutable defaults.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python OOP"><summary><span class="tag warn">Medium</span> What is duck typing?</summary><div class="answer"><p>Behaviour matters, not declared type: an object works if it has the needed methods. Protocols describe such interfaces for type checkers.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python OOP"><summary><span class="tag bad">Advanced</span> Explain the method resolution order and super().</summary><div class="answer"><p>The MRO is the C3 linearisation: children before parents, parents in the declared order. super() delegates to the next class in the instance&#x27;s MRO, which makes cooperative multiple inheritance work.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python OOP"><summary><span class="tag bad">Advanced</span> Composition or inheritance?</summary><div class="answer"><p>Prefer composition (has-a) for flexibility and loose coupling. Use inheritance for genuine is-a relationships and shared behaviour, and keep hierarchies shallow, using mixins sparingly.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python OOP"><summary><span class="tag bad">Advanced</span> Do type hints enforce types?</summary><div class="answer"><p>No. They are annotations checked by tools such as mypy and pyright, and used by libraries like pydantic or dataclasses, but the interpreter does not enforce them.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python OOP"><summary><span class="tag bad">Advanced</span> What does __hash__ need when you define __eq__?</summary><div class="answer"><p>Equal objects must have equal hashes. Defining __eq__ alone sets __hash__ to None, making the class unhashable; define both for set and dict use, based on immutable fields.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="py1-data.html"><span class="dir">Previous</span><span>PY1 Collections, comprehensions, files and text</span></a>
+      <a class="next" href="py3-advanced.html"><span class="dir">Next</span><span>PY3 Advanced Python: iterators, generators, decorators and the object model</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

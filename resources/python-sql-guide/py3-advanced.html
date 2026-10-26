@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="PY3">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Advanced Python: iterators, generators, decorators and the object model | Python + SQL</title>
+<meta name="description" content="The iterator protocol, generators, closures, decorators, context managers, functools and itertools, descriptors, metaclasses, memory management, the GIL and common pitfalls.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part PY3</p>
+      <h1>Advanced Python: iterators, generators, decorators and the object model</h1>
+      <p class="lede">These are the features that separate someone who writes Python from someone who understands it. Each one is built from a simple idea, shown here with small programs whose outputs were checked by running them.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="iterators" data-track>
+      <h2>Iterators and generators</h2>
+<h3>The iteration protocol</h3>
+<p>A <code>for</code> loop calls <code>iter(obj)</code> to get an <strong>iterator</strong>, then repeatedly calls <code>next()</code> on it until <code>StopIteration</code>. An <strong>iterable</strong> has <code>__iter__</code>; an <strong>iterator</strong> has <code>__next__</code> and returns itself from <code>__iter__</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py3-01.py">it = iter([10, 20])
+print(next(it), next(it))
+try:
+    next(it)
+except StopIteration:
+    print("exhausted")
+
+class Countdown:
+    def __init__(self, n): self.n = n
+    def __iter__(self): return self
+    def __next__(self):
+        if self.n &lt;= 0:
+            raise StopIteration
+        self.n -= 1
+        return self.n + 1
+print(list(Countdown(3)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>10 20
+exhausted
+[3, 2, 1]</code></pre>
+<h3>Generators</h3>
+<p>A function with <code>yield</code> becomes a <strong>generator function</strong>. Calling it returns a generator (an iterator) that runs lazily, pausing at each <code>yield</code> and resuming where it stopped. State is kept for you.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py3-02.py">def fib():
+    a, b = 0, 1
+    while True:
+        yield a
+        a, b = b, a + b
+
+from itertools import islice
+print(list(islice(fib(), 10)))
+
+def read_chunks(items, size):
+    for i in range(0, len(items), size):
+        yield items[i:i + size]
+print(list(read_chunks(list(range(7)), 3)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[0, 1, 1, 2, 3, 5, 8, 13, 21, 34]
+[[0, 1, 2], [3, 4, 5], [6]]</code></pre>
+<p>Why generators matter: they process huge or infinite streams in constant memory, and let you build pipelines.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py3-03.py">def numbers():
+    for n in range(1, 11):
+        yield n
+def squares(it):
+    for n in it:
+        yield n * n
+def evens(it):
+    for n in it:
+        if n % 2 == 0:
+            yield n
+print(sum(evens(squares(numbers()))))     # nothing is stored in a list</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>220</code></pre>
+<h3>send, yield from and generator state</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/py3-04.py">def averager():
+    total, count, avg = 0.0, 0, None
+    while True:
+        x = yield avg                # receives values from .send()
+        total += x; count += 1
+        avg = total / count
+
+g = averager(); next(g)
+print(g.send(10), g.send(20), g.send(30))
+
+def flatten(nested):
+    for item in nested:
+        if isinstance(item, list):
+            yield from flatten(item)   # delegate to a sub-generator
+        else:
+            yield item
+print(list(flatten([1, [2, [3, 4]], 5])))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>10.0 15.0 20.0
+[1, 2, 3, 4, 5]</code></pre>
+<p>A generator is <strong>single use</strong>: once exhausted it yields nothing more.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py3-q01" data-topic="Python advanced" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does a generator function return when called?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Its final value <span class="q-why">Nothing runs yet.</span></li>
+          <li data-key="B">A generator object that runs lazily on demand <span class="q-why">Correct.</span></li>
+          <li data-key="C">A list <span class="q-why">No.</span></li>
+          <li data-key="D">None <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The body runs only when you ask for values with next() or a loop.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-py3-q02" data-topic="Python advanced" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which is true of generator expressions?</p></div>
+        <ul class="q-options">
+          <li data-key="A">They build the full list in memory <span class="q-why">That is a list comprehension.</span></li>
+          <li data-key="B">They produce values lazily and can be consumed once <span class="q-why">Correct.</span></li>
+          <li data-key="C">They are slower than loops <span class="q-why">Not generally.</span></li>
+          <li data-key="D">They need classes <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>They use parentheses and yield items on demand.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Iterable versus iterator?</summary><div class="answer"><p>An iterable can produce an iterator via __iter__; an iterator produces values with __next__ and is exhausted after one pass.</p></div></details>
+      </div>
+    </section>
+
+    <section id="decorators" data-track>
+      <h2>Closures and decorators</h2>
+<h3>Closures</h3>
+<p>An inner function can <strong>capture</strong> variables from the enclosing function, keeping them alive.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py3-05.py">def make_counter():
+    count = 0
+    def inc():
+        nonlocal count
+        count += 1
+        return count
+    return inc
+c1, c2 = make_counter(), make_counter()
+print(c1(), c1(), c2())
+
+# late binding gotcha: all lambdas see the final i
+fs = [lambda: i for i in range(3)]
+print([f() for f in fs])
+fs = [lambda i=i: i for i in range(3)]      # bind the current value
+print([f() for f in fs])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>1 2 1
+[2, 2, 2]
+[0, 1, 2]</code></pre>
+<h3>Decorators</h3>
+<p>A <strong>decorator</strong> is a function that takes a function and returns a new one, usually adding behaviour. <code>@dec</code> above <code>def f</code> means <code>f = dec(f)</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py3-06.py">import functools, time
+
+def timed(fn):
+    @functools.wraps(fn)                 # keep name and docstring
+    def wrapper(*args, **kwargs):
+        start = time.perf_counter()
+        result = fn(*args, **kwargs)
+        wrapper.last = time.perf_counter() - start
+        return result
+    return wrapper
+
+@timed
+def work(n):
+    """Add numbers."""
+    return sum(range(n))
+
+print(work(1000), work.__name__, work.__doc__, work.last &gt;= 0)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>499500 work Add numbers. True</code></pre>
+<h3>Decorators with arguments, and class decorators</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/py3-07.py">import functools
+
+def retry(times):
+    def deco(fn):
+        @functools.wraps(fn)
+        def wrapper(*a, **k):
+            for attempt in range(1, times + 1):
+                try:
+                    return fn(*a, **k)
+                except ValueError as e:
+                    print("attempt", attempt, "failed:", e)
+            raise RuntimeError("gave up")
+        return wrapper
+    return deco
+
+calls = {"n": 0}
+@retry(3)
+def flaky():
+    calls["n"] += 1
+    if calls["n"] &lt; 3:
+        raise ValueError("not yet")
+    return "ok"
+print(flaky())
+
+@functools.lru_cache(maxsize=None)
+def fib(n): return n if n &lt; 2 else fib(n - 1) + fib(n - 2)
+print(fib(80), fib.cache_info().hits &gt; 0)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>attempt 1 failed: not yet
+attempt 2 failed: not yet
+ok
+23416728348467685 True</code></pre>
+<p>Built-in decorators you already met: <code>@property</code>, <code>@staticmethod</code>, <code>@classmethod</code>, <code>@dataclass</code>, <code>@lru_cache</code>, <code>@wraps</code>.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py3-q03" data-topic="Python advanced" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why use functools.wraps inside a decorator?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To make it faster <span class="q-why">No.</span></li>
+          <li data-key="B">To preserve the wrapped function's name and docstring <span class="q-why">Correct.</span></li>
+          <li data-key="C">To cache results <span class="q-why">That is lru_cache.</span></li>
+          <li data-key="D">To catch errors <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Without it the wrapper replaces the metadata of the original function.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-py3-q04" data-topic="Python advanced" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does <code>[f() for f in [lambda: i for i in range(3)]]</code> return?</p></div>
+        <ul class="q-options">
+          <li data-key="A">[0, 1, 2] <span class="q-why">That needs i=i.</span></li>
+          <li data-key="B">[2, 2, 2] <span class="q-why">Correct: late binding.</span></li>
+          <li data-key="C">[0, 0, 0] <span class="q-why">No.</span></li>
+          <li data-key="D">Error <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The lambdas look up i when called, after the loop has finished.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does @dec above def f mean?</summary><div class="answer"><p>f = dec(f): the name is rebound to the object returned by the decorator.</p></div></details>
+      </div>
+    </section>
+
+    <section id="context" data-track>
+      <h2>Context managers</h2>
+<h3>The with statement</h3>
+<p><code>with</code> runs setup, your block, then guaranteed cleanup, even if an exception occurs. An object works if it defines <code>__enter__</code> and <code>__exit__</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py3-08.py">class Timer:
+    def __enter__(self):
+        print("start")
+        return self
+    def __exit__(self, exc_type, exc, tb):
+        print("stop", "with error" if exc_type else "cleanly")
+        return False          # do not suppress the exception
+
+with Timer():
+    print("working")
+try:
+    with Timer():
+        raise ValueError("boom")
+except ValueError:
+    print("error propagated")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>start
+working
+stop cleanly
+start
+stop with error
+error propagated</code></pre>
+<h3>contextlib</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/py3-09.py">from contextlib import contextmanager, suppress, ExitStack
+
+@contextmanager
+def tag(name):
+    print(f"&lt;{name}&gt;", end="")
+    try:
+        yield
+    finally:
+        print(f"&lt;/{name}&gt;")
+
+with tag("b"):
+    print("bold", end="")
+
+with suppress(FileNotFoundError):
+    open("/definitely/missing.txt")
+print("continued")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>&lt;b&gt;bold&lt;/b&gt;
+continued</code></pre>
+<p>Common uses: files, locks, database transactions, temporary directories, patching in tests, timing, changing directories.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py3-q05" data-topic="Python advanced" data-type="single" data-answer="A">
+        <div class="q-stem"><p>What does <code>__exit__</code> returning True mean?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The exception is suppressed <span class="q-why">Correct.</span></li>
+          <li data-key="B">The block runs again <span class="q-why">No.</span></li>
+          <li data-key="C">The file is closed <span class="q-why">Not by itself.</span></li>
+          <li data-key="D">Nothing <span class="q-why">It matters.</span></li>
+        </ul>
+        <div class="q-explain"><p>Returning a true value swallows the exception raised in the with block.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why use context managers?</summary><div class="answer"><p>They guarantee cleanup (close, release, rollback) even when exceptions occur.</p></div></details>
+      </div>
+    </section>
+
+    <section id="tools" data-track>
+      <h2>functools, itertools and operator</h2>
+<pre><code class="lang-py" data-embed="solutions/snippets/py3-10.py">import functools, itertools, operator
+print(functools.reduce(operator.mul, [1, 2, 3, 4]))
+add5 = functools.partial(operator.add, 5)
+print(add5(10))
+print(list(itertools.chain([1, 2], [3])), list(itertools.accumulate([1, 2, 3, 4])))
+print(list(itertools.combinations("abc", 2)), list(itertools.product([0, 1], repeat=2)))
+print(list(itertools.permutations([1, 2, 3], 2))[:3])
+data = sorted(["apple", "avocado", "banana", "blueberry", "cherry"], key=lambda w: w[0])
+for k, grp in itertools.groupby(data, key=lambda w: w[0]):
+    print(k, list(grp))
+print(list(itertools.islice(itertools.cycle("ab"), 5)), list(itertools.zip_longest([1, 2, 3], "a", fillvalue="-")))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>24
+15
+[1, 2, 3] [1, 3, 6, 10]
+[('a', 'b'), ('a', 'c'), ('b', 'c')] [(0, 0), (0, 1), (1, 0), (1, 1)]
+[(1, 2), (1, 3), (2, 1)]
+a ['apple', 'avocado']
+b ['banana', 'blueberry']
+c ['cherry']
+['a', 'b', 'a', 'b', 'a'] [(1, 'a'), (2, '-'), (3, '-')]</code></pre>
+<p><code>groupby</code> groups <strong>consecutive</strong> items, so sort first. <code>functools.cached_property</code>, <code>singledispatch</code> and <code>total_ordering</code> are also useful.</p>
+    </section>
+
+    <section id="memory" data-track>
+      <h2>Memory, references and the GIL</h2>
+<h3>Reference counting and garbage collection</h3>
+<p>Every object keeps a count of references to it. At zero it is freed immediately. A cycle collector finds unreachable cycles. <code>sys.getrefcount</code> shows the count.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py3-11.py">import sys, gc, weakref
+x = []
+before = sys.getrefcount(x)
+y = x                                  # one more reference
+print(sys.getrefcount(x) - before)     # exactly one more
+
+class Node:
+    def __init__(self): self.other = None
+a, b = Node(), Node()
+a.other, b.other = b, a               # a reference cycle
+r = weakref.ref(a)
+del a, b
+print(r() is not None)                # still alive (cycle)
+gc.collect()
+print(r() is None)                    # the cycle collector freed it</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>1
+True
+True</code></pre>
+<p>Use <strong>weak references</strong> for caches and parent links to avoid cycles.</p>
+<h3>Small tricks and mutability</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/py3-12.py">import sys
+a, b = 256, 256
+print(a is b)                         # small ints are cached
+print([1, 2] == [1, 2], [1, 2] is [1, 2])
+t = (1, [2, 3])
+t[1].append(4)                        # a tuple's items are fixed, but a list inside can change
+print(t)
+print(sys.getsizeof([0] * 100) &gt; sys.getsizeof([]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>True
+True False
+(1, [2, 3, 4])
+True</code></pre>
+<h3>The GIL</h3>
+<p>CPython has a <strong>global interpreter lock</strong>: only one thread executes Python bytecode at a time. Consequences:</p>
+<ul><li><strong>CPU-bound</strong> work in threads does not run in parallel. Use <strong>processes</strong> or native extensions (NumPy releases the GIL).</li><li><strong>I/O-bound</strong> work (network, disk) benefits from threads or asyncio because waiting releases the GIL.</li></ul>
+<p>Recent Python versions offer experimental free-threaded builds that remove the GIL; ecosystem support is still growing. See <a href="py4-concurrency.html">PY4</a>.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py3-q06" data-topic="Python advanced" data-type="single" data-answer="B">
+        <div class="q-stem"><p>For CPU-bound pure Python work, which gives real parallelism in CPython?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Threads <span class="q-why">The GIL serialises bytecode.</span></li>
+          <li data-key="B">Processes <span class="q-why">Correct.</span></li>
+          <li data-key="C">asyncio <span class="q-why">Single threaded.</span></li>
+          <li data-key="D">More functions <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use multiprocessing, a process pool or native code to use multiple cores.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does the GIL mean for threads?</summary><div class="answer"><p>Only one thread runs Python bytecode at a time: no CPU parallelism in threads, but I/O waits still overlap.</p></div></details>
+      </div>
+    </section>
+
+    <section id="metaclass" data-track>
+      <h2>Descriptors, metaclasses and dynamic features</h2>
+<h3>Attribute lookup and descriptors</h3>
+<p>A <strong>descriptor</strong> is an object with <code>__get__</code> (and optionally <code>__set__</code>) stored on a class. Properties, methods and <code>classmethod</code> are all descriptors.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py3-13.py">class Positive:
+    def __set_name__(self, owner, name): self.name = "_" + name
+    def __get__(self, obj, owner=None): return getattr(obj, self.name)
+    def __set__(self, obj, value):
+        if value &lt;= 0:
+            raise ValueError("must be positive")
+        setattr(obj, self.name, value)
+
+class Product:
+    price = Positive()
+    qty = Positive()
+    def __init__(self, price, qty): self.price, self.qty = price, qty
+
+p = Product(9.5, 3)
+print(p.price, p.qty)
+try:
+    p.qty = 0
+except ValueError as e:
+    print("rejected:", e)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>9.5 3
+rejected: must be positive</code></pre>
+<h3>Metaclasses and <code>__init_subclass__</code></h3>
+<p>Classes are objects too, created by a <strong>metaclass</strong> (default <code>type</code>). Most needs are met by the simpler <code>__init_subclass__</code> hook or class decorators.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py3-14.py">class Plugin:
+    registry = {}
+    def __init_subclass__(cls, **kw):
+        super().__init_subclass__(**kw)
+        Plugin.registry[cls.__name__.lower()] = cls
+
+class Csv(Plugin): pass
+class Json(Plugin): pass
+print(sorted(Plugin.registry))
+
+Dynamic = type("Dynamic", (), {"hello": lambda self: "hi"})   # create a class at runtime
+print(Dynamic().hello())</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>['csv', 'json']
+hi</code></pre>
+<h3>Introspection</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/py3-15.py">import inspect
+def f(a, b=2, *args, **kw): ...
+print(inspect.signature(f))
+print(hasattr("x", "upper"), getattr("x", "upper")(), [n for n in dir(1) if n.startswith("bit")])
+print(type(f).__name__, f.__name__, callable(f))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>(a, b=2, *args, **kw)
+True X ['bit_count', 'bit_length']
+function f True</code></pre>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What are descriptors used for?</summary><div class="answer"><p>They control attribute access on classes; properties, methods and classmethods are built from them.</p></div></details>
+      </div>
+    </section>
+
+    <section id="idioms" data-track>
+      <h2>Pythonic idioms and common pitfalls</h2>
+<h3>Idioms</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Instead of</th><th>Write</th></tr></thead>
+<tbody>
+<tr><td><code>for i in range(len(xs))</code></td><td><code>for x in xs</code> or <code>for i, x in enumerate(xs)</code></td></tr><tr><td><code>if x == True</code></td><td><code>if x</code></td></tr><tr><td><code>if len(xs) == 0</code></td><td><code>if not xs</code></td></tr><tr><td>manual index swap</td><td><code>a, b = b, a</code></td></tr><tr><td>string <code>+=</code> in a loop</td><td><code>"".join(parts)</code></td></tr><tr><td><code>try: d[k] except KeyError</code> for defaults</td><td><code>d.get(k, default)</code> or <code>defaultdict</code></td></tr><tr><td>open and close by hand</td><td><code>with open(...)</code></td></tr><tr><td><code>type(x) == list</code></td><td><code>isinstance(x, list)</code></td></tr><tr><td>check then act on a file</td><td>try the action, catch the error (EAFP)</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>EAFP</strong> ("easier to ask forgiveness than permission") is idiomatic: try it and handle the exception, rather than checking beforehand (LBYL).</p>
+<h3>Pitfalls</h3>
+<ul><li>Mutable default arguments and shared <code>[[0]*n]*m</code> rows (<a href="py0-basics.html">PY0</a>, <a href="py1-data.html">PY1</a>).</li><li>Modifying a list while iterating over it: iterate over a copy or build a new list.</li><li>Late-binding closures in loops (shown above).</li><li>Catching broad <code>Exception</code> and hiding bugs.</li><li><code>is</code> for value comparison (use <code>==</code>).</li><li>Integer division and float rounding surprises.</li><li>Circular imports.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/py3-16.py">nums = [1, 2, 3, 4, 5, 6]
+for n in nums:
+    if n % 2 == 0:
+        nums.remove(n)               # skips elements!
+print(nums)
+print([n for n in [1, 2, 3, 4, 5, 6] if n % 2])   # correct</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[1, 3, 5]
+[1, 3, 5]</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py3-q07" data-topic="Python advanced" data-type="multi" data-answer="A,C,D">
+        <div class="q-stem"><p>Which are idiomatic Python? Select all.</p></div>
+        <ul class="q-options">
+          <li data-key="A">for x in items:</li>
+          <li data-key="B">for i in range(len(items)): x = items[i]</li>
+          <li data-key="C">''.join(parts)</li>
+          <li data-key="D">if not items:</li>
+        </ul>
+        <div class="q-explain"><p>Index loops are rarely needed; use enumerate when you need the index.</p></div>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Python advanced</h2>
+      <p class="muted">11 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Python advanced">
+<details class="recall iq" data-level="basic" data-topic="Python advanced"><summary><span class="tag ok">Basic</span> What is a generator and why use one?</summary><div class="answer"><p>A function with yield that returns a lazy iterator. It produces values on demand, saving memory and enabling pipelines and infinite sequences.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Python advanced"><summary><span class="tag ok">Basic</span> What is a decorator?</summary><div class="answer"><p>A callable that takes a function and returns a replacement, usually adding behaviour. @dec above def f means f = dec(f). Use functools.wraps to keep metadata.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python advanced"><summary><span class="tag warn">Medium</span> Explain context managers.</summary><div class="answer"><p>Objects defining __enter__ and __exit__ (or built with contextlib.contextmanager) used with the with statement to guarantee setup and cleanup, even when exceptions occur.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python advanced"><summary><span class="tag warn">Medium</span> What is a closure and what is late binding?</summary><div class="answer"><p>A closure captures variables from its enclosing scope. Late binding means the variable is looked up when the function runs, so lambdas in a loop all see the final value unless bound with a default argument.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python advanced"><summary><span class="tag warn">Medium</span> Iterable versus iterator?</summary><div class="answer"><p>An iterable has __iter__ returning an iterator. An iterator has __next__ and is exhausted after one pass. Lists are iterables; generators are iterators.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python advanced"><summary><span class="tag warn">Medium</span> What does yield from do?</summary><div class="answer"><p>It delegates to a sub-generator, passing values through, and returns the sub-generator&#x27;s result. It simplifies recursive generators.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python advanced"><summary><span class="tag bad">Advanced</span> Explain the GIL.</summary><div class="answer"><p>A lock in CPython allowing only one thread to execute Python bytecode at a time. CPU-bound threads do not run in parallel; I/O-bound threads still overlap. Use multiprocessing or native extensions for CPU parallelism.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python advanced"><summary><span class="tag bad">Advanced</span> How does Python manage memory?</summary><div class="answer"><p>Reference counting frees objects when counts drop to zero, and a cyclic garbage collector handles reference cycles. Weak references avoid keeping objects alive.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python advanced"><summary><span class="tag bad">Advanced</span> What are descriptors?</summary><div class="answer"><p>Objects with __get__, __set__ or __delete__ defined on a class that control attribute access. Properties, methods, classmethods and staticmethods are implemented with descriptors.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python advanced"><summary><span class="tag bad">Advanced</span> When would you use a metaclass?</summary><div class="answer"><p>Rarely: to customise class creation (registries, validation, ORMs). Prefer class decorators or __init_subclass__ when they are enough.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python advanced"><summary><span class="tag bad">Advanced</span> What is the difference between __new__ and __init__?</summary><div class="answer"><p>__new__ creates the instance (a static method returning it) and __init__ initialises it. Override __new__ for immutable types or singletons.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="py2-oop.html"><span class="dir">Previous</span><span>PY2 Classes, dataclasses, typing and modules</span></a>
+      <a class="next" href="py4-concurrency.html"><span class="dir">Next</span><span>PY4 Concurrency: threads, processes and asyncio</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

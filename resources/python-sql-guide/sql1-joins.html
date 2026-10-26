@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="SQL1">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Joins, subqueries, set operations and expressions | Python + SQL</title>
+<meta name="description" content="INNER, LEFT, RIGHT, FULL, CROSS and self joins, join pitfalls, subqueries, correlated subqueries, EXISTS, set operations, CASE, string, number and date functions.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SQL1</p>
+      <h1>Joins, subqueries, set operations and expressions</h1>
+      <p class="lede">Real questions need several tables at once. Joins combine them; subqueries and set operations compose queries. This is the core of everyday SQL and of most interview questions.</p>
+      <div class="meta"><span class="tag ok">Basic</span><span class="tag warn">Medium</span><span class="tag">~4 hours</span></div>
+    </div>
+
+    <section id="joins" data-track>
+      <h2>Joins</h2>
+<h3>Intuition</h3>
+<p>A join pairs rows from two tables whenever a condition holds, usually "the foreign key equals the primary key". Think of laying two lists side by side and connecting matching entries.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql1-01.sql">SELECT o.id AS order_id, c.name, o.order_date, o.status
+FROM orders AS o
+JOIN customers AS c ON c.id = o.customer_id
+ORDER BY o.id
+LIMIT 5;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>order_id</th><th>name</th><th>order_date</th><th>status</th></tr></thead>
+<tbody><tr><td>1</td><td>Ada</td><td>2024-01-10</td><td>paid</td></tr><tr><td>2</td><td>Ada</td><td>2024-02-14</td><td>paid</td></tr><tr><td>3</td><td>Ben</td><td>2024-01-20</td><td>paid</td></tr><tr><td>4</td><td>Chloe</td><td>2024-02-02</td><td>cancelled</td></tr><tr><td>5</td><td>Chloe</td><td>2024-02-25</td><td>paid</td></tr></tbody>
+</table>
+</div>
+<p>Always qualify columns with table aliases (<code>o.id</code>, <code>c.name</code>) when tables share column names.</p>
+<h3>The join types</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Join</th><th>Keeps</th><th>Unmatched rows</th></tr></thead>
+<tbody>
+<tr><td><code>INNER JOIN</code> (or <code>JOIN</code>)</td><td>Only matching pairs</td><td>Dropped</td></tr><tr><td><code>LEFT JOIN</code></td><td>All left rows, plus matches</td><td>Right columns become NULL</td></tr><tr><td><code>RIGHT JOIN</code></td><td>All right rows, plus matches</td><td>Left columns become NULL</td></tr><tr><td><code>FULL OUTER JOIN</code></td><td>All rows from both</td><td>NULLs on whichever side is missing</td></tr><tr><td><code>CROSS JOIN</code></td><td>Every left row with every right row</td><td>No condition (Cartesian product)</td></tr>
+</tbody>
+</table>
+</div>
+<h3>INNER versus LEFT</h3>
+<p>Customers who never ordered disappear in an inner join but stay in a left join.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql1-02.sql">SELECT c.name, COUNT(o.id) AS orders
+FROM customers c
+LEFT JOIN orders o ON o.customer_id = c.id
+GROUP BY c.id, c.name
+ORDER BY orders DESC, c.name;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>orders</th></tr></thead>
+<tbody><tr><td>Ada</td><td>3</td></tr><tr><td>Ben</td><td>2</td></tr><tr><td>Chloe</td><td>2</td></tr><tr><td>Dev</td><td>1</td></tr><tr><td>Eli</td><td>1</td></tr><tr><td>Fay</td><td>1</td></tr><tr><td>Gus</td><td>0</td></tr><tr><td>Hana</td><td>0</td></tr></tbody>
+</table>
+</div>
+<p>Notice <code>COUNT(o.id)</code> (not <code>COUNT(*)</code>): it counts non-NULL order ids, so customers with no orders get <strong>0</strong> instead of 1.</p>
+<h3>Finding rows with no match (anti-join)</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql1-03.sql">SELECT c.name
+FROM customers c
+LEFT JOIN orders o ON o.customer_id = c.id
+WHERE o.id IS NULL;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th></tr></thead>
+<tbody><tr><td>Gus</td></tr><tr><td>Hana</td></tr></tbody>
+</table>
+</div>
+<h3>WHERE versus ON in outer joins</h3>
+<p>Filtering the <strong>right</strong> table in <code>WHERE</code> turns a left join into an inner join, because NULL rows fail the test. Put the condition in <code>ON</code> to keep unmatched left rows.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql1-04.sql">SELECT c.name, COUNT(o.id) AS paid_orders
+FROM customers c
+LEFT JOIN orders o ON o.customer_id = c.id AND o.status = 'paid'   -- condition in ON
+GROUP BY c.id, c.name
+ORDER BY c.id;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>paid_orders</th></tr></thead>
+<tbody><tr><td>Ada</td><td>2</td></tr><tr><td>Ben</td><td>2</td></tr><tr><td>Chloe</td><td>1</td></tr><tr><td>Dev</td><td>1</td></tr><tr><td>Eli</td><td>1</td></tr><tr><td>Fay</td><td>1</td></tr><tr><td>Gus</td><td>0</td></tr><tr><td>Hana</td><td>0</td></tr></tbody>
+</table>
+</div>
+<h3>Joining several tables</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql1-05.sql">SELECT o.id, c.name AS customer, p.name AS product, i.qty, i.qty * p.price AS line_total
+FROM orders o
+JOIN customers c   ON c.id = o.customer_id
+JOIN order_items i ON i.order_id = o.id
+JOIN products p    ON p.id = i.product_id
+WHERE o.id IN (1, 6)
+ORDER BY o.id, p.name;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>id</th><th>customer</th><th>product</th><th>qty</th><th>line_total</th></tr></thead>
+<tbody><tr><td>1</td><td>Ada</td><td>Laptop</td><td>1</td><td>1200.0</td></tr><tr><td>1</td><td>Ada</td><td>Notebook</td><td>10</td><td>50.0</td></tr><tr><td>6</td><td>Dev</td><td>Headphones</td><td>1</td><td>150.0</td></tr><tr><td>6</td><td>Dev</td><td>Phone</td><td>1</td><td>800.0</td></tr></tbody>
+</table>
+</div>
+<h3>Self join and cross join</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql1-06.sql">SELECT e.name AS employee, m.name AS manager
+FROM employees e
+LEFT JOIN employees m ON m.id = e.manager_id
+ORDER BY e.id
+LIMIT 5;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>employee</th><th>manager</th></tr></thead>
+<tbody><tr><td>Alice</td><td>NULL</td></tr><tr><td>Bob</td><td>Alice</td></tr><tr><td>Carol</td><td>Alice</td></tr><tr><td>Dan</td><td>Alice</td></tr><tr><td>Eve</td><td>Dan</td></tr></tbody>
+</table>
+</div>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql1-07.sql">SELECT c.name, p.category
+FROM (SELECT name FROM customers WHERE id &lt;= 2) c
+CROSS JOIN (SELECT DISTINCT category FROM products) p
+ORDER BY c.name, p.category;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>category</th></tr></thead>
+<tbody><tr><td>Ada</td><td>electronics</td></tr><tr><td>Ada</td><td>furniture</td></tr><tr><td>Ada</td><td>stationery</td></tr><tr><td>Ben</td><td>electronics</td></tr><tr><td>Ben</td><td>furniture</td></tr><tr><td>Ben</td><td>stationery</td></tr></tbody>
+</table>
+</div>
+<h3>Join pitfalls</h3>
+<ul><li><strong>Row multiplication</strong>: joining a customer to orders and then to items repeats the customer columns. Aggregating afterwards can double count; aggregate in a subquery first.</li><li><strong>Missing join condition</strong> produces a Cartesian product (rows x rows) and silently huge results.</li><li><strong>Joining on non-unique columns</strong> multiplies rows.</li><li>Use <code>USING (col)</code> as shorthand when both tables share the column name.</li></ul>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql1-08.sql">-- Wrong: SUM(p.price) is repeated once per item, and orders are repeated per line
+SELECT COUNT(*) AS rows_after_join, COUNT(DISTINCT o.id) AS real_orders
+FROM orders o JOIN order_items i ON i.order_id = o.id;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>rows_after_join</th><th>real_orders</th></tr></thead>
+<tbody><tr><td>16</td><td>10</td></tr></tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql1-q01" data-topic="SQL joins" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which join returns all customers, even those who never ordered?</p></div>
+        <ul class="q-options">
+          <li data-key="A">INNER JOIN <span class="q-why">Drops customers without orders.</span></li>
+          <li data-key="B">LEFT JOIN from customers to orders <span class="q-why">Correct.</span></li>
+          <li data-key="C">CROSS JOIN <span class="q-why">Cartesian product.</span></li>
+          <li data-key="D">UNION <span class="q-why">Not a join.</span></li>
+        </ul>
+        <div class="q-explain"><p>A left join keeps every left-side row and fills NULLs where no match exists.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-sql1-q02" data-topic="SQL joins" data-type="single" data-answer="B">
+        <div class="q-stem"><p>You LEFT JOIN orders and add <code>WHERE o.status = 'paid'</code>. What happens?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Unmatched customers are kept <span class="q-why">They have NULL status, which fails the test.</span></li>
+          <li data-key="B">It behaves like an inner join <span class="q-why">Correct.</span></li>
+          <li data-key="C">Syntax error <span class="q-why">No.</span></li>
+          <li data-key="D">Duplicates are removed <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Put the condition in ON to preserve unmatched left rows.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-sql1-q03" data-topic="SQL joins" data-type="numeric" data-answer="20" data-tol="0">
+        <div class="q-stem"><p>Table A has 4 rows and table B has 5 rows. How many rows does A CROSS JOIN B produce?</p></div>
+        <div class="q-explain"><p>4 x 5 = 20.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-sql1-q04" data-topic="SQL joins" data-type="multi" data-answer="A,B,C">
+        <div class="q-stem"><p>Which can cause unexpected row multiplication? Select all.</p></div>
+        <ul class="q-options">
+          <li data-key="A">Joining on a non-unique column</li>
+          <li data-key="B">A missing join condition</li>
+          <li data-key="C">Joining orders to order_items then summing order-level totals</li>
+          <li data-key="D">Using table aliases</li>
+        </ul>
+        <div class="q-explain"><p>Aliases only rename; the others multiply rows or double count.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Inner versus left join?</summary><div class="answer"><p>Inner keeps only matching pairs; left keeps all left rows and NULLs for non-matching right columns.</p></div></details>
+        <details class="recall"><summary>How do you find rows with no match?</summary><div class="answer"><p>LEFT JOIN and filter right key IS NULL, or NOT EXISTS.</p></div></details>
+      </div>
+    </section>
+
+    <section id="subqueries" data-track>
+      <h2>Subqueries</h2>
+<h3>Scalar, row and table subqueries</h3>
+<p>A <strong>subquery</strong> is a query nested inside another.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql1-09.sql">SELECT name, price
+FROM products
+WHERE price &gt; (SELECT AVG(price) FROM products)      -- scalar subquery: one value
+ORDER BY price DESC;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>price</th></tr></thead>
+<tbody><tr><td>Laptop</td><td>1200.0</td></tr><tr><td>Phone</td><td>800.0</td></tr></tbody>
+</table>
+</div>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql1-10.sql">SELECT name FROM customers
+WHERE id IN (SELECT customer_id FROM orders WHERE status = 'paid')   -- list subquery
+ORDER BY name;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th></tr></thead>
+<tbody><tr><td>Ada</td></tr><tr><td>Ben</td></tr><tr><td>Chloe</td></tr><tr><td>Dev</td></tr><tr><td>Eli</td></tr><tr><td>Fay</td></tr></tbody>
+</table>
+</div>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql1-11.sql">SELECT category, ROUND(avg_price, 1) AS avg_price
+FROM (SELECT category, AVG(price) AS avg_price FROM products GROUP BY category) t   -- derived table
+WHERE avg_price &gt; 100;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>category</th><th>avg_price</th></tr></thead>
+<tbody><tr><td>electronics</td><td>716.7</td></tr><tr><td>furniture</td><td>240.0</td></tr></tbody>
+</table>
+</div>
+<h3>Correlated subqueries</h3>
+<p>A <strong>correlated</strong> subquery refers to the outer row, so it conceptually runs once per outer row.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql1-12.sql">SELECT p.name, p.category, p.price
+FROM products p
+WHERE p.price = (SELECT MAX(p2.price) FROM products p2 WHERE p2.category = p.category)
+ORDER BY p.category;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>category</th><th>price</th></tr></thead>
+<tbody><tr><td>Laptop</td><td>electronics</td><td>1200.0</td></tr><tr><td>Desk</td><td>furniture</td><td>300.0</td></tr><tr><td>Notebook</td><td>stationery</td><td>5.0</td></tr></tbody>
+</table>
+</div>
+<p>This returns the dearest product in each category. (Window functions in <a href="sql2-advanced.html">SQL2</a> often do this more clearly and fast.)</p>
+<h3>EXISTS and NOT EXISTS</h3>
+<p><code>EXISTS (subquery)</code> is true if the subquery returns at least one row. It stops at the first match, and it is safe with NULLs.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql1-13.sql">SELECT c.name
+FROM customers c
+WHERE EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.id AND o.status = 'cancelled');</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th></tr></thead>
+<tbody><tr><td>Chloe</td></tr></tbody>
+</table>
+</div>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql1-14.sql">SELECT c.name
+FROM customers c
+WHERE NOT EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.id)
+ORDER BY c.name;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th></tr></thead>
+<tbody><tr><td>Gus</td></tr><tr><td>Hana</td></tr></tbody>
+</table>
+</div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Pattern</th><th>Use</th></tr></thead>
+<tbody>
+<tr><td><code>IN (subquery)</code></td><td>Small lists, simple membership</td></tr><tr><td><code>EXISTS</code></td><td>Existence checks, correlated, NULL-safe</td></tr><tr><td><code>NOT EXISTS</code></td><td>"Has no ..." (prefer over <code>NOT IN</code> with possible NULLs)</td></tr><tr><td><code>JOIN</code></td><td>When you need columns from the other table</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql1-q05" data-topic="SQL joins" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is NOT EXISTS safer than NOT IN with a subquery?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is always faster <span class="q-why">Not always.</span></li>
+          <li data-key="B">A single NULL in the subquery makes NOT IN return no rows; NOT EXISTS is NULL-safe <span class="q-why">Correct.</span></li>
+          <li data-key="C">NOT IN is deprecated <span class="q-why">No.</span></li>
+          <li data-key="D">There is no difference <span class="q-why">There is.</span></li>
+        </ul>
+        <div class="q-explain"><p>x NOT IN (..., NULL) is never true.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is a correlated subquery?</summary><div class="answer"><p>A subquery referencing columns of the outer query, evaluated per outer row.</p></div></details>
+      </div>
+    </section>
+
+    <section id="sets" data-track>
+      <h2>Set operations</h2>
+<p>Combine the results of two queries with the same number and compatible types of columns.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Operator</th><th>Result</th><th>Duplicates</th></tr></thead>
+<tbody>
+<tr><td><code>UNION</code></td><td>Rows in either</td><td>Removed</td></tr><tr><td><code>UNION ALL</code></td><td>Rows in either</td><td>Kept (faster)</td></tr><tr><td><code>INTERSECT</code></td><td>Rows in both</td><td>Removed</td></tr><tr><td><code>EXCEPT</code> (<code>MINUS</code> in Oracle)</td><td>Rows in the first not in the second</td><td>Removed</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql1-15.sql">SELECT city FROM customers WHERE city IS NOT NULL
+INTERSECT
+SELECT 'Paris'
+UNION
+SELECT 'Tokyo'
+ORDER BY 1;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>city</th></tr></thead>
+<tbody><tr><td>Paris</td></tr><tr><td>Tokyo</td></tr></tbody>
+</table>
+</div>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql1-16.sql">SELECT id FROM customers
+EXCEPT
+SELECT customer_id FROM orders
+ORDER BY 1;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>id</th></tr></thead>
+<tbody><tr><td>7</td></tr><tr><td>8</td></tr></tbody>
+</table>
+</div>
+<p>Prefer <code>UNION ALL</code> when duplicates cannot occur or do not matter; <code>UNION</code> must sort or hash to deduplicate.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql1-q06" data-topic="SQL joins" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which set operator keeps duplicates?</p></div>
+        <ul class="q-options">
+          <li data-key="A">UNION <span class="q-why">Removes them.</span></li>
+          <li data-key="B">UNION ALL <span class="q-why">Correct.</span></li>
+          <li data-key="C">INTERSECT <span class="q-why">Removes them.</span></li>
+          <li data-key="D">EXCEPT <span class="q-why">Removes them.</span></li>
+        </ul>
+        <div class="q-explain"><p>UNION ALL is also cheaper because it skips deduplication.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>UNION versus UNION ALL?</summary><div class="answer"><p>UNION deduplicates (extra work); UNION ALL concatenates.</p></div></details>
+      </div>
+    </section>
+
+    <section id="functions" data-track>
+      <h2>Expressions and functions</h2>
+<h3>CASE</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql1-17.sql">SELECT name, price,
+       CASE WHEN price &gt;= 1000 THEN 'premium'
+            WHEN price &gt;= 100  THEN 'standard'
+            ELSE 'budget' END AS tier
+FROM products
+ORDER BY price DESC;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>price</th><th>tier</th></tr></thead>
+<tbody><tr><td>Laptop</td><td>1200.0</td><td>premium</td></tr><tr><td>Phone</td><td>800.0</td><td>standard</td></tr><tr><td>Desk</td><td>300.0</td><td>standard</td></tr><tr><td>Chair</td><td>180.0</td><td>standard</td></tr><tr><td>Headphones</td><td>150.0</td><td>standard</td></tr><tr><td>Notebook</td><td>5.0</td><td>budget</td></tr><tr><td>Pen</td><td>2.0</td><td>budget</td></tr></tbody>
+</table>
+</div>
+<h3>Strings</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql1-18.sql">SELECT name,
+       LENGTH(name) AS len,
+       UPPER(name) AS up,
+       SUBSTR(name, 1, 3) AS first3,
+       REPLACE(name, 'a', '*') AS replaced,
+       name || ' (' || city || ')' AS label,
+       INSTR(name, 'a') AS pos_a
+FROM customers
+WHERE city IS NOT NULL
+LIMIT 3;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>len</th><th>up</th><th>first3</th><th>replaced</th><th>label</th><th>pos_a</th></tr></thead>
+<tbody><tr><td>Ada</td><td>3</td><td>ADA</td><td>Ada</td><td>Ad*</td><td>Ada (London)</td><td>3</td></tr><tr><td>Ben</td><td>3</td><td>BEN</td><td>Ben</td><td>Ben</td><td>Ben (Paris)</td><td>0</td></tr><tr><td>Chloe</td><td>5</td><td>CHLOE</td><td>Chl</td><td>Chloe</td><td>Chloe (London)</td><td>0</td></tr></tbody>
+</table>
+</div>
+<p>Other dialects: <code>CONCAT</code>, <code>SUBSTRING</code>, <code>POSITION</code>, <code>TRIM</code>, <code>LTRIM</code>, <code>REGEXP</code>, <code>LIKE</code>. SQLite uses <code>||</code> and <code>SUBSTR</code>; PostgreSQL supports both; MySQL uses <code>CONCAT</code>.</p>
+<h3>Numbers</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql1-19.sql">SELECT ROUND(2.567, 1) AS r, ABS(-4) AS a, 17 % 5 AS m, 7 / 2 AS int_div, 7 / 2.0 AS real_div,
+       CAST('42' AS INTEGER) + 1 AS cast_int, MAX(3, 9, 5) AS greatest;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>r</th><th>a</th><th>m</th><th>int_div</th><th>real_div</th><th>cast_int</th><th>greatest</th></tr></thead>
+<tbody><tr><td>2.6</td><td>4</td><td>2</td><td>3</td><td>3.5</td><td>43</td><td>9</td></tr></tbody>
+</table>
+</div>
+<p>Integer division truncates in many databases (SQLite, SQL Server, PostgreSQL for integers). Cast to decimal first when you want a fraction.</p>
+<h3>Dates (SQLite syntax; other engines differ)</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql1-20.sql">SELECT order_date,
+       strftime('%Y-%m', order_date) AS month,
+       strftime('%w', order_date) AS weekday_num,
+       date(order_date, '+30 days') AS plus_30,
+       julianday('2024-04-01') - julianday(order_date) AS days_ago
+FROM orders
+WHERE id &lt;= 3;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>order_date</th><th>month</th><th>weekday_num</th><th>plus_30</th><th>days_ago</th></tr></thead>
+<tbody><tr><td>2024-01-10</td><td>2024-01</td><td>3</td><td>2024-02-09</td><td>82.0</td></tr><tr><td>2024-02-14</td><td>2024-02</td><td>3</td><td>2024-03-15</td><td>47.0</td></tr><tr><td>2024-01-20</td><td>2024-01</td><td>6</td><td>2024-02-19</td><td>72.0</td></tr></tbody>
+</table>
+</div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Task</th><th>PostgreSQL</th><th>MySQL</th><th>SQL Server</th><th>SQLite</th></tr></thead>
+<tbody>
+<tr><td>Today</td><td><code>CURRENT_DATE</code></td><td><code>CURDATE()</code></td><td><code>CAST(GETDATE() AS DATE)</code></td><td><code>date('now')</code></td></tr><tr><td>Add days</td><td><code>d + INTERVAL '30 days'</code></td><td><code>DATE_ADD(d, INTERVAL 30 DAY)</code></td><td><code>DATEADD(day, 30, d)</code></td><td><code>date(d, '+30 days')</code></td></tr><tr><td>Truncate to month</td><td><code>DATE_TRUNC('month', d)</code></td><td><code>DATE_FORMAT(d, '%Y-%m-01')</code></td><td><code>DATETRUNC(month, d)</code></td><td><code>strftime('%Y-%m-01', d)</code></td></tr><tr><td>Difference in days</td><td><code>d1 - d2</code></td><td><code>DATEDIFF(d1, d2)</code></td><td><code>DATEDIFF(day, d2, d1)</code></td><td><code>julianday(d1) - julianday(d2)</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>Store timestamps in <strong>UTC</strong> and use proper date types; compare dates as dates, not as strings with formats that do not sort.</p>
+<h3>Revenue per customer: putting it together</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql1-21.sql">SELECT c.name,
+       COALESCE(SUM(i.qty * p.price), 0) AS spent
+FROM customers c
+LEFT JOIN orders o     ON o.customer_id = c.id AND o.status = 'paid'
+LEFT JOIN order_items i ON i.order_id = o.id
+LEFT JOIN products p    ON p.id = i.product_id
+GROUP BY c.id, c.name
+ORDER BY spent DESC, c.name;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>spent</th></tr></thead>
+<tbody><tr><td>Ben</td><td>2000.0</td></tr><tr><td>Ada</td><td>1590.0</td></tr><tr><td>Dev</td><td>950.0</td></tr><tr><td>Chloe</td><td>375.0</td></tr><tr><td>Fay</td><td>175.0</td></tr><tr><td>Eli</td><td>100.0</td></tr><tr><td>Gus</td><td>0</td></tr><tr><td>Hana</td><td>0</td></tr></tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql1-q07" data-topic="SQL joins" data-type="single" data-answer="B">
+        <div class="q-stem"><p><code>SELECT 7 / 2</code> in SQLite or PostgreSQL with integers returns:</p></div>
+        <ul class="q-options">
+          <li data-key="A">3.5 <span class="q-why">Only if one operand is decimal.</span></li>
+          <li data-key="B">3 <span class="q-why">Correct: integer division.</span></li>
+          <li data-key="C">4 <span class="q-why">No.</span></li>
+          <li data-key="D">Error <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Cast an operand (7 / 2.0 or CAST(7 AS REAL)) to get a fraction.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why store timestamps in UTC?</summary><div class="answer"><p>It avoids daylight saving ambiguity and makes comparison and ordering consistent.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: SQL joins</h2>
+      <p class="muted">10 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="SQL joins">
+<details class="recall iq" data-level="basic" data-topic="SQL joins"><summary><span class="tag ok">Basic</span> Explain INNER, LEFT, RIGHT and FULL joins.</summary><div class="answer"><p>Inner returns matching rows only. Left keeps all left rows with NULLs for missing right matches. Right is the mirror. Full keeps unmatched rows from both sides.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="SQL joins"><summary><span class="tag ok">Basic</span> What is a self join?</summary><div class="answer"><p>Joining a table to itself with aliases, for example employees to their managers.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="SQL joins"><summary><span class="tag ok">Basic</span> UNION versus UNION ALL?</summary><div class="answer"><p>UNION removes duplicates (extra work); UNION ALL keeps all rows and is faster.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL joins"><summary><span class="tag warn">Medium</span> How do you find rows in A with no match in B?</summary><div class="answer"><p>LEFT JOIN and filter B&#x27;s key IS NULL, or NOT EXISTS. Prefer NOT EXISTS over NOT IN when NULLs are possible.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL joins"><summary><span class="tag warn">Medium</span> IN versus EXISTS?</summary><div class="answer"><p>IN compares to a list or subquery result; EXISTS checks whether a correlated subquery returns any row, stops early and is NULL-safe.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL joins"><summary><span class="tag warn">Medium</span> Why does a WHERE filter on the right table turn a LEFT JOIN into an INNER JOIN?</summary><div class="answer"><p>Unmatched rows have NULLs in right columns, which fail the condition. Put the condition in the ON clause instead.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL joins"><summary><span class="tag warn">Medium</span> What is a CROSS JOIN and when is it useful?</summary><div class="answer"><p>The Cartesian product of two tables. Useful for generating combinations such as all dates by all products.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SQL joins"><summary><span class="tag bad">Advanced</span> How does row multiplication happen and how do you avoid double counting?</summary><div class="answer"><p>Joining one-to-many tables repeats the parent row. Aggregate the child table in a subquery or CTE first, then join the result.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SQL joins"><summary><span class="tag bad">Advanced</span> What is a correlated subquery and what are alternatives?</summary><div class="answer"><p>A subquery referencing the outer row, evaluated per outer row. Alternatives are joins to a pre-aggregated derived table or window functions.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SQL joins"><summary><span class="tag bad">Advanced</span> Explain NOT IN with NULLs.</summary><div class="answer"><p>If the subquery returns any NULL, x NOT IN (...) is never true, so no rows return. Use NOT EXISTS or filter NULLs out.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sql0-basics.html"><span class="dir">Previous</span><span>SQL0 SQL from scratch: tables, queries, filtering and aggregation</span></a>
+      <a class="next" href="sql2-advanced.html"><span class="dir">Next</span><span>SQL2 Advanced SQL: CTEs, window functions, recursion and upserts</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

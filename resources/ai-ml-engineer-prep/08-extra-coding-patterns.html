@@ -1,0 +1,1455 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="08">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>08 Extra coding patterns | AI/ML Engineer Prep</title>
+<meta name="description" content="22 short coding patterns for AI engineering screens, each explained and tested: sampling, softmax, log-sum-exp, cosine top-k, RRF, nDCG, MRR, MMR, rate limiter, LRU, BPE, KV calculator, backoff, chunker, SSE, trimmer.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part 08</p>
+      <h1>Extra coding patterns</h1>
+      <p class="lede">Twenty-two small functions that show up in AI engineering screens and take-homes. Each one lists what to remember, the one idea that makes it correct, its complexity, the classic bug, and a tested implementation from <code>solutions/patterns/</code>.</p>
+      <div class="meta"><span class="tag accent">22 patterns</span><span class="tag">~3 hours</span><span class="tag">All tested: <code>python3 solutions/patterns/test_patterns.py</code></span></div>
+    </div>
+
+    <section id="top-k" data-track>
+      <h2>Top-k sampling</h2>
+      <ul>
+        <li><strong>What:</strong> Keep the k highest logits, renormalize with softmax over just those, sample. Temperature 0 means argmax.</li>
+        <li><strong>Key idea:</strong> Sort indices by (-logit, index) so ties at the cutoff are deterministic. Sample by walking the cumulative sum until it exceeds a uniform random number.</li>
+        <li><strong>Complexity:</strong> O(V log V) with a sort; O(V log k) with a heap (heapq.nlargest).</li>
+        <li><strong>Classic bug:</strong> Sampling from the full softmax and then zeroing (forgets to renormalize), or applying softmax before temperature.</li>
+        <li><strong>Check:</strong> Logits [0, 1, 2], k = 2: token 0 is dropped, P(token 2) = e^2/(e^2 + e^1) = 0.7311 (tested empirically within 0.02 over 20,000 draws).</li>
+      </ul>
+      <pre><code class="lang-py" data-embed="solutions/patterns/top_k_sampling.py">"""Top-k sampling."""
+import random
+from typing import List
+
+from softmax import softmax
+
+
+def top_k_probs(logits: List[float], k: int, temperature: float = 1.0) -&gt; List[float]:
+    """Keep the k largest logits (ties: smaller index), renormalize, zero the rest."""
+    if k &lt;= 0:
+        raise ValueError("k must be &gt;= 1")
+    keep = sorted(range(len(logits)), key=lambda i: (-logits[i], i))[:k]
+    sub = softmax([logits[i] for i in keep], temperature)
+    probs = [0.0] * len(logits)
+    for i, p in zip(keep, sub):
+        probs[i] = p
+    return probs
+
+
+def sample_top_k(logits: List[float], k: int, temperature: float = 1.0,
+                 rng: random.Random = random) -&gt; int:
+    """Draw one token id. temperature == 0 means greedy (argmax)."""
+    if temperature == 0:
+        return max(range(len(logits)), key=lambda i: (logits[i], -i))
+    probs = top_k_probs(logits, k, temperature)
+    r, acc = rng.random(), 0.0
+    for i, p in enumerate(probs):
+        acc += p
+        if r &lt; acc:
+            return i
+    return max(i for i, p in enumerate(probs) if p &gt; 0)   # guard against rounding at acc ~ 1</code></pre>
+    </section>
+
+    <section id="top-p" data-track>
+      <h2>Top-p (nucleus) sampling</h2>
+      <ul>
+        <li><strong>What:</strong> Softmax (with temperature), sort descending, keep the shortest prefix whose sum reaches p, renormalize, sample.</li>
+        <li><strong>Key idea:</strong> Include the token that crosses p, and always keep at least one token.</li>
+        <li><strong>Complexity:</strong> O(V log V).</li>
+        <li><strong>Classic bug:</strong> Using a strict '&gt; p' check, which drops the crossing token, or forgetting the at-least-one rule for tiny p.</li>
+        <li><strong>Check:</strong> p = 0.75 on [0.5, 0.3, 0.15, 0.05] keeps two: [0.625, 0.375, 0, 0].</li>
+      </ul>
+      <pre><code class="lang-py" data-embed="solutions/patterns/top_p_sampling.py">"""Top-p (nucleus) sampling."""
+import random
+from typing import List
+
+from softmax import softmax
+
+
+def top_p_probs(logits: List[float], p: float, temperature: float = 1.0) -&gt; List[float]:
+    """Keep the smallest set of most likely tokens whose total probability &gt;= p.
+
+    Sort by probability (ties: smaller index), add tokens until the running
+    sum reaches p, always keep at least one, renormalize. Temperature is
+    applied BEFORE the cutoff, which is what most inference servers do
+    (check your library: the order of processors can differ).
+    """
+    if not 0 &lt; p &lt;= 1:
+        raise ValueError("p must be in (0, 1]")
+    probs = softmax(logits, temperature)
+    order = sorted(range(len(probs)), key=lambda i: (-probs[i], i))
+    keep, acc = [], 0.0
+    for i in order:
+        keep.append(i)
+        acc += probs[i]
+        if acc &gt;= p - 1e-12:
+            break
+    total = sum(probs[i] for i in keep)
+    out = [0.0] * len(probs)
+    for i in keep:
+        out[i] = probs[i] / total
+    return out
+
+
+def sample_top_p(logits: List[float], p: float, temperature: float = 1.0,
+                 rng: random.Random = random) -&gt; int:
+    probs = top_p_probs(logits, p, temperature)
+    r, acc = rng.random(), 0.0
+    for i, q in enumerate(probs):
+        acc += q
+        if r &lt; acc:
+            return i
+    return max(i for i, q in enumerate(probs) if q &gt; 0)</code></pre>
+    </section>
+
+    <section id="softmax" data-track>
+      <h2>Numerically stable softmax with temperature</h2>
+      <ul>
+        <li><strong>What:</strong> p_i = exp((z_i - max z)/T) / sum exp((z_j - max z)/T).</li>
+        <li><strong>Key idea:</strong> Subtracting the max keeps every exponent at most 0, so exp never overflows and the denominator is at least 1.</li>
+        <li><strong>Complexity:</strong> O(V).</li>
+        <li><strong>Classic bug:</strong> math.exp(1000) raises OverflowError (numpy returns inf, then nan after division).</li>
+        <li><strong>Check:</strong> [2, 1, 0] gives [0.6652, 0.2447, 0.0900]. At T = 0.5: [0.8668, 0.1173, 0.0159]. softmax([1000, 1000]) = [0.5, 0.5].</li>
+      </ul>
+      <pre><code class="lang-py" data-embed="solutions/patterns/softmax.py">"""Numerically stable softmax with temperature."""
+import math
+from typing import List
+
+
+def softmax(logits: List[float], temperature: float = 1.0) -&gt; List[float]:
+    """p_i = exp((z_i - max z) / T) / sum_j exp((z_j - max z) / T).
+
+    Subtracting the max changes nothing mathematically (it cancels in the
+    ratio) but keeps every exponent &lt;= 0, so exp never overflows. At least
+    one term is exp(0) = 1, so the denominator is never 0.
+    """
+    if temperature &lt;= 0:
+        raise ValueError("temperature must be &gt; 0 (use argmax for T = 0)")
+    if not logits:
+        return []
+    m = max(logits)
+    exps = [math.exp((z - m) / temperature) for z in logits]
+    total = sum(exps)
+    return [e / total for e in exps]</code></pre>
+    </section>
+
+    <section id="logsumexp" data-track>
+      <h2>Log-sum-exp</h2>
+      <ul>
+        <li><strong>What:</strong> lse(x) = m + log(sum exp(x_i - m)), with m = max x. log_softmax(z) = z - lse(z).</li>
+        <li><strong>Key idea:</strong> The same max-shift trick, in log space. Use log_softmax directly instead of log(softmax(z)), which underflows to log(0) = -inf.</li>
+        <li><strong>Complexity:</strong> O(n).</li>
+        <li><strong>Classic bug:</strong> Not handling an empty input or all -inf (return -inf).</li>
+        <li><strong>Check:</strong> lse([1000, 1000]) = 1000 + ln 2. log_softmax([0, -2000])[1] = -2000 exactly, where log(softmax) would give -inf.</li>
+      </ul>
+      <pre><code class="lang-py" data-embed="solutions/patterns/logsumexp.py">"""Log-sum-exp and log-softmax, computed stably."""
+import math
+from typing import List
+
+
+def logsumexp(xs: List[float]) -&gt; float:
+    """log(sum(exp(x))) = m + log(sum(exp(x - m))) with m = max(xs).
+
+    Empty input or all -inf returns -inf (the log of an empty sum).
+    """
+    if not xs:
+        return -math.inf
+    m = max(xs)
+    if m == -math.inf:
+        return -math.inf
+    return m + math.log(sum(math.exp(x - m) for x in xs))
+
+
+def log_softmax(logits: List[float]) -&gt; List[float]:
+    """log p_i = z_i - logsumexp(z). Use this instead of log(softmax(z)),
+    which returns -inf when a probability underflows to 0."""
+    lse = logsumexp(logits)
+    return [z - lse for z in logits]</code></pre>
+    </section>
+
+    <section id="cosine-topk" data-track>
+      <h2>Cosine similarity top-k with numpy</h2>
+      <ul>
+        <li><strong>What:</strong> Scores = (M q) / (|rows| |q|). argpartition for the top k, then sort only those k.</li>
+        <li><strong>Key idea:</strong> Guard zero vectors with np.divide(..., where=denom &gt; 0). For exact index tie-breaks, widen the candidate set to every row tied with the k-th score before the final lexsort.</li>
+        <li><strong>Complexity:</strong> O(n d) for the matrix-vector product, O(n) to partition, O(k log k) to sort.</li>
+        <li><strong>Classic bug:</strong> Dividing by zero norms (NaN poisons the ranking), or using argsort on all n when k is small.</li>
+        <li><strong>Check:</strong> Rows [1,0], [0,1], [1,1], [0,0], [2,0] with query [1,0]: top 3 = [0, 4, 2] (0 and 4 tie at 1.0, smaller index first).</li>
+      </ul>
+      <pre><code class="lang-py" data-embed="solutions/patterns/cosine_topk.py">"""Cosine similarity top-k with numpy."""
+import numpy as np
+
+
+def cosine_top_k(matrix: np.ndarray, query: np.ndarray, k: int):
+    """Return (indices, scores) of the k rows most cosine-similar to query.
+
+    cos(a, b) = a.b / (|a| |b|). Normalize once, then one matrix-vector
+    product scores every row. Zero vectors get similarity 0 instead of NaN.
+    argpartition finds the top k in O(n), then only those k are sorted.
+    Ties: smaller index first (lexsort on (index, -score)).
+    """
+    m = np.asarray(matrix, dtype=np.float64)
+    q = np.asarray(query, dtype=np.float64)
+    n = m.shape[0]
+    if n == 0 or k &lt;= 0:
+        return np.array([], dtype=int), np.array([])
+    k = min(k, n)
+    row_norm = np.linalg.norm(m, axis=1)
+    q_norm = np.linalg.norm(q)
+    denom = row_norm * q_norm
+    scores = np.divide(m @ q, denom, out=np.zeros(n), where=denom &gt; 0)
+    if k &lt; n:
+        # widen the partition to every row tied with the k-th score so the index tie-break is exact
+        kth = np.partition(scores, n - k)[n - k]
+        cand = np.nonzero(scores &gt;= kth)[0]
+    else:
+        cand = np.arange(n)
+    order = cand[np.lexsort((cand, -scores[cand]))][:k]
+    return order, scores[order]</code></pre>
+    </section>
+
+    <section id="rrf" data-track>
+      <h2>Reciprocal Rank Fusion</h2>
+      <ul>
+        <li><strong>What:</strong> score(d) = sum over lists of 1/(k + rank), rank 1-based, k = 60.</li>
+        <li><strong>Key idea:</strong> Only ranks matter, so no score normalization is needed. A doc missing from a list just gets nothing from it.</li>
+        <li><strong>Complexity:</strong> O(total list length + m log m).</li>
+        <li><strong>Classic bug:</strong> 0-based ranks, or counting a duplicate id twice within one list.</li>
+        <li><strong>Check:</strong> BM25 [d1, d2, d3] and dense [d3, d1, d4] fuse to d1 (1/61 + 1/62), d3 (1/61 + 1/63), d2, d4.</li>
+      </ul>
+      <pre><code class="lang-py" data-embed="solutions/patterns/rrf.py">"""Reciprocal Rank Fusion."""
+from typing import Dict, Hashable, List, Tuple
+
+
+def rrf(rankings: List[List[Hashable]], k: int = 60, top_n: int = None) -&gt; List[Tuple[Hashable, float]]:
+    """score(d) = sum over lists containing d of 1 / (k + rank(d)), rank 1-based.
+
+    Only ranks are used, never raw scores, so BM25 scores (unbounded) and
+    cosine scores (-1..1) can be fused without calibration. k = 60 is the
+    value from the original paper (Cormack et al., 2009); larger k flattens
+    the advantage of the top positions. A doc missing from a list simply
+    gets nothing from that list. If an id repeats inside one list, only its
+    first (best) position counts. Ties: id order, so ids must be comparable.
+    """
+    scores: Dict[Hashable, float] = {}
+    for lst in rankings:
+        seen = set()
+        for rank, doc in enumerate(lst, start=1):
+            if doc in seen:
+                continue
+            seen.add(doc)
+            scores[doc] = scores.get(doc, 0.0) + 1.0 / (k + rank)
+    out = sorted(scores.items(), key=lambda kv: (-kv[1], kv[0]))
+    return out[:top_n] if top_n is not None else out</code></pre>
+    </section>
+
+    <section id="ndcg" data-track>
+      <h2>nDCG@k</h2>
+      <ul>
+        <li><strong>What:</strong> DCG = sum gain_i / log2(i + 1), positions from 1. nDCG = DCG / IDCG.</li>
+        <li><strong>Key idea:</strong> IDCG sorts ALL judged relevance values, not just the retrieved ones, so missing a relevant document is penalized.</li>
+        <li><strong>Complexity:</strong> O(n log n) for the ideal sort.</li>
+        <li><strong>Classic bug:</strong> Using log2(i) with 1-based i (divides by zero at position 1), or building the ideal from the retrieved list only.</li>
+        <li><strong>Check:</strong> Ranked [c, b, a] with relevance a = 3, b = 2, c = 1: nDCG@3 = 0.79 (exactly 0.789998).</li>
+      </ul>
+      <pre><code class="lang-py" data-embed="solutions/patterns/ndcg.py">"""nDCG@k."""
+import math
+from typing import Dict, Hashable, List
+
+
+def dcg(gains: List[float]) -&gt; float:
+    """sum_i gain_i / log2(i + 1), positions i = 1, 2, 3, ..."""
+    return sum(g / math.log2(i + 1) for i, g in enumerate(gains, start=1))
+
+
+def ndcg_at_k(ranked: List[Hashable], relevance: Dict[Hashable, float], k: int,
+              exponential: bool = False) -&gt; float:
+    """DCG of the top k divided by the DCG of the ideal top k.
+
+    relevance holds graded judgments for ALL judged docs (unlisted = 0). The
+    ideal ordering sorts every judged doc by relevance, not only the ones the
+    system retrieved; otherwise a system that misses relevant docs gets
+    flattered. exponential=True uses gain 2^rel - 1 (common in web search),
+    the default uses gain = rel. Returns 0.0 when nothing is relevant.
+    """
+    gain = (lambda r: 2 ** r - 1) if exponential else (lambda r: r)
+    got = [gain(relevance.get(d, 0)) for d in ranked[:k]]
+    ideal = sorted((gain(r) for r in relevance.values()), reverse=True)[:k]
+    idcg = dcg(ideal)
+    return dcg(got) / idcg if idcg &gt; 0 else 0.0</code></pre>
+    </section>
+
+    <section id="mrr" data-track>
+      <h2>Mean Reciprocal Rank</h2>
+      <ul>
+        <li><strong>What:</strong> RR = 1/(position of the first relevant result), 0 if none. MRR = mean over queries.</li>
+        <li><strong>Key idea:</strong> Only the first relevant hit matters. Queries with no hit count as 0 (do not drop them).</li>
+        <li><strong>Complexity:</strong> O(total results).</li>
+        <li><strong>Classic bug:</strong> Averaging only over queries with a hit, which inflates MRR.</li>
+        <li><strong>Check:</strong> First hits at ranks 1, 2 and none give (1 + 0.5 + 0)/3 = 0.5.</li>
+      </ul>
+      <pre><code class="lang-py" data-embed="solutions/patterns/mrr.py">"""Mean Reciprocal Rank."""
+from typing import Hashable, List, Set
+
+
+def reciprocal_rank(ranked: List[Hashable], relevant: Set[Hashable], k: int = None) -&gt; float:
+    """1 / (1-based position of the FIRST relevant result), 0 if none in the top k."""
+    for pos, d in enumerate(ranked[:k] if k else ranked, start=1):
+        if d in relevant:
+            return 1.0 / pos
+    return 0.0
+
+
+def mean_reciprocal_rank(runs: List[List[Hashable]], qrels: List[Set[Hashable]], k: int = None) -&gt; float:
+    """Average of reciprocal_rank over queries. Queries with no hit count as 0."""
+    if not runs:
+        return 0.0
+    return sum(reciprocal_rank(r, q, k) for r, q in zip(runs, qrels)) / len(runs)</code></pre>
+    </section>
+
+    <section id="mmr" data-track>
+      <h2>MMR diversification</h2>
+      <ul>
+        <li><strong>What:</strong> Pick argmax of lam x sim(q, d) - (1 - lam) x max similarity to anything already selected.</li>
+        <li><strong>Key idea:</strong> Keep a running max-similarity array, updated once per selection, so each round is O(n) instead of O(n x |S|).</li>
+        <li><strong>Complexity:</strong> O(k x n).</li>
+        <li><strong>Classic bug:</strong> Using the sum instead of the max similarity to selected docs, or forgetting that the first pick is purely by relevance.</li>
+        <li><strong>Check:</strong> Two near-duplicates (similarity 0.99) and a different doc: lam = 1 picks both duplicates, lam = 0.5 picks [0, 2].</li>
+      </ul>
+      <pre><code class="lang-py" data-embed="solutions/patterns/mmr.py">"""Maximal Marginal Relevance diversification."""
+from typing import List
+
+
+def mmr(query_sim: List[float], doc_sim: List[List[float]], k: int, lam: float = 0.7) -&gt; List[int]:
+    """Greedy selection: argmax_d [ lam * sim(q, d) - (1 - lam) * max_{s in S} sim(d, s) ].
+
+    lam = 1 is plain relevance ranking, lam = 0 is pure diversity. The first
+    pick is always the most relevant doc (S is empty, penalty 0). Ties:
+    smaller index. Returns picks in selection order. O(k * n).
+    """
+    n = len(query_sim)
+    selected: List[int] = []
+    max_sim = [float("-inf")] * n  # max similarity to anything selected so far
+    remaining = set(range(n))
+    while remaining and len(selected) &lt; k:
+        def gain(d):
+            penalty = max_sim[d] if selected else 0.0
+            return (lam * query_sim[d] - (1 - lam) * penalty, -d)
+        best = max(remaining, key=gain)
+        selected.append(best)
+        remaining.discard(best)
+        for d in remaining:
+            max_sim[d] = max(max_sim[d], doc_sim[d][best])
+    return selected</code></pre>
+    </section>
+
+    <section id="token-bucket" data-track>
+      <h2>Token bucket rate limiter</h2>
+      <ul>
+        <li><strong>What:</strong> Capacity C tokens, refilled at rate r per second. A request spends cost tokens if available.</li>
+        <li><strong>Key idea:</strong> Refill lazily from elapsed time (tokens = min(C, tokens + dt x r)). There is no background thread. Inject the clock for tests.</li>
+        <li><strong>Complexity:</strong> O(1) per call.</li>
+        <li><strong>Classic bug:</strong> Refilling past capacity after idle periods, or using wall-clock time (time.time) instead of a monotonic clock.</li>
+        <li><strong>Check:</strong> rate 2/s, capacity 5: a burst of 5 passes, the 6th fails. After 0.5 s exactly one more passes.</li>
+      </ul>
+      <pre><code class="lang-py" data-embed="solutions/patterns/token_bucket.py">"""Token bucket rate limiter."""
+import time
+from typing import Callable, Optional
+
+
+class TokenBucket:
+    """Holds up to `capacity` tokens and refills at `rate` tokens per second.
+
+    allow(cost) spends `cost` tokens if available. Bursts up to capacity
+    are allowed; the long-run average is limited to `rate`. Refill is
+    computed lazily from elapsed time, so there is no background thread.
+    For LLM APIs, cost can be the request's token count (tokens-per-minute
+    limits) instead of 1 (requests-per-minute limits).
+    """
+
+    def __init__(self, rate: float, capacity: float, clock: Callable[[], float] = time.monotonic):
+        self.rate, self.capacity, self.clock = rate, capacity, clock
+        self.tokens = capacity
+        self.last = clock()
+
+    def _refill(self, now: float) -&gt; None:
+        if now &gt; self.last:
+            self.tokens = min(self.capacity, self.tokens + (now - self.last) * self.rate)
+            self.last = now
+
+    def allow(self, cost: float = 1.0, now: Optional[float] = None) -&gt; bool:
+        self._refill(self.clock() if now is None else now)
+        if cost &lt;= self.tokens:
+            self.tokens -= cost
+            return True
+        return False
+
+    def wait_time(self, cost: float = 1.0, now: Optional[float] = None) -&gt; float:
+        """Seconds until `cost` tokens will be available (0 if available now)."""
+        self._refill(self.clock() if now is None else now)
+        if cost &gt; self.capacity:
+            return float("inf")
+        return max(0.0, (cost - self.tokens) / self.rate)</code></pre>
+    </section>
+
+    <section id="lru-cache" data-track>
+      <h2>LRU cache (and a block prefix cache)</h2>
+      <ul>
+        <li><strong>What:</strong> OrderedDict: move_to_end on get and put, popitem(last=False) to evict the least recently used.</li>
+        <li><strong>Key idea:</strong> Prompt caches key each block by the ENTIRE prefix up to it, so a block is reused only when everything before it matches. That is why only shared prefixes hit.</li>
+        <li><strong>Complexity:</strong> O(1) get and put.</li>
+        <li><strong>Classic bug:</strong> Not refreshing recency on get, or evicting before inserting an existing key.</li>
+        <li><strong>Check:</strong> Capacity 2: put a, put b, get a, put c evicts b. The prefix cache reuses 12 tokens of a shared 12-token system prompt, and 0 if the first token changes.</li>
+      </ul>
+      <pre><code class="lang-py" data-embed="solutions/patterns/lru_cache.py">"""LRU cache, and a block-level prefix cache built on it (the idea behind prompt/prefix caching)."""
+from collections import OrderedDict
+from typing import Hashable, List, Optional, Sequence
+
+
+class LRUCache:
+    """O(1) get/put. OrderedDict keeps keys in recency order; the front is least recent."""
+
+    def __init__(self, capacity: int):
+        if capacity &lt;= 0:
+            raise ValueError("capacity must be &gt;= 1")
+        self.capacity = capacity
+        self.data: "OrderedDict[Hashable, object]" = OrderedDict()
+
+    def get(self, key: Hashable) -&gt; Optional[object]:
+        if key not in self.data:
+            return None
+        self.data.move_to_end(key)          # mark as most recently used
+        return self.data[key]
+
+    def put(self, key: Hashable, value: object) -&gt; Optional[Hashable]:
+        """Insert or update. Returns the evicted key, if any."""
+        if key in self.data:
+            self.data.move_to_end(key)
+            self.data[key] = value
+            return None
+        self.data[key] = value
+        if len(self.data) &gt; self.capacity:
+            evicted, _ = self.data.popitem(last=False)
+            return evicted
+        return None
+
+
+class PrefixCache:
+    """Caches prompt prefixes in fixed-size token blocks, keyed by the whole prefix.
+
+    The key for block j is the tuple of ALL tokens up to the end of block j,
+    so a block is only reused when everything before it matches too. That
+    is why prompt caching only helps with a shared PREFIX: change one early
+    token and every later block key changes. Real servers hash the prefix
+    instead of storing the tuple (vLLM-style automatic prefix caching works
+    on this block principle; details vary by server and version).
+    """
+
+    def __init__(self, block: int, capacity_blocks: int):
+        self.block = block
+        self.lru = LRUCache(capacity_blocks)
+
+    def _keys(self, tokens: Sequence[int]) -&gt; List[tuple]:
+        full = len(tokens) // self.block
+        return [tuple(tokens[:(j + 1) * self.block]) for j in range(full)]
+
+    def lookup(self, tokens: Sequence[int]) -&gt; int:
+        """Number of leading tokens whose KV could be reused (block aligned)."""
+        hit = 0
+        for key in self._keys(tokens):
+            if self.lru.get(key) is None:
+                break
+            hit += self.block
+        return hit
+
+    def insert(self, tokens: Sequence[int]) -&gt; None:
+        for key in self._keys(tokens):
+            self.lru.put(key, True)</code></pre>
+    </section>
+
+    <section id="bpe-merge" data-track>
+      <h2>One BPE merge step</h2>
+      <ul>
+        <li><strong>What:</strong> Count adjacent symbol pairs weighted by word frequency, take the most frequent, replace it everywhere left to right.</li>
+        <li><strong>Key idea:</strong> Merge non-overlapping occurrences scanning left to right (aaa with pair aa gives aa, a). Ties need a rule: here, the lexicographically smallest pair.</li>
+        <li><strong>Complexity:</strong> O(total symbols) per step.</li>
+        <li><strong>Classic bug:</strong> Overlapping merges, or forgetting to weight pair counts by word frequency.</li>
+        <li><strong>Check:</strong> {low: 5, lower: 2, newest: 6, widest: 3}: es and st both count 9, so the tie gives (e, s). The next step merges (es, t).</li>
+      </ul>
+      <pre><code class="lang-py" data-embed="solutions/patterns/bpe_merge.py">"""One BPE training merge step."""
+from collections import Counter
+from typing import Dict, Optional, Tuple
+
+Word = Tuple[str, ...]
+
+
+def most_frequent_pair(vocab: Dict[Word, int]) -&gt; Optional[Tuple[str, str]]:
+    """Count adjacent symbol pairs weighted by word frequency.
+    Ties: lexicographically smallest pair (real tokenizers pick their own rule)."""
+    pairs: Counter = Counter()
+    for word, freq in vocab.items():
+        for a, b in zip(word, word[1:]):
+            pairs[(a, b)] += freq
+    if not pairs:
+        return None
+    best = max(pairs.values())
+    return min(p for p, c in pairs.items() if c == best)
+
+
+def merge_pair(vocab: Dict[Word, int], pair: Tuple[str, str]) -&gt; Dict[Word, int]:
+    """Replace every non-overlapping occurrence of pair, scanning left to right."""
+    a, b = pair
+    out: Dict[Word, int] = {}
+    for word, freq in vocab.items():
+        merged, i = [], 0
+        while i &lt; len(word):
+            if i + 1 &lt; len(word) and word[i] == a and word[i + 1] == b:
+                merged.append(a + b)
+                i += 2
+            else:
+                merged.append(word[i])
+                i += 1
+        key = tuple(merged)
+        out[key] = out.get(key, 0) + freq
+    return out
+
+
+def bpe_step(vocab: Dict[Word, int]):
+    """One training step: find the best pair and merge it. Returns (pair, new_vocab)."""
+    pair = most_frequent_pair(vocab)
+    if pair is None:
+        return None, vocab
+    return pair, merge_pair(vocab, pair)</code></pre>
+    </section>
+
+    <section id="kv-calc" data-track>
+      <h2>KV cache size calculator</h2>
+      <ul>
+        <li><strong>What:</strong> 2 x layers x kv_heads x head_dim x seq_len x batch x bytes.</li>
+        <li><strong>Key idea:</strong> Use KV heads (GQA), not query heads. Keep GiB (2^30) and GB (10^9) separate.</li>
+        <li><strong>Complexity:</strong> O(1).</li>
+        <li><strong>Classic bug:</strong> Query heads instead of KV heads, or forgetting the 2.</li>
+        <li><strong>Check:</strong> 32 layers, 8 KV heads, dim 128, fp16, batch 4 x 8192 gives exactly 4 GiB.</li>
+      </ul>
+      <pre><code class="lang-py" data-embed="solutions/patterns/kv_cache.py">"""KV cache and weight memory calculators."""
+
+DTYPE_BYTES = {"fp32": 4, "fp16": 2, "bf16": 2, "fp8": 1, "int8": 1, "int4": 0.5}
+GiB = 1024 ** 3
+GB = 1000 ** 3
+
+
+def kv_cache_bytes(layers: int, kv_heads: int, head_dim: int, seq_len: int,
+                   batch: int, bytes_per_elem: float) -&gt; float:
+    """2 (K and V) x layers x kv_heads x head_dim x seq_len x batch x bytes.
+
+    kv_heads is the number of KEY/VALUE heads: equal to the query heads for
+    MHA, 1 for MQA, and a small group count for GQA (for example 8).
+    """
+    return 2 * layers * kv_heads * head_dim * seq_len * batch * bytes_per_elem
+
+
+def kv_bytes_per_token(layers: int, kv_heads: int, head_dim: int, bytes_per_elem: float) -&gt; float:
+    return 2 * layers * kv_heads * head_dim * bytes_per_elem
+
+
+def weight_bytes(params: float, dtype: str) -&gt; float:
+    """Weights only. Real int4 formats also store scales/zero-points (a few % more)."""
+    return params * DTYPE_BYTES[dtype]
+
+
+def max_tokens_in_cache(free_bytes: float, layers: int, kv_heads: int, head_dim: int,
+                        bytes_per_elem: float) -&gt; int:
+    """How many tokens (summed over all sequences in the batch) fit in free memory."""
+    return int(free_bytes // kv_bytes_per_token(layers, kv_heads, head_dim, bytes_per_elem))</code></pre>
+    </section>
+
+    <section id="backoff" data-track>
+      <h2>Exponential backoff with jitter</h2>
+      <ul>
+        <li><strong>What:</strong> delay = uniform(0, min(cap, base x 2^attempt)). Retry only transient errors. Bounded attempts.</li>
+        <li><strong>Key idea:</strong> Jitter de-synchronizes clients. Side-effecting calls need an idempotency key reused on every attempt (part 05).</li>
+        <li><strong>Complexity:</strong> O(attempts).</li>
+        <li><strong>Classic bug:</strong> Retrying non-retryable errors (validation), unbounded retries, or no jitter.</li>
+        <li><strong>Check:</strong> A function failing twice with TimeoutError, then succeeding: 3 calls, 2 sleeps. A ValueError propagates immediately.</li>
+      </ul>
+      <pre><code class="lang-py" data-embed="solutions/patterns/backoff.py">"""Retry with exponential backoff and full jitter."""
+import random
+import time
+from typing import Callable, Tuple, Type
+
+
+def backoff_delay(attempt: int, base: float = 0.5, cap: float = 30.0,
+                  rng: random.Random = random) -&gt; float:
+    """Full jitter: uniform(0, min(cap, base * 2^attempt)), attempt = 0, 1, 2...
+
+    Exponential growth gives a struggling server room. Jitter spreads
+    clients out so they do not all retry at the same instant (the
+    "thundering herd"). The cap keeps one delay from growing without bound.
+    """
+    return rng.uniform(0, min(cap, base * (2 ** attempt)))
+
+
+def retry(fn: Callable[[], object], max_attempts: int = 5,
+          retry_on: Tuple[Type[BaseException], ...] = (TimeoutError, ConnectionError),
+          base: float = 0.5, cap: float = 30.0,
+          sleep: Callable[[float], None] = time.sleep, rng: random.Random = random):
+    """Call fn until it succeeds, retrying only on retry_on errors.
+
+    Only safe for idempotent operations: if fn has side effects (a payment,
+    a refund), pass the same idempotency key on every attempt so a retry
+    after a timeout cannot apply the effect twice.
+    """
+    for attempt in range(max_attempts):
+        try:
+            return fn()
+        except retry_on:
+            if attempt == max_attempts - 1:
+                raise
+            sleep(backoff_delay(attempt, base, cap, rng))</code></pre>
+    </section>
+
+    <section id="chunker" data-track>
+      <h2>Text chunker with overlap</h2>
+      <ul>
+        <li><strong>What:</strong> Windows of size tokens, step = size - overlap. Stop once a window reaches the end.</li>
+        <li><strong>Key idea:</strong> Count: 1 + ceil((n - size)/step) for n &gt; size. Checking 'did this window reach the end' prevents a tiny duplicate tail chunk.</li>
+        <li><strong>Complexity:</strong> O(n) windows (O(n x size / step) copying).</li>
+        <li><strong>Classic bug:</strong> Allowing overlap &gt;= size (infinite loop), or emitting a final chunk that is fully contained in the previous one.</li>
+        <li><strong>Check:</strong> 10 tokens, size 4, overlap 1: [0-3], [3-6], [6-9]. Verified against the count formula for all n &lt; 40, sizes up to 8.</li>
+      </ul>
+      <pre><code class="lang-py" data-embed="solutions/patterns/chunker.py">"""Fixed-size text chunker with overlap."""
+from typing import List, Sequence
+
+
+def chunk_tokens(tokens: Sequence, size: int, overlap: int) -&gt; List[Sequence]:
+    """Windows of `size` tokens; consecutive windows share `overlap` tokens.
+
+    step = size - overlap. Stops once a window reaches the end, so the tail
+    is covered exactly once and no tiny duplicate chunk is produced.
+    Number of chunks for n &gt; size: 1 + ceil((n - size) / step).
+    """
+    if size &lt;= 0 or not 0 &lt;= overlap &lt; size:
+        raise ValueError("need size &gt; 0 and 0 &lt;= overlap &lt; size")
+    step = size - overlap
+    out = []
+    start = 0
+    while True:
+        out.append(tokens[start:start + size])
+        if start + size &gt;= len(tokens):
+            break
+        start += step
+    return out if len(tokens) else []
+
+
+def chunk_words(text: str, size: int, overlap: int) -&gt; List[str]:
+    """Whitespace-word version (real pipelines count model tokens, and prefer
+    splitting on sentence or heading boundaries)."""
+    return [" ".join(c) for c in chunk_tokens(text.split(), size, overlap)]</code></pre>
+    </section>
+
+    <section id="sse" data-track>
+      <h2>Streaming SSE parser</h2>
+      <ul>
+        <li><strong>What:</strong> Lines end with \n, \r\n or \r. 'field: value'. data lines are joined with \n. A blank line dispatches. A line starting with ':' is a comment.</li>
+        <li><strong>Key idea:</strong> Buffer partial lines across chunks, and remember a trailing \r so a \n arriving at the start of the next chunk is not treated as a second (blank) line.</li>
+        <li><strong>Complexity:</strong> O(n) overall (a regex finds each line end).</li>
+        <li><strong>Classic bug:</strong> Splitting only on \n, dispatching on every data line, or losing a partial line at a chunk boundary.</li>
+        <li><strong>Check:</strong> Tested on every possible split point of a stream mixing \n, \r\n and \r, and when fed one character at a time.</li>
+      </ul>
+      <pre><code class="lang-py" data-embed="solutions/patterns/sse_parser.py">"""Incremental Server-Sent Events parser (the wire format LLM APIs stream over)."""
+import re
+from typing import Dict, List, Optional
+
+_EOL = re.compile(r"\r\n|\r|\n")
+
+
+class SSEParser:
+    """feed(chunk) -&gt; list of complete events {"event", "data", "id"}.
+
+    Rules (from the HTML Living Standard's EventSource section):
+    - Lines end with \\n, \\r\\n or \\r. A chunk may end mid-line, or between \\r and \\n.
+    - A blank line dispatches the event if any data was collected.
+    - "field: value": one leading space after the colon is removed.
+    - "data" lines are joined with \\n. A line starting with ":" is a comment.
+    - Event type defaults to "message". "id" persists across events.
+    """
+
+    def __init__(self) -&gt; None:
+        self.buf = ""
+        self.data: List[str] = []
+        self.event = ""
+        self.last_id = ""
+        self.retry: Optional[int] = None
+        self._skip_lf = False
+
+    def feed(self, chunk: str) -&gt; List[Dict[str, str]]:
+        out: List[Dict[str, str]] = []
+        if chunk and self._skip_lf:
+            if chunk.startswith("\n"):
+                chunk = chunk[1:]
+            self._skip_lf = False
+        self.buf += chunk
+        while True:
+            m = _EOL.search(self.buf)
+            if not m:
+                break
+            line = self.buf[:m.start()]
+            if m.group() == "\r" and m.end() == len(self.buf):
+                self._skip_lf = True            # a "\n" at the start of the next chunk belongs to this "\r"
+            self.buf = self.buf[m.end():]
+            ev = self._line(line)
+            if ev:
+                out.append(ev)
+        return out
+
+    def _line(self, line: str) -&gt; Optional[Dict[str, str]]:
+        if line == "":
+            if not self.data:
+                self.event = ""
+                return None
+            ev = {"event": self.event or "message", "data": "\n".join(self.data), "id": self.last_id}
+            self.data, self.event = [], ""
+            return ev
+        if line.startswith(":"):
+            return None                        # comment / keep-alive
+        field, sep, value = line.partition(":")
+        if sep and value.startswith(" "):
+            value = value[1:]
+        if field == "data":
+            self.data.append(value)
+        elif field == "event":
+            self.event = value
+        elif field == "id" and "\0" not in value:
+            self.last_id = value
+        elif field == "retry" and value.isdigit():
+            self.retry = int(value)
+        return None</code></pre>
+    </section>
+
+    <section id="trimmer" data-track>
+      <h2>Sliding-window token budget trimmer</h2>
+      <ul>
+        <li><strong>What:</strong> Always keep system messages. Then keep the newest messages, walking backward, while they fit. Stop at the first that does not.</li>
+        <li><strong>Key idea:</strong> Stop rather than skip, so the kept history is a contiguous recent window. Raise if the newest message cannot fit: silently dropping the user's question is the worst failure.</li>
+        <li><strong>Complexity:</strong> O(n) messages (plus token counting).</li>
+        <li><strong>Classic bug:</strong> Dropping the system prompt first, or keeping an older message after skipping a newer one (a gap in the conversation).</li>
+        <li><strong>Check:</strong> Budget 8 with sizes system 2, user 3, assistant 2, user 4 keeps system, assistant, last user.</li>
+      </ul>
+      <pre><code class="lang-py" data-embed="solutions/patterns/trimmer.py">"""Sliding-window token budget trimmer for chat history."""
+from typing import Callable, Dict, List
+
+
+def trim_history(messages: List[Dict[str, str]], budget: int,
+                 count_tokens: Callable[[str], int]) -&gt; List[Dict[str, str]]:
+    """Keep system messages and the newest messages that fit; drop the oldest.
+
+    - System messages are always kept (they carry the instructions).
+    - Walk the rest from newest to oldest and keep each whole message while it
+      fits; stop at the first one that does not (never skip a gap, which would
+      break the conversation's order of events).
+    - The newest message must fit, otherwise raise: silently dropping the
+      user's actual question is the worst possible failure.
+    Returns kept messages in their original order.
+    """
+    system = [i for i, m in enumerate(messages) if m["role"] == "system"]
+    used = sum(count_tokens(messages[i]["content"]) for i in system)
+    if used &gt; budget:
+        raise ValueError("system messages alone exceed the budget")
+    keep = set(system)
+    others = [i for i in range(len(messages)) if i not in keep]
+    for n, i in enumerate(reversed(others)):
+        cost = count_tokens(messages[i]["content"])
+        if used + cost &gt; budget:
+            if n == 0:
+                raise ValueError("newest message does not fit in the budget")
+            break
+        used += cost
+        keep.add(i)
+    return [messages[i] for i in sorted(keep)]</code></pre>
+    </section>
+
+    <section id="attention" data-track>
+      <h2>Scaled dot-product attention (with causal mask)</h2>
+      <ul>
+        <li><strong>What:</strong> out = softmax(Q K^T / sqrt(d_k) + mask) V, one row per query.</li>
+        <li><strong>Key idea:</strong> Divide by sqrt(d_k) so dot products do not grow with dimension and saturate the softmax. The causal mask sets future positions to -inf, so their weight is exactly 0.</li>
+        <li><strong>Complexity:</strong> O(n_q x n_k x d) time, O(n_q x n_k) for the score matrix (FlashAttention avoids materializing it).</li>
+        <li><strong>Classic bug:</strong> Forgetting the scale, applying the mask after the softmax (the weights then no longer sum to 1), or masking j &gt;= i instead of j &gt; i (which hides the token from itself).</li>
+        <li><strong>Check:</strong> q = [1, 0] over keys [1,0], [0,1], [1,1] gives weights [0.4011, 0.1978, 0.4011] and output [0.8022, 0.5989]. Matches a numpy reference on 20 random causal cases.</li>
+      </ul>
+      <pre><code class="lang-py" data-embed="solutions/patterns/attention.py">"""Scaled dot-product attention (single head) with an optional causal mask, pure Python."""
+import math
+from typing import List
+
+Matrix = List[List[float]]
+
+
+def attention(Q: Matrix, K: Matrix, V: Matrix, causal: bool = False) -&gt; Matrix:
+    """out = softmax(Q K^T / sqrt(d_k) + mask) V
+
+    Q: n_q x d_k, K: n_k x d_k, V: n_k x d_v. With causal=True, query i may
+    only attend to keys 0..i (requires n_q == n_k), which is how a decoder
+    stops token i from seeing the future. Each softmax row is max-shifted for
+    stability. Cost: O(n_q x n_k x d), the quadratic term in sequence length.
+    """
+    d_k = len(K[0])
+    scale = 1.0 / math.sqrt(d_k)
+    out = []
+    for i, q in enumerate(Q):
+        scores = []
+        for j, k in enumerate(K):
+            if causal and j &gt; i:
+                scores.append(-math.inf)           # masked: weight becomes exactly 0
+            else:
+                scores.append(sum(a * b for a, b in zip(q, k)) * scale)
+        m = max(scores)
+        exps = [math.exp(s - m) if s != -math.inf else 0.0 for s in scores]
+        total = sum(exps)
+        weights = [e / total for e in exps]
+        out.append([sum(w * v[c] for w, v in zip(weights, V)) for c in range(len(V[0]))])
+    return out</code></pre>
+    </section>
+
+    <section id="transformer-params" data-track>
+      <h2>Transformer parameter count</h2>
+      <ul>
+        <li><strong>What:</strong> Per layer: attention 2d^2 + 2d x kv_dim, SwiGLU MLP 3 x d x ffn, two norms. Plus embeddings, LM head, final norm.</li>
+        <li><strong>Key idea:</strong> GQA shrinks only the K and V projections. Untied embeddings count the vocab x d matrix twice.</li>
+        <li><strong>Complexity:</strong> O(1).</li>
+        <li><strong>Classic bug:</strong> Using 2 x d x ffn for a SwiGLU MLP (it has three matrices), or forgetting the LM head.</li>
+        <li><strong>Check:</strong> Llama 2 7B = 6,738,415,616 and Llama 3 8B = 8,030,261,248, exactly the published counts.</li>
+      </ul>
+      <pre><code class="lang-py" data-embed="solutions/patterns/transformer_params.py">"""Parameter count of a Llama-style decoder (no biases, RMSNorm, SwiGLU MLP)."""
+
+
+def llama_params(vocab: int, d: int, layers: int, ffn: int, n_heads: int, n_kv_heads: int,
+                 tied_embeddings: bool = False) -&gt; int:
+    """Count every weight:
+
+    per layer:
+      attention  q: d x d, o: d x d, k and v: d x (n_kv_heads x head_dim) each
+      MLP (SwiGLU) gate, up: d x ffn, down: ffn x d  -&gt; 3 x d x ffn
+      2 RMSNorm weight vectors of size d
+    plus the token embedding (vocab x d), the LM head (vocab x d unless tied)
+    and the final norm (d).
+    Rule of thumb for MHA with ffn = 4d: about 12 x layers x d^2 + embeddings.
+    """
+    head_dim = d // n_heads
+    kv_dim = n_kv_heads * head_dim
+    attn = 2 * d * d + 2 * d * kv_dim
+    mlp = 3 * d * ffn
+    per_layer = attn + mlp + 2 * d
+    embed = vocab * d * (1 if tied_embeddings else 2)
+    return layers * per_layer + embed + d</code></pre>
+    </section>
+
+    <section id="classification-metrics" data-track>
+      <h2>Precision, recall, F1 and ROC-AUC</h2>
+      <ul>
+        <li><strong>What:</strong> Confusion counts, then P = TP/(TP+FP), R = TP/(TP+FN), F1 = 2PR/(P+R). AUC = P(random positive scores above random negative).</li>
+        <li><strong>Key idea:</strong> AUC via ranks (Mann-Whitney U) is O(n log n). Ties get their average rank, which counts tied pairs as 1/2.</li>
+        <li><strong>Complexity:</strong> O(n) for the counts, O(n log n) for AUC.</li>
+        <li><strong>Classic bug:</strong> Dividing by zero when nothing is predicted positive, or the O(n_pos x n_neg) pair loop on large data.</li>
+        <li><strong>Check:</strong> TP 40, FP 10, FN 20, TN 930: P 0.8, R 0.667, F1 0.7273 (accuracy 0.97 looks great but misleads). The rank AUC matches brute-force pairs on 300 random cases with ties.</li>
+      </ul>
+      <pre><code class="lang-py" data-embed="solutions/patterns/classification_metrics.py">"""Confusion-matrix metrics and ROC-AUC from scratch."""
+from typing import Dict, List, Sequence
+
+
+def confusion(y_true: Sequence[int], y_pred: Sequence[int]) -&gt; Dict[str, int]:
+    tp = sum(1 for t, p in zip(y_true, y_pred) if t == 1 and p == 1)
+    fp = sum(1 for t, p in zip(y_true, y_pred) if t == 0 and p == 1)
+    fn = sum(1 for t, p in zip(y_true, y_pred) if t == 1 and p == 0)
+    tn = sum(1 for t, p in zip(y_true, y_pred) if t == 0 and p == 0)
+    return {"tp": tp, "fp": fp, "fn": fn, "tn": tn}
+
+
+def precision_recall_f1(y_true: Sequence[int], y_pred: Sequence[int], beta: float = 1.0):
+    """precision = tp/(tp+fp), recall = tp/(tp+fn), F_beta = (1+b^2)PR/(b^2 P + R).
+    Undefined ratios (0/0) are returned as 0.0, the common library convention."""
+    c = confusion(y_true, y_pred)
+    p = c["tp"] / (c["tp"] + c["fp"]) if c["tp"] + c["fp"] else 0.0
+    r = c["tp"] / (c["tp"] + c["fn"]) if c["tp"] + c["fn"] else 0.0
+    b2 = beta * beta
+    f = (1 + b2) * p * r / (b2 * p + r) if (b2 * p + r) else 0.0
+    return p, r, f
+
+
+def roc_auc(y_true: Sequence[int], scores: Sequence[float]) -&gt; float:
+    """AUC = P(score of a random positive &gt; score of a random negative), ties count 1/2.
+
+    Computed with ranks (Mann-Whitney U) in O(n log n): sort by score, give
+    tied scores their average rank, then
+        AUC = (sum of positive ranks - n_pos (n_pos + 1) / 2) / (n_pos x n_neg)
+    """
+    n = len(scores)
+    order = sorted(range(n), key=lambda i: scores[i])
+    ranks: List[float] = [0.0] * n
+    i = 0
+    while i &lt; n:
+        j = i
+        while j + 1 &lt; n and scores[order[j + 1]] == scores[order[i]]:
+            j += 1
+        avg = (i + j) / 2 + 1                     # 1-based average rank of the tie group
+        for k in range(i, j + 1):
+            ranks[order[k]] = avg
+        i = j + 1
+    n_pos = sum(1 for t in y_true if t == 1)
+    n_neg = n - n_pos
+    if n_pos == 0 or n_neg == 0:
+        raise ValueError("AUC needs both classes")
+    s = sum(r for r, t in zip(ranks, y_true) if t == 1)
+    return (s - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg)</code></pre>
+    </section>
+
+    <section id="logistic-regression" data-track>
+      <h2>Logistic regression with gradient descent</h2>
+      <ul>
+        <li><strong>What:</strong> p = sigmoid(w.x + b), minimize mean binary cross-entropy. Gradient: mean((p - y) x), plus l2 x w if regularized.</li>
+        <li><strong>Key idea:</strong> The gradient has the same shape as linear regression's. Use a numerically stable sigmoid, never exp of a large positive number.</li>
+        <li><strong>Complexity:</strong> O(epochs x n x d).</li>
+        <li><strong>Classic bug:</strong> Regularizing the bias, using MSE loss (non-convex with sigmoid), or a learning rate so large the loss oscillates.</li>
+        <li><strong>Check:</strong> Separable toy data is classified perfectly, and the analytic gradient matches a finite-difference check to 1e-6.</li>
+      </ul>
+      <pre><code class="lang-py" data-embed="solutions/patterns/logistic_regression.py">"""Logistic regression trained with batch gradient descent, pure Python."""
+import math
+from typing import List, Sequence, Tuple
+
+
+def sigmoid(z: float) -&gt; float:
+    # stable for large |z|: never calls exp on a big positive number
+    if z &gt;= 0:
+        return 1.0 / (1.0 + math.exp(-z))
+    e = math.exp(z)
+    return e / (1.0 + e)
+
+
+def log_loss(X: Sequence[Sequence[float]], y: Sequence[int], w: List[float], b: float, l2: float = 0.0) -&gt; float:
+    eps = 1e-12
+    total = 0.0
+    for xi, yi in zip(X, y):
+        p = sigmoid(sum(a * c for a, c in zip(w, xi)) + b)
+        total += -(yi * math.log(p + eps) + (1 - yi) * math.log(1 - p + eps))
+    return total / len(y) + 0.5 * l2 * sum(c * c for c in w)
+
+
+def fit(X: Sequence[Sequence[float]], y: Sequence[int], lr: float = 0.1, epochs: int = 500,
+        l2: float = 0.0) -&gt; Tuple[List[float], float]:
+    """Minimize mean binary cross-entropy (+ optional L2 on w, not on b).
+
+    The gradient is remarkably simple: dL/dw = mean((p - y) x) + l2 w and
+    dL/db = mean(p - y). Same form as linear regression's, with p = sigmoid(w.x + b).
+    """
+    n, d = len(X), len(X[0])
+    w, b = [0.0] * d, 0.0
+    for _ in range(epochs):
+        gw, gb = [0.0] * d, 0.0
+        for xi, yi in zip(X, y):
+            err = sigmoid(sum(a * c for a, c in zip(w, xi)) + b) - yi
+            for j in range(d):
+                gw[j] += err * xi[j]
+            gb += err
+        w = [w[j] - lr * (gw[j] / n + l2 * w[j]) for j in range(d)]
+        b -= lr * gb / n
+    return w, b
+
+
+def predict_proba(X: Sequence[Sequence[float]], w: List[float], b: float) -&gt; List[float]:
+    return [sigmoid(sum(a * c for a, c in zip(w, xi)) + b) for xi in X]</code></pre>
+    </section>
+
+    <section id="kmeans" data-track>
+      <h2>k-means with k-means++ init</h2>
+      <ul>
+        <li><strong>What:</strong> Repeat: assign points to the nearest centroid, then move each centroid to the mean of its points. Stop when assignments stop changing.</li>
+        <li><strong>Key idea:</strong> Each step lowers the within-cluster sum of squares, so it converges, but only to a local optimum. k-means++ spreads the initial centroids out to avoid bad starts.</li>
+        <li><strong>Complexity:</strong> O(iters x n x k x d).</li>
+        <li><strong>Classic bug:</strong> Not handling empty clusters, forgetting to scale features (distance is dominated by large-unit features), or assuming the result is the global optimum.</li>
+        <li><strong>Check:</strong> Three well-separated blobs of 30 points are each assigned to exactly one cluster.</li>
+      </ul>
+      <pre><code class="lang-py" data-embed="solutions/patterns/kmeans.py">"""k-means (Lloyd's algorithm) with k-means++ initialization, pure Python."""
+import random
+from typing import List, Sequence, Tuple
+
+Point = Sequence[float]
+
+
+def _d2(a: Point, b: Point) -&gt; float:
+    return sum((x - y) ** 2 for x, y in zip(a, b))
+
+
+def kmeans(points: List[Point], k: int, iters: int = 100, seed: int = 0) -&gt; Tuple[List[List[float]], List[int]]:
+    """Alternate two steps until assignments stop changing:
+    1. assign each point to its nearest centroid (squared Euclidean),
+    2. move each centroid to the mean of its points.
+    Each step can only lower the within-cluster sum of squares, so it
+    converges, but to a LOCAL optimum that depends on the initialization.
+    k-means++ picks initial centroids far apart (probability proportional to
+    squared distance), which makes bad local optima much less likely.
+    """
+    rng = random.Random(seed)
+    centroids = [list(rng.choice(points))]
+    while len(centroids) &lt; k:
+        d2 = [min(_d2(p, c) for c in centroids) for p in points]
+        total = sum(d2)
+        r, acc = rng.random() * total, 0.0
+        for p, w in zip(points, d2):
+            acc += w
+            if acc &gt;= r:
+                centroids.append(list(p))
+                break
+    assign: List[int] = [-1] * len(points)
+    for _ in range(iters):
+        new = [min(range(k), key=lambda c: (_d2(p, centroids[c]), c)) for p in points]
+        if new == assign:
+            break
+        assign = new
+        for c in range(k):
+            members = [p for p, a in zip(points, assign) if a == c]
+            if members:                               # keep an empty cluster's centroid in place
+                centroids[c] = [sum(col) / len(members) for col in zip(*members)]
+    return centroids, assign
+
+
+def inertia(points: List[Point], centroids: List[List[float]], assign: List[int]) -&gt; float:
+    """Within-cluster sum of squared distances, the objective k-means minimizes."""
+    return sum(_d2(p, centroids[a]) for p, a in zip(points, assign))</code></pre>
+    </section>
+
+    <section id="pattern-tests">
+      <h2>All pattern tests</h2>
+      <p>Every function above is exercised by this file: hand-computed values, sampling frequencies with seeded RNGs, every split point for the SSE parser, brute-force checks for the chunker counts.</p>
+      <details class="box">
+        <summary>test_patterns.py</summary>
+        <div class="d-body"><pre><code class="lang-py" data-embed="solutions/patterns/test_patterns.py">"""Tests for the 17 extra coding patterns. Run: python3 test_patterns.py"""
+import itertools
+import math
+import random
+
+from attention import attention
+from backoff import backoff_delay, retry
+from classification_metrics import confusion, precision_recall_f1, roc_auc
+from kmeans import inertia, kmeans
+from logistic_regression import fit, log_loss, predict_proba
+from transformer_params import llama_params
+from bpe_merge import bpe_step, merge_pair, most_frequent_pair
+from chunker import chunk_tokens, chunk_words
+from kv_cache import GB, GiB, kv_bytes_per_token, kv_cache_bytes, max_tokens_in_cache, weight_bytes
+from logsumexp import log_softmax, logsumexp
+from lru_cache import LRUCache, PrefixCache
+from mmr import mmr
+from mrr import mean_reciprocal_rank, reciprocal_rank
+from ndcg import dcg, ndcg_at_k
+from rrf import rrf
+from softmax import softmax
+from sse_parser import SSEParser
+from token_bucket import TokenBucket
+from top_k_sampling import sample_top_k, top_k_probs
+from top_p_sampling import sample_top_p, top_p_probs
+from trimmer import trim_history
+
+PASSED = []
+
+
+def case(fn):
+    fn()
+    PASSED.append(fn.__name__)
+    return fn
+
+
+def close(a, b, tol=1e-9):
+    return abs(a - b) &lt;= tol
+
+
+@case
+def test_softmax():
+    p = softmax([2.0, 1.0, 0.0])
+    assert close(sum(p), 1.0)
+    assert close(p[0], math.exp(2) / (math.exp(2) + math.exp(1) + 1))
+    assert [round(x, 4) for x in p] == [0.6652, 0.2447, 0.09]
+    # stability: huge logits would overflow math.exp without the max shift
+    assert close(softmax([1000.0, 1000.0])[0], 0.5)
+    # temperature: T &lt; 1 sharpens, T &gt; 1 flattens, T -&gt; large is uniform
+    assert softmax([2.0, 1.0, 0.0], 0.5)[0] &gt; p[0] &gt; softmax([2.0, 1.0, 0.0], 2.0)[0]
+    assert [round(x, 4) for x in softmax([2.0, 1.0, 0.0], 0.5)] == [0.8668, 0.1173, 0.0159]
+    assert softmax([]) == []
+    try:
+        softmax([1.0], 0)
+        raise AssertionError
+    except ValueError:
+        pass
+
+
+@case
+def test_logsumexp():
+    assert close(logsumexp([0.0, 0.0]), math.log(2))
+    assert close(logsumexp([1000.0, 1000.0]), 1000 + math.log(2))
+    assert logsumexp([]) == -math.inf
+    assert logsumexp([-math.inf, -math.inf]) == -math.inf
+    ls = log_softmax([2.0, 1.0, 0.0])
+    assert close(sum(math.exp(x) for x in ls), 1.0)
+    # log_softmax stays finite where log(softmax) underflows to log(0)
+    assert log_softmax([0.0, -2000.0])[1] == -2000.0
+
+
+@case
+def test_top_k():
+    probs = top_k_probs([1.0, 3.0, 2.0, 3.0], 2)
+    assert probs[0] == 0 and probs[2] == 0 and close(probs[1], 0.5) and close(probs[3], 0.5)
+    probs = top_k_probs([0.0, 1.0, 2.0], 2)
+    assert probs[0] == 0.0 and close(probs[2], math.e / (math.e + 1))
+    rng = random.Random(0)
+    counts = [0, 0, 0]
+    for _ in range(20000):
+        counts[sample_top_k([0.0, 1.0, 2.0], 2, rng=rng)] += 1
+    assert counts[0] == 0 and abs(counts[2] / 20000 - 0.7311) &lt; 0.02
+    assert sample_top_k([0.0, 5.0, 5.0], 1, temperature=0) == 1   # greedy, tie -&gt; smaller index
+
+
+@case
+def test_top_p():
+    # probs 0.5, 0.3, 0.15, 0.05 (logits are their logs)
+    lg = [math.log(x) for x in [0.5, 0.3, 0.15, 0.05]]
+    p = top_p_probs(lg, 0.75)
+    assert close(p[0], 0.5 / 0.8) and close(p[1], 0.3 / 0.8) and p[2] == 0 and p[3] == 0
+    p = top_p_probs(lg, 0.8)                 # 0.5 + 0.3 = 0.8 reaches p exactly
+    assert p[2] == 0 and close(p[0] + p[1], 1.0)
+    p = top_p_probs(lg, 0.1)                 # at least one token always survives
+    assert p == [1.0, 0.0, 0.0, 0.0]
+    assert top_p_probs(lg, 1.0)[3] &gt; 0
+    rng = random.Random(1)
+    assert all(sample_top_p(lg, 0.75, rng=rng) in (0, 1) for _ in range(2000))
+
+
+@case
+def test_cosine_topk():
+    try:
+        import numpy as np
+    except ImportError:
+        print("  (numpy not installed: cosine_top_k skipped)")
+        return
+    from cosine_topk import cosine_top_k
+    m = np.array([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.0, 0.0], [2.0, 0.0]])
+    idx, sc = cosine_top_k(m, np.array([1.0, 0.0]), 3)
+    assert list(idx) == [0, 4, 2]            # 0 and 4 tie at 1.0 -&gt; smaller index first
+    assert close(sc[2], 1 / math.sqrt(2))
+    idx, sc = cosine_top_k(m, np.array([0.0, 0.0]), 2)
+    assert list(idx) == [0, 1] and list(sc) == [0.0, 0.0]   # zero query: all 0, no NaN
+    rng = np.random.default_rng(0)
+    m = rng.integers(-2, 3, size=(300, 4)).astype(float)    # many exact ties
+    q = rng.integers(-2, 3, size=4).astype(float)
+    idx, _ = cosine_top_k(m, q, 25)
+    norms = np.linalg.norm(m, axis=1) * np.linalg.norm(q)
+    full = [(-(m[i] @ q / norms[i]) if norms[i] &gt; 0 else 0.0, i) for i in range(300)]
+    assert list(idx) == [i for _, i in sorted(full)[:25]]
+
+
+@case
+def test_rrf():
+    bm25 = ["d1", "d2", "d3"]
+    dense = ["d3", "d1", "d4"]
+    out = rrf([bm25, dense])
+    s = dict(out)
+    assert close(s["d1"], 1 / 61 + 1 / 62) and close(s["d3"], 1 / 63 + 1 / 61)
+    assert close(s["d2"], 1 / 62) and close(s["d4"], 1 / 63)
+    assert [d for d, _ in out] == ["d1", "d3", "d2", "d4"]
+    assert rrf([["a", "a", "b"]]) == [("a", 1 / 61), ("b", 1 / 63)]   # duplicate keeps first position
+    assert rrf([], k=60) == []
+    assert rrf([["x", "y"]], top_n=1) == [("x", 1 / 61)]
+
+
+@case
+def test_ndcg():
+    rel = {"a": 3, "b": 2, "c": 1}
+    assert close(ndcg_at_k(["a", "b", "c"], rel, 3), 1.0)
+    got = ndcg_at_k(["c", "b", "a"], rel, 3)
+    d = 1 + 2 / math.log2(3) + 3 / 2
+    i = 3 + 2 / math.log2(3) + 1 / 2
+    assert close(got, d / i)
+    assert round(got, 6) == 0.789998
+    # missing a relevant doc is penalized because the ideal uses ALL judged docs
+    assert ndcg_at_k(["a", "x"], rel, 2) &lt; 1.0
+    assert ndcg_at_k(["x"], {}, 5) == 0.0
+    assert close(dcg([1, 1]), 1 + 1 / math.log2(3))
+    assert ndcg_at_k(["c", "b", "a"], rel, 3, exponential=True) &lt; got   # bigger penalty for burying the 3
+
+
+@case
+def test_mrr():
+    assert reciprocal_rank(["x", "a", "b"], {"a", "b"}) == 0.5
+    assert reciprocal_rank(["x", "y"], {"a"}) == 0.0
+    assert reciprocal_rank(["x", "y", "a"], {"a"}, k=2) == 0.0
+    assert close(mean_reciprocal_rank([["a"], ["x", "a"], ["x", "y"]], [{"a"}, {"a"}, {"a"}]), (1 + 0.5 + 0) / 3)
+
+
+@case
+def test_mmr():
+    q = [0.9, 0.88, 0.5]
+    sims = [[1, 0.99, 0.1], [0.99, 1, 0.1], [0.1, 0.1, 1]]
+    assert mmr(q, sims, 2, lam=1.0) == [0, 1]       # pure relevance takes the near-duplicate
+    assert mmr(q, sims, 2, lam=0.5) == [0, 2]       # diversity skips it
+    assert mmr(q, sims, 3, lam=0.5) == [0, 2, 1]
+    assert mmr([], [], 3) == []
+    assert mmr([0.5, 0.5], [[1, 0], [0, 1]], 1) == [0]
+
+
+@case
+def test_token_bucket():
+    t = [0.0]
+    tb = TokenBucket(rate=2.0, capacity=5, clock=lambda: t[0])
+    assert all(tb.allow() for _ in range(5)) and not tb.allow()   # burst of 5, then empty
+    t[0] = 0.5
+    assert tb.allow() and not tb.allow()                         # 0.5 s * 2/s = 1 token
+    t[0] = 100.0
+    assert close(tb.wait_time(5), 0.0) and tb.allow(5)            # capped at capacity, not 200
+    assert close(tb.wait_time(1), 0.5)
+    assert tb.wait_time(6) == float("inf")
+
+
+@case
+def test_lru_and_prefix_cache():
+    c = LRUCache(2)
+    c.put("a", 1)
+    c.put("b", 2)
+    assert c.get("a") == 1                    # a is now most recent
+    assert c.put("c", 3) == "b"               # so b is evicted
+    assert c.get("b") is None and c.get("c") == 3
+    pc = PrefixCache(block=4, capacity_blocks=100)
+    system = list(range(12))
+    pc.insert(system + [100, 101, 102, 103])
+    assert pc.lookup(system + [200, 201, 202, 203]) == 12      # shared prefix reused
+    assert pc.lookup([999] + system[1:] + [100, 101, 102, 103]) == 0   # first token changed: nothing reused
+    assert pc.lookup(system[:6]) == 4                          # only full blocks count
+
+
+@case
+def test_bpe():
+    vocab = {tuple("low"): 5, tuple("lower"): 2, tuple("newest"): 6, tuple("widest"): 3}
+    pair = most_frequent_pair(vocab)
+    assert pair == ("e", "s")                 # es: 6 + 3 = 9, st: 9 too, ties -&gt; smallest pair
+    pair, v2 = bpe_step(vocab)
+    assert v2[("n", "e", "w", "es", "t")] == 6 and v2[("l", "o", "w")] == 5
+    pair, v3 = bpe_step(v2)
+    assert pair == ("es", "t")
+    assert merge_pair({("a", "a", "a"): 1}, ("a", "a")) == {("aa", "a"): 1}   # non-overlapping, left to right
+    assert bpe_step({("x",): 3}) == (None, {("x",): 3})
+
+
+@case
+def test_kv_cache():
+    b = kv_cache_bytes(32, 8, 128, 8192, 4, 2)
+    assert b == 4 * GiB                       # the assessment question: 4 GiB
+    assert kv_bytes_per_token(32, 8, 128, 2) == 131072           # 128 KiB per token
+    assert kv_bytes_per_token(32, 32, 128, 2) == 524288          # MHA (32 KV heads): 4x more
+    assert weight_bytes(8e9, "bf16") / GB == 16.0
+    assert weight_bytes(70e9, "int4") / GB == 35.0
+    assert max_tokens_in_cache(10 * GiB, 32, 8, 128, 2) == 81920
+
+
+@case
+def test_backoff():
+    rng = random.Random(0)
+    for attempt in range(10):
+        d = backoff_delay(attempt, base=0.5, cap=8.0, rng=rng)
+        assert 0 &lt;= d &lt;= min(8.0, 0.5 * 2 ** attempt)
+    calls, sleeps = [0], []
+
+    def flaky():
+        calls[0] += 1
+        if calls[0] &lt; 3:
+            raise TimeoutError
+        return "ok"
+
+    assert retry(flaky, sleep=sleeps.append, rng=random.Random(1)) == "ok"
+    assert calls[0] == 3 and len(sleeps) == 2
+    try:
+        retry(lambda: (_ for _ in ()).throw(ValueError("bad input")), sleep=sleeps.append)
+        raise AssertionError
+    except ValueError:
+        pass                                  # non-retryable errors propagate immediately
+    try:
+        retry(lambda: (_ for _ in ()).throw(TimeoutError()), max_attempts=3, sleep=lambda s: None)
+        raise AssertionError
+    except TimeoutError:
+        pass
+
+
+@case
+def test_chunker():
+    toks = list(range(10))
+    assert chunk_tokens(toks, 4, 1) == [[0, 1, 2, 3], [3, 4, 5, 6], [6, 7, 8, 9]]
+    assert chunk_tokens(toks, 4, 2) == [[0, 1, 2, 3], [2, 3, 4, 5], [4, 5, 6, 7], [6, 7, 8, 9]]
+    assert chunk_tokens(toks, 20, 5) == [toks]
+    assert chunk_tokens([], 4, 1) == []
+    for n, size, ov in itertools.product(range(1, 40), range(1, 9), range(0, 8)):
+        if ov &gt;= size:
+            continue
+        out = chunk_tokens(list(range(n)), size, ov)
+        assert out[0][0] == 0 and out[-1][-1] == n - 1
+        expected = 1 if n &lt;= size else 1 + math.ceil((n - size) / (size - ov))
+        assert len(out) == expected
+    assert chunk_words("a b c d e", 2, 0) == ["a b", "c d", "e"]
+    try:
+        chunk_tokens(toks, 4, 4)
+        raise AssertionError
+    except ValueError:
+        pass
+
+
+@case
+def test_sse():
+    stream = ('data: {"delta": "Hel"}\n\n: keep-alive\n\nevent: done\r\ndata: line1\r\ndata:line2\r\nid: 7\r\n\r\n'
+              'data: x\r\rdata: y\n\n')
+    expected = [
+        {"event": "message", "data": '{"delta": "Hel"}', "id": ""},
+        {"event": "done", "data": "line1\nline2", "id": "7"},
+        {"event": "message", "data": "x", "id": "7"},
+        {"event": "message", "data": "y", "id": "7"},
+    ]
+    p = SSEParser()
+    assert p.feed(stream) == expected
+    for i in range(len(stream) + 1):          # every single split point, including between \r and \n
+        p = SSEParser()
+        assert p.feed(stream[:i]) + p.feed("") + p.feed(stream[i:]) == expected
+    p = SSEParser()
+    assert sum((p.feed(ch) for ch in stream), []) == expected   # one char at a time
+
+
+@case
+def test_trimmer():
+    count = lambda s: len(s.split())
+    msgs = [
+        {"role": "system", "content": "be brief"},              # 2
+        {"role": "user", "content": "one two three"},           # 3
+        {"role": "assistant", "content": "four five"},          # 2
+        {"role": "user", "content": "six seven eight nine"},    # 4
+    ]
+    assert trim_history(msgs, 100, count) == msgs
+    assert trim_history(msgs, 8, count) == [msgs[0], msgs[2], msgs[3]]
+    assert trim_history(msgs, 7, count) == [msgs[0], msgs[3]]   # assistant msg would need 8
+    try:
+        trim_history(msgs, 5, count)
+        raise AssertionError
+    except ValueError:
+        pass
+
+
+@case
+def test_attention():
+    out = attention([[1, 0]], [[1, 0], [0, 1], [1, 1]], [[1, 0], [0, 1], [1, 1]])
+    assert [round(x, 4) for x in out[0]] == [0.8022, 0.5989]
+    X = [[0.5, -1.0], [2.0, 0.0], [1.0, 1.0]]
+    causal = attention(X, X, [[1, 0], [0, 1], [5, 5]], causal=True)
+    assert causal[0] == [1.0, 0.0]                           # token 0 can only see itself
+    assert max(causal[1]) &lt;= 1.0                             # token 1 never sees the [5, 5] value of token 2
+    try:
+        import numpy as np
+    except ImportError:
+        return
+    rng = np.random.default_rng(0)
+    for _ in range(20):
+        n, dk, dv = rng.integers(1, 6), rng.integers(1, 5), rng.integers(1, 4)
+        Q, K, V = rng.normal(size=(n, dk)), rng.normal(size=(n, dk)), rng.normal(size=(n, dv))
+        s_ = Q @ K.T / np.sqrt(dk)
+        s_ = s_ + np.triu(np.full((n, n), -np.inf), 1)
+        w = np.exp(s_ - s_.max(axis=1, keepdims=True))
+        ref = (w / w.sum(axis=1, keepdims=True)) @ V
+        got = np.array(attention(Q.tolist(), K.tolist(), V.tolist(), causal=True))
+        assert np.allclose(got, ref)
+
+
+@case
+def test_transformer_params():
+    assert llama_params(32000, 4096, 32, 11008, 32, 32) == 6738415616      # Llama 2 7B
+    assert llama_params(128256, 4096, 32, 14336, 32, 8) == 8030261248      # Llama 3 8B
+    assert llama_params(32000, 4096, 32, 11008, 32, 32, tied_embeddings=True) == 6738415616 - 32000 * 4096
+
+
+@case
+def test_classification_metrics():
+    y = [1] * 60 + [0] * 940
+    pred = [1] * 40 + [0] * 20 + [1] * 10 + [0] * 930
+    assert confusion(y, pred) == {"tp": 40, "fp": 10, "fn": 20, "tn": 930}
+    p, r, f = precision_recall_f1(y, pred)
+    assert close(p, 0.8) and close(r, 2 / 3) and round(f, 4) == 0.7273
+    assert precision_recall_f1([1, 0], [0, 0]) == (0.0, 0.0, 0.0)       # no positive predictions
+    assert round(roc_auc([1, 1, 1, 0, 0, 0, 0], [0.9, 0.8, 0.4, 0.7, 0.3, 0.2, 0.1]), 4) == 0.9167
+    assert roc_auc([1, 0], [0.5, 0.5]) == 0.5                           # tie counts half
+    rng = random.Random(4)
+    for _ in range(300):
+        n = rng.randint(2, 12)
+        yt = [rng.randint(0, 1) for _ in range(n)]
+        if len(set(yt)) &lt; 2:
+            continue
+        sc = [rng.choice([0.1, 0.2, 0.5, 0.7, 0.9]) for _ in range(n)]   # many ties
+        pos = [s for s, t in zip(sc, yt) if t]
+        neg = [s for s, t in zip(sc, yt) if not t]
+        brute = sum(1 if a &gt; b else 0.5 if a == b else 0 for a in pos for b in neg) / (len(pos) * len(neg))
+        assert close(roc_auc(yt, sc), brute)
+
+
+@case
+def test_logistic_regression():
+    X = [[0.0, 0.0], [1.0, 0.5], [0.5, 1.0], [3.0, 3.0], [4.0, 3.5], [3.5, 4.0]]
+    y = [0, 0, 0, 1, 1, 1]
+    w, b = fit(X, y, lr=0.5, epochs=300)
+    assert [round(pr) for pr in predict_proba(X, w, b)] == y
+    assert log_loss(X, y, w, b) &lt; log_loss(X, y, [0.0, 0.0], 0.0)
+    # gradient check: analytic gradient of one GD step matches finite differences
+    w0, b0, h = [0.3, -0.2], 0.1, 1e-6
+    from logistic_regression import sigmoid
+    gw = [sum((sigmoid(w0[0] * xi[0] + w0[1] * xi[1] + b0) - yi) * xi[j] for xi, yi in zip(X, y)) / 6 for j in range(2)]
+    for j in range(2):
+        wp = list(w0); wp[j] += h
+        wm = list(w0); wm[j] -= h
+        num = (log_loss(X, y, wp, b0) - log_loss(X, y, wm, b0)) / (2 * h)
+        assert abs(num - gw[j]) &lt; 1e-6
+
+
+@case
+def test_kmeans():
+    rng = random.Random(0)
+    blobs = [(0, 0), (10, 10), (0, 10)]
+    pts = [(cx + rng.gauss(0, 0.5), cy + rng.gauss(0, 0.5)) for cx, cy in blobs for _ in range(30)]
+    cents, assign = kmeans(pts, 3, seed=1)
+    for b in range(3):                                   # each blob lands in exactly one cluster
+        assert len(set(assign[b * 30:(b + 1) * 30])) == 1
+    assert len(set(assign)) == 3
+    assert inertia(pts, cents, assign) &lt; 3 * 90 * 0.5 ** 2 * 2
+    one = kmeans([(1.0, 2.0)] * 4, 1)
+    assert one[0] == [[1.0, 2.0]] and one[1] == [0, 0, 0, 0]
+
+
+if __name__ == "__main__":
+    print(f"patterns: all {len(PASSED)} pattern test groups passed")</code></pre></div>
+      </details>
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="07-coding-problems.html"><span class="dir">Previous</span><span>07 Coding problems</span></a>
+      <a class="next" href="09-questions-i-saw.html"><span class="dir">Next</span><span>09 Questions I saw</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

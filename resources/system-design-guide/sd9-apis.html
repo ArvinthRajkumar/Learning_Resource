@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD9">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>APIs, microservices and service communication | System Design</title>
+<meta name="description" content="REST, gRPC, GraphQL, pagination, versioning, authentication and authorization, rate limiting with working algorithms, API gateways, service discovery, and monolith versus microservices.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD9</p>
+      <h1>APIs, microservices and service communication</h1>
+      <p class="lede">An API is the contract between parts of a system. Good APIs are predictable, evolvable and safe under retries and abuse. This part covers how to design them, how services find and talk to each other, and when to split a system into services at all.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~3 hours</span></div>
+    </div>
+
+    <section id="design" data-track>
+      <h2>Designing APIs</h2>
+<h3>Intuition</h3>
+<p>An API is a promise. Once other teams or customers depend on it, every change risks breaking them. Design for the <strong>clients' tasks</strong>, keep it small and consistent, and plan for change from day one.</p>
+<h3>REST in practice</h3>
+<p>REST models the system as <strong>resources</strong> (nouns) addressed by URLs and manipulated with HTTP methods.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Operation</th><th>Request</th><th>Success</th></tr></thead>
+<tbody>
+<tr><td>List</td><td><code>GET /v1/orders?limit=20</code></td><td>200 with a page</td></tr><tr><td>Read</td><td><code>GET /v1/orders/123</code></td><td>200</td></tr><tr><td>Create</td><td><code>POST /v1/orders</code></td><td>201 with <code>Location</code> header</td></tr><tr><td>Replace</td><td><code>PUT /v1/orders/123</code></td><td>200 or 204</td></tr><tr><td>Partial update</td><td><code>PATCH /v1/orders/123</code></td><td>200</td></tr><tr><td>Delete</td><td><code>DELETE /v1/orders/123</code></td><td>204</td></tr>
+</tbody>
+</table>
+</div>
+<p>Rules of good REST design: plural nouns, nested only for true ownership (<code>/orders/123/items</code>), correct status codes, JSON bodies, consistent error shape, stateless requests, and caching headers where safe.</p>
+<pre><code>HTTP/1.1 422 Unprocessable Entity
+Content-Type: application/json
+
+{"error": {"code": "invalid_quantity", "message": "quantity must be 1 or more", "field": "items[0].quantity"}}</code></pre>
+<h3>Idempotency for unsafe operations</h3>
+<p><code>POST /payments</code> can be retried by clients and gateways after a timeout. Accept an <code>Idempotency-Key</code> header, store the first result under that key for a day or so, and return it on retries. This is what payment APIs such as Stripe do.</p>
+<h3>Pagination</h3>
+<p>Never return unbounded lists.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Style</th><th>How</th><th>Pros</th><th>Cons</th></tr></thead>
+<tbody>
+<tr><td>Offset</td><td><code>?offset=40&amp;limit=20</code></td><td>Easy, random page access</td><td>Slow for large offsets (database scans and discards), items shift between pages</td></tr><tr><td>Cursor (keyset)</td><td><code>?after=&lt;last_id&gt;&amp;limit=20</code></td><td>Fast and stable, uses an index</td><td>No jumping to page N</td></tr><tr><td>Page token</td><td>Opaque server-generated cursor</td><td>Hides internals, can change later</td><td>Not human readable</td></tr>
+</tbody>
+</table>
+</div>
+<p>Keyset SQL: <code>WHERE (created_at, id) &lt; (:ts, :id) ORDER BY created_at DESC, id DESC LIMIT 20</code>.</p>
+<h3>Versioning and evolution</h3>
+<ul><li>Version in the URL (<code>/v1/</code>) or a header. Keep old versions alive for a published deprecation period.</li><li><strong>Backward compatible</strong> changes: adding optional fields, new endpoints, new enum values (if clients ignore unknown). <strong>Breaking</strong> changes: removing or renaming fields, changing types or meanings, new required inputs.</li><li>Be liberal in what you accept, conservative in what you send. Tolerate unknown fields.</li></ul>
+<h3>Error handling and contracts</h3>
+<p>Use a stable machine-readable error code plus a human message. Document with <strong>OpenAPI</strong>. Provide request ids in responses to trace problems. Return <code>429</code> with a <code>Retry-After</code> header when rate limiting.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd9-q01" data-topic="APIs" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A client times out calling POST /payments and retries. How do you prevent a double charge?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Disable retries <span class="q-why">Clients and gateways will retry anyway.</span></li>
+          <li data-key="B">Require an idempotency key and return the stored result on repeats <span class="q-why">Correct.</span></li>
+          <li data-key="C">Use GET instead <span class="q-why">Wrong semantics.</span></li>
+          <li data-key="D">Ignore it <span class="q-why">Money is lost.</span></li>
+        </ul>
+        <div class="q-explain"><p>Store the first outcome under the idempotency key and replay it.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd9-q02" data-topic="APIs" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is keyset (cursor) pagination better than offset for large tables?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It supports jumping to any page <span class="q-why">Offset does that, not keyset.</span></li>
+          <li data-key="B">It uses an index and is stable under inserts <span class="q-why">Correct.</span></li>
+          <li data-key="C">It needs no ordering <span class="q-why">Needs a stable order.</span></li>
+          <li data-key="D">It is always cacheable <span class="q-why">Not the reason.</span></li>
+        </ul>
+        <div class="q-explain"><p>Offset makes the database skip rows, which gets slower; keyset seeks using an index.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What status code and header do you return when rate limiting?</summary><div class="answer"><p>429 Too Many Requests with a Retry-After header.</p></div></details>
+      </div>
+    </section>
+
+    <section id="styles" data-track>
+      <h2>REST, gRPC and GraphQL</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>REST (JSON over HTTP)</th><th>gRPC</th><th>GraphQL</th></tr></thead>
+<tbody>
+<tr><td>Contract</td><td>OpenAPI (optional)</td><td>Protocol Buffers schema (mandatory)</td><td>Typed schema</td></tr><tr><td>Wire format</td><td>Text JSON</td><td>Binary protobuf over HTTP/2</td><td>JSON over HTTP</td></tr><tr><td>Strengths</td><td>Simple, cacheable, universal, human friendly</td><td>Fast, small, streaming, generated clients</td><td>Client chooses fields, one round trip for related data</td></tr><tr><td>Weaknesses</td><td>Over-fetching and under-fetching, chatty</td><td>Not browser friendly without a proxy, harder to debug</td><td>Caching is harder, risk of expensive queries, N+1 resolvers</td></tr><tr><td>Best for</td><td>Public APIs, CRUD</td><td>Internal service-to-service calls, low latency, streaming</td><td>Mobile and complex UIs aggregating many sources</td></tr>
+</tbody>
+</table>
+</div>
+<p>A common shape: <strong>public REST or GraphQL at the edge, gRPC between internal services</strong>.</p>
+<h3>Streaming and real-time</h3>
+<p>WebSocket (two-way), Server-Sent Events (server to client), gRPC streaming (client, server or both), long polling as a fallback (<a href="sd2-networking.html">SD2</a>). For fan-out to millions of clients, put a pub/sub system behind a fleet of connection servers (<a href="sd14-case-2.html">SD14</a>).</p>
+<h3>Webhooks</h3>
+<p>Instead of clients polling, the server <strong>calls back</strong> a client-supplied URL on events. Sign each payload (HMAC), include an event id for deduplication, retry with backoff, and let receivers acknowledge quickly and process asynchronously.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd9-q03" data-topic="APIs" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which is the best fit for low-latency internal service calls with a strict schema?</p></div>
+        <ul class="q-options">
+          <li data-key="A">GraphQL <span class="q-why">Better for client-driven queries.</span></li>
+          <li data-key="B">gRPC <span class="q-why">Correct.</span></li>
+          <li data-key="C">SOAP over email <span class="q-why">No.</span></li>
+          <li data-key="D">FTP <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>gRPC uses compact binary protobuf over HTTP/2 with generated clients.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>REST versus gRPC versus GraphQL in one line each.</summary><div class="answer"><p>REST: simple and cacheable; gRPC: fast binary typed contracts for internal calls; GraphQL: clients choose fields to avoid over and under-fetching.</p></div></details>
+      </div>
+    </section>
+
+    <section id="auth" data-track>
+      <h2>Authentication and authorization</h2>
+<h3>Two different questions</h3>
+<ul><li><strong>Authentication (authn)</strong>: who are you?</li><li><strong>Authorization (authz)</strong>: what are you allowed to do?</li></ul>
+<h3>Common mechanisms</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Mechanism</th><th>How</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>Session cookie</td><td>Server stores session, browser holds an id</td><td>Simple for web apps, needs CSRF protection</td></tr><tr><td>API key</td><td>Static secret per client</td><td>Easy, coarse, rotate and scope them</td></tr><tr><td>OAuth 2.0</td><td>A user grants an app limited access via tokens</td><td>Standard for delegated access ("Sign in with ...")</td></tr><tr><td>OpenID Connect</td><td>Identity layer on top of OAuth 2.0</td><td>Gives an ID token describing the user</td></tr><tr><td>JWT</td><td>Signed token containing claims</td><td>Verified without a lookup, hard to revoke, keep short-lived</td></tr><tr><td>mTLS</td><td>Both sides present certificates</td><td>Service-to-service identity</td></tr>
+</tbody>
+</table>
+</div>
+<h3>OAuth 2.0 authorization code flow in one paragraph</h3>
+<p>The app sends the user to the identity provider. The user logs in and approves scopes. The provider redirects back with a short-lived <strong>authorization code</strong>. The app's server exchanges the code (plus its secret or a PKCE verifier) for an <strong>access token</strong> (short-lived) and a <strong>refresh token</strong> (long-lived). The app calls the API with <code>Authorization: Bearer &lt;access token&gt;</code>.</p>
+<h3>Authorization models</h3>
+<ul><li><strong>RBAC</strong>: users have roles, roles have permissions. Simple and common.</li><li><strong>ABAC</strong>: decisions use attributes of user, resource and context (department, region, time).</li><li><strong>ACLs</strong>: per-object lists of who may do what (documents, files).</li></ul>
+<p>Always check authorization on the <strong>server for each request</strong>, and check ownership of the specific object, or you create <strong>IDOR</strong> bugs ("insecure direct object reference": changing <code>/orders/123</code> to <code>/orders/124</code> shows someone else's order).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd9-q04" data-topic="APIs" data-type="multi" data-answer="A,C">
+        <div class="q-stem"><p>Which statements about JWTs are correct? Select all.</p></div>
+        <ul class="q-options">
+          <li data-key="A">They can be verified without a database lookup</li>
+          <li data-key="B">They are easy to revoke instantly</li>
+          <li data-key="C">They should be short-lived</li>
+          <li data-key="D">They are encrypted by default</li>
+        </ul>
+        <div class="q-explain"><p>JWTs are signed (not encrypted by default) and hard to revoke, so keep them short-lived and use refresh tokens.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd9-q05" data-topic="APIs" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Changing /orders/123 to /orders/124 shows another user's order. This bug is called:</p></div>
+        <ul class="q-options">
+          <li data-key="A">CSRF <span class="q-why">Cross-site request forgery is different.</span></li>
+          <li data-key="B">IDOR (broken object-level authorization) <span class="q-why">Correct.</span></li>
+          <li data-key="C">SQL injection <span class="q-why">Different.</span></li>
+          <li data-key="D">Clickjacking <span class="q-why">Different.</span></li>
+        </ul>
+        <div class="q-explain"><p>Always check that the authenticated user is allowed to access that specific object.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Authentication versus authorization?</summary><div class="answer"><p>Who you are versus what you may do.</p></div></details>
+      </div>
+    </section>
+
+    <section id="rate-limit" data-track>
+      <h2>Rate limiting</h2>
+<h3>Why</h3>
+<p>Protect services from overload and abuse, enforce fair use and plans, and control cost.</p>
+<h3>The main algorithms</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Algorithm</th><th>Idea</th><th>Burst handling</th><th>Memory</th></tr></thead>
+<tbody>
+<tr><td>Fixed window counter</td><td>Count per calendar window (per minute)</td><td>Allows 2x bursts at window edges</td><td>Tiny</td></tr><tr><td>Sliding window log</td><td>Keep timestamps of recent requests</td><td>Exact</td><td>High</td></tr><tr><td>Sliding window counter</td><td>Weighted blend of current and previous window</td><td>Close to exact</td><td>Small</td></tr><tr><td>Token bucket</td><td>Bucket refills at rate r up to capacity b; each request takes a token</td><td>Allows bursts up to b, then rate r</td><td>Tiny</td></tr><tr><td>Leaky bucket</td><td>Requests queue and drain at a fixed rate</td><td>Smooths output</td><td>Small</td></tr>
+</tbody>
+</table>
+</div>
+<p>The <strong>token bucket</strong> is the most common because it permits short bursts while enforcing an average rate.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd9-01.py">class TokenBucket:
+    def __init__(self, rate, capacity, now=0.0):
+        self.rate, self.cap, self.tokens, self.last = rate, capacity, capacity, now
+    def allow(self, now, cost=1):
+        self.tokens = min(self.cap, self.tokens + (now - self.last) * self.rate)
+        self.last = now
+        if self.tokens &gt;= cost:
+            self.tokens -= cost
+            return True
+        return False
+
+tb = TokenBucket(rate=2, capacity=4)          # 2 tokens per second, burst of 4
+results = [tb.allow(t) for t in (0, 0, 0, 0, 0, 0.5, 1.0, 1.0, 1.0)]
+print(results)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[True, True, True, True, False, True, True, False, False]</code></pre>
+<h3>Where and how</h3>
+<ul><li>Enforce at the <strong>API gateway or edge</strong>, per API key, user id or IP. Return <code>429 Too Many Requests</code> plus <code>Retry-After</code> and rate limit headers.</li><li><strong>Distributed counters</strong>: keep counts in Redis (atomic <code>INCR</code> with expiry, or a Lua script for token bucket) so all gateway nodes share state. Accept small inaccuracy to avoid a central hot spot, or keep local buckets that sync periodically.</li><li>Different limits per endpoint (login is stricter), per plan and per cost.</li><li>Decide <strong>fail open or closed</strong> if the limiter store is down. Failing open protects availability but loses protection.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd9-q06" data-topic="APIs" data-type="numeric" data-answer="2" data-tol="0">
+        <div class="q-stem"><p>A token bucket has rate 2 tokens per second and capacity 4, and starts full. After 4 requests at time 0, how many requests can be allowed at time 1.0?</p></div>
+        <div class="q-explain"><p>Tokens refill by 2 x 1.0 = 2, so two more requests are allowed.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why is token bucket popular?</summary><div class="answer"><p>It allows bursts up to the bucket size while enforcing an average rate, with tiny state.</p></div></details>
+      </div>
+    </section>
+
+    <section id="gateway" data-track>
+      <h2>API gateway and service discovery</h2>
+<h3>API gateway</h3>
+<p>A single entry point in front of many services. It handles cross-cutting concerns once: TLS, authentication, rate limiting, request routing, protocol translation, response aggregation, caching, logging, and canary routing. Examples: Kong, NGINX, Envoy, AWS API Gateway. Keep <strong>business logic out</strong> of the gateway. Avoid it becoming a bottleneck or a single team dependency by scaling it horizontally and keeping it thin.</p>
+<h3>Backend for frontend (BFF)</h3>
+<p>A separate gateway per client type (web, iOS, partner) that shapes responses for that client.</p>
+<h3>Service discovery</h3>
+<p>In dynamic clusters, instances come and go, so callers cannot hard-code addresses.</p>
+<ul><li><strong>Client-side</strong>: the client asks a registry (Consul, etcd, Eureka) for healthy instances and balances itself.</li><li><strong>Server-side</strong>: the client calls a load balancer or DNS name and it finds instances (Kubernetes Services).</li></ul>
+<p>Instances <strong>register</strong> on start, send heartbeats and <strong>deregister</strong> on shutdown. Health checks remove dead ones.</p>
+<h3>Service mesh</h3>
+<p>A mesh (Istio, Linkerd) puts a <strong>sidecar proxy</strong> next to every service instance. The sidecars provide mutual TLS, retries, timeouts, circuit breaking, traffic splitting and metrics, with no application code changes. The cost is complexity and extra latency per hop.</p>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does an API gateway do?</summary><div class="answer"><p>Single entry point handling TLS, auth, rate limits, routing and cross-cutting concerns for many services.</p></div></details>
+      </div>
+    </section>
+
+    <section id="microservices" data-track>
+      <h2>Monolith or microservices</h2>
+<h3>The monolith</h3>
+<p>One deployable unit. Simple to build, test, deploy and debug, with in-process calls and ACID transactions. Starts to hurt when many teams collide in one codebase, deployments become risky and slow, or parts need very different scaling.</p>
+<h3>Microservices</h3>
+<p>Many small services, each owned by a team, deployed independently, with its own data store, communicating over the network.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Benefit</th><th>Cost</th></tr></thead>
+<tbody>
+<tr><td>Independent deploys and scaling</td><td>Network calls instead of function calls: latency and failure modes</td></tr><tr><td>Team autonomy</td><td>Distributed transactions and data consistency are hard</td></tr><tr><td>Technology freedom</td><td>Operational overhead: many pipelines, dashboards, versions</td></tr><tr><td>Fault isolation</td><td>Debugging across services needs tracing</td></tr><tr><td></td><td>Testing the whole system is harder</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Practical guidance</h3>
+<ul><li><strong>Start with a well-structured (modular) monolith.</strong> Split along <strong>business capabilities</strong> (bounded contexts from domain-driven design) when team size and scaling needs justify it.</li><li>Each service owns its data. No shared database between services.</li><li>Avoid chatty calls and distributed monoliths (services that must be deployed together).</li><li>Use <strong>async events</strong> for cross-service workflows, <strong>sagas</strong> for business transactions (<a href="sd6-consistency.html">SD6</a>), and the <strong>strangler fig</strong> pattern to migrate gradually: route one capability at a time to the new service.</li></ul>
+<div class="callout trap"><span class="callout-title">Trap</span><p>Microservices are an organisational scaling tool before they are a technical one. Splitting a small team's product into 30 services slows delivery and adds failures.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd9-q07" data-topic="APIs" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is a sensible default for a new product with a small team?</p></div>
+        <ul class="q-options">
+          <li data-key="A">30 microservices <span class="q-why">Heavy operational burden.</span></li>
+          <li data-key="B">A modular monolith, split later along business boundaries <span class="q-why">Correct.</span></li>
+          <li data-key="C">A shared database across many services <span class="q-why">Couples them tightly.</span></li>
+          <li data-key="D">No tests <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Microservices solve organisational scaling; do not pay for them before you need them.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is the strangler fig pattern?</summary><div class="answer"><p>Gradually route functionality from a monolith to new services until the old system can be retired.</p></div></details>
+      </div>
+    </section>
+
+    <section id="communication" data-track>
+      <h2>Inter-service communication</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Style</th><th>Examples</th><th>Use when</th><th>Risk</th></tr></thead>
+<tbody>
+<tr><td>Synchronous request/response</td><td>REST, gRPC</td><td>The caller needs the answer now</td><td>Tight coupling, cascading failure, latency adds up</td></tr><tr><td>Asynchronous messaging</td><td>Queues, events</td><td>The caller does not need to wait; fan-out</td><td>Eventual consistency, ordering, duplicates</td></tr>
+</tbody>
+</table>
+</div>
+<p>Latency adds along a call chain, and availability multiplies: five services in series each at 99.9 percent give about 99.5 percent. Prefer <strong>fewer synchronous hops</strong>, set <strong>timeouts</strong> on every call, and use <strong>circuit breakers</strong> (<a href="sd10-reliability.html">SD10</a>).</p>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: APIs</h2>
+      <p class="muted">11 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="APIs">
+<details class="recall iq" data-level="basic" data-topic="APIs"><summary><span class="tag ok">Basic</span> What makes a good REST API?</summary><div class="answer"><p>Resource-oriented URLs, correct methods and status codes, consistent JSON and error shapes, pagination, versioning, idempotency for unsafe operations and clear documentation.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="APIs"><summary><span class="tag ok">Basic</span> Authentication versus authorization?</summary><div class="answer"><p>Authentication verifies who you are; authorization decides what you may do. Both must be checked on every request.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="APIs"><summary><span class="tag warn">Medium</span> REST versus gRPC versus GraphQL?</summary><div class="answer"><p>REST is simple and cacheable. gRPC is fast, typed and streaming for internal calls. GraphQL lets clients select fields to avoid over and under-fetching but complicates caching and query cost control.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="APIs"><summary><span class="tag warn">Medium</span> Offset versus cursor pagination?</summary><div class="answer"><p>Offset is simple but slow for large offsets and unstable when data changes. Cursor (keyset) pagination uses an index, is fast and stable but cannot jump to arbitrary pages.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="APIs"><summary><span class="tag warn">Medium</span> How do you design rate limiting?</summary><div class="answer"><p>Token bucket per client key at the gateway, with counters in Redis updated atomically, returning 429 with Retry-After, with different limits per endpoint and tier and a fail-open or fail-closed choice.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="APIs"><summary><span class="tag warn">Medium</span> What is an API gateway?</summary><div class="answer"><p>A single entry point handling TLS, authentication, rate limiting, routing and aggregation for many services, keeping business logic out.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="APIs"><summary><span class="tag warn">Medium</span> How does OAuth 2.0 authorization code flow work?</summary><div class="answer"><p>The user authenticates at the identity provider and consents; the app receives a short-lived code and exchanges it for access and refresh tokens, then calls the API with the bearer token.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="APIs"><summary><span class="tag bad">Advanced</span> Monolith versus microservices?</summary><div class="answer"><p>Start with a modular monolith. Move to microservices along business boundaries when team size or scaling demands it, accepting network failure modes, distributed data and operational cost.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="APIs"><summary><span class="tag bad">Advanced</span> How do services find each other?</summary><div class="answer"><p>Through service discovery: a registry (Consul, etcd) used by clients, or platform DNS and load balancers such as Kubernetes Services, with health checks and automatic deregistration.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="APIs"><summary><span class="tag bad">Advanced</span> What is a service mesh?</summary><div class="answer"><p>Sidecar proxies next to each service handling mutual TLS, retries, timeouts, circuit breaking, traffic splitting and telemetry without code changes, at the cost of complexity and latency.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="APIs"><summary><span class="tag bad">Advanced</span> How do you evolve an API without breaking clients?</summary><div class="answer"><p>Make additive changes, tolerate unknown fields, version breaking changes and support old versions for a deprecation window, and use contract tests.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd8-messaging.html"><span class="dir">Previous</span><span>SD8 Queues, streams and asynchronous processing</span></a>
+      <a class="next" href="sd10-reliability.html"><span class="dir">Next</span><span>SD10 Reliability, availability and resilience</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="M10">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>M10 Stacks & Queues | DSA Master Guide</title>
+<meta name="description" content="LIFO and FIFO containers, plus the monotonic stack trick that solves &quot;next greater&quot; style problems.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<link rel="stylesheet" href="viz.css">
+<script src="viz.js" defer></script>
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Module 10</p>
+      <h1>Stacks &amp; Queues</h1>
+      <p class="lede">LIFO and FIFO containers, plus the monotonic stack trick that solves "next greater" style problems. Topics in this module: Stack (LIFO); queue, deque, circular queue and priority queue; balanced parentheses and monotonic stacks.</p>
+      <div class="meta"><span class="tag ok">Essential</span><span class="tag">3 topics</span><span class="tag">13 problems</span><span class="tag">55 interview questions</span></div>
+    </div>
+
+    <section id="why-this-module" data-track>
+      <h2>Start from scratch: why this module exists</h2>
+      <p>Stacks and queues restrict access to make behaviour predictable: last-in-first-out (undo, nesting) and first-in-first-out (waiting lines). The restriction is a feature: fewer operations, no way to misuse them, and a direct match to many real processes.</p>
+      <p>Monotonic stacks and deques extend the idea to solve 'next greater' and sliding-window problems in linear time.</p>
+      <p><strong>Who needs it:</strong> Compilers (parsing), operating systems (scheduling), browsers (history), message systems (queues) and interviewers.</p>
+      <p><strong>Before you start:</strong> Modules 1, 3 and 9.</p>
+      <h3>After this module you can</h3>
+      <ul><li>Implement stacks and queues with list/deque.</li><li>Solve bracket matching and expression evaluation.</li><li>Use monotonic stacks and deques.</li><li>Choose between stack, queue, deque and priority queue.</li></ul>
+      <p><strong>Common pitfalls:</strong> Using list.pop(0) as a queue, popping an empty stack, storing values instead of indices in monotonic stacks.</p>
+      <p><strong>Typical interview questions here:</strong> Valid parentheses, min stack, queue using two stacks, next greater element, daily temperatures, largest rectangle, sliding window maximum.</p>
+    </section>
+
+    <section id="c10_1" data-track>
+      <h2>Stack (LIFO)</h2>
+      <p><span class="tag ok">Essential</span> <span class="tag">Topic 10.1</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>A stack is a collection where the last item added is the first removed (Last In, First Out). The operations are push (add on top), pop (remove top) and peek (look at top).</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Stacks track "what is still open or pending": brackets, undo history, function calls, expression evaluation.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>A pile of plates: you can only add or remove from the top.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Think about how you read a maths expression like (2 + (3 * 4)). When you hit the first '(' you must remember that something is still open. When you hit the next '(' you remember another. When you hit ')' you close the most recently opened one. The 'most recent unfinished thing' is always the one to resolve first. That is Last In, First Out.</p>
+      <p>A stack is the minimal data structure for that behaviour: you may only touch the top. Restricting the operations is a feature: with only push, pop and peek (all O(1)) there is nothing to get wrong, and the discipline matches many real problems (undo, nested calls, matching).</p>
+      <p>Your own program uses a stack all the time: the call stack. When function A calls B, A pauses and B runs on top; when B returns, control comes back to A. Recursion is a stack in disguise, and DFS can be written with an explicit stack instead of recursion.</p>
+      <p>In Python you never need a special class: a list with append and pop is a stack. This is why many Python solutions are only a few lines.</p>
+      <p>When you see 'matching', 'nested', 'undo', 'most recent', 'reverse order' or 'evaluate an expression', think stack first.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="stack"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>In Python a list is a stack: stack.append(x) pushes, stack.pop() pops, stack[-1] peeks. All are O(1).</li><li>Check emptiness before popping: <code>if stack:</code> (popping an empty list raises IndexError).</li><li>Balanced brackets: push opening brackets; for a closing bracket the top must be the matching opener.</li><li>Expression evaluation (postfix): push numbers; at an operator pop two values, compute, push the result.</li><li>Reverse a string with a stack: push every character, then pop them all.</li><li>Use the live demo below: push, pop and peek, and watch the top move.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>A stack is a pile where you can only touch the top. Last in, first out. Real-life examples: undo in an editor, the back button of a browser, a stack of plates. Python programs themselves use a stack of function calls.</p>
+      <p>In Python the list is a perfect stack: append(x) pushes, pop() removes and returns the top, stack[-1] peeks. All three are O(1). Never use pop(0); that is a queue operation and costs O(n).</p>
+      <p>The pattern: 'match the most recent unfinished thing'. Brackets are the classic: when you see a closer, the opener it matches is the most recent unmatched opener, which is the top of the stack. Same idea for HTML tags, nested functions and undo history.</p>
+      <p>Expression evaluation: in postfix (reverse Polish) notation like '2 3 + 4 *', numbers are pushed and an operator pops the top two numbers, applies the operation and pushes the result. Careful: the first number popped is the RIGHT operand.</p>
+      <p>Depth-first search is also stack-based: a recursion uses the call stack, and an iterative DFS uses your own list as a stack.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Python's list.append and list.pop() work at the end of a dynamic array: amortised O(1) each. list.pop(0) would shift the whole array: O(n).</li><li>The call stack is a stack of frame objects. The recursion limit protects the interpreter from unbounded growth.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Programming languages</td><td>The call stack, expression evaluation and parsing.</td></tr><tr><td>Editors and browsers</td><td>Undo/redo and back/forward are stacks of states.</td></tr><tr><td>Compilers</td><td>Checking balanced brackets/tags and converting infix to postfix.</td></tr><tr><td>Interviewers</td><td>Bracket matching and min-stack are standard easy-to-medium questions testing the 'most recent unresolved item' idea.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Stack vs recursion</td><td>Recursion uses the call stack implicitly. An explicit stack avoids the recursion limit and lets you pause/resume.</td></tr><tr><td>Stack vs queue</td><td>Stack reverses order (LIFO); queue preserves order (FIFO). DFS uses a stack, BFS a queue.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>stack = []; stack.append(x); top = stack[-1]; stack.pop(); if not stack: ...</li><li>Use a dict like {')': '(', ']': '[', '}': '{'} to match brackets.</li><li>Use a string with the opening brackets 'if ch in "([{"'.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c10_1.py">class Stack:
+    def __init__(self):
+        self.items = []
+
+    def push(self, x):
+        self.items.append(x)
+
+    def pop(self):
+        if not self.items:
+            raise IndexError("pop from empty stack")
+        return self.items.pop()
+
+    def peek(self):
+        return self.items[-1] if self.items else None
+
+    def is_empty(self):
+        return not self.items
+
+    def size(self):
+        return len(self.items)</code></pre>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Dry run of the related problem "Balanced Brackets": Call: <code>valid_parens("{[]}")</code>, returns <code>True</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>ch (after)</th><th>stack (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>pairs = {")": "(", "]": "[", "}": "{"}</code></td><td>-</td><td>-</td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>stack = []</code></td><td>-</td><td><strong><code>[]</code></strong></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>for ch in s:</code></td><td><strong><code>'{'</code></strong></td><td><code>[]</code></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>if ch in pairs:                      # closing bracket</code></td><td><code>'{'</code></td><td><code>[]</code></td></tr>
+<tr><td class="num">5</td><td class="num">9</td><td><code>stack.append(ch)                 # opening bracket</code></td><td><code>'{'</code></td><td><strong><code>['{']</code></strong></td></tr>
+<tr><td class="num">6</td><td class="num">4</td><td><code>for ch in s:</code></td><td><strong><code>'['</code></strong></td><td><code>['{']</code></td></tr>
+<tr><td class="num">7</td><td class="num">5</td><td><code>if ch in pairs:                      # closing bracket</code></td><td><code>'['</code></td><td><code>['{']</code></td></tr>
+<tr><td class="num">8</td><td class="num">9</td><td><code>stack.append(ch)                 # opening bracket</code></td><td><code>'['</code></td><td><strong><code>['{', '[']</code></strong></td></tr>
+<tr><td class="num">9</td><td class="num">4</td><td><code>for ch in s:</code></td><td><strong><code>']'</code></strong></td><td><code>['{', '[']</code></td></tr>
+<tr><td class="num">10</td><td class="num">5</td><td><code>if ch in pairs:                      # closing bracket</code></td><td><code>']'</code></td><td><code>['{', '[']</code></td></tr>
+<tr><td class="num">11</td><td class="num">6</td><td><code>if not stack or stack.pop() != pairs[ch]:</code></td><td><code>']'</code></td><td><strong><code>['{']</code></strong></td></tr>
+<tr><td class="num">12</td><td class="num">4</td><td><code>for ch in s:</code></td><td><strong><code>'}'</code></strong></td><td><code>['{']</code></td></tr>
+<tr><td class="num">13</td><td class="num">5</td><td><code>if ch in pairs:                      # closing bracket</code></td><td><code>'}'</code></td><td><code>['{']</code></td></tr>
+<tr><td class="num">14</td><td class="num">6</td><td><code>if not stack or stack.pop() != pairs[ch]:</code></td><td><code>'}'</code></td><td><strong><code>[]</code></strong></td></tr>
+<tr><td class="num">15</td><td class="num">4</td><td><code>for ch in s:</code></td><td><code>'}'</code></td><td><code>[]</code></td></tr>
+<tr><td class="num">16</td><td class="num">10</td><td><code>return not stack</code></td><td><code>'}'</code></td><td><code>[]</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>push, pop, peek: O(1) each. Space O(n).</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Popping from an empty stack.</li><li>Using list.pop(0) (that is O(n); it is queue behaviour).</li><li>Forgetting to check the stack is empty at the end (unclosed brackets).</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>Matching/nesting, undo, "most recent unresolved item", depth-first traversal -&gt; stack.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m10-problems.html#prob-valid_parens">Balanced Brackets</a> <span class="tag">LC 20</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Stack</td></tr><tr><td><a href="m10-problems.html#prob-eval_postfix">Evaluate Postfix Expression</a> <span class="tag">LC 150</span></td><td><span class="tag warn">Medium</span></td><td>Stack, expression evaluation</td></tr><tr><td><a href="m10-problems.html#prob-basic_calculator_ii">Basic Calculator II</a> <span class="tag">LC 227</span></td><td><span class="tag warn">Medium</span></td><td>Stack, operator precedence</td></tr><tr><td><a href="m10-problems.html#prob-asteroid_collision">Asteroid Collision</a> <span class="tag">LC 735</span></td><td><span class="tag warn">Medium</span></td><td>Stack simulation</td></tr><tr><td><a href="m10-problems.html#prob-min_stack">Min Stack</a> <span class="tag">LC 155</span></td><td><span class="tag warn">Medium</span></td><td>Stack design</td></tr><tr><td><a href="m10-problems.html#prob-decode_string">Decode a String</a> <span class="tag">LC 394</span></td><td><span class="tag warn">Medium</span></td><td>Stack of states</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why is a stack LIFO?</summary><div class="answer"><p>Many problems resolve the most recent unfinished item first (nested brackets, undo, function calls).</p></div></details>
+        <details class="recall"><summary>Why use a Python list as a stack?</summary><div class="answer"><p>append and pop at the end are O(1).</p></div></details>
+        <details class="recall"><summary>Why not use pop(0) for a stack?</summary><div class="answer"><p>A stack only touches the end; pop(0) is the queue end and costs O(n).</p></div></details>
+        <details class="recall"><summary>Why check for an empty stack before popping?</summary><div class="answer"><p>Popping an empty list raises IndexError.</p></div></details>
+        <details class="recall"><summary>Why is DFS stack-based?</summary><div class="answer"><p>It follows one path as deep as possible, then returns to the most recent branch point.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c10_1-q1" data-topic="Stacks &amp; Queues" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which end of a Python list is used for push/pop in O(1)?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Front</li>
+          <li data-key="B">Back</li>
+          <li data-key="C">Middle</li>
+          <li data-key="D">Both are O(n)</li>
+        </ul>
+        <div class="q-explain"><p>append/pop at the end are O(1); pop(0) is O(n).</p></div>
+      </div>
+      <div class="quiz" data-qid="c10_1-q2" data-topic="Stacks &amp; Queues" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Stack order is...</p></div>
+        <ul class="q-options">
+          <li data-key="A">FIFO</li>
+          <li data-key="B">LIFO</li>
+          <li data-key="C">Random</li>
+          <li data-key="D">Sorted</li>
+        </ul>
+        <div class="q-explain"><p>Last in, first out.</p></div>
+      </div>
+    </section>
+
+    <section id="c10_2" data-track>
+      <h2>Queue, deque, circular queue and priority queue</h2>
+      <p><span class="tag ok">Essential</span> <span class="tag">Topic 10.2</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>A queue is First In, First Out: items are added at the back (enqueue) and removed from the front (dequeue). A deque allows O(1) operations at both ends. A priority queue always gives the smallest (or largest) item first.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Queues model waiting lines and BFS. Deques power sliding-window tricks. Priority queues power schedulers, Dijkstra and top-K problems.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>A ticket counter: the person who arrived first is served first. A hospital emergency room is a priority queue: the most urgent patient goes first.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>People wait in line: the first person to arrive is served first. That fairness rule (First In, First Out) is the queue. Operating systems schedule tasks this way, printers print jobs this way and BFS explores a graph this way.</p>
+      <p>Why can't a Python list be a good queue? Removing the first element forces every other element to shift left: O(n) each time. A deque (double-ended queue) is built so both ends are O(1). That is why the standard answer is collections.deque.</p>
+      <p>A circular queue fixes a classic array problem: if you dequeue from the front of a fixed array, the freed slots at the front are wasted. Wrapping the indexes with modulo reuses them, so a fixed-size buffer behaves like an endless queue. Keyboard buffers and audio streams use this.</p>
+      <p>Sometimes order of arrival is not what matters; priority is. An emergency room treats the most urgent patient first. A priority queue returns the most important item first. The heap makes this efficient: O(log n) to insert and remove instead of O(n) to scan.</p>
+      <p>Three structures, three question types: 'serve in arrival order' (queue), 'access both ends' (deque), 'serve the best next' (priority queue).</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="queue"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Do NOT use list.pop(0) for queues: it is O(n). Use collections.deque: append(x) to enqueue, popleft() to dequeue, both O(1).</li><li>Circular queue: a fixed-size array with front and rear indices that wrap around using % capacity so freed slots are reused.</li><li>Deque: appendleft, append, popleft, pop - all O(1).</li><li>Priority queue: heapq.heappush(h, x) and heapq.heappop(h) are O(log n); h[0] is the minimum. For a max-heap, push negative values.</li><li>Try enqueue and dequeue in the live demo.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>A queue is a line: first in, first out. Add at the back (enqueue), remove from the front (dequeue). BFS, task scheduling and 'process in order of arrival' all use queues. In Python use collections.deque, because popping from the left of a list is O(n).</p>
+      <p>A deque (double-ended queue) can add and remove at BOTH ends in O(1). It also works as a stack. It is the tool behind the sliding window maximum trick: keep a deque of indices in decreasing value order.</p>
+      <p>A circular queue stores items in a fixed array and uses front/size with modulo to wrap around, reusing freed slots. It is often asked in theory and design questions. Track size separately to tell 'full' from 'empty'.</p>
+      <p>A priority queue gives the item with the highest priority first, not the oldest. Python's heapq implements a min-heap: heappush and heappop are O(log n), and heap[0] peeks at the smallest in O(1). For a max-heap push negative numbers. For custom priorities push tuples (priority, item).</p>
+      <p>How to choose: plain order of arrival -&gt; deque. Need smallest/largest repeatedly -&gt; heap. Need both ends -&gt; deque. Need random access -&gt; list.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>deque is a doubly linked list of fixed-size blocks, which makes append/popleft O(1) and memory use efficient. Indexing in the middle is O(n).</li><li>heapq maintains a binary heap in a plain list: parent at (i-1)//2, children at 2i+1, 2i+2; push sifts up, pop sifts down in O(log n).</li><li>Circular queue: next free slot is (front + size) % capacity; full when size == capacity; empty when size == 0.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Operating systems</td><td>Process scheduling, print spooling and I/O buffers are queues; priority scheduling uses priority queues.</td></tr><tr><td>Message brokers and servers</td><td>Task queues (job workers) decouple fast producers from slow consumers.</td></tr><tr><td>Graph algorithms</td><td>BFS uses a queue; Dijkstra uses a priority queue.</td></tr><tr><td>Interviewers</td><td>Queue via stacks, circular queue, sliding window maximum and top-K questions are common.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>deque vs list as queue</td><td>deque: O(1) popleft. list: O(n) pop(0).</td></tr><tr><td>heap vs sorted list as priority queue</td><td>Sorted list: insert O(n), pop-min O(1) from the front. Heap: both O(log n); better for many inserts.</td></tr><tr><td>queue.Queue vs deque</td><td>queue.Queue is thread-safe with blocking; deque is faster for single-threaded algorithms.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>from collections import deque; q = deque(); q.append(x); q.popleft(); q.appendleft(x); q.pop().</li><li>import heapq; heapq.heappush(h, x); heapq.heappop(h); h[0]; heapq.heapify(lst).</li><li>Max-heap trick: heappush(h, -x) and negate on pop.</li><li>Tuples in a heap compare element by element: heappush(h, (dist, node)).</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c10_2.py">from collections import deque
+import heapq
+
+class CircularQueue:
+    def __init__(self, capacity):
+        self.data = [None] * capacity
+        self.front = self.size = 0
+        self.cap = capacity
+
+    def enqueue(self, x):
+        if self.size == self.cap:
+            return False                       # full
+        self.data[(self.front + self.size) % self.cap] = x
+        self.size += 1
+        return True
+
+    def dequeue(self):
+        if self.size == 0:
+            return None
+        x = self.data[self.front]
+        self.front = (self.front + 1) % self.cap    # wrap around
+        self.size -= 1
+        return x
+
+q = deque([1, 2, 3])
+q.append(4); q.appendleft(0); q.popleft()
+pq = []
+for x in (5, 1, 3):
+    heapq.heappush(pq, x)
+smallest = heapq.heappop(pq)</code></pre>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Dry run of the related problem "Last Stone Weight": Call: <code>last_stone_weight([2, 7, 4, 1, 8, 1])</code>, returns <code>1</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>a (after)</th><th>b (after)</th><th>heap (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">4</td><td><code>heap = [-s for s in stones]</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">2</td><td class="num">4</td><td><code>heap = [-s for s in stones]</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>heap = [-s for s in stones]</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">4</td><td class="num">4</td><td><code>heap = [-s for s in stones]</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">5</td><td class="num">4</td><td><code>heap = [-s for s in stones]</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">6</td><td class="num">4</td><td><code>heap = [-s for s in stones]</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">7</td><td class="num">4</td><td><code>heap = [-s for s in stones]</code></td><td>-</td><td>-</td><td><strong><code>[-2, -7, -4, -1, -8, -1]</code></strong></td></tr>
+<tr><td class="num">8</td><td class="num">5</td><td><code>heapq.heapify(heap)</code></td><td>-</td><td>-</td><td><strong><code>[-8, -7, -4, -1, -2, -1]</code></strong></td></tr>
+<tr><td class="num">9</td><td class="num">6</td><td><code>while len(heap) &gt; 1:</code></td><td>-</td><td>-</td><td><code>[-8, -7, -4, -1, -2, -1]</code></td></tr>
+<tr><td class="num">10</td><td class="num">7</td><td><code>a = -heapq.heappop(heap)       # heaviest</code></td><td><strong><code>8</code></strong></td><td>-</td><td><strong><code>[-7, -2, -4, -1, -1]</code></strong></td></tr>
+<tr><td class="num">11</td><td class="num">8</td><td><code>b = -heapq.heappop(heap)       # second heaviest</code></td><td><code>8</code></td><td><strong><code>7</code></strong></td><td><strong><code>[-4, -2, -1, -1]</code></strong></td></tr>
+<tr><td class="num">12</td><td class="num">9</td><td><code>if a != b:</code></td><td><code>8</code></td><td><code>7</code></td><td><code>[-4, -2, -1, -1]</code></td></tr>
+<tr><td class="num">13</td><td class="num">10</td><td><code>heapq.heappush(heap, -(a - b))</code></td><td><code>8</code></td><td><code>7</code></td><td><strong><code>[-4, -2, -1, -1, -1]</code></strong></td></tr>
+<tr><td class="num">14</td><td class="num">6</td><td><code>while len(heap) &gt; 1:</code></td><td><code>8</code></td><td><code>7</code></td><td><code>[-4, -2, -1, -1, -1]</code></td></tr>
+<tr><td class="num">15</td><td class="num">7</td><td><code>a = -heapq.heappop(heap)       # heaviest</code></td><td><strong><code>4</code></strong></td><td><code>7</code></td><td><strong><code>[-2, -1, -1, -1]</code></strong></td></tr>
+<tr><td class="num">16</td><td class="num">8</td><td><code>b = -heapq.heappop(heap)       # second heaviest</code></td><td><code>4</code></td><td><strong><code>2</code></strong></td><td><strong><code>[-1, -1, -1]</code></strong></td></tr>
+<tr><td class="num">17</td><td class="num">9</td><td><code>if a != b:</code></td><td><code>4</code></td><td><code>2</code></td><td><code>[-1, -1, -1]</code></td></tr>
+<tr><td class="num">18</td><td class="num">10</td><td><code>heapq.heappush(heap, -(a - b))</code></td><td><code>4</code></td><td><code>2</code></td><td><strong><code>[-2, -1, -1, -1]</code></strong></td></tr>
+<tr><td class="num">19</td><td class="num">6</td><td><code>while len(heap) &gt; 1:</code></td><td><code>4</code></td><td><code>2</code></td><td><code>[-2, -1, -1, -1]</code></td></tr>
+<tr><td class="num">20</td><td class="num">7</td><td><code>a = -heapq.heappop(heap)       # heaviest</code></td><td><strong><code>2</code></strong></td><td><code>2</code></td><td><strong><code>[-1, -1, -1]</code></strong></td></tr>
+<tr><td class="num">21</td><td class="num">8</td><td><code>b = -heapq.heappop(heap)       # second heaviest</code></td><td><code>2</code></td><td><strong><code>1</code></strong></td><td><strong><code>[-1, -1]</code></strong></td></tr>
+<tr><td class="num">22</td><td class="num">9</td><td><code>if a != b:</code></td><td><code>2</code></td><td><code>1</code></td><td><code>[-1, -1]</code></td></tr>
+<tr><td class="num">23</td><td class="num">10</td><td><code>heapq.heappush(heap, -(a - b))</code></td><td><code>2</code></td><td><code>1</code></td><td><strong><code>[-1, -1, -1]</code></strong></td></tr>
+<tr><td class="num">24</td><td class="num">6</td><td><code>while len(heap) &gt; 1:</code></td><td><code>2</code></td><td><code>1</code></td><td><code>[-1, -1, -1]</code></td></tr>
+<tr><td class="num">25</td><td class="num">7</td><td><code>a = -heapq.heappop(heap)       # heaviest</code></td><td><strong><code>1</code></strong></td><td><code>1</code></td><td><strong><code>[-1, -1]</code></strong></td></tr>
+<tr><td class="num">26</td><td class="num">8</td><td><code>b = -heapq.heappop(heap)       # second heaviest</code></td><td><code>1</code></td><td><code>1</code></td><td><strong><code>[-1]</code></strong></td></tr>
+<tr><td class="num">27</td><td class="num">9</td><td><code>if a != b:</code></td><td><code>1</code></td><td><code>1</code></td><td><code>[-1]</code></td></tr>
+<tr><td class="num">28</td><td class="num">6</td><td><code>while len(heap) &gt; 1:</code></td><td><code>1</code></td><td><code>1</code></td><td><code>[-1]</code></td></tr>
+<tr><td class="num">29</td><td class="num">11</td><td><code>return -heap[0] if heap else 0</code></td><td><code>1</code></td><td><code>1</code></td><td><code>[-1]</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>deque/circular queue operations O(1); heap push/pop O(log n).</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Using a list as a queue.</li><li>Circular queue: confusing "full" and "empty" states.</li><li>Expecting Python heapq to be a max-heap.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>Level-by-level, shortest unweighted path, task scheduling -&gt; queue.</li><li>"K smallest/largest", "always need the next best" -&gt; heap.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m13-problems.html#prob-last_stone_weight">Last Stone Weight</a> <span class="tag">LC 1046</span></td><td><span class="tag ok">Easy</span></td><td>Max-heap simulation</td></tr><tr><td><a href="m10-problems.html#prob-my_queue">Queue Using Two Stacks</a> <span class="tag">LC 232</span></td><td><span class="tag warn">Medium</span></td><td>Stacks and queues design</td></tr><tr><td><a href="m10-problems.html#prob-lru_cache">LRU Cache</a> <span class="tag">LC 146</span></td><td><span class="tag warn">Medium</span></td><td>Design: hash map + ordered recency</td></tr><tr><td><a href="m10-problems.html#prob-sliding_window_max">Sliding Window Maximum</a> <span class="tag">LC 239</span></td><td><span class="tag bad">Hard</span></td><td>Monotonic deque</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why is deque better than list for queues?</summary><div class="answer"><p>popleft is O(1) while list.pop(0) shifts all items.</p></div></details>
+        <details class="recall"><summary>Why use a circular queue?</summary><div class="answer"><p>It reuses freed array slots by wrapping indexes, giving a fixed-size queue without wasted space.</p></div></details>
+        <details class="recall"><summary>Why a priority queue instead of sorting repeatedly?</summary><div class="answer"><p>A heap gives the next best item in O(log n) after each insert, while re-sorting costs O(n log n).</p></div></details>
+        <details class="recall"><summary>Why does heapq give a min-heap only?</summary><div class="answer"><p>That is how the library is written; negate values to simulate a max-heap.</p></div></details>
+        <details class="recall"><summary>Why track size in a circular queue?</summary><div class="answer"><p>front == rear is ambiguous (empty or full); a size counter removes the ambiguity.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c10_2-q1" data-topic="Stacks &amp; Queues" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Best Python structure for an efficient queue?</p></div>
+        <ul class="q-options">
+          <li data-key="A">list with pop(0)</li>
+          <li data-key="B">collections.deque</li>
+          <li data-key="C">set</li>
+          <li data-key="D">tuple</li>
+        </ul>
+        <div class="q-explain"><p>deque.popleft() is O(1).</p></div>
+      </div>
+      <div class="quiz" data-qid="c10_2-q2" data-topic="Stacks &amp; Queues" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In a circular queue of capacity 4 with front=3, the next index after front is...</p></div>
+        <ul class="q-options">
+          <li data-key="A">4</li>
+          <li data-key="B">0</li>
+          <li data-key="C">3</li>
+          <li data-key="D">-1</li>
+        </ul>
+        <div class="q-explain"><p>(3 + 1) % 4 = 0.</p></div>
+      </div>
+    </section>
+
+    <section id="c10_3" data-track>
+      <h2>Balanced parentheses and monotonic stacks</h2>
+      <p><span class="tag ok">Essential</span> <span class="tag">Topic 10.3</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>A monotonic stack keeps its elements in increasing or decreasing order. When a new element breaks the order you pop until it fits - each pop resolves a pending question, such as "what is the next greater element?".</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Next greater element, daily temperatures, stock span and largest rectangle all fall in O(n) with this idea, versus O(n^2) brute force.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>People in a queue at a photo shoot: a taller person steps in and everyone shorter in front of them becomes "hidden" - they are resolved and removed.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Next greater element: for each number find the first bigger number to its right. The obvious method scans right from each element: O(n^2) in bad cases. Observe the waste: if you are looking for something bigger than a, and a bigger b to the right is found, then b also answers every smaller element sitting between them that has not yet found its answer.</p>
+      <p>So keep a 'waiting room' of elements that have not found their answer. When a new number arrives, it answers every waiting element smaller than it. The waiting elements are always in decreasing order from bottom to top, because a larger number arriving would have cleared the smaller ones. Decreasing order is why it is called monotonic.</p>
+      <p>Each element enters the waiting room once and leaves once, so total work is O(n). This 'amortised' argument is the key analytic idea: the while loop in the code does not multiply, it is bounded by the number of pushes.</p>
+      <p>Once you see the template you can adapt it: next smaller (flip the comparison), previous greater (scan from the other side), stock span, daily temperatures (store index differences), and largest rectangle in a histogram (when a lower bar arrives, the popped bar's rectangle ends here).</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="paren"></div>
+      <div class="viz-slot" data-viz="nge"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Balanced brackets: push openers, match closers; the stack must be empty at the end.</li><li>Next greater: keep a stack of INDICES whose answer is unknown (their values decrease). For a new x, while stack top value &lt; x, pop it and set its answer to x. Then push the new index.</li><li>Every index is pushed once and popped once -&gt; O(n).</li><li>Example [4, 5, 2, 25]: 4 waits; 5 &gt; 4 resolves 4; 2 waits; 25 resolves 2 and 5; 25 never resolved -&gt; -1.</li><li>Use both visualisers: bracket matching and next greater.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>A monotonic stack keeps its items in sorted order (always increasing or always decreasing). When a new item breaks the order you pop items until the order is restored. Each pop is when an item 'finds its answer'.</p>
+      <p>Next greater element: keep a stack of positions that are still waiting for a bigger number to the right. When a bigger number arrives, it answers every smaller waiting position on top of the stack. Then it joins the stack itself. The leftover positions at the end have no greater element.</p>
+      <p>Why O(n)? Every position is pushed once and popped at most once. The inner while loop looks scary but the total pops cannot exceed the total pushes.</p>
+      <p>Daily temperatures, stock span, next smaller element, trapping rain water and largest rectangle in a histogram are all variations. The difference is what you store (value or index) and which comparison you use (&lt; or &gt;).</p>
+      <p>Tip: store INDICES, not values. You can always get the value with nums[index], and indices let you compute distances.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Storing indices instead of values lets you compute distances and read values via a[idx]. Using strict or non-strict comparison decides how equal values behave.</li><li>Adding a sentinel (like a 0 height at the end) flushes everything left on the stack at the end of the scan so no special cleanup is needed.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Stock and finance tools</td><td>Stock span and 'days until a higher price' are monotonic stack questions.</td></tr><tr><td>Compilers and parsers</td><td>Operator precedence parsing keeps a stack of pending operators in precedence order.</td></tr><tr><td>Graphics and UI</td><td>Largest rectangle and skyline problems.</td></tr><tr><td>Interviewers</td><td>A strong signal question: do you know the stack can resolve many pending items at once?</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Monotonic stack vs brute force</td><td>O(n) vs O(n^2) worst case.</td></tr><tr><td>Monotonic stack vs segment tree</td><td>For static next-greater queries a stack is simpler and O(n). Segment trees support range queries with updates.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>while stack and nums[stack[-1]] &lt; x: j = stack.pop(); ans[j] = x</li><li>Add a sentinel (like a 0 at the end of heights) to flush the stack.</li><li>result = [-1] * n initialises 'no answer' for everyone.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c10_3.py">def is_balanced(s):
+    pairs = {")": "(", "]": "[", "}": "{"}
+    stack = []
+    for ch in s:
+        if ch in "([{":
+            stack.append(ch)
+        elif ch in pairs:
+            if not stack or stack.pop() != pairs[ch]:
+                return False
+    return not stack
+
+def next_greater(nums):
+    res = [-1] * len(nums)
+    stack = []                     # indices with unresolved answers
+    for i, x in enumerate(nums):
+        while stack and nums[stack[-1]] &lt; x:
+            res[stack.pop()] = x
+        stack.append(i)
+    return res</code></pre>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - scan right from every element</h4>
+      <p>O(n^2) in the worst case.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c10_3_stage1.py">def next_greater(nums):
+    res = []
+    for i, x in enumerate(nums):
+        for y in nums[i + 1:]:
+            if y &gt; x:
+                res.append(y)
+                break
+        else:
+            res.append(-1)
+    return res</code></pre>
+      <p class="muted small">Check: <code>next_greater([4, 5, 2, 25])</code> returns <code>[5, 25, 25, -1]</code></p>
+      <h4>Stage 2 - monotonic stack</h4>
+      <p>A new number answers every smaller waiting number. Each index is pushed and popped once: O(n).</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c10_3_stage2.py">def next_greater(nums):
+    res = [-1] * len(nums)
+    stack = []
+    for i, x in enumerate(nums):
+        while stack and nums[stack[-1]] &lt; x:
+            res[stack.pop()] = x
+        stack.append(i)
+    return res</code></pre>
+      <p class="muted small">Check: <code>next_greater([4, 5, 2, 25])</code> returns <code>[5, 25, 25, -1]</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>next_greater([4, 5, 2, 25])</code>, returns <code>[5, 25, 25, -1]</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>i (after)</th><th>x (after)</th><th>stack (after)</th><th>res (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">13</td><td><code>res = [-1] * len(nums)</code></td><td>-</td><td>-</td><td>-</td><td><strong><code>[-1, -1, -1, -1]</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">14</td><td><code>stack = []                     # indices with unresolved answers</code></td><td>-</td><td>-</td><td><strong><code>[]</code></strong></td><td><code>[-1, -1, -1, -1]</code></td></tr>
+<tr><td class="num">3</td><td class="num">15</td><td><code>for i, x in enumerate(nums):</code></td><td><strong><code>0</code></strong></td><td><strong><code>4</code></strong></td><td><code>[]</code></td><td><code>[-1, -1, -1, -1]</code></td></tr>
+<tr><td class="num">4</td><td class="num">16</td><td><code>while stack and nums[stack[-1]] &lt; x:</code></td><td><code>0</code></td><td><code>4</code></td><td><code>[]</code></td><td><code>[-1, -1, -1, -1]</code></td></tr>
+<tr><td class="num">5</td><td class="num">18</td><td><code>stack.append(i)</code></td><td><code>0</code></td><td><code>4</code></td><td><strong><code>[0]</code></strong></td><td><code>[-1, -1, -1, -1]</code></td></tr>
+<tr><td class="num">6</td><td class="num">15</td><td><code>for i, x in enumerate(nums):</code></td><td><strong><code>1</code></strong></td><td><strong><code>5</code></strong></td><td><code>[0]</code></td><td><code>[-1, -1, -1, -1]</code></td></tr>
+<tr><td class="num">7</td><td class="num">16</td><td><code>while stack and nums[stack[-1]] &lt; x:</code></td><td><code>1</code></td><td><code>5</code></td><td><code>[0]</code></td><td><code>[-1, -1, -1, -1]</code></td></tr>
+<tr><td class="num">8</td><td class="num">17</td><td><code>res[stack.pop()] = x</code></td><td><code>1</code></td><td><code>5</code></td><td><strong><code>[]</code></strong></td><td><strong><code>[5, -1, -1, -1]</code></strong></td></tr>
+<tr><td class="num">9</td><td class="num">16</td><td><code>while stack and nums[stack[-1]] &lt; x:</code></td><td><code>1</code></td><td><code>5</code></td><td><code>[]</code></td><td><code>[5, -1, -1, -1]</code></td></tr>
+<tr><td class="num">10</td><td class="num">18</td><td><code>stack.append(i)</code></td><td><code>1</code></td><td><code>5</code></td><td><strong><code>[1]</code></strong></td><td><code>[5, -1, -1, -1]</code></td></tr>
+<tr><td class="num">11</td><td class="num">15</td><td><code>for i, x in enumerate(nums):</code></td><td><strong><code>2</code></strong></td><td><strong><code>2</code></strong></td><td><code>[1]</code></td><td><code>[5, -1, -1, -1]</code></td></tr>
+<tr><td class="num">12</td><td class="num">16</td><td><code>while stack and nums[stack[-1]] &lt; x:</code></td><td><code>2</code></td><td><code>2</code></td><td><code>[1]</code></td><td><code>[5, -1, -1, -1]</code></td></tr>
+<tr><td class="num">13</td><td class="num">18</td><td><code>stack.append(i)</code></td><td><code>2</code></td><td><code>2</code></td><td><strong><code>[1, 2]</code></strong></td><td><code>[5, -1, -1, -1]</code></td></tr>
+<tr><td class="num">14</td><td class="num">15</td><td><code>for i, x in enumerate(nums):</code></td><td><strong><code>3</code></strong></td><td><strong><code>25</code></strong></td><td><code>[1, 2]</code></td><td><code>[5, -1, -1, -1]</code></td></tr>
+<tr><td class="num">15</td><td class="num">16</td><td><code>while stack and nums[stack[-1]] &lt; x:</code></td><td><code>3</code></td><td><code>25</code></td><td><code>[1, 2]</code></td><td><code>[5, -1, -1, -1]</code></td></tr>
+<tr><td class="num">16</td><td class="num">17</td><td><code>res[stack.pop()] = x</code></td><td><code>3</code></td><td><code>25</code></td><td><strong><code>[1]</code></strong></td><td><strong><code>[5, -1, 25, -1]</code></strong></td></tr>
+<tr><td class="num">17</td><td class="num">16</td><td><code>while stack and nums[stack[-1]] &lt; x:</code></td><td><code>3</code></td><td><code>25</code></td><td><code>[1]</code></td><td><code>[5, -1, 25, -1]</code></td></tr>
+<tr><td class="num">18</td><td class="num">17</td><td><code>res[stack.pop()] = x</code></td><td><code>3</code></td><td><code>25</code></td><td><strong><code>[]</code></strong></td><td><strong><code>[5, 25, 25, -1]</code></strong></td></tr>
+<tr><td class="num">19</td><td class="num">16</td><td><code>while stack and nums[stack[-1]] &lt; x:</code></td><td><code>3</code></td><td><code>25</code></td><td><code>[]</code></td><td><code>[5, 25, 25, -1]</code></td></tr>
+<tr><td class="num">20</td><td class="num">18</td><td><code>stack.append(i)</code></td><td><code>3</code></td><td><code>25</code></td><td><strong><code>[3]</code></strong></td><td><code>[5, 25, 25, -1]</code></td></tr>
+<tr><td class="num">21</td><td class="num">15</td><td><code>for i, x in enumerate(nums):</code></td><td><code>3</code></td><td><code>25</code></td><td><code>[3]</code></td><td><code>[5, 25, 25, -1]</code></td></tr>
+<tr><td class="num">22</td><td class="num">19</td><td><code>return res</code></td><td><code>3</code></td><td><code>25</code></td><td><code>[3]</code></td><td><code>[5, 25, 25, -1]</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>O(n) time and space for both (amortised: each element pushed/popped once).</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Storing values when indices are needed.</li><li>Using &lt; vs &lt;= incorrectly for equal values.</li><li>Not processing leftovers after the loop when the problem requires it.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"Next greater/smaller", "span", "until a warmer day", "histogram" -&gt; monotonic stack.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m10-problems.html#prob-valid_parens">Balanced Brackets</a> <span class="tag">LC 20</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Stack</td></tr><tr><td><a href="m10-problems.html#prob-next_greater">Next Greater Element</a></td><td><span class="tag warn">Medium</span></td><td>Monotonic stack</td></tr><tr><td><a href="m10-problems.html#prob-daily_temperatures">Days Until a Warmer Temperature</a> <span class="tag">LC 739</span></td><td><span class="tag warn">Medium</span></td><td>Monotonic stack</td></tr><tr><td><a href="m10-problems.html#prob-eval_postfix">Evaluate Postfix Expression</a> <span class="tag">LC 150</span></td><td><span class="tag warn">Medium</span></td><td>Stack, expression evaluation</td></tr><tr><td><a href="m10-problems.html#prob-remove_k_digits">Remove K Digits</a> <span class="tag">LC 402</span></td><td><span class="tag warn">Medium</span></td><td>Monotonic stack (greedy)</td></tr><tr><td><a href="m10-problems.html#prob-largest_rectangle">Largest Rectangle in a Histogram</a> <span class="tag">LC 84</span></td><td><span class="tag bad">Hard</span></td><td>Monotonic stack</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why store indices in the monotonic stack?</summary><div class="answer"><p>Indices give both the value (nums[i]) and the distance, which many problems need.</p></div></details>
+        <details class="recall"><summary>Why is the algorithm O(n)?</summary><div class="answer"><p>Each index is pushed once and popped at most once.</p></div></details>
+        <details class="recall"><summary>Why pop while the top is smaller?</summary><div class="answer"><p>The new element is the answer for every smaller waiting element.</p></div></details>
+        <details class="recall"><summary>Why add a sentinel at the end of a histogram?</summary><div class="answer"><p>It forces every remaining bar to be popped and processed.</p></div></details>
+        <details class="recall"><summary>Why not use brute force?</summary><div class="answer"><p>It rescans to the right for every element: O(n^2).</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c10_3-q1" data-topic="Stacks &amp; Queues" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Time complexity of next greater element with a monotonic stack?</p></div>
+        <ul class="q-options">
+          <li data-key="A">O(n^2)</li>
+          <li data-key="B">O(n)</li>
+          <li data-key="C">O(log n)</li>
+          <li data-key="D">O(n log n)</li>
+        </ul>
+        <div class="q-explain"><p>Each element is pushed once and popped once.</p></div>
+      </div>
+      <div class="quiz" data-qid="c10_3-q2" data-topic="Stacks &amp; Queues" data-type="single" data-answer="B">
+        <div class="q-stem"><p>"([)]" is...</p></div>
+        <ul class="q-options">
+          <li data-key="A">Balanced</li>
+          <li data-key="B">Not balanced</li>
+          <li data-key="C">Empty</li>
+          <li data-key="D">Invalid input</li>
+        </ul>
+        <div class="q-explain"><p>The brackets cross, so the closer does not match the top opener.</p></div>
+      </div>
+    </section>
+
+    <h2 id="practice-problems">Practice problems for this module</h2>
+
+    <p>13 problems with hints, approach, dry run and tested solutions on the <a href="m10-problems.html">problem set for this module</a>.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m10-problems.html#prob-valid_parens">Balanced Brackets</a> <span class="tag">LC 20</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Stack</td></tr><tr><td><a href="m10-problems.html#prob-next_greater">Next Greater Element</a></td><td><span class="tag warn">Medium</span></td><td>Monotonic stack</td></tr><tr><td><a href="m10-problems.html#prob-eval_postfix">Evaluate Postfix Expression</a> <span class="tag">LC 150</span></td><td><span class="tag warn">Medium</span></td><td>Stack, expression evaluation</td></tr><tr><td><a href="m10-problems.html#prob-daily_temperatures">Days Until a Warmer Temperature</a> <span class="tag">LC 739</span></td><td><span class="tag warn">Medium</span></td><td>Monotonic stack</td></tr><tr><td><a href="m10-problems.html#prob-my_queue">Queue Using Two Stacks</a> <span class="tag">LC 232</span></td><td><span class="tag warn">Medium</span></td><td>Stacks and queues design</td></tr><tr><td><a href="m10-problems.html#prob-min_stack">Min Stack</a> <span class="tag">LC 155</span></td><td><span class="tag warn">Medium</span></td><td>Stack design</td></tr><tr><td><a href="m10-problems.html#prob-decode_string">Decode a String</a> <span class="tag">LC 394</span></td><td><span class="tag warn">Medium</span></td><td>Stack of states</td></tr><tr><td><a href="m10-problems.html#prob-basic_calculator_ii">Basic Calculator II</a> <span class="tag">LC 227</span></td><td><span class="tag warn">Medium</span></td><td>Stack, operator precedence</td></tr><tr><td><a href="m10-problems.html#prob-lru_cache">LRU Cache</a> <span class="tag">LC 146</span></td><td><span class="tag warn">Medium</span></td><td>Design: hash map + ordered recency</td></tr><tr><td><a href="m10-problems.html#prob-asteroid_collision">Asteroid Collision</a> <span class="tag">LC 735</span></td><td><span class="tag warn">Medium</span></td><td>Stack simulation</td></tr><tr><td><a href="m10-problems.html#prob-remove_k_digits">Remove K Digits</a> <span class="tag">LC 402</span></td><td><span class="tag warn">Medium</span></td><td>Monotonic stack (greedy)</td></tr><tr><td><a href="m10-problems.html#prob-sliding_window_max">Sliding Window Maximum</a> <span class="tag">LC 239</span></td><td><span class="tag bad">Hard</span></td><td>Monotonic deque</td></tr><tr><td><a href="m10-problems.html#prob-largest_rectangle">Largest Rectangle in a Histogram</a> <span class="tag">LC 84</span></td><td><span class="tag bad">Hard</span></td><td>Monotonic stack</td></tr>
+</tbody>
+</table>
+</div>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Stacks &amp; Queues</h2>
+      <p class="muted">55 questions: try to answer aloud in under a minute, then reveal. All questions from every module are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Stacks & Queues">
+<details class="recall iq" data-level="basic" data-topic="Stacks &amp; Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is a stack? Give uses.</summary><div class="answer"><p>A LIFO collection with push, pop and peek in O(1). Uses: undo/redo, bracket matching, expression evaluation, DFS, function call stack, browser history.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Stacks &amp; Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you check balanced brackets?</summary><div class="answer"><pre><code class="lang-py">def is_valid(s):
+    pairs = {')': '(', ']': '[', '}': '{'}
+    st = []
+    for ch in s:
+        if ch in pairs:
+            if not st or st.pop() != pairs[ch]:
+                return False
+        else:
+            st.append(ch)
+    return not st</code></pre></div></details>
+<details class="recall iq" data-level="basic" data-topic="Stacks &amp; Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How would you implement a queue using two stacks?</summary><div class="answer"><p>Push onto an &#x27;inbox&#x27; stack. When you need to pop, if the &#x27;outbox&#x27; is empty move everything from inbox to outbox (reversing the order) and pop from outbox. Amortised O(1) per operation.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Stacks &amp; Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you get the minimum of a stack in O(1)?</summary><div class="answer"><p>Store (value, min so far) pairs, or keep a second stack of minimums.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Stacks &amp; Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What happens if you pop an empty list?</summary><div class="answer"><p>IndexError. Check &#x27;if stack:&#x27; before popping.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Stacks &amp; Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why is the call stack a stack?</summary><div class="answer"><p>Functions finish in the reverse order that they started: the most recently called function must finish first.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Stacks &amp; Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why should you not use list.pop(0) as a queue?</summary><div class="answer"><p>It shifts every remaining element, costing O(n). collections.deque.popleft() is O(1).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Stacks &amp; Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is a deque?</summary><div class="answer"><p>A double-ended queue with O(1) append and pop at both ends.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Stacks &amp; Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is a priority queue and how is it implemented in Python?</summary><div class="answer"><p>A queue that always returns the smallest (or highest priority) item first. Python&#x27;s heapq module (binary min-heap): push and pop are O(log n).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Stacks &amp; Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you make a max-heap with heapq?</summary><div class="answer"><p>Store negative values (or use negated priorities) and negate again after popping.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Stacks &amp; Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How does a circular queue work?</summary><div class="answer"><p>A fixed-size array with a front index and a size. Position of the next free slot is (front + size) % capacity; dequeue moves front = (front + 1) % capacity.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Stacks &amp; Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Implement a queue with a list of two stacks.</summary><div class="answer"><p>See the &#x27;Queue Using Two Stacks&#x27; problem in the library.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Stacks &amp; Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the difference between a queue and a priority queue?</summary><div class="answer"><p>A queue serves by arrival order; a priority queue serves by priority regardless of arrival order.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Stacks &amp; Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is a monotonic stack?</summary><div class="answer"><p>A stack whose elements are kept in increasing or decreasing order by popping elements that violate the order when a new element arrives.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Stacks &amp; Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Solve Next Greater Element in O(n).</summary><div class="answer"><p>Scan left to right with a stack of indices waiting for a greater value. For each x pop while nums[stack[-1]] &lt; x and set their answer to x; then push the current index.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Stacks &amp; Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why is it O(n) and not O(n^2)?</summary><div class="answer"><p>Each element is pushed once and popped at most once, so total work is at most 2n.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Stacks &amp; Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How would you do daily temperatures?</summary><div class="answer"><p>Same as next greater element but store index differences: answer[j] = i - j.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Stacks &amp; Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the largest rectangle in a histogram approach?</summary><div class="answer"><p>Keep a stack of increasing bar heights. When a smaller bar arrives, pop taller bars and compute area = height x width where width reaches back to the previous stack element.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Stacks &amp; Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why is the algorithm O(n) even with a while loop inside the for loop?</summary><div class="answer"><p>Each index is pushed once and popped at most once, so total pops are bounded by n.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Convert infix to postfix (shunting yard) in outline.</summary><div class="answer"><p>Scan tokens; output numbers; push operators on a stack after popping operators of higher or equal precedence to the output; handle &#x27;(&#x27; by pushing and &#x27;)&#x27; by popping to the output until &#x27;(&#x27;. At the end pop the rest.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What is the final stack after pushing 1, 2, 3, pop, push 4, pop, pop?</summary><div class="answer"><p>[1]. Pops remove 3, then 4, then 2.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How does the browser back button relate to a stack?</summary><div class="answer"><p>Visiting a page pushes it; Back pops to the previous page. A second stack supports Forward.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is a stack LIFO?</summary><div class="answer"><p>Many problems resolve the most recent unfinished item first (nested brackets, undo, function calls).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use a Python list as a stack?</summary><div class="answer"><p>append and pop at the end are O(1).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use pop(0) for a stack?</summary><div class="answer"><p>A stack only touches the end; pop(0) is the queue end and costs O(n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why check for an empty stack before popping?</summary><div class="answer"><p>Popping an empty list raises IndexError.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is DFS stack-based?</summary><div class="answer"><p>It follows one path as deep as possible, then returns to the most recent branch point.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is a stack better than recursion sometimes?</summary><div class="answer"><p>An explicit stack avoids the recursion limit and lets you pause or inspect state.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Reverse a string using a stack.</summary><div class="answer"><p>Push every character then pop all into a new string. (In Python s[::-1] is shorter.)</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What is the order when you push 1, 2, 3 and pop twice?</summary><div class="answer"><p>3 then 2; 1 remains.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Implement a stack using two queues (outline).</summary><div class="answer"><p>On push, add to q2, move all items from q1 to q2, then swap the names; pop takes from q1. Push is O(n), pop O(1).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What does this print?</summary><div class="answer"><pre><code class="lang-py">from collections import deque
+q = deque([1, 2, 3])
+q.appendleft(0)
+q.pop()
+print(q)</code></pre><p>deque([0, 1, 2]). appendleft adds 0 at the front; pop removes 3 from the right.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> Why do web servers use a queue between request handling and heavy work?</summary><div class="answer"><p>It absorbs bursts: requests are enqueued quickly and workers process them at their own pace, preventing overload and enabling retries.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is deque better than list for queues?</summary><div class="answer"><p>popleft is O(1) while list.pop(0) shifts all items.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use a circular queue?</summary><div class="answer"><p>It reuses freed array slots by wrapping indexes, giving a fixed-size queue without wasted space.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why a priority queue instead of sorting repeatedly?</summary><div class="answer"><p>A heap gives the next best item in O(log n) after each insert, while re-sorting costs O(n log n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does heapq give a min-heap only?</summary><div class="answer"><p>That is how the library is written; negate values to simulate a max-heap.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why track size in a circular queue?</summary><div class="answer"><p>front == rear is ambiguous (empty or full); a size counter removes the ambiguity.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not always use a heap when order matters?</summary><div class="answer"><p>If you only need arrival order, a deque is simpler and O(1).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Implement a queue with two stacks.</summary><div class="answer"><p>See the &#x27;Queue Using Two Stacks&#x27; problem: push to inbox; when popping with an empty outbox move all items across.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> Where do message queues help in a web service?</summary><div class="answer"><p>They decouple fast request handling from slow work, smooth traffic bursts and allow retries.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Compute the stock span for each day (number of consecutive days up to and including today with price &lt;= today).</summary><div class="answer"><pre><code class="lang-py">def spans(p):
+    st, res = [], []
+    for i, x in enumerate(p):
+        while st and p[st[-1]] &lt;= x:
+            st.pop()
+        res.append(i + 1 if not st else i - st[-1])
+        st.append(i)
+    return res</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> next_greater([5, 4, 3, 2, 1]) gives what?</summary><div class="answer"><p>[-1, -1, -1, -1, -1]: the list is decreasing, so nothing has a greater element to its right.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> Why do compilers use stacks to parse expressions?</summary><div class="answer"><p>Nested structure (parentheses, operator precedence) is naturally resolved last-in first-out.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why store indices in the monotonic stack?</summary><div class="answer"><p>Indices give both the value (nums[i]) and the distance, which many problems need.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is the algorithm O(n)?</summary><div class="answer"><p>Each index is pushed once and popped at most once.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why pop while the top is smaller?</summary><div class="answer"><p>The new element is the answer for every smaller waiting element.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why add a sentinel at the end of a histogram?</summary><div class="answer"><p>It forces every remaining bar to be popped and processed.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use brute force?</summary><div class="answer"><p>It rescans to the right for every element: O(n^2).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is the stack decreasing for next greater but increasing for next smaller?</summary><div class="answer"><p>The waiting elements are those that have not found a bigger (or smaller) partner; keeping the stack ordered the opposite way makes the new element resolve them.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Next smaller element for each position.</summary><div class="answer"><p>Same template with the comparison reversed: while stack and nums[stack[-1]] &gt; x: res[stack.pop()] = x.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Stacks &amp; Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> next_greater([2, 2, 2]) returns?</summary><div class="answer"><p>[-1, -1, -1] with a strict &lt; comparison, because equal values are not greater.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Stacks &amp; Queues"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> How would you evaluate a normal infix expression with + - * / and parentheses?</summary><div class="answer"><p>Two stacks (numbers, operators) with precedence handling, or convert to postfix then evaluate.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Stacks &amp; Queues"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> How would you implement a task scheduler that runs the highest-priority task first and FIFO among equals?</summary><div class="answer"><p>Heap of (priority, counter, task) where counter is an increasing sequence number to break ties in arrival order.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Stacks &amp; Queues"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Trapping rain water with a stack or two pointers.</summary><div class="answer"><p>Two pointers keeping left_max and right_max: move the pointer with the smaller max and add max - height. O(n) time, O(1) space.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="m06-problems.html"><span class="dir">Previous</span><span>Problems 6: Sorting Algorithms</span></a>
+      <a class="next" href="m10-problems.html"><span class="dir">Next</span><span>Problems 10: Stacks & Queues</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

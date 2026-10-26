@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="12">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>12 LLM system design and MLOps | AI/ML Engineer Prep</title>
+<meta name="description" content="A framework for LLM system design interviews: requirements and SLOs, capacity and cost estimation, serving architecture, caching and routing, observability and LLMOps, and two fully worked designs.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part 12</p>
+      <h1>LLM system design and MLOps</h1>
+      <p class="lede">The open-ended round: "design a document Q&amp;A assistant" or "design a support agent". Interviewers look for a structured approach, back-of-envelope numbers, sensible tradeoffs, and an evaluation and monitoring plan. This page gives you the framework, the estimates, and two worked designs.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~2 hours</span></div>
+    </div>
+
+    <!-- ============================================================ 1 -->
+    <section id="design-framework" data-track>
+      <h2>A framework for any LLM design question</h2>
+
+      <h3>Intuition</h3>
+      <p>Do not jump to "use GPT plus a vector DB". Clarify what success means, estimate the load, sketch the simplest architecture that works, then deepen the parts that matter: quality (retrieval, evals), latency, cost, safety and operations. Say your tradeoffs out loud.</p>
+
+      <ol>
+        <li><strong>Clarify requirements</strong>: users, use cases, inputs and outputs. Functional needs (cite sources? take actions?) and non-functional ones: latency SLOs (time to first token, total time), availability, quality bar, cost ceiling, privacy and compliance (PII, data residency), languages.</li>
+        <li><strong>Estimate scale</strong>: requests per day, peak QPS, tokens in and out, concurrency (Little's law), storage for documents and embeddings.</li>
+        <li><strong>High-level design</strong>: client, gateway (auth, rate limits), orchestrator, retrieval, model serving or API, tools, stores, async pipelines (ingestion), observability.</li>
+        <li><strong>Deep dives</strong>: retrieval quality, model choice and routing, caching, failure handling, safety, prompt versioning.</li>
+        <li><strong>Evaluation</strong>: offline golden sets and component metrics, then online metrics and A/B tests.</li>
+        <li><strong>Operations</strong>: monitoring, alerting, cost tracking, feedback loops, rollout and rollback.</li>
+      </ol>
+
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Decision</th><th>Option A</th><th>Option B</th><th>Decide by</th></tr></thead>
+        <tbody>
+          <tr><td>Model access</td><td>Hosted API</td><td>Self-hosted open-weights model</td><td>volume and cost at scale, data control, latency, team ops capacity, required quality</td></tr>
+          <tr><td>Knowledge</td><td>RAG</td><td>Fine-tuning</td><td>freshness and citations (RAG) vs behavior and format (fine-tune). Often both.</td></tr>
+          <tr><td>Model size</td><td>One large model</td><td>Cascade: small first, escalate</td><td>quality gap vs cost and latency</td></tr>
+          <tr><td>Control flow</td><td>Fixed workflow</td><td>Autonomous agent</td><td>how predictable the steps are</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="s12-fw-1" data-topic="System design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In an LLM design interview, what should come first?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Choosing the vector database <span class="q-why">Too early.</span></li>
+          <li data-key="B">Clarifying requirements, success metrics and scale <span class="q-why">Correct: they drive every later choice.</span></li>
+          <li data-key="C">Writing the prompt <span class="q-why">An implementation detail.</span></li>
+          <li data-key="D">Fine-tuning a model <span class="q-why">This may not even be needed.</span></li>
+        </ul>
+        <div class="q-explain"><p>Requirements, then estimates, then a simple design, then deep dives and evals.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name four non-functional requirements for an LLM system.</summary><div class="answer"><p>Latency (TTFT and total), cost, availability, privacy and compliance (also quality bar, languages, throughput).</p></div></details>
+        <details class="recall"><summary>When does self-hosting beat an API?</summary><div class="answer"><p>High steady volume, strict data control, custom models or latency needs, and a team able to operate GPUs.</p></div></details>
+        <details class="recall"><summary>What must every design include beyond architecture?</summary><div class="answer"><p>An evaluation plan and monitoring and feedback loops.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 2 -->
+    <section id="capacity-cost" data-track>
+      <h2>Back-of-envelope: capacity, latency and cost</h2>
+
+      <h3>The formulas</h3>
+      <div class="formula">
+        <div class="f-title">Estimation toolkit</div>
+        <div class="f-body">avg QPS = requests_per_day / 86,400;      peak QPS ~ 2 to 5 x avg
+concurrency (Little's law) L = arrival_rate * time_in_system
+latency ~ TTFT + output_tokens * time_per_output_token
+API cost/day = tokens_in * price_in + tokens_out * price_out
+KV memory ~ concurrency * tokens_per_sequence * KV_bytes_per_token</div>
+      </div>
+
+      <div class="worked">
+        <span class="w-title">1M requests/day, 1,500 input + 300 output tokens each</span>
+        <ol class="steps">
+          <li>Average QPS: 1,000,000 / 86,400 = 11.57. Peak at 3x is about 35 QPS.</li>
+          <li>Tokens per day: 1.5B input, 300M output. Peak output demand: 35 x 300 = 10,500 tokens/s.</li>
+          <li>API cost at illustrative prices ($0.50 per M input, $1.50 per M output): 1,500 x 0.5 + 300 x 1.5 = $1,200 per day. Real prices vary widely by model and provider, so plug in current ones. Prompt caching discounts can cut the input cost substantially.</li>
+          <li>Latency: TTFT 0.5 s + 300 tokens x 20 ms = 6.5 s total. Stream tokens so users see progress after 0.5 s.</li>
+          <li>Self-hosting check: requests spend about 10 s in the system, so concurrency = 35 x 10 = 350 sequences (Little's law). KV at 1,800 tokens x 128 KiB (Llama-3-8B fp16) is about 236 MB per sequence, so about 82.6 GB of KV cache at peak, on top of the weights. If one GPU sustains about 2,500 output tokens/s for this model (an illustrative figure: benchmark your stack), you need ceil(10,500 / 2,500) = 5 GPUs, plus headroom and redundancy.</li>
+        </ol>
+        <span class="result">~35 peak QPS, ~$1.2k/day API (illustrative), or ~5+ GPUs self-hosted</span>
+      </div>
+
+      <h3>Cost levers</h3>
+      <ul>
+        <li><strong>Model cascade / routing</strong>: send easy requests to a small model and escalate hard ones. If 80% go to a model costing 1 unit and 20% to one costing 10, the average cost is 2.8 instead of 10, a 72% saving (2.9 with a cheap router of cost 0.1 on every request).</li>
+        <li><strong>Caching</strong>: exact-match cache for repeated requests, semantic cache (embedding similarity) for near-duplicates (careful with stale or personalized answers), provider prompt or prefix caching for shared context. A 30% cache hit rate removes 300k of 1M daily calls.</li>
+        <li><strong>Shorter prompts</strong>: trim retrieved context (rerank to the top 3 to 5), compress the history, cap max tokens per task.</li>
+        <li><strong>Batch APIs</strong> for offline jobs (often discounted by providers), and quantized self-hosted models.</li>
+      </ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="s12-cap-1" data-topic="System design" data-type="numeric" data-answer="350" data-tol="0">
+        <div class="q-stem"><p>Peak arrival rate 35 requests/s, each request in the system for 10 s. How many concurrent requests (Little's law)?</p></div>
+        <div class="q-explain"><p>L = lambda x W = 35 x 10 = 350.</p></div>
+      </div>
+      <div class="quiz" data-qid="s12-cap-2" data-topic="System design" data-type="numeric" data-answer="2.8" data-tol="0.01">
+        <div class="q-stem"><p>A cascade sends 80% of requests to a model costing 1 unit and 20% to one costing 10 units. Average cost per request?</p></div>
+        <div class="q-explain"><p>0.8 x 1 + 0.2 x 10 = 2.8 (72% cheaper than always using the large model).</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Little's law?</summary><div class="answer"><p>Average items in the system = arrival rate x average time in the system.</p></div></details>
+        <details class="recall"><summary>Average QPS for 1M requests/day?</summary><div class="answer"><p>About 11.6.</p></div></details>
+        <details class="recall"><summary>Three cost levers?</summary><div class="answer"><p>Routing/cascades, caching, shorter prompts (also batch APIs and quantized self-hosting).</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 3 -->
+    <section id="serving-architecture" data-track>
+      <h2>Serving architecture: gateway, routing, caching, fallbacks</h2>
+
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 300" role="img" aria-label="Reference architecture: client to API gateway (auth, rate limit) to orchestrator; orchestrator uses cache, guardrails, retrieval (vector DB, BM25), router to small or large model or external API with fallback; tools; logs and traces to observability; ingestion pipeline updates the index">
+          <defs><marker id="s1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker></defs>
+          <rect x="10" y="120" width="80" height="44" rx="6" class="d-box"/><text x="50" y="146" text-anchor="middle" class="d-sm">client</text>
+          <line x1="90" y1="142" x2="118" y2="142" class="d-line" marker-end="url(#s1)"/>
+          <rect x="120" y="110" width="110" height="64" rx="6" class="d-a"/><text x="175" y="136" text-anchor="middle" class="d-sm">API gateway</text><text x="175" y="152" text-anchor="middle" class="d-sm">auth, rate limit</text>
+          <line x1="230" y1="142" x2="258" y2="142" class="d-line" marker-end="url(#s1)"/>
+          <rect x="260" y="100" width="140" height="84" rx="6" class="d-c"/><text x="330" y="126" text-anchor="middle" class="d-sm">orchestrator</text><text x="330" y="142" text-anchor="middle" class="d-sm">prompt build, tools,</text><text x="330" y="158" text-anchor="middle" class="d-sm">streaming, retries</text>
+          <rect x="260" y="20" width="140" height="40" rx="6" class="d-box"/><text x="330" y="44" text-anchor="middle" class="d-sm">cache (exact/semantic)</text>
+          <rect x="260" y="230" width="140" height="44" rx="6" class="d-box"/><text x="330" y="256" text-anchor="middle" class="d-sm">guardrails in/out</text>
+          <line x1="330" y1="100" x2="330" y2="62" class="d-line" marker-end="url(#s1)"/><line x1="330" y1="184" x2="330" y2="228" class="d-line" marker-end="url(#s1)"/>
+          <rect x="450" y="20" width="130" height="50" rx="6" class="d-b"/><text x="515" y="42" text-anchor="middle" class="d-sm">retrieval</text><text x="515" y="58" text-anchor="middle" class="d-sm">vector + BM25</text>
+          <rect x="450" y="100" width="130" height="84" rx="6" class="d-e"/><text x="515" y="126" text-anchor="middle" class="d-sm">router</text><text x="515" y="142" text-anchor="middle" class="d-sm">small model</text><text x="515" y="158" text-anchor="middle" class="d-sm">large model</text><text x="515" y="174" text-anchor="middle" class="d-sm">fallback API</text>
+          <rect x="450" y="220" width="130" height="50" rx="6" class="d-box"/><text x="515" y="250" text-anchor="middle" class="d-sm">tools / APIs</text>
+          <line x1="400" y1="120" x2="448" y2="50" class="d-line" marker-end="url(#s1)"/><line x1="400" y1="142" x2="448" y2="142" class="d-line" marker-end="url(#s1)"/><line x1="400" y1="165" x2="448" y2="240" class="d-line" marker-end="url(#s1)"/>
+          <rect x="610" y="20" width="100" height="50" rx="6" class="d-box"/><text x="660" y="42" text-anchor="middle" class="d-sm">ingestion</text><text x="660" y="58" text-anchor="middle" class="d-sm">chunk + embed</text>
+          <line x1="610" y1="45" x2="582" y2="45" class="d-line" marker-end="url(#s1)"/>
+          <rect x="610" y="120" width="100" height="64" rx="6" class="d-d"/><text x="660" y="146" text-anchor="middle" class="d-sm">observability</text><text x="660" y="162" text-anchor="middle" class="d-sm">logs, traces,</text><text x="660" y="176" text-anchor="middle" class="d-sm">evals, cost</text>
+          <line x1="582" y1="152" x2="608" y2="152" class="d-line d-dash" marker-end="url(#s1)"/>
+        </svg>
+        </div>
+        <figcaption>A reference architecture. Real systems drop the pieces they do not need.</figcaption>
+      </figure>
+      <ul>
+        <li><strong>Gateway</strong>: authentication, per-user and per-tenant rate limits (token bucket, part 08), quotas, request IDs.</li>
+        <li><strong>Streaming</strong> over SSE or WebSockets for perceived latency. Handle client disconnects (cancel generation to free GPU slots).</li>
+        <li><strong>Fallbacks</strong>: on timeouts or 5xx, retry with backoff, then fail over to a secondary model or provider. Degrade gracefully (return sources without a synthesis).</li>
+        <li><strong>Self-hosted serving</strong>: vLLM, TGI, TensorRT-LLM or SGLang, with continuous batching, paged KV, prefix caching and quantization (part 01). Autoscale on queue depth and KV utilization, not CPU.</li>
+        <li><strong>Async ingestion</strong>: document changes go through a queue to chunking, embedding and index upsert, with idempotent job IDs (part 05).</li>
+        <li><strong>Multi-tenancy</strong>: tenant filters enforced in retrieval, per-tenant keys, and no cross-tenant caching of personalized answers.</li>
+      </ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="s12-arch-1" data-topic="System design" data-type="multi" data-answer="A,B,D">
+        <div class="q-stem"><p>Which are sound reliability measures for an LLM-backed API? Select all.</p></div>
+        <ul class="q-options">
+          <li data-key="A">Timeouts and bounded retries with jittered backoff <span class="q-why">Yes.</span></li>
+          <li data-key="B">Fallback to a secondary model or provider <span class="q-why">Yes.</span></li>
+          <li data-key="C">Autoscaling self-hosted GPUs on CPU utilization <span class="q-why">GPU inference load shows up in queue depth and KV usage, not CPU.</span></li>
+          <li data-key="D">Cancelling generation when the client disconnects <span class="q-why">Yes: it frees capacity.</span></li>
+        </ul>
+        <div class="q-explain"><p>Bound the latency, degrade gracefully, and scale on the right signal.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Exact vs semantic cache risk?</summary><div class="answer"><p>A semantic cache can return answers for similar but different questions, or stale and personalized content. It needs thresholds, TTLs and scoping.</p></div></details>
+        <details class="recall"><summary>What signal should autoscale an LLM server?</summary><div class="answer"><p>Queue depth or waiting requests, KV cache utilization, and latency SLOs.</p></div></details>
+        <details class="recall"><summary>Why stream responses?</summary><div class="answer"><p>Perceived latency drops to TTFT, and users can stop early.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 4 -->
+    <section id="llmops" data-track>
+      <h2>Observability and LLMOps</h2>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Layer</th><th>What to track</th></tr></thead>
+        <tbody>
+          <tr><td>System</td><td>p50 / p95 / p99 latency (TTFT and total), error rates, timeouts, queue depth, GPU and KV utilization, throughput (tokens/s)</td></tr>
+          <tr><td>Cost</td><td>tokens in and out per request, per feature and per tenant, cache hit rates, spend vs budget alerts</td></tr>
+          <tr><td>Quality</td><td>online LLM-judge samples, user feedback (thumbs, edits, escalations), groundedness and citation checks, refusal rate, format-error rate</td></tr>
+          <tr><td>Retrieval</td><td>empty-result rate, top-score distributions, recall on a canary set, index freshness</td></tr>
+          <tr><td>Safety</td><td>guardrail triggers, PII detections, injection attempts, policy violations</td></tr>
+          <tr><td>Drift</td><td>query topic mix, input length, language mix, embedding distribution shift</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <ul>
+        <li><strong>Tracing</strong>: one trace per request, spanning retrieval, each model call (prompt version, model version, tokens, latency) and each tool call. This is essential for debugging agents.</li>
+        <li><strong>Eval in CI/CD</strong>: every prompt, model or retrieval change runs the golden set. Block on significant regressions (paired tests, part 04).</li>
+        <li><strong>Rollouts</strong>: shadow traffic, then canary (a few % of users), then a gradual ramp with guardrail metrics. Keep instant rollback (prompt and model versions behind a config flag).</li>
+        <li><strong>Feedback loop</strong>: failures from production get triaged, added to the golden set, then fixed (prompt, retrieval, fine-tune), and the regression test prevents recurrence.</li>
+        <li><strong>Privacy</strong>: redact PII in logs, define retention, honor data processing agreements, keep a per-tenant data boundary.</li>
+      </ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="s12-ops-1" data-topic="System design" data-type="single" data-answer="C">
+        <div class="q-stem"><p>After a provider silently updates the model, answer quality drops. What would have caught this fastest?</p></div>
+        <ul class="q-options">
+          <li data-key="A">CPU dashboards <span class="q-why">They do not measure quality.</span></li>
+          <li data-key="B">Monthly user surveys <span class="q-why">Too slow.</span></li>
+          <li data-key="C">Pinned model versions plus scheduled golden-set evals and online quality sampling with alerts <span class="q-why">Correct.</span></li>
+          <li data-key="D">Higher rate limits <span class="q-why">Unrelated.</span></li>
+        </ul>
+        <div class="q-explain"><p>Quality is a production metric. Monitor it like latency.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does a trace for an LLM request contain?</summary><div class="answer"><p>Spans for retrieval, each model call (prompt and model versions, tokens, latency) and each tool call, all under one request ID.</p></div></details>
+        <details class="recall"><summary>Canary vs shadow deployment?</summary><div class="answer"><p>Shadow runs the new version on copied traffic without showing users. Canary serves a small slice of real users.</p></div></details>
+        <details class="recall"><summary>How do production failures improve the system?</summary><div class="answer"><p>They become golden-set test cases, get fixed, and then guard against regressions.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 5 -->
+    <section id="design-rag-assistant" data-track>
+      <h2>Worked design 1: enterprise document Q&amp;A assistant</h2>
+      <div class="worked">
+        <span class="w-title">Prompt: "Design an assistant that answers employee questions from 2M internal documents (wikis, PDFs, tickets), with citations and access control."</span>
+        <ol class="steps">
+          <li><strong>Requirements</strong>: answers grounded with citations. Respect document permissions. TTFT under 2 s at p95. 50k employees, about 100k questions per day (about 1.2 QPS average, about 5 peak). Documents update hourly. Admit "not found".</li>
+          <li><strong>Ingestion</strong>: connectors, then parsing (PDF and table extraction), structure-aware chunking (about 500 tokens with overlap, headings kept as metadata), near-duplicate removal, embedding, and upsert into a vector index plus a BM25 index. Store ACL groups, source, timestamp and URL per chunk. Incremental updates via change events with idempotent job keys.</li>
+          <li><strong>Query path</strong>: auth gives the user's groups. Optionally rewrite the query (resolve "it" from chat history). Hybrid retrieval (dense + BM25, RRF) <em>pre-filtered by ACL</em>, top 50. Cross-encoder rerank to the top 5. Build the prompt: system rules (answer only from sources, cite [doc-id], fallback phrase), sources, question. Stream the answer and render citations as links.</li>
+          <li><strong>Scale</strong>: 2M docs x about 5 chunks = 10M vectors x 1,024 dims x 4 B = about 41 GB (fp32), so HNSW on a few nodes, or a managed vector DB. Low QPS, so an API LLM is cheapest to start.</li>
+          <li><strong>Evals</strong>: 300 golden questions with source labels. Measure recall@5 after reranking, answer correctness (LLM judge validated against humans), citation precision, faithfulness and abstention accuracy. Paired tests for every change.</li>
+          <li><strong>Risks</strong>: permission leaks (enforce in retrieval, test with cross-group probes), stale content (freshness metadata, prefer recent), prompt injection inside documents (treat sources as untrusted data, no tool actions), PII in logs.</li>
+          <li><strong>Iteration</strong>: log queries with no or low-score retrieval to find content gaps. Use thumbs-down feedback to grow the golden set.</li>
+        </ol>
+      </div>
+      <p>Storage check: 10M x 1,024 x 4 bytes = 40.96 GB (verified the same way as part 03's 6.1 GB for 1M x 1,536).</p>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Where must document permissions be enforced?</summary><div class="answer"><p>In retrieval (pre-filtering by ACL), never by asking the model to hide content.</p></div></details>
+        <details class="recall"><summary>Which metrics would you report for this assistant?</summary><div class="answer"><p>Recall@k, answer correctness, citation precision, faithfulness, abstention accuracy, latency and cost.</p></div></details>
+        <details class="recall"><summary>How do you handle hourly document updates?</summary><div class="answer"><p>Event-driven incremental ingestion with idempotent upserts and deletes, and freshness metadata.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 6 -->
+    <section id="design-support-agent" data-track>
+      <h2>Worked design 2: customer support agent that takes actions</h2>
+      <div class="worked">
+        <span class="w-title">Prompt: "Design an AI agent that resolves e-commerce support chats: order status, returns, refunds up to $200."</span>
+        <ol class="steps">
+          <li><strong>Requirements</strong>: resolve common intents end to end, escalate to humans otherwise. Refunds must never duplicate. Audit trail. Containment rate and CSAT are the business metrics.</li>
+          <li><strong>Control flow</strong>: an intent classifier routes to deterministic workflows for known intents (status, return label). A tool-using agent handles the long tail, with a step limit and a token budget.</li>
+          <li><strong>Tools</strong>: get_order(order_id), create_return(order_id, items), create_refund(order_id, amount, idempotency_key). Each validates that the order belongs to the authenticated user (least privilege). Amount is capped at $200 and at the order total, enforced in code.</li>
+          <li><strong>Safety</strong>: human approval above thresholds or for anomalous patterns. Prompt-injection resistance (user text cannot change the tool scope). PII handling.</li>
+          <li><strong>Reliability</strong>: idempotency keys generated once per logical refund and persisted in conversation state. Timeouts plus jittered retries. Outbox for "refund issued" notifications. Checkpointed agent state so crashed sessions resume safely.</li>
+          <li><strong>Evals</strong>: simulated conversations (scripted user personas) scored for task success, policy compliance (no refund over the cap, no wrong order), tool-call accuracy and tone. Regression suite in CI. Online: containment, escalation rate, refund error rate, CSAT.</li>
+          <li><strong>Rollout</strong>: shadow mode (the agent drafts, humans send), then low-risk intents first, then expand by intent as metrics hold.</li>
+        </ol>
+      </div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="s12-agent-1" data-topic="System design" data-type="single" data-answer="D">
+        <div class="q-stem"><p>How do you guarantee the agent can never refund more than $200 or refund someone else's order?</p></div>
+        <ul class="q-options">
+          <li data-key="A">State the rule clearly in the system prompt <span class="q-why">Prompts are not enforcement.</span></li>
+          <li data-key="B">Fine-tune on examples that respect the cap <span class="q-why">Still probabilistic.</span></li>
+          <li data-key="C">Use a larger model <span class="q-why">Still probabilistic.</span></li>
+          <li data-key="D">Enforce ownership and amount checks in the tool implementation (server-side), with human approval for exceptions <span class="q-why">Correct: deterministic enforcement.</span></li>
+        </ul>
+        <div class="q-explain"><p>Business invariants belong in code paths the model cannot bypass.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why route known intents to fixed workflows?</summary><div class="answer"><p>They are predictable, cheaper and easier to test. Reserve the agent for the long tail.</p></div></details>
+        <details class="recall"><summary>How do you evaluate a support agent offline?</summary><div class="answer"><p>Simulated conversations scored on task success, policy compliance, tool accuracy and tone.</p></div></details>
+        <details class="recall"><summary>Safe rollout path?</summary><div class="answer"><p>Shadow (drafts only), then low-risk intents, then gradual expansion with guardrail metrics.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ interview -->
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: system design and MLOps</h2>
+      <p class="muted">Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="System design">
+<details class="recall iq" data-level="basic" data-topic="System design"><summary><span class="tag ok">Basic</span> What are the key latency metrics for an LLM service?</summary><div class="answer"><p>Time to first token, time per output token (inter-token latency), total latency at p50/p95/p99, and throughput in tokens/s and requests/s.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="System design"><summary><span class="tag ok">Basic</span> Hosted API vs self-hosted model?</summary><div class="answer"><p>APIs: fast to start, top quality, pay per token, less control. Self-hosted: data control, customization, cost advantages at high steady volume, but GPU ops burden.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="System design"><summary><span class="tag ok">Basic</span> Why stream LLM responses?</summary><div class="answer"><p>Users see output after the time to first token instead of waiting for the full response, which improves perceived latency, and they can stop early.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="System design"><summary><span class="tag warn">Medium</span> How would you estimate the cost of an LLM feature?</summary><div class="answer"><p>Requests per day x (input tokens x input price + output tokens x output price), minus cache discounts. For self-hosting: peak tokens/s divided by per-GPU throughput gives the GPU count, then add redundancy.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="System design"><summary><span class="tag warn">Medium</span> What is a model cascade?</summary><div class="answer"><p>Route easy requests to a cheap model and escalate hard or low-confidence ones to a stronger model. With 80% handled at cost 1 and 20% at cost 10, average cost is 2.8 instead of 10.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="System design"><summary><span class="tag warn">Medium</span> What should you monitor in an LLM application?</summary><div class="answer"><p>Latency, errors, throughput, token usage and cost, cache hit rate, quality signals (judge samples, user feedback, groundedness), retrieval health, safety triggers, and drift in inputs.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="System design"><summary><span class="tag warn">Medium</span> How do you roll out a new prompt or model safely?</summary><div class="answer"><p>Offline golden-set evals with paired tests, then shadow traffic, then a canary to a small slice, then a gradual ramp with guardrail metrics and instant rollback through versioned configs.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="System design"><summary><span class="tag warn">Medium</span> Semantic caching: benefits and risks?</summary><div class="answer"><p>It saves cost and latency on near-duplicate queries. The risks are wrong answers for similar but different questions, stale content and leaking personalized answers. Use similarity thresholds, TTLs and per-user or tenant scoping.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="System design"><summary><span class="tag bad">Advanced</span> Design a document Q&amp;A assistant for 2M internal documents with permissions.</summary><div class="answer"><p>Event-driven ingestion (parse, structure-aware chunks, embeddings, vector + BM25 indexes with ACL metadata), hybrid retrieval pre-filtered by ACL, cross-encoder rerank to the top 5, a grounded prompt with citations and an abstain path, streaming, golden-set evals (recall@k, faithfulness, citation precision), and monitoring of retrieval gaps and permissions.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="System design"><summary><span class="tag bad">Advanced</span> Design a support agent that can issue refunds.</summary><div class="answer"><p>Intent routing to deterministic workflows, plus a bounded agent for the long tail. Tools with server-side ownership and amount checks, idempotency keys, human approval above thresholds, checkpointed state, outbox notifications, simulated-conversation evals, and a shadow-then-canary rollout.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="System design"><summary><span class="tag bad">Advanced</span> How would you serve a model with spiky traffic cheaply?</summary><div class="answer"><p>Autoscale on queue depth and KV utilization with warm pools, continuous batching, quantization, prefix caching, a cascade to smaller models, burst overflow to an API provider, request prioritization, and graceful degradation.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="System design"><summary><span class="tag bad">Advanced</span> How do you use Little&#x27;s law in LLM capacity planning?</summary><div class="answer"><p>Concurrency = arrival rate x time in system. At 35 req/s and 10 s each there are 350 concurrent sequences. Multiply by tokens per sequence and KV bytes per token to size KV memory (about 83 GB for Llama-3-8B at 1,800 tokens).</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="06-decoding-and-sampling.html"><span class="dir">Previous</span><span>06 Decoding and sampling</span></a>
+      <a class="next" href="07-coding-problems.html"><span class="dir">Next</span><span>07 Coding problems</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

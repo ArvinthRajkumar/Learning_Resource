@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD22">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Security architecture: authentication, tokens, encryption, zero trust and threat modelling | System Design</title>
+<meta name="description" content="Designing secure systems: passwords and hashing, sessions versus tokens, OAuth 2.0 and OpenID Connect, signed tokens with working HMAC code, encryption at rest and in transit, secrets, zero trust, common attacks and threat modelling.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD22</p>
+      <h1>Security architecture: authentication, tokens, encryption, zero trust and threat modelling</h1>
+      <p class="lede">Security is a property of the whole design, not a feature added at the end. This part covers the identity, cryptography and network ideas every architect must know, with short runnable demonstrations of the key mechanisms.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~4 hours</span></div>
+    </div>
+
+    <section id="principles" data-track>
+      <h2>Security principles</h2>
+<ul><li><strong>Least privilege</strong>: grant the minimum access, for the minimum time.</li><li><strong>Defence in depth</strong>: layers (network, identity, application, data) so one failure is not fatal.</li><li><strong>Fail closed</strong>: on error, deny.</li><li><strong>Secure by default</strong>, <strong>minimise attack surface</strong>, <strong>separation of duties</strong>, <strong>assume breach</strong>.</li><li><strong>Never roll your own crypto</strong>: use vetted libraries and managed services.</li></ul>
+<p>The <strong>CIA triad</strong>: Confidentiality, Integrity, Availability. Add <strong>authenticity</strong> and <strong>non-repudiation</strong> where needed.</p>
+    </section>
+
+    <section id="authn" data-track>
+      <h2>Authentication: proving who you are</h2>
+<p><strong>Authentication</strong> (who are you?) versus <strong>authorization</strong> (what may you do?). Factors: something you <strong>know</strong> (password), <strong>have</strong> (phone, hardware key), <strong>are</strong> (biometrics). <strong>MFA</strong> combines two or more; phishing-resistant options are WebAuthn/passkeys.</p>
+<h3>Storing passwords</h3>
+<p>Never store plaintext or a fast hash. Use a <strong>slow, salted, memory-hard</strong> password hash (argon2id, scrypt, bcrypt). The salt is random per user, defeating rainbow tables; the work factor slows brute force.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd22-01.py">import hashlib, hmac, os, time
+def hash_password(pw, iterations=200_000):
+    salt = os.urandom(16)
+    return salt, iterations, hashlib.pbkdf2_hmac("sha256", pw.encode(), salt, iterations)
+def verify(pw, salt, iterations, digest):
+    cand = hashlib.pbkdf2_hmac("sha256", pw.encode(), salt, iterations)
+    return hmac.compare_digest(cand, digest)               # constant-time comparison
+salt, it, dg = hash_password("correct horse battery staple")
+print("right password:", verify("correct horse battery staple", salt, it, dg), "| wrong password:", verify("hunter2", salt, it, dg))
+t = time.perf_counter(); hashlib.sha256(b"x").digest(); fast = time.perf_counter() - t
+t = time.perf_counter(); hashlib.pbkdf2_hmac("sha256", b"x", salt, it); slow = time.perf_counter() - t
+print("PBKDF2 (200k rounds) is slower than a single SHA-256:", slow &gt; 100 * fast)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>right password: True | wrong password: False
+PBKDF2 (200k rounds) is slower than a single SHA-256: True</code></pre>
+<p>The work factor is the large cost every attacker guess must pay; raise it as hardware improves.</p>
+<h3>Sessions versus tokens</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>Server session</th><th>Stateless token (JWT)</th></tr></thead>
+<tbody>
+<tr><td>State</td><td>Server stores session id to data</td><td>Token carries claims, signed</td></tr><tr><td>Revocation</td><td>Delete the session</td><td>Hard; use short expiry plus a deny-list or refresh rotation</td></tr><tr><td>Scaling</td><td>Needs shared store (Redis)</td><td>Any server can verify with the key</td></tr><tr><td>Risk</td><td>Session fixation, CSRF</td><td>Theft is valid until expiry; large tokens</td></tr>
+</tbody>
+</table>
+</div>
+<p>Cookies: set <code>HttpOnly</code> (no JavaScript access), <code>Secure</code> (HTTPS only), <code>SameSite=Lax/Strict</code> (CSRF defence).</p>
+<h3>A signed token, from scratch</h3>
+<p>A JWT is <code>base64(header).base64(payload).signature</code> where the signature (HMAC for symmetric, RSA/ECDSA for asymmetric) covers the first two parts. Anyone can <em>read</em> the payload; only the key holder can <em>forge</em> it. Always check the signature <strong>and</strong> expiry, and fix the accepted algorithm.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd22-02.py">import base64, hashlib, hmac, json, time
+b64 = lambda b: base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+unb64 = lambda s: base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+def sign(payload, key):
+    head = b64(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+    body = b64(json.dumps(payload, separators=(",", ":")).encode())
+    sig = b64(hmac.new(key, f"{head}.{body}".encode(), hashlib.sha256).digest())
+    return f"{head}.{body}.{sig}"
+def verify(token, key, now):
+    head, body, sig = token.split(".")
+    if json.loads(unb64(head))["alg"] != "HS256": return "rejected: unexpected algorithm"
+    good = b64(hmac.new(key, f"{head}.{body}".encode(), hashlib.sha256).digest())
+    if not hmac.compare_digest(sig, good): return "rejected: bad signature"
+    claims = json.loads(unb64(body))
+    return "rejected: expired" if claims["exp"] &lt; now else claims
+key = b"server-secret-key"
+tok = sign({"sub": "user42", "role": "admin", "exp": 1000}, key)
+print("valid     :", verify(tok, key, now=500))
+print("expired   :", verify(tok, key, now=2000))
+h, b, s = tok.split(".")
+forged_body = b64(json.dumps({"sub": "user42", "role": "superadmin", "exp": 9999}, separators=(",", ":")).encode())
+print("tampered  :", verify(f"{h}.{forged_body}.{s}", key, now=500))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>valid     : {'sub': 'user42', 'role': 'admin', 'exp': 1000}
+expired   : rejected: expired
+tampered  : rejected: bad signature</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd22-q01" data-topic="Security architecture" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why use a salt when hashing passwords?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To make hashes shorter <span class="q-why">No.</span></li>
+          <li data-key="B">So identical passwords hash differently and precomputed tables fail <span class="q-why">Correct.</span></li>
+          <li data-key="C">To encrypt them <span class="q-why">Hashing is not encryption.</span></li>
+          <li data-key="D">To speed up logins <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Each user gets a unique random salt.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd22-q02" data-topic="Security architecture" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Which is appropriate for storing passwords?</p></div>
+        <ul class="q-options">
+          <li data-key="A">MD5 <span class="q-why">Fast and broken.</span></li>
+          <li data-key="B">Plain SHA-256 <span class="q-why">Too fast.</span></li>
+          <li data-key="C">argon2id, scrypt or bcrypt <span class="q-why">Correct.</span></li>
+          <li data-key="D">Base64 <span class="q-why">Encoding, not hashing.</span></li>
+        </ul>
+        <div class="q-explain"><p>Slow, salted and memory-hard resists brute force.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd22-q03" data-topic="Security architecture" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What can anyone do with a signed JWT without the key?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Modify it undetected <span class="q-why">Signature check fails.</span></li>
+          <li data-key="B">Read the payload <span class="q-why">Correct, the payload is only encoded, not encrypted.</span></li>
+          <li data-key="C">Extend the expiry <span class="q-why">That breaks the signature.</span></li>
+          <li data-key="D">Nothing <span class="q-why">They can read it.</span></li>
+        </ul>
+        <div class="q-explain"><p>Do not put secrets in a JWT payload.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Authentication versus authorization?</summary><div class="answer"><p>Authentication proves who you are; authorization decides what you may do.</p></div></details>
+        <details class="recall"><summary>How do cookies resist XSS and CSRF?</summary><div class="answer"><p>HttpOnly blocks script access; SameSite and anti-CSRF tokens block cross-site request forgery.</p></div></details>
+      </div>
+    </section>
+
+    <section id="authz" data-track>
+      <h2>Authorization</h2>
+<p>Models: <strong>RBAC</strong> (roles), <strong>ABAC</strong> (attributes and policies), <strong>ReBAC</strong> (relationships, as in Google Zanzibar: "viewer of the parent folder"), and <strong>ACLs</strong>. Enforce on the <strong>server</strong>, at every request, close to the data, and check <strong>object-level</strong> access (prevent IDOR/BOLA: user 5 reading <code>/orders/9</code>). Centralise policy (OPA, Cedar) where many services share rules.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd22-q04" data-topic="Security architecture" data-type="single" data-answer="B">
+        <div class="q-stem"><p>IDOR (BOLA) is prevented by:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Hiding ids <span class="q-why">Obscurity.</span></li>
+          <li data-key="B">Checking that the caller may access that specific object on every request <span class="q-why">Correct.</span></li>
+          <li data-key="C">Using POST <span class="q-why">No.</span></li>
+          <li data-key="D">Using HTTPS <span class="q-why">Does not authorize.</span></li>
+        </ul>
+        <div class="q-explain"><p>Object-level authorization.</p></div>
+      </div>
+    </section>
+
+    <section id="oauth" data-track>
+      <h2>OAuth 2.0 and OpenID Connect</h2>
+<ul><li><strong>OAuth 2.0</strong> is <strong>delegated authorization</strong>: an app gets a limited <strong>access token</strong> to call an API on a user's behalf without learning their password.</li><li><strong>OpenID Connect (OIDC)</strong> adds an <strong>ID token</strong> (who the user is) on top of OAuth.</li></ul>
+<p>Authorization Code flow with <strong>PKCE</strong> (the standard for web, mobile and single-page apps):</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="PKCE binds the code to the app that started the flow, so an intercepted code is useless." style="min-width:760px"><defs><marker id="ah47" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah47a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah47b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah47d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah47)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah47)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah47)"/><line x1="747.0" y1="78.0" x2="747.0" y2="118.0" class="d-line" marker-end="url(#ah47)"/><line x1="662.0" y1="147.0" x2="618.0" y2="147.0" class="d-line" marker-end="url(#ah47)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">User clicks login</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle" class="d-sm">App redirects to the authorization server with a code challenge</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle" class="d-sm">User authenticates and consents</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle" class="d-sm">Server redirects back with a one-time code</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="151.5" text-anchor="middle" class="d-sm">App exchanges code and verifier for tokens</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="151.5" text-anchor="middle" class="d-sm">App calls the API with the access token</text></svg>
+</div>
+<figcaption>PKCE binds the code to the app that started the flow, so an intercepted code is useless.</figcaption></figure>
+<p>Short-lived access tokens plus long-lived <strong>refresh tokens</strong> (rotate and bind them). <strong>Client credentials</strong> flow is for service-to-service. Avoid the implicit flow and password grant. Validate <code>iss</code>, <code>aud</code>, <code>exp</code> and scopes.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd22-q05" data-topic="Security architecture" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does PKCE protect against?</p></div>
+        <ul class="q-options">
+          <li data-key="A">SQL injection <span class="q-why">No.</span></li>
+          <li data-key="B">An intercepted authorization code being redeemed by an attacker <span class="q-why">Correct.</span></li>
+          <li data-key="C">Weak passwords <span class="q-why">No.</span></li>
+          <li data-key="D">DNS spoofing <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The code is bound to the original code verifier.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>OAuth versus OIDC?</summary><div class="answer"><p>OAuth delegates authorization with access tokens; OIDC adds an ID token to say who the user is.</p></div></details>
+      </div>
+    </section>
+
+    <section id="crypto" data-track>
+      <h2>Encryption</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Kind</th><th>Use</th><th>Examples</th></tr></thead>
+<tbody>
+<tr><td><strong>Symmetric</strong></td><td>Encrypt bulk data, one shared key</td><td>AES-GCM, ChaCha20-Poly1305</td></tr><tr><td><strong>Asymmetric</strong></td><td>Key exchange, signatures, identity</td><td>RSA, ECDSA, Ed25519, X25519</td></tr><tr><td><strong>Hash</strong></td><td>Integrity, fingerprints (no key)</td><td>SHA-256</td></tr><tr><td><strong>MAC</strong></td><td>Integrity and authenticity with a shared key</td><td>HMAC-SHA256</td></tr><tr><td><strong>KDF</strong></td><td>Derive keys from secrets</td><td>PBKDF2, scrypt, HKDF</td></tr>
+</tbody>
+</table>
+</div>
+<ul><li><strong>In transit</strong>: TLS 1.2+ everywhere (also between internal services); <strong>mTLS</strong> gives mutual authentication; HSTS forces HTTPS.</li><li><strong>At rest</strong>: disk or database encryption, <strong>envelope encryption</strong>: a data key encrypts data, a master key in a <strong>KMS/HSM</strong> encrypts the data key, so rotating the master key is cheap.</li><li><strong>End-to-end encryption</strong>: only the endpoints hold keys (messaging apps), at the cost of server-side features like search.</li><li>Use <strong>authenticated encryption</strong> (GCM), never reuse a nonce, and rotate keys.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd22-q06" data-topic="Security architecture" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is envelope encryption?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Encrypting emails <span class="q-why">No.</span></li>
+          <li data-key="B">A data key encrypts the data and a master key in a KMS encrypts the data key <span class="q-why">Correct.</span></li>
+          <li data-key="C">Hashing twice <span class="q-why">No.</span></li>
+          <li data-key="D">Using RSA only <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Rotating the master key avoids re-encrypting all data.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>TLS versus mTLS?</summary><div class="answer"><p>TLS authenticates the server to the client; mTLS makes both sides present certificates.</p></div></details>
+      </div>
+    </section>
+
+    <section id="secrets" data-track>
+      <h2>Secrets management</h2>
+<p>Never commit secrets or bake them into images. Use a secret manager (Vault, AWS Secrets Manager), inject at runtime, scope per service, <strong>rotate</strong>, audit access, and prefer short-lived credentials (workload identity, IAM roles) over static keys. Scan repositories for leaked keys.</p>
+    </section>
+
+    <section id="network" data-track>
+      <h2>Network security and zero trust</h2>
+<p>Traditional model: a hard perimeter, trusted inside. <strong>Zero trust</strong>: <em>never trust, always verify</em>: authenticate and authorize every request regardless of network location, with device and identity checks, microsegmentation and least-privilege access.</p>
+<p>Practical layers: WAF and DDoS protection at the edge, private subnets for data stores, security groups as allow-lists, egress control, API gateway with authentication and rate limits, service mesh with mTLS between services.</p>
+    </section>
+
+    <section id="attacks" data-track>
+      <h2>Common attacks and defences</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Attack</th><th>Defence</th></tr></thead>
+<tbody>
+<tr><td><strong>SQL injection</strong></td><td>Parameterised queries, never string concatenation</td></tr><tr><td><strong>XSS</strong></td><td>Output encoding, Content-Security-Policy, HttpOnly cookies</td></tr><tr><td><strong>CSRF</strong></td><td>SameSite cookies, anti-CSRF tokens</td></tr><tr><td><strong>SSRF</strong></td><td>Allow-list outbound destinations, block metadata IPs</td></tr><tr><td><strong>IDOR / BOLA</strong></td><td>Object-level authorization on every access</td></tr><tr><td><strong>Brute force / credential stuffing</strong></td><td>Rate limits, MFA, breached-password checks</td></tr><tr><td><strong>DDoS</strong></td><td>CDN, rate limiting, autoscaling, scrubbing services</td></tr><tr><td><strong>Supply chain</strong></td><td>Pin and verify dependencies, SBOM, signed artifacts</td></tr><tr><td><strong>Insider threat</strong></td><td>Least privilege, audit logs, approvals</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd22-03.py">import sqlite3
+db = sqlite3.connect(":memory:")
+db.executescript("CREATE TABLE users(name TEXT, secret TEXT); INSERT INTO users VALUES('ana','a-secret'),('bo','b-secret');")
+evil = "x' OR '1'='1"
+unsafe = db.execute(f"SELECT name FROM users WHERE name = '{evil}'").fetchall()          # string building
+safe = db.execute("SELECT name FROM users WHERE name = ?", (evil,)).fetchall()           # parameter binding
+print("injected query returns:", unsafe, "| parameterised query returns:", safe)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>injected query returns: [('ana',), ('bo',)] | parameterised query returns: []</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd22-q07" data-topic="Security architecture" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you prevent SQL injection?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Escape quotes by hand <span class="q-why">Fragile.</span></li>
+          <li data-key="B">Use parameterised queries <span class="q-why">Correct.</span></li>
+          <li data-key="C">Use longer passwords <span class="q-why">Unrelated.</span></li>
+          <li data-key="D">Hide the table names <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Data is bound as parameters and never parsed as SQL.</p></div>
+      </div>
+    </section>
+
+    <section id="threat" data-track>
+      <h2>Threat modelling</h2>
+<p>Ask four questions: <strong>What are we building? What can go wrong? What will we do about it? Did we do a good job?</strong> Draw a data-flow diagram, mark trust boundaries, and walk <strong>STRIDE</strong>:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Letter</th><th>Threat</th><th>Property violated</th></tr></thead>
+<tbody>
+<tr><td><strong>S</strong></td><td>Spoofing identity</td><td>Authentication</td></tr><tr><td><strong>T</strong></td><td>Tampering with data</td><td>Integrity</td></tr><tr><td><strong>R</strong></td><td>Repudiation</td><td>Non-repudiation (audit logs)</td></tr><tr><td><strong>I</strong></td><td>Information disclosure</td><td>Confidentiality</td></tr><tr><td><strong>D</strong></td><td>Denial of service</td><td>Availability</td></tr><tr><td><strong>E</strong></td><td>Elevation of privilege</td><td>Authorization</td></tr>
+</tbody>
+</table>
+</div>
+<p>Also keep <strong>audit logs</strong> (who did what, tamper-evident), plan <strong>incident response</strong>, and follow privacy rules (data minimisation, retention limits, consent, regional residency such as GDPR).</p>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Authenticate strongly, authorize every object access on the server, encrypt in transit and at rest with managed keys, keep secrets out of code, assume the network is hostile, validate all input with parameterised interfaces, and threat-model new designs with STRIDE.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd22-q08" data-topic="Security architecture" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In STRIDE, what does the 'E' stand for?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Encryption <span class="q-why">No.</span></li>
+          <li data-key="B">Elevation of privilege <span class="q-why">Correct.</span></li>
+          <li data-key="C">Errors <span class="q-why">No.</span></li>
+          <li data-key="D">Eavesdropping <span class="q-why">That is information disclosure.</span></li>
+        </ul>
+        <div class="q-explain"><p>Gaining capabilities one should not have.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name the STRIDE letters.</summary><div class="answer"><p>Spoofing, Tampering, Repudiation, Information disclosure, Denial of service, Elevation of privilege.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Security architecture</h2>
+      <p class="muted">15 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Security architecture">
+<details class="recall iq" data-level="basic" data-topic="Security architecture"><summary><span class="tag ok">Basic</span> Authentication versus authorization?</summary><div class="answer"><p>Authentication verifies who you are; authorization determines what you may do.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Security architecture"><summary><span class="tag ok">Basic</span> How should passwords be stored?</summary><div class="answer"><p>As salted hashes from a slow, memory-hard function such as argon2id, scrypt or bcrypt. Never plaintext, never fast hashes like MD5 or plain SHA-256.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Security architecture"><summary><span class="tag ok">Basic</span> How do you prevent SQL injection?</summary><div class="answer"><p>Parameterised queries or prepared statements so user input is bound as data, plus least-privileged database accounts.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Security architecture"><summary><span class="tag warn">Medium</span> Sessions versus JWTs?</summary><div class="answer"><p>Sessions keep state on the server and are easy to revoke; JWTs are self-contained and verifiable by any service but hard to revoke, so use short lifetimes and refresh tokens.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Security architecture"><summary><span class="tag warn">Medium</span> Explain the OAuth 2.0 authorization code flow with PKCE.</summary><div class="answer"><p>The app redirects to the authorization server with a code challenge; after login it receives a one-time code and exchanges it with the code verifier for tokens, so an intercepted code is useless.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Security architecture"><summary><span class="tag warn">Medium</span> OAuth versus OpenID Connect?</summary><div class="answer"><p>OAuth delegates authorization with access tokens; OIDC adds an ID token and standard claims to authenticate the user.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Security architecture"><summary><span class="tag warn">Medium</span> What is IDOR/BOLA and how do you prevent it?</summary><div class="answer"><p>Accessing another user&#x27;s object by changing an id. Enforce object-level authorization on the server for every request.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Security architecture"><summary><span class="tag warn">Medium</span> Symmetric versus asymmetric encryption?</summary><div class="answer"><p>Symmetric (AES) uses one shared key and is fast for bulk data; asymmetric (RSA, ECC) uses key pairs for key exchange and signatures. TLS combines both.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Security architecture"><summary><span class="tag warn">Medium</span> What is envelope encryption?</summary><div class="answer"><p>Data is encrypted with a data key, which is encrypted by a master key in a KMS or HSM. Rotating the master key re-wraps small data keys instead of re-encrypting all data.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Security architecture"><summary><span class="tag bad">Advanced</span> What is zero trust?</summary><div class="answer"><p>No implicit trust from network location: every request is authenticated, authorized and encrypted, with device and identity checks, microsegmentation and least privilege.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Security architecture"><summary><span class="tag bad">Advanced</span> How do you secure service-to-service calls?</summary><div class="answer"><p>mTLS (often via a service mesh) for mutual authentication, short-lived workload identities, per-service authorization policies and network policies.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Security architecture"><summary><span class="tag bad">Advanced</span> Explain CSRF and its defences.</summary><div class="answer"><p>A malicious site makes the user&#x27;s browser send an authenticated request. Defend with SameSite cookies, anti-CSRF tokens and checking Origin headers.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Security architecture"><summary><span class="tag bad">Advanced</span> How do you manage secrets?</summary><div class="answer"><p>Store in a secret manager, inject at runtime, scope narrowly, rotate, audit and prefer short-lived credentials such as workload identity over static keys; never commit them.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Security architecture"><summary><span class="tag bad">Advanced</span> Walk through STRIDE on a login endpoint.</summary><div class="answer"><p>Spoofing (credential stuffing, MFA), Tampering (TLS, signed tokens), Repudiation (audit logs), Information disclosure (generic errors, no secrets in logs), Denial of service (rate limits), Elevation (authorization checks).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Security architecture"><summary><span class="tag bad">Advanced</span> How do you defend an API against abuse?</summary><div class="answer"><p>Authentication, per-key rate limits and quotas, WAF and bot detection, input validation and size limits, idempotency keys, monitoring and anomaly alerts.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd21-cloud-deployment.html"><span class="dir">Previous</span><span>SD21 Cloud architecture and deployment: containers, Kubernetes, multi-region and cost</span></a>
+      <a class="next" href="sd23-ml-systems.html"><span class="dir">Next</span><span>SD23 Designing ML and AI systems: feature stores, serving, recommendation, search and LLM applications</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

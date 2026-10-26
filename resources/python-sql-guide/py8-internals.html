@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="PY8">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Python internals: objects, names, bytecode, memory, the import system and the data model | Python + SQL</title>
+<meta name="description" content="How Python really works: everything is an object, names and binding, scopes (LEGB), the attribute lookup order, method resolution, reference counting and the cycle collector, interning, how dicts and lists are built, bytecode and the import machinery.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part PY8</p>
+      <h1>Python internals: objects, names, bytecode, memory, the import system and the data model</h1>
+      <p class="lede">Knowing the mechanism turns Python's surprises into predictions. This part explains the model underneath the syntax, with experiments you can reproduce, so you can answer interview questions about why, not only what.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="objects" data-track>
+      <h2>Everything is an object</h2>
+<p>Every value (numbers, functions, classes, modules) is an <strong>object</strong> with an <strong>identity</strong> (<code>id</code>), a <strong>type</strong> and a <strong>value</strong>. A variable is a <strong>name bound to an object</strong>, not a box holding a value. Assignment binds a name; it never copies.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py8-01.py">a = [1, 2, 3]
+b = a                       # binds a second name to the same list
+b.append(4)
+print("a:", a, "| same object:", a is b, "| equal copy is a different object:", a is list(a), a == list(a))
+x = 10
+def show(n): return id(n) == id(x)
+print("function parameters bind to the same object:", show(x))
+print("types:", type(3).__name__, type(len).__name__, type(type).__name__, type(None).__name__, "| a function is an object with attributes:", hasattr(show, "__code__"))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>a: [1, 2, 3, 4] | same object: True | equal copy is a different object: False True
+function parameters bind to the same object: True
+types: int builtin_function_or_method type NoneType | a function is an object with attributes: True</code></pre>
+<p><code>is</code> compares identity, <code>==</code> compares value (via <code>__eq__</code>). Use <code>is</code> only for singletons (<code>None</code>, <code>True</code>, <code>False</code>).</p>
+<h3>Small integers and interning</h3>
+<p>CPython caches small integers (-5 to 256) and may intern some strings, so <code>is</code> can appear to work and then fail. Never rely on it.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py8-02.py">a = int("256"); b = int("256")
+c = int("100000"); d = int("100000")
+print("256 shared:", a is b, "| 100000 shared:", c is d, "| values equal either way:", a == b, c == d)
+s1 = "hello world"; s2 = "".join(["hello", " ", "world"])
+print("equal strings, different objects:", s1 == s2, s1 is s2)
+import sys
+print("interned explicitly:", sys.intern(s1) is sys.intern(s2))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>256 shared: True | 100000 shared: False | values equal either way: True True
+equal strings, different objects: True False
+interned explicitly: True</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py8-q01" data-topic="Python internals" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does <code>b = a</code> do when a is a list?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Copies the list <span class="q-why">No.</span></li>
+          <li data-key="B">Binds b to the same list object <span class="q-why">Correct.</span></li>
+          <li data-key="C">Creates a deep copy <span class="q-why">No.</span></li>
+          <li data-key="D">Freezes the list <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Mutations through either name are visible through both.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>is versus ==?</summary><div class="answer"><p>is checks object identity; == checks value equality via __eq__.</p></div></details>
+      </div>
+    </section>
+
+    <section id="scopes" data-track>
+      <h2>Names, scopes and LEGB</h2>
+<p>Python resolves a name by searching <strong>L</strong>ocal, <strong>E</strong>nclosing function, <strong>G</strong>lobal, then <strong>B</strong>uilt-in scopes. A name assigned anywhere in a function is local to that function for the whole function body, which explains <code>UnboundLocalError</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py8-03.py">x = "global"
+def outer():
+    x = "enclosing"
+    def inner():
+        return x                 # found in the enclosing scope
+    return inner()
+def broken():
+    try:
+        print(x)                 # x is assigned later in this function, so it is local, and not yet bound
+        x = "local"
+    except UnboundLocalError as e:
+        return f"UnboundLocalError: {e}"
+def counter():
+    n = 0
+    def inc():
+        nonlocal n               # rebind the enclosing variable
+        n += 1
+        return n
+    return inc
+c = counter(); c(); c()
+print(outer(), "|", broken(), "| closure state:", c())</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>enclosing | UnboundLocalError: cannot access local variable 'x' where it is not associated with a value | closure state: 3</code></pre>
+<h3>Mutable default arguments</h3>
+<p>Defaults are evaluated <strong>once</strong>, when the function is defined, and stored on the function object.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py8-04.py">def append_to(item, bucket=[]):
+    bucket.append(item); return bucket
+print(append_to(1), append_to(2), append_to.__defaults__)
+def append_safe(item, bucket=None):
+    bucket = [] if bucket is None else bucket
+    bucket.append(item); return bucket
+print(append_safe(1), append_safe(2))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[1, 2] [1, 2] ([1, 2],)
+[1] [2]</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py8-q02" data-topic="Python internals" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What causes UnboundLocalError?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Using a global <span class="q-why">No.</span></li>
+          <li data-key="B">Reading a name that is assigned later in the same function, so it is local but unbound <span class="q-why">Correct.</span></li>
+          <li data-key="C">Typos <span class="q-why">That is NameError.</span></li>
+          <li data-key="D">Recursion <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Assignment anywhere in the function makes the name local throughout.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-py8-q03" data-topic="Python internals" data-type="single" data-answer="B">
+        <div class="q-stem"><p>When are default argument values evaluated?</p></div>
+        <ul class="q-options">
+          <li data-key="A">On every call <span class="q-why">No.</span></li>
+          <li data-key="B">Once, when the function is defined <span class="q-why">Correct.</span></li>
+          <li data-key="C">When first used <span class="q-why">No.</span></li>
+          <li data-key="D">At import of the caller <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>That is why mutable defaults are shared between calls.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is LEGB?</summary><div class="answer"><p>The name lookup order: Local, Enclosing, Global, Built-in.</p></div></details>
+      </div>
+    </section>
+
+    <section id="lookup" data-track>
+      <h2>Attribute lookup and the data model</h2>
+<p><code>obj.name</code> runs a defined search: data descriptors on the type, then the instance <code>__dict__</code>, then non-data descriptors and class attributes along the <strong>method resolution order (MRO)</strong>, then <code>__getattr__</code>. Functions on classes are descriptors that produce <strong>bound methods</strong>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py8-05.py">class A:
+    kind = "class attribute"
+    def who(self): return "A.who"
+class B(A):
+    def who(self): return "B.who -&gt; " + super().who()
+class C(A):
+    def who(self): return "C.who -&gt; " + super().who()
+class D(B, C): pass
+print([k.__name__ for k in D.__mro__])
+print(D().who())
+d = D()
+print("instance dict empty:", d.__dict__, "| lookup finds class attribute:", d.kind)
+d.kind = "instance attribute"
+print("now shadowed on the instance:", d.kind, "| class unchanged:", D.kind)
+m = d.who
+print("bound method has __self__:", m.__self__ is d, "| underlying function:", m.__func__.__qualname__)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>['D', 'B', 'C', 'A', 'object']
+B.who -&gt; C.who -&gt; A.who
+instance dict empty: {} | lookup finds class attribute: class attribute
+now shadowed on the instance: instance attribute | class unchanged: class attribute
+bound method has __self__: True | underlying function: B.who</code></pre>
+<p>C3 linearisation gives <code>D -&gt; B -&gt; C -&gt; A -&gt; object</code>, so <code>super()</code> follows the MRO, not only the parent.</p>
+<h3>Special methods make objects behave like built-ins</h3>
+<p><code>len(x)</code> calls <code>type(x).__len__(x)</code>; <code>x + y</code> calls <code>__add__</code>; <code>with</code> calls <code>__enter__</code>/<code>__exit__</code>; <code>for</code> calls <code>__iter__</code>/<code>__next__</code>. Special methods are looked up on the <strong>type</strong>, not the instance.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py8-06.py">class Vec:
+    __slots__ = ("x", "y")
+    def __init__(self, x, y): self.x, self.y = x, y
+    def __repr__(self): return f"Vec({self.x}, {self.y})"
+    def __add__(self, o): return Vec(self.x + o.x, self.y + o.y)
+    def __eq__(self, o): return isinstance(o, Vec) and (self.x, self.y) == (o.x, o.y)
+    def __hash__(self): return hash((self.x, self.y))
+    def __bool__(self): return bool(self.x or self.y)
+    def __len__(self): return 2
+v = Vec(1, 2)
+print(v + Vec(3, 4), "| equal:", v == Vec(1, 2), "| usable in a set:", len({v, Vec(1, 2)}) == 1, "| truthiness:", bool(Vec(0, 0)), "| no __dict__:", not hasattr(v, "__dict__"))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>Vec(4, 6) | equal: True | usable in a set: True | truthiness: False | no __dict__: True</code></pre>
+<p>If you define <code>__eq__</code> you should define <code>__hash__</code> consistently (equal objects must have equal hashes), or the class becomes unhashable.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py8-q04" data-topic="Python internals" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does super() follow?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Only the direct parent <span class="q-why">Not exactly.</span></li>
+          <li data-key="B">The method resolution order of the instance's class <span class="q-why">Correct.</span></li>
+          <li data-key="C">Alphabetical order <span class="q-why">No.</span></li>
+          <li data-key="D">Reverse order <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>In diamond inheritance it visits each class once.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-py8-q05" data-topic="Python internals" data-type="single" data-answer="B">
+        <div class="q-stem"><p>If you define __eq__ without __hash__, what happens?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Nothing <span class="q-why">No.</span></li>
+          <li data-key="B">The class becomes unhashable <span class="q-why">Correct.</span></li>
+          <li data-key="C">Hash becomes id() <span class="q-why">No.</span></li>
+          <li data-key="D">It errors on definition <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Python sets __hash__ to None to keep the equal-implies-same-hash rule.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is a descriptor?</summary><div class="answer"><p>An object with __get__ (and optionally __set__ or __delete__) that customises attribute access, as property and methods do.</p></div></details>
+      </div>
+    </section>
+
+    <section id="memory" data-track>
+      <h2>Memory: reference counting and garbage collection</h2>
+<p>CPython frees most objects with <strong>reference counting</strong>: when the count of references hits zero the object is destroyed immediately. Reference cycles need the <strong>cyclic garbage collector</strong> (<code>gc</code>).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py8-07.py">import sys, gc, weakref
+x = object()
+print("refcount after creating, one name plus the call argument:", sys.getrefcount(x))
+y = x
+print("after a second name:", sys.getrefcount(x))
+del y
+class Node:
+    def __init__(self): self.other = None
+a, b = Node(), Node()
+a.other, b.other = b, a                     # a reference cycle
+ref = weakref.ref(a)
+del a, b
+print("alive after del (cycle keeps it):", ref() is not None)
+gc.collect()
+print("alive after gc.collect():", ref() is not None)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>refcount after creating, one name plus the call argument: 2
+after a second name: 3
+alive after del (cycle keeps it): True
+alive after gc.collect(): False</code></pre>
+<p><code>weakref</code> references do not keep objects alive (used by caches). <code>__del__</code> runs when an object is destroyed but its timing is not guaranteed on other implementations; use context managers for cleanup.</p>
+<h3>How built-in containers are built</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Type</th><th>Implementation</th><th>Consequence</th></tr></thead>
+<tbody>
+<tr><td><code>list</code></td><td>Dynamic array of pointers, over-allocates</td><td><code>append</code> amortised O(1); <code>insert(0, x)</code> O(n); index O(1)</td></tr><tr><td><code>tuple</code></td><td>Fixed array</td><td>Immutable, hashable if elements are</td></tr><tr><td><code>dict</code></td><td>Open-addressing hash table, insertion ordered</td><td>Average O(1) lookup; keys must be hashable</td></tr><tr><td><code>set</code></td><td>Hash table of keys only</td><td>Average O(1) membership</td></tr><tr><td><code>str</code></td><td>Immutable Unicode sequence</td><td><code>s += x</code> in a loop is O(n^2); use <code>"".join</code></td></tr><tr><td><code>deque</code></td><td>Doubly linked blocks</td><td>O(1) at both ends, O(n) in the middle</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/py8-08.py">import timeit
+lst = list(range(100_000)); st = set(lst)
+t_list = timeit.timeit("99_999 in lst", globals={"lst": lst}, number=200)
+t_set = timeit.timeit("99_999 in st", globals={"st": st}, number=200)
+print("set lookup beats list scan by more than 50x:", t_list / t_set &gt; 50)
+d = {}
+for k in ["b", "a", "c"]: d[k] = 1
+print("dict preserves insertion order:", list(d), "| mutable keys are rejected:", end=" ")
+try: {[1]: 2}
+except TypeError as e: print(e)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>set lookup beats list scan by more than 50x: True
+dict preserves insertion order: ['b', 'a', 'c'] | mutable keys are rejected: cannot use 'list' as a dict key (unhashable type: 'list')</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py8-q06" data-topic="Python internals" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How does CPython free reference cycles?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Reference counting alone <span class="q-why">Cannot free cycles.</span></li>
+          <li data-key="B">The cyclic garbage collector (gc) <span class="q-why">Correct.</span></li>
+          <li data-key="C">The OS <span class="q-why">No.</span></li>
+          <li data-key="D">It never does <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>gc.collect() forces a pass.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-py8-q07" data-topic="Python internals" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is string concatenation in a loop O(n^2)?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Strings are mutable <span class="q-why">They are immutable.</span></li>
+          <li data-key="B">Each += creates a new string and copies the old contents <span class="q-why">Correct.</span></li>
+          <li data-key="C">The GIL <span class="q-why">No.</span></li>
+          <li data-key="D">Unicode <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Collect parts in a list and use ''.join.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why can a refcount of an object look higher than expected?</summary><div class="answer"><p>Temporary references, such as the argument passed to getrefcount, add to the count.</p></div></details>
+      </div>
+    </section>
+
+    <section id="bytecode" data-track>
+      <h2>Bytecode and execution</h2>
+<p>Python compiles source to <strong>bytecode</strong> for a stack-based virtual machine, cached in <code>__pycache__</code>. The <code>dis</code> module shows it. Exact opcodes change between versions, so treat them as illustration.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py8-09.py">import dis
+def add(a, b): return a + b
+ops = [i.opname for i in dis.get_instructions(add)]
+print("add() uses a small stack machine; instruction kinds include load and return:", any(o.startswith("LOAD") for o in ops), any("RETURN" in o for o in ops))
+code = add.__code__
+print("argument names:", code.co_varnames, "| argument count:", code.co_argcount, "| constants:", code.co_consts)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>add() uses a small stack machine; instruction kinds include load and return: True True
+argument names: ('a', 'b') | argument count: 2 | constants: (None,)</code></pre>
+<p>Consequences: every function call creates a <strong>frame</strong>; attribute and global lookups cost dictionary lookups (so binding <code>local_append = items.append</code> speeds hot loops); recent versions specialise bytecode adaptively for speed.</p>
+    </section>
+
+    <section id="imports" data-track>
+      <h2>The import system</h2>
+<p><code>import m</code> finds <code>m</code> via <code>sys.modules</code> (cache), then finders on <code>sys.path</code>; it executes the module <strong>once</strong> and binds the module object. Circular imports fail when a module is used before it finishes executing.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py8-10.py">import sys, importlib, types
+mod = types.ModuleType("demo_mod")
+exec("VALUE = 42\ndef hello(): return 'hi from demo_mod'", mod.__dict__)
+sys.modules["demo_mod"] = mod                     # register it like a normal import would
+import demo_mod
+print(demo_mod.VALUE, demo_mod.hello(), "| cached:", "demo_mod" in sys.modules, "| same object on re-import:", importlib.import_module("demo_mod") is demo_mod)
+print("__name__ of the main script:", __name__, "| so `if __name__ == '__main__'` runs only when executed directly")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>42 hi from demo_mod | cached: True | same object on re-import: True
+__name__ of the main script: __main__ | so `if __name__ == '__main__'` runs only when executed directly</code></pre>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why does a module run only once on import?</summary><div class="answer"><p>It is cached in sys.modules, and later imports return the cached module object.</p></div></details>
+      </div>
+    </section>
+
+    <section id="gil" data-track>
+      <h2>The GIL and threads, revisited</h2>
+<p>The <strong>Global Interpreter Lock</strong> lets one thread run Python bytecode at a time in CPython, protecting reference counts. Consequences: CPU-bound threads do not speed up (use processes), I/O-bound threads do (the lock is released while waiting), and C extensions (NumPy) can release it. Recent Python versions offer an optional free-threaded build; check your version's documentation before relying on it. See <a href="py4-concurrency.html">PY4</a>.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py8-q08" data-topic="Python internals" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which workload benefits from threads in CPython?</p></div>
+        <ul class="q-options">
+          <li data-key="A">CPU-bound number crunching <span class="q-why">The GIL prevents speedup.</span></li>
+          <li data-key="B">I/O-bound work such as network calls <span class="q-why">Correct.</span></li>
+          <li data-key="C">Both equally <span class="q-why">No.</span></li>
+          <li data-key="D">Neither <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The lock is released while waiting for I/O.</p></div>
+      </div>
+    </section>
+
+    <section id="descriptors" data-track>
+      <h2>Descriptors, properties and metaclasses in one view</h2>
+<p><code>property</code>, <code>classmethod</code>, <code>staticmethod</code> and bound methods are all <strong>descriptors</strong>: objects with <code>__get__</code>. Classes are objects created by <code>type</code> (the default metaclass); <code>__init_subclass__</code> and class decorators handle most needs that once required metaclasses.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py8-11.py">class Positive:
+    def __set_name__(self, owner, name): self.name = "_" + name
+    def __get__(self, obj, owner=None): return self if obj is None else getattr(obj, self.name)
+    def __set__(self, obj, value):
+        if value &lt;= 0: raise ValueError("must be positive")
+        setattr(obj, self.name, value)
+class Product:
+    price = Positive()
+    def __init__(self, price): self.price = price
+p = Product(5)
+try: p.price = -1
+except ValueError as e: print("validation via descriptor:", e, "| price still", p.price)
+class Registry:
+    items = []
+    def __init_subclass__(cls, **kw): Registry.items.append(cls.__name__)
+class Plugin1(Registry): pass
+class Plugin2(Registry): pass
+print("subclasses registered automatically:", Registry.items, "| type of a class:", type(Product).__name__)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>validation via descriptor: must be positive | price still 5
+subclasses registered automatically: ['Plugin1', 'Plugin2'] | type of a class: type</code></pre>
+    </section>
+
+    <section id="perf" data-track>
+      <h2>Performance mental model</h2>
+<ol><li>Algorithms and data structures dominate (list scan versus set lookup above).</li><li>Avoid work in hot loops: hoist attribute lookups, use comprehensions and built-ins implemented in C (<code>sum</code>, <code>sorted</code>, <code>str.join</code>).</li><li>Measure with <code>timeit</code>, <code>cProfile</code>, <code>tracemalloc</code> before optimising.</li><li>Use the right tool for the job: NumPy or pandas for vectorised numerics, multiprocessing for CPU-bound work, asyncio for many network waits, Cython or Rust extensions for tight kernels.</li></ol>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Names refer to objects; assignment shares, never copies. Name resolution follows LEGB, attribute lookup follows descriptors, instance dict and the MRO, and memory is reference counted with a cycle collector. When behaviour surprises you, ask which object a name points to and which scope or class is searched.</p></div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Python internals</h2>
+      <p class="muted">15 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Python internals">
+<details class="recall iq" data-level="basic" data-topic="Python internals"><summary><span class="tag ok">Basic</span> What does it mean that everything in Python is an object?</summary><div class="answer"><p>Values, functions, classes and modules all have identity, type and value, and names are references to them.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Python internals"><summary><span class="tag ok">Basic</span> is versus ==?</summary><div class="answer"><p>is tests whether two names refer to the same object; == tests value equality. Use is for None.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Python internals"><summary><span class="tag ok">Basic</span> Why is a mutable default argument a bug?</summary><div class="answer"><p>The default is created once at function definition and shared across calls, so mutations persist. Use None and create the object inside.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python internals"><summary><span class="tag warn">Medium</span> Explain LEGB.</summary><div class="answer"><p>Names are resolved in Local, Enclosing function, Global then Built-in scopes. nonlocal and global declare which scope to rebind.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python internals"><summary><span class="tag warn">Medium</span> What is the MRO and how is it computed?</summary><div class="answer"><p>The method resolution order is the linearisation of a class and its bases using C3, used by attribute lookup and super(). Inspect it with Class.__mro__.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python internals"><summary><span class="tag warn">Medium</span> How does attribute lookup work?</summary><div class="answer"><p>Data descriptors on the type, then the instance __dict__, then non-data descriptors and class attributes along the MRO, then __getattr__ as a fallback.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python internals"><summary><span class="tag warn">Medium</span> How does CPython manage memory?</summary><div class="answer"><p>Reference counting frees objects immediately at zero, and a cyclic garbage collector reclaims reference cycles.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python internals"><summary><span class="tag warn">Medium</span> What is the GIL and what does it imply?</summary><div class="answer"><p>A lock allowing one thread to execute Python bytecode at a time in CPython. CPU-bound threads do not speed up; I/O-bound threads do. Use multiprocessing or native extensions for CPU work.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python internals"><summary><span class="tag warn">Medium</span> Why define __hash__ with __eq__?</summary><div class="answer"><p>Equal objects must hash equally for dict and set correctness. Defining __eq__ alone makes instances unhashable.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python internals"><summary><span class="tag bad">Advanced</span> What is a descriptor?</summary><div class="answer"><p>An object with __get__, __set__ or __delete__ stored on a class that controls attribute access. property, methods, classmethod and staticmethod are descriptors.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python internals"><summary><span class="tag bad">Advanced</span> What are __slots__ for?</summary><div class="answer"><p>They replace the per-instance dict with fixed attributes, reducing memory and preventing arbitrary new attributes, at some cost in flexibility.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python internals"><summary><span class="tag bad">Advanced</span> How does import work?</summary><div class="answer"><p>Python checks sys.modules, then uses finders on sys.path to locate and load the module, executes it once and caches it, which is also why circular imports can see partially initialised modules.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python internals"><summary><span class="tag bad">Advanced</span> Why is s += x in a loop slow for strings?</summary><div class="answer"><p>Strings are immutable, so each concatenation can copy the whole string (O(n^2) total). Collect pieces and use &#x27;&#x27;.join().</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python internals"><summary><span class="tag bad">Advanced</span> What are weak references used for?</summary><div class="answer"><p>To refer to an object without keeping it alive, for caches, observers and parent pointers, avoiding leaks from cycles.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python internals"><summary><span class="tag bad">Advanced</span> What does the dis module show?</summary><div class="answer"><p>The bytecode instructions the interpreter runs for a function. Useful for understanding evaluation order and cost; opcodes vary between versions.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="py7-data-web.html"><span class="dir">Previous</span><span>PY7 Working with data formats and the web: CSV, XML, URLs, HTTP clients and servers</span></a>
+      <a class="next" href="py9-design-patterns.html"><span class="dir">Next</span><span>PY9 Clean code, SOLID and design patterns in Python</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

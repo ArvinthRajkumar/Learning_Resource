@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="PS0">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Using SQL from Python: DB-API, transactions, ORMs, pandas and pipelines | Python + SQL</title>
+<meta name="description" content="The DB-API with sqlite3, safe parameter binding, transactions, row factories, bulk loads, the N+1 problem, SQLAlchemy Core and ORM, pandas, connection pooling, migrations, async access, testing and a small ETL pipeline.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part PS0</p>
+      <h1>Using SQL from Python: DB-API, transactions, ORMs, pandas and pipelines</h1>
+      <p class="lede">SQL answers questions; Python glues the answers into programs. This part shows how the two work together correctly: safe queries, transactions that actually commit and roll back, efficient batches, ORMs and when to use them, and how to test database code.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="dbapi" data-track>
+      <h2>The DB-API and sqlite3</h2>
+<h3>One interface, many databases</h3>
+<p>Python defines a standard database interface, <strong>DB-API 2.0 (PEP 249)</strong>. Every driver follows it: <code>sqlite3</code> (built in), <code>psycopg</code> (PostgreSQL), <code>mysqlclient</code> and <code>PyMySQL</code> (MySQL), <code>pyodbc</code> (SQL Server), <code>oracledb</code> (Oracle). The core objects are the same: a <strong>connection</strong>, a <strong>cursor</strong>, <code>execute</code>, <code>fetch*</code>, <code>commit</code>, <code>rollback</code>. Only the connection string and the parameter placeholder style (<code>?</code>, <code>%s</code>, <code>:name</code>) differ.</p>
+<h3>First program</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps0-01.py">import sqlite3
+
+con = sqlite3.connect(":memory:")            # a database held in memory (use a filename for a file)
+cur = con.cursor()
+cur.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER)")
+cur.execute("INSERT INTO users (name, age) VALUES (?, ?)", ("Ada", 36))
+cur.executemany("INSERT INTO users (name, age) VALUES (?, ?)", [("Ben", 25), ("Cy", 41)])
+con.commit()
+
+cur.execute("SELECT id, name, age FROM users WHERE age &gt; ? ORDER BY age", (30,))
+print(cur.fetchall())
+print(cur.description[0][0], "|", cur.rowcount)
+cur.execute("SELECT COUNT(*) FROM users")
+print(cur.fetchone()[0])
+con.close()</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[(1, 'Ada', 36), (3, 'Cy', 41)]
+id | -1
+3</code></pre>
+<p>Fetching: <code>fetchone()</code> (one row or <code>None</code>), <code>fetchmany(n)</code>, <code>fetchall()</code> (everything in memory). A cursor is also <strong>iterable</strong>, which streams rows and is best for big results: <code>for row in cur.execute(...)</code>.</p>
+<h3>Named rows</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps0-02.py">import sqlite3
+con = sqlite3.connect(":memory:")
+con.row_factory = sqlite3.Row                 # rows behave like dicts and tuples
+con.execute("CREATE TABLE t (a INTEGER, b TEXT)")
+con.execute("INSERT INTO t VALUES (1, 'x'), (2, 'y')")
+for row in con.execute("SELECT a, b FROM t ORDER BY a"):
+    print(row["a"], row["b"], tuple(row), dict(row))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>1 x (1, 'x') {'a': 1, 'b': 'x'}
+2 y (2, 'y') {'a': 2, 'b': 'y'}</code></pre>
+<h3>Types</h3>
+<p>sqlite3 maps <code>None</code>/NULL, <code>int</code>, <code>float</code>, <code>str</code>, <code>bytes</code> automatically. Dates and decimals need explicit handling: store ISO strings or use adapters. Other drivers map <code>date</code>, <code>datetime</code>, <code>Decimal</code> and JSON natively.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps0-03.py">import sqlite3, datetime, json
+con = sqlite3.connect(":memory:")
+con.execute("CREATE TABLE ev (at TEXT, payload TEXT)")
+now = datetime.datetime(2024, 3, 5, 12, 0, tzinfo=datetime.timezone.utc)
+con.execute("INSERT INTO ev VALUES (?, ?)", (now.isoformat(), json.dumps({"k": [1, 2]})))
+at, payload = con.execute("SELECT at, payload FROM ev").fetchone()
+print(datetime.datetime.fromisoformat(at).year, json.loads(payload)["k"])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>2024 [1, 2]</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-ps0-q01" data-topic="Python with SQL" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What do all Python database drivers have in common?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The same SQL dialect <span class="q-why">Dialects differ.</span></li>
+          <li data-key="B">The DB-API 2.0 interface: connect, cursor, execute, fetch, commit, rollback <span class="q-why">Correct.</span></li>
+          <li data-key="C">The same placeholder <span class="q-why">Placeholder style differs.</span></li>
+          <li data-key="D">Nothing <span class="q-why">They share PEP 249.</span></li>
+        </ul>
+        <div class="q-explain"><p>That is why code structure is similar across sqlite3, psycopg and others.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name the DB-API core objects.</summary><div class="answer"><p>Connection, cursor, execute and fetch methods, commit and rollback.</p></div></details>
+      </div>
+    </section>
+
+    <section id="injection" data-track>
+      <h2>Parameters and SQL injection</h2>
+<h3>The most important rule</h3>
+<p><strong>Never build SQL by joining strings with user input.</strong> An attacker supplies text that changes the query. This is <strong>SQL injection</strong>, one of the most common and damaging vulnerabilities.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps0-04.py">import sqlite3
+con = sqlite3.connect(":memory:")
+con.execute("CREATE TABLE users (name TEXT, secret TEXT)")
+con.execute("INSERT INTO users VALUES ('ada', 's3cret'), ('ben', 'hunter2')")
+
+user_input = "nobody' OR '1'='1"
+
+unsafe = "SELECT name, secret FROM users WHERE name = '%s'" % user_input
+print("UNSAFE query text:", unsafe)
+print("unsafe rows leaked:", con.execute(unsafe).fetchall())
+
+safe_rows = con.execute("SELECT name, secret FROM users WHERE name = ?", (user_input,)).fetchall()
+print("safe rows:", safe_rows)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>UNSAFE query text: SELECT name, secret FROM users WHERE name = 'nobody' OR '1'='1'
+unsafe rows leaked: [('ada', 's3cret'), ('ben', 'hunter2')]
+safe rows: []</code></pre>
+<p>With <strong>parameter binding</strong> the SQL text and the values travel separately; the database never parses the value as SQL. Placeholders: <code>?</code> (sqlite3), <code>%s</code> (psycopg, MySQL), <code>:name</code> or <code>%(name)s</code> (named style).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps0-05.py">import sqlite3
+con = sqlite3.connect(":memory:")
+con.execute("CREATE TABLE t (a INTEGER, b TEXT)")
+con.execute("INSERT INTO t VALUES (:a, :b)", {"a": 1, "b": "one"})
+ids = [1, 2, 3]
+placeholders = ", ".join("?" * len(ids))          # build placeholders, not values
+print(con.execute(f"SELECT {placeholders} AS expanded", ids).fetchall())</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[(1, 2, 3)]</code></pre>
+<h3>What cannot be a parameter</h3>
+<p>Placeholders replace <strong>values</strong> only, not <strong>identifiers</strong> (table or column names), keywords, or <code>ORDER BY</code> direction. If you must choose these dynamically, map user input through an <strong>allow-list</strong>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps0-06.py">ALLOWED_SORT = {"name": "name", "age": "age"}
+def order_clause(user_col, direction):
+    col = ALLOWED_SORT[user_col]                 # KeyError for anything unexpected
+    d = "DESC" if direction == "desc" else "ASC"
+    return f"ORDER BY {col} {d}"
+print(order_clause("age", "desc"))
+try:
+    order_clause("age; DROP TABLE users", "asc")
+except KeyError:
+    print("rejected")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>ORDER BY age DESC
+rejected</code></pre>
+<p>Also: give the application a <strong>least-privilege</strong> database account, and escape <code>LIKE</code> wildcards when searching for literal text.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-ps0-q02" data-topic="Python with SQL" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which line is safe against SQL injection?</p></div>
+        <ul class="q-options">
+          <li data-key="A">cur.execute("... WHERE name = '" + name + "'") <span class="q-why">String concatenation.</span></li>
+          <li data-key="B">cur.execute("... WHERE name = ?", (name,)) <span class="q-why">Correct.</span></li>
+          <li data-key="C">cur.execute(f"... WHERE name = '{name}'") <span class="q-why">f-string formatting.</span></li>
+          <li data-key="D">cur.execute("... WHERE name = '%s'" % name) <span class="q-why">String formatting.</span></li>
+        </ul>
+        <div class="q-explain"><p>Bind values as parameters so they are never parsed as SQL.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-ps0-q03" data-topic="Python with SQL" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Can you bind a table name as a parameter?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Yes, always <span class="q-why">No.</span></li>
+          <li data-key="B">No: placeholders are for values; map identifiers through an allow-list <span class="q-why">Correct.</span></li>
+          <li data-key="C">Only in SQLite <span class="q-why">No.</span></li>
+          <li data-key="D">Only for SELECT <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Identifiers and keywords cannot be parameters.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why do parameters prevent injection?</summary><div class="answer"><p>The SQL text and the values are sent separately, so values are never interpreted as SQL.</p></div></details>
+      </div>
+    </section>
+
+    <section id="transactions" data-track>
+      <h2>Transactions from Python</h2>
+<h3>Commit and rollback</h3>
+<p>Changes are not permanent until you <strong>commit</strong>. Use the connection as a <strong>context manager</strong>: it commits on success and rolls back if an exception occurs (it does not close the connection).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps0-07.py">import sqlite3
+con = sqlite3.connect(":memory:")
+con.execute("CREATE TABLE acct (name TEXT PRIMARY KEY, bal INTEGER NOT NULL CHECK (bal &gt;= 0))")
+con.executemany("INSERT INTO acct VALUES (?, ?)", [("alice", 100), ("bob", 20)])
+con.commit()
+
+def transfer(src, dst, amount):
+    with con:                                        # one transaction
+        con.execute("UPDATE acct SET bal = bal - ? WHERE name = ?", (amount, src))
+        con.execute("UPDATE acct SET bal = bal + ? WHERE name = ?", (amount, dst))
+
+transfer("alice", "bob", 30)
+print(con.execute("SELECT * FROM acct ORDER BY name").fetchall())
+try:
+    transfer("alice", "bob", 500)                     # violates CHECK, whole transaction rolls back
+except sqlite3.IntegrityError as e:
+    print("failed:", e)
+print(con.execute("SELECT * FROM acct ORDER BY name").fetchall())</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[('alice', 70), ('bob', 50)]
+failed: CHECK constraint failed: bal &gt;= 0
+[('alice', 70), ('bob', 50)]</code></pre>
+<h3>Good habits</h3>
+<ul><li>Keep transactions <strong>short</strong>: do slow work (HTTP calls, user input) outside them.</li><li>One logical operation = one transaction. Do not commit after every statement in a loop unless you must.</li><li><strong>Retry</strong> on serialisation failures and deadlocks (with backoff).</li><li>Do not share a connection between threads unless the driver says it is safe; use one connection per thread or a pool.</li><li>Use <code>try/finally</code> or <code>with</code> to guarantee connections are closed.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps0-08.py">import sqlite3
+from contextlib import closing
+with closing(sqlite3.connect(":memory:")) as con, con:      # closes the connection AND commits
+    con.execute("CREATE TABLE x (v INTEGER)")
+    con.execute("INSERT INTO x VALUES (1)")
+    print(con.execute("SELECT * FROM x").fetchall())</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[(1,)]</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-ps0-q04" data-topic="Python with SQL" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does <code>with con:</code> do for a sqlite3 connection?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Closes the connection <span class="q-why">It does not close it.</span></li>
+          <li data-key="B">Commits on success, rolls back on exception <span class="q-why">Correct.</span></li>
+          <li data-key="C">Starts a new database <span class="q-why">No.</span></li>
+          <li data-key="D">Locks the file forever <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use contextlib.closing as well if you also want it closed.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you make a transfer atomic from Python?</summary><div class="answer"><p>Run both updates inside one transaction (with con:) so any error rolls everything back.</p></div></details>
+      </div>
+    </section>
+
+    <section id="patterns" data-track>
+      <h2>Efficient access patterns</h2>
+<h3>Bulk inserts</h3>
+<p>Send many rows in one call and one transaction. This can be 10 to 100 times faster than inserting one by one with a commit each time.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps0-09.py">import sqlite3, time
+rows = [(i, f"user{i}") for i in range(20000)]
+
+def one_by_one():
+    con = sqlite3.connect(":memory:")
+    con.execute("CREATE TABLE u (id INTEGER, name TEXT)")
+    for r in rows[:2000]:
+        con.execute("INSERT INTO u VALUES (?, ?)", r)
+        con.commit()                                   # commit per row: slow on a real disk
+    return time.perf_counter()
+
+def bulk():
+    con = sqlite3.connect(":memory:")
+    con.execute("CREATE TABLE u (id INTEGER, name TEXT)")
+    with con:
+        con.executemany("INSERT INTO u VALUES (?, ?)", rows)
+    return con.execute("SELECT COUNT(*) FROM u").fetchone()[0]
+
+print(bulk(), "rows inserted with executemany")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>20000 rows inserted with executemany</code></pre>
+<p>For very large loads use the database's bulk path: PostgreSQL <code>COPY</code>, MySQL <code>LOAD DATA</code>, SQL Server <code>BULK INSERT</code>.</p>
+<h3>The N+1 query problem</h3>
+<p>Fetching a list, then running one query <strong>per item</strong>, turns one logical read into N+1 round trips. Over a network each costs about 1 ms or more.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps0-10.py">import sqlite3
+con = sqlite3.connect(":memory:")
+con.executescript("""
+CREATE TABLE author (id INTEGER PRIMARY KEY, name TEXT);
+CREATE TABLE book (id INTEGER PRIMARY KEY, author_id INTEGER, title TEXT);
+INSERT INTO author VALUES (1,'Ada'),(2,'Ben'),(3,'Cy');
+INSERT INTO book VALUES (1,1,'A1'),(2,1,'A2'),(3,2,'B1'),(4,3,'C1'),(5,3,'C2');
+""")
+count = [0]
+con.set_trace_callback(lambda sql: count.__setitem__(0, count[0] + 1))
+
+# N+1: one query for authors, then one per author
+for a_id, name in con.execute("SELECT id, name FROM author").fetchall():
+    con.execute("SELECT title FROM book WHERE author_id = ?", (a_id,)).fetchall()
+print("N+1 queries:", count[0])
+
+count[0] = 0
+rows = con.execute("SELECT a.name, b.title FROM author a JOIN book b ON b.author_id = a.id").fetchall()
+print("single join queries:", count[0], len(rows), "rows")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>N+1 queries: 4
+single join queries: 1 5 rows</code></pre>
+<p>Fixes: a <strong>join</strong>, an <code>IN (...)</code> batch, or in an ORM <strong>eager loading</strong> (<code>joinedload</code>, <code>selectinload</code>, Django <code>select_related</code> and <code>prefetch_related</code>). Detect with query logging and tests that count queries.</p>
+<h3>Streaming large results</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps0-11.py">import sqlite3
+con = sqlite3.connect(":memory:")
+con.execute("CREATE TABLE big (n INTEGER)")
+con.executemany("INSERT INTO big VALUES (?)", ((i,) for i in range(100000)))
+total = 0
+for (n,) in con.execute("SELECT n FROM big"):            # iterates lazily instead of fetchall()
+    total += n
+print(total)
+cur = con.execute("SELECT n FROM big ORDER BY n")
+while batch := cur.fetchmany(25000):
+    print(len(batch), batch[0][0])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>4999950000
+25000 0
+25000 25000
+25000 50000
+25000 75000</code></pre>
+<p>Server-side cursors (PostgreSQL named cursors) avoid loading the whole result into the client.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-ps0-q05" data-topic="Python with SQL" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the N+1 query problem?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A query with N joins <span class="q-why">No.</span></li>
+          <li data-key="B">One query for a list followed by one query per item <span class="q-why">Correct.</span></li>
+          <li data-key="C">A sorting problem <span class="q-why">No.</span></li>
+          <li data-key="D">A transaction deadlock <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Replace with a join, a batched IN query or eager loading.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-ps0-q06" data-topic="Python with SQL" data-type="numeric" data-answer="51" data-tol="0">
+        <div class="q-stem"><p>An API returns 50 orders and runs one extra query per order for its customer. How many queries run in total?</p></div>
+        <div class="q-explain"><p>1 query for the list plus 50 per-order queries = 51.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you speed up inserting many rows?</summary><div class="answer"><p>executemany (or the database's bulk COPY/LOAD) in a single transaction.</p></div></details>
+      </div>
+    </section>
+
+    <section id="orm" data-track>
+      <h2>ORMs and query builders</h2>
+<h3>Layers of abstraction</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Layer</th><th>Example</th><th>Trade-off</th></tr></thead>
+<tbody>
+<tr><td>Raw SQL with a driver</td><td><code>sqlite3</code>, <code>psycopg</code></td><td>Full control, manual mapping</td></tr><tr><td>Query builder</td><td>SQLAlchemy Core, <code>pypika</code></td><td>Composable SQL in Python, dialect-aware</td></tr><tr><td>ORM</td><td>SQLAlchemy ORM, Django ORM, Peewee</td><td>Rows as objects, relationships, migrations; hides SQL</td></tr>
+</tbody>
+</table>
+</div>
+<p>An <strong>ORM (object-relational mapper)</strong> maps classes to tables and objects to rows. It saves boilerplate and handles relationships, but it can generate inefficient SQL (N+1), hides what runs, and does not remove the need to understand SQL. Look at the SQL it emits.</p>
+<h3>SQLAlchemy 2.x (display only: needs <code>pip install sqlalchemy</code>)</h3>
+<pre><code class="lang-py">from sqlalchemy import create_engine, select, ForeignKey, String
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, Session, selectinload
+
+class Base(DeclarativeBase): pass
+
+class Author(Base):
+    __tablename__ = "author"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(50))
+    books: Mapped[list["Book"]] = relationship(back_populates="author")
+
+class Book(Base):
+    __tablename__ = "book"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str]
+    author_id: Mapped[int] = mapped_column(ForeignKey("author.id"))
+    author: Mapped[Author] = relationship(back_populates="books")
+
+engine = create_engine("sqlite:///:memory:", echo=True)     # echo=True prints the SQL
+Base.metadata.create_all(engine)
+
+with Session(engine) as session, session.begin():           # one transaction
+    session.add(Author(name="Ada", books=[Book(title="A1"), Book(title="A2")]))
+
+with Session(engine) as session:
+    stmt = select(Author).options(selectinload(Author.books)).where(Author.name == "Ada")
+    for author in session.scalars(stmt):
+        print(author.name, [b.title for b in author.books])  # no N+1: books loaded in one extra query</code></pre>
+<p>Key ideas: an <strong>engine</strong> (connection pool plus dialect), a <strong>session</strong> (a unit of work that tracks changes and flushes them in a transaction), <strong>lazy versus eager loading</strong>, and <strong>migrations</strong> with Alembic.</p>
+<h3>SQLAlchemy Core (SQL expression language)</h3>
+<pre><code class="lang-py">from sqlalchemy import create_engine, text
+engine = create_engine("postgresql+psycopg://user:pass@localhost/shop")
+with engine.begin() as conn:                                  # begin() commits on success
+    rows = conn.execute(text("SELECT id, name FROM customers WHERE city = :city"), {"city": "London"})
+    for row in rows:
+        print(row.id, row.name)</code></pre>
+<h3>Django ORM flavour</h3>
+<pre><code class="lang-py">orders = Order.objects.filter(status="paid").select_related("customer").prefetch_related("items")
+total = Order.objects.filter(status="paid").aggregate(Sum("amount"))</code></pre>
+<h3>When to use what</h3>
+<p>Use an ORM for ordinary create, read, update, delete and relationships in application code. Drop to SQL (through the ORM's text interface or views) for reporting, complex window queries and bulk operations. Keep business rules in code and integrity rules in the database.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-ps0-q07" data-topic="Python with SQL" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is a reasonable way to use an ORM?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Never look at the SQL it generates <span class="q-why">Dangerous.</span></li>
+          <li data-key="B">Use it for routine CRUD, inspect the SQL, and drop to SQL for complex reports <span class="q-why">Correct.</span></li>
+          <li data-key="C">Use it for everything including bulk loads <span class="q-why">Often slow.</span></li>
+          <li data-key="D">Avoid learning SQL <span class="q-why">You still need it.</span></li>
+        </ul>
+        <div class="q-explain"><p>ORMs save boilerplate but do not replace SQL knowledge.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does eager loading do?</summary><div class="answer"><p>Loads related rows in the same or a batched query to avoid N+1.</p></div></details>
+      </div>
+    </section>
+
+    <section id="pandas" data-track>
+      <h2>pandas and analytics</h2>
+<h3>Reading SQL into a DataFrame (display only: needs <code>pip install pandas</code>)</h3>
+<pre><code class="lang-py">import pandas as pd, sqlite3
+con = sqlite3.connect("shop.db")
+df = pd.read_sql_query(
+    "SELECT o.order_date, p.category, i.qty * p.price AS revenue "
+    "FROM orders o JOIN order_items i ON i.order_id = o.id JOIN products p ON p.id = i.product_id "
+    "WHERE o.status = ?", con, params=("paid",), parse_dates=["order_date"])
+monthly = df.groupby([df.order_date.dt.to_period("M"), "category"])["revenue"].sum().unstack(fill_value=0)
+monthly.to_sql("monthly_revenue", con, if_exists="replace")  # write results back</code></pre>
+<p>Guideline: <strong>filter and aggregate in SQL</strong> (the database is built for it and sends less data); use pandas for what SQL does badly (complex reshaping, statistics, plotting, machine learning). Pass parameters, do not f-string values. For big data prefer chunked reads (<code>chunksize=</code>) or tools such as DuckDB and Polars.</p>
+<h3>DuckDB: SQL over files</h3>
+<p>DuckDB queries CSV and Parquet files and DataFrames with SQL, in process, with no server: <code>duckdb.sql("SELECT category, SUM(revenue) FROM 'sales.parquet' GROUP BY 1")</code>.</p>
+    </section>
+
+    <section id="operations" data-track>
+      <h2>Connections, pools, migrations and async</h2>
+<h3>Connection pooling</h3>
+<p>Opening a database connection is expensive (network, authentication, memory on the server). A <strong>pool</strong> keeps connections open and lends them out. Size it from the database's limit and your concurrency; too many connections hurt the database. In web services use the framework's pool (SQLAlchemy <code>QueuePool</code>, <code>psycopg_pool</code>) and an external pooler (PgBouncer) in front of PostgreSQL for many app instances. Always return connections (<code>with</code> blocks) and set timeouts.</p>
+<h3>Migrations</h3>
+<p>Schema changes should be <strong>versioned code</strong>, applied in order, in every environment: Alembic (SQLAlchemy), Django migrations, Flyway, Liquibase, <code>sqitch</code>. A migration has an <code>upgrade</code> and ideally a <code>downgrade</code>. A minimal version of the idea:</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps0-12.py">import sqlite3
+MIGRATIONS = [
+    ("001_create_users", "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL)"),
+    ("002_add_email", "ALTER TABLE users ADD COLUMN email TEXT"),
+    ("003_email_index", "CREATE INDEX idx_users_email ON users(email)"),
+]
+
+def migrate(con):
+    con.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY)")
+    done = {v for (v,) in con.execute("SELECT version FROM schema_migrations")}
+    for version, sql in MIGRATIONS:
+        if version not in done:
+            with con:
+                con.execute(sql)
+                con.execute("INSERT INTO schema_migrations VALUES (?)", (version,))
+            print("applied", version)
+
+con = sqlite3.connect(":memory:")
+migrate(con)
+migrate(con)                       # second run applies nothing: idempotent
+print([r[0] for r in con.execute("SELECT version FROM schema_migrations ORDER BY version")])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>applied 001_create_users
+applied 002_add_email
+applied 003_email_index
+['001_create_users', '002_add_email', '003_email_index']</code></pre>
+<p>Make migrations <strong>backward compatible</strong> (expand and contract, see <a href="../system-design-guide/sd11-observability-security.html">SD11</a>) and test them against a copy of production data.</p>
+<h3>Async database access</h3>
+<p>For asyncio programs (<a href="py4-concurrency.html">PY4</a>) use async drivers so queries do not block the loop: <code>asyncpg</code> or <code>psycopg</code> async mode for PostgreSQL, <code>aiosqlite</code>, <code>aiomysql</code>, SQLAlchemy's <code>AsyncSession</code>.</p>
+<pre><code class="lang-py">import asyncpg, asyncio
+async def main():
+    pool = await asyncpg.create_pool("postgresql://user:pass@localhost/shop", min_size=2, max_size=10)
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            rows = await conn.fetch("SELECT id, name FROM customers WHERE city = $1", "London")
+    print([dict(r) for r in rows])
+asyncio.run(main())</code></pre>
+<p>(PostgreSQL drivers use <code>$1</code> or <code>%s</code> placeholders, never string formatting.)</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-ps0-q08" data-topic="Python with SQL" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why use a connection pool?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To avoid transactions <span class="q-why">No.</span></li>
+          <li data-key="B">Opening connections is expensive, so reuse them and cap the total <span class="q-why">Correct.</span></li>
+          <li data-key="C">To encrypt data <span class="q-why">No.</span></li>
+          <li data-key="D">To avoid indexes <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Pools improve latency and protect the database from too many connections.</p></div>
+      </div>
+    </section>
+
+    <section id="dbtesting" data-track>
+      <h2>Testing database code</h2>
+<h3>Options</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Approach</th><th>Pros</th><th>Cons</th></tr></thead>
+<tbody>
+<tr><td>In-memory SQLite</td><td>Very fast, zero setup</td><td>Dialect differences from production</td></tr><tr><td>Real database in a container (Testcontainers, docker compose)</td><td>Same engine as production</td><td>Slower, needs Docker</td></tr><tr><td>Mock the database</td><td>Fastest</td><td>Tests prove little about SQL</td></tr>
+</tbody>
+</table>
+</div>
+<p>Test with the <strong>same engine</strong> you run in production for anything beyond trivial queries. Wrap each test in a transaction and roll back, or create a fresh schema per test.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps0-13.py">import sqlite3, unittest, io
+
+def create_user(con, name):
+    with con:
+        cur = con.execute("INSERT INTO users (name) VALUES (?)", (name,))
+    return cur.lastrowid
+
+def count_users(con):
+    return con.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+
+class UserRepoTest(unittest.TestCase):
+    def setUp(self):                                  # fresh database for every test
+        self.con = sqlite3.connect(":memory:")
+        self.con.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL)")
+    def tearDown(self):
+        self.con.close()
+    def test_create(self):
+        uid = create_user(self.con, "ada")
+        self.assertEqual(uid, 1)
+        self.assertEqual(count_users(self.con), 1)
+    def test_unique_name(self):
+        create_user(self.con, "ada")
+        with self.assertRaises(sqlite3.IntegrityError):
+            create_user(self.con, "ada")
+        self.assertEqual(count_users(self.con), 1)
+
+suite = unittest.defaultTestLoader.loadTestsFromTestCase(UserRepoTest)
+res = unittest.TextTestRunner(stream=io.StringIO()).run(suite)
+print("tests run:", res.testsRun, "failures:", len(res.failures) + len(res.errors))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>tests run: 2 failures: 0</code></pre>
+<p>Also test: constraint violations, concurrent updates (optimistic locking), migrations up and down, and query counts (guard against N+1).</p>
+    </section>
+
+    <section id="etl" data-track>
+      <h2>A small ETL pipeline</h2>
+<p><strong>ETL</strong> means <strong>extract</strong> data from a source, <strong>transform</strong> it, <strong>load</strong> it into a destination. Here: parse CSV text, clean it, load into SQLite with a transaction, and report with SQL.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps0-14.py">import csv, io, sqlite3
+from datetime import date
+
+RAW = """order_id,customer,amount,order_date
+1,Ada,120.50,2024-01-05
+2,Ben,80,2024-01-07
+3,Ada,,2024-02-01
+4,Cy,45.25,2024-02-10
+2,Ben,80,2024-01-07
+5,Dev,300,not-a-date
+"""
+
+def extract(text):
+    return list(csv.DictReader(io.StringIO(text)))
+
+def transform(rows):
+    seen, good, bad = set(), [], []
+    for r in rows:
+        try:
+            if r["order_id"] in seen:
+                continue                                  # drop duplicates
+            amount = float(r["amount"])                   # empty string raises ValueError
+            day = date.fromisoformat(r["order_date"])
+            seen.add(r["order_id"])
+            good.append((int(r["order_id"]), r["customer"].strip().title(), round(amount, 2), day.isoformat()))
+        except ValueError as e:
+            bad.append((r["order_id"], str(e)))
+    return good, bad
+
+def load(con, rows):
+    con.execute("CREATE TABLE IF NOT EXISTS orders (order_id INTEGER PRIMARY KEY, customer TEXT, amount REAL, order_date TEXT)")
+    with con:
+        con.executemany("INSERT OR REPLACE INTO orders VALUES (?, ?, ?, ?)", rows)   # idempotent reload
+
+good, bad = transform(extract(RAW))
+con = sqlite3.connect(":memory:")
+load(con, good); load(con, good)                           # running twice changes nothing
+print("loaded", len(good), "rejected", len(bad))
+for order_id, reason in bad:
+    print("  rejected order", order_id)
+print(con.execute("""SELECT customer, SUM(amount) AS total, COUNT(*) AS n
+                     FROM orders GROUP BY customer ORDER BY total DESC""").fetchall())</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>loaded 3 rejected 2
+  rejected order 3
+  rejected order 5
+[('Ada', 120.5, 1), ('Ben', 80.0, 1), ('Cy', 45.25, 1)]</code></pre>
+<p>Pipeline principles: <strong>idempotent</strong> loads (safe to re-run), <strong>validate and quarantine</strong> bad rows instead of crashing or silently dropping them, load in <strong>transactions</strong>, keep <strong>raw data</strong> for reprocessing, add <strong>data quality checks</strong> and <strong>logging</strong>, and orchestrate with a scheduler (cron, Airflow, Dagster) with retries. See <a href="../system-design-guide/sd12-data-systems.html">SD12</a> for warehouses and streaming.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-ps0-q09" data-topic="Python with SQL" data-type="fill" data-answer="idempotent">
+        <div class="q-stem"><p>A load that can be run twice with no change in result is called <input class="q-input" aria-label="blank 1">.</p></div>
+        <div class="q-explain"><p>Idempotent loads make retries and re-runs safe.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>List ETL best practices.</summary><div class="answer"><p>Idempotent loads, validation with quarantine of bad rows, transactions, keep raw data, quality checks, logging and orchestration.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Python with SQL</h2>
+      <p class="muted">10 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Python with SQL">
+<details class="recall iq" data-level="basic" data-topic="Python with SQL"><summary><span class="tag ok">Basic</span> How do you run a safe query from Python?</summary><div class="answer"><p>Use parameter placeholders: cursor.execute(&#x27;SELECT ... WHERE id = ?&#x27;, (id,)). Never concatenate or format user input into SQL.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Python with SQL"><summary><span class="tag ok">Basic</span> What is SQL injection?</summary><div class="answer"><p>An attack where user input is interpreted as SQL. Prevent with parameterised queries, allow-listed identifiers and least-privilege accounts.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python with SQL"><summary><span class="tag warn">Medium</span> How do you make a multi-statement change atomic in Python?</summary><div class="answer"><p>Run the statements in one transaction: with connection: ... commits on success and rolls back on exception.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python with SQL"><summary><span class="tag warn">Medium</span> What is the N+1 query problem?</summary><div class="answer"><p>One query for a list plus one per item. Fix with a join, an IN batch or ORM eager loading (selectinload, joinedload, select_related, prefetch_related).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python with SQL"><summary><span class="tag warn">Medium</span> How do you insert many rows efficiently?</summary><div class="answer"><p>executemany in a single transaction, or the database&#x27;s bulk loader (COPY, LOAD DATA) for very large loads.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python with SQL"><summary><span class="tag warn">Medium</span> ORM versus raw SQL?</summary><div class="answer"><p>ORMs reduce boilerplate and manage relationships and migrations but can hide inefficient SQL. Use them for routine CRUD and raw SQL for complex reports and bulk work.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python with SQL"><summary><span class="tag warn">Medium</span> What is a connection pool?</summary><div class="answer"><p>A set of reusable open connections shared by requests, avoiding the cost of reconnecting and capping load on the database.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python with SQL"><summary><span class="tag bad">Advanced</span> How do you do database migrations safely?</summary><div class="answer"><p>Version every change, apply in order with a tool (Alembic, Django, Flyway), make changes backward compatible (expand then contract) and test on production-like data.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python with SQL"><summary><span class="tag bad">Advanced</span> How do you test database code?</summary><div class="answer"><p>Use a real engine (a container or in-memory SQLite for simple cases), fresh schema or rolled-back transaction per test, and test constraints, concurrency and query counts.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python with SQL"><summary><span class="tag bad">Advanced</span> When to use pandas versus SQL?</summary><div class="answer"><p>Filter, join and aggregate in SQL near the data; use pandas for reshaping, statistics and visualisation on the smaller result. Use chunking, DuckDB or Polars for large data.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sql9-more-problems.html"><span class="dir">Previous</span><span>SQL9 More SQL interview problems: set two</span></a>
+      <a class="next" href="ps1-python-problems.html"><span class="dir">Next</span><span>PS1 Python interview problems and predict-the-output puzzles</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

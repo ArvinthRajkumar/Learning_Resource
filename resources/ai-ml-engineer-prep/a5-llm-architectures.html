@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="A5">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LLM architectures and efficiency: attention variants, RoPE, MoE, quantisation and long context | AI/ML Prep</title>
+<meta name="description" content="Scaled dot-product attention coded and checked, multi-query and grouped-query attention, RoPE, FlashAttention, mixture of experts routing, state space models, quantisation methods with measured error, and long-context techniques.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part A5</p>
+      <h1>LLM architectures and efficiency: attention variants, RoPE, MoE, quantisation and long context</h1>
+      <p class="lede">Frontier model papers read like lists of small architectural changes. Each one solves a specific cost: memory, compute, context length or stability. This part explains the main changes, what problem each solves, and how to estimate their effect with numbers.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~6 hours</span></div>
+    </div>
+
+    <section id="attention" data-track>
+      <h2>Attention in code and cost</h2>
+<h3>Scaled dot-product attention</h3>
+<p>For queries <code>Q</code>, keys <code>K</code>, values <code>V</code>: <code>Attention(Q, K, V) = softmax(Q K^T / sqrt(d_k)) V</code>. Each query takes a weighted average of values, with weights from query-key similarity. Dividing by <code>sqrt(d_k)</code> keeps scores from growing with dimension (which would saturate the softmax).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a5-01.py">import math
+def softmax(xs):
+    m = max(xs); e = [math.exp(x - m) for x in xs]; s = sum(e)
+    return [x / s for x in e]
+def attention(Q, K, V, causal=False):
+    d = len(K[0])
+    out = []
+    for i, q in enumerate(Q):
+        scores = [sum(a * b for a, b in zip(q, k)) / math.sqrt(d) for k in K]
+        if causal:
+            scores = [s if j &lt;= i else float("-inf") for j, s in enumerate(scores)]
+        w = softmax(scores)
+        out.append([sum(w[j] * V[j][c] for j in range(len(V))) for c in range(len(V[0]))])
+    return out
+X = [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
+print("full  :", [[round(v, 2) for v in row] for row in attention(X, X, X)])
+print("causal:", [[round(v, 2) for v in row] for row in attention(X, X, X, causal=True)])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>full  : [[0.8, 0.6], [0.6, 0.8], [0.75, 0.75]]
+causal: [[1.0, 0.0], [0.33, 0.67], [0.75, 0.75]]</code></pre>
+<p>The causal mask means token <code>i</code> sees only tokens up to <code>i</code> (the first row is just itself), which makes next-token training possible in parallel.</p>
+<h3>Cost of attention</h3>
+<p>Score matrix: <code>n x n</code> per head, so <strong>compute and memory grow with the square of sequence length</strong> <code>n</code>. Parameters per layer: about <code>4 d^2</code> (Q, K, V, output projections) for attention and <code>8 d^2</code> for a 4x MLP: <code>12 d^2</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a5-02.py">d, layers = 4096, 32
+params = layers * 12 * d * d
+print("approx parameters from the formula: %.2f B" % (params / 1e9))
+for n in (2_048, 8_192, 32_768, 131_072):
+    entries = n * n
+    print("n=%7d: score matrix per head %.2e entries = %.1f GB in fp16 per head if materialised" % (n, entries, entries * 2 / 1e9))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>approx parameters from the formula: 6.44 B
+n=   2048: score matrix per head 4.19e+06 entries = 0.0 GB in fp16 per head if materialised
+n=   8192: score matrix per head 6.71e+07 entries = 0.1 GB in fp16 per head if materialised
+n=  32768: score matrix per head 1.07e+09 entries = 2.1 GB in fp16 per head if materialised
+n= 131072: score matrix per head 1.72e+10 entries = 34.4 GB in fp16 per head if materialised</code></pre>
+<p>At 131k tokens one head's full score matrix would be 34 GB, which is why attention must be <strong>computed in tiles without ever materialising the matrix</strong> (FlashAttention).</p>
+<h3>FlashAttention</h3>
+<p>Attention is limited by <strong>memory traffic</strong> (reading and writing the big score matrix to GPU main memory), not arithmetic. FlashAttention <strong>tiles</strong> <code>Q, K, V</code> into blocks held in fast on-chip SRAM and uses the <strong>online softmax</strong> to accumulate the result block by block, so the full <code>n x n</code> matrix is never stored. Exact result, <code>O(n)</code> extra memory, 2 to 4 times faster.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a5-03.py">import math
+# Online softmax: process scores in chunks while keeping a running max and normaliser.
+scores = [2.0, 1.0, 0.1, 3.0, -1.0, 0.5]
+values = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+m, l, acc = float("-inf"), 0.0, 0.0
+for s, v in zip(scores, values):             # one "block" of size 1 for clarity
+    m_new = max(m, s)
+    scale = math.exp(m - m_new) if m != float("-inf") else 0.0
+    l = l * scale + math.exp(s - m_new)
+    acc = acc * scale + math.exp(s - m_new) * v
+    m = m_new
+exp = [math.exp(s - max(scores)) for s in scores]
+direct = sum(e * v for e, v in zip(exp, values)) / sum(exp)
+print("online %.6f direct %.6f" % (acc / l, direct))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>online 3.248271 direct 3.248271</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a5-q01" data-topic="LLM architectures" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why divide attention scores by sqrt(d_k)?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To make them integers <span class="q-why">No.</span></li>
+          <li data-key="B">Dot products grow with dimension, so scaling keeps the softmax from saturating <span class="q-why">Correct.</span></li>
+          <li data-key="C">To save memory <span class="q-why">No.</span></li>
+          <li data-key="D">To apply the mask <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Without scaling large scores give near one-hot softmax and tiny gradients.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a5-q02" data-topic="LLM architectures" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does FlashAttention avoid storing?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The weights <span class="q-why">No.</span></li>
+          <li data-key="B">The full n x n attention score matrix in GPU main memory <span class="q-why">Correct.</span></li>
+          <li data-key="C">The input tokens <span class="q-why">No.</span></li>
+          <li data-key="D">The KV cache <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It computes attention block by block with an online softmax in fast SRAM.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Complexity of self-attention?</summary><div class="answer"><p>O(n^2) compute and memory in sequence length for the score matrix (FlashAttention removes the memory term).</p></div></details>
+      </div>
+    </section>
+
+    <section id="kv" data-track>
+      <h2>Reducing the KV cache: MQA and GQA</h2>
+<p>During generation each new token needs the keys and values of all previous tokens, stored in the <strong>KV cache</strong> (<a href="01-inference-and-memory.html">01</a>). Its size per token is <code>2 x layers x kv_heads x head_dim x bytes</code>.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Variant</th><th>KV heads</th><th>Idea</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td>MHA (multi-head)</td><td>= query heads</td><td>Every head has its own K and V</td><td>Best quality, largest cache</td></tr><tr><td>MQA (multi-query)</td><td>1</td><td>All query heads share one K and V</td><td>Smallest cache, small quality loss</td></tr><tr><td>GQA (grouped-query)</td><td><code>g</code> groups</td><td>Query heads share K and V within a group</td><td>Near-MHA quality, near-MQA cache; used by LLaMA 2 70B, LLaMA 3, Mistral</td></tr><tr><td>MLA (multi-head latent, DeepSeek)</td><td>compressed latent</td><td>Cache a low-rank latent, expand on the fly</td><td>Very small cache</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/a5-04.py">layers, head_dim, bytes_ = 32, 128, 2
+for name, kv_heads in (("MHA (32 kv heads)", 32), ("GQA (8 kv heads)", 8), ("MQA (1 kv head)", 1)):
+    per_token = 2 * layers * kv_heads * head_dim * bytes_
+    print("%-18s %7.0f KiB per token, %5.1f GiB for 32k tokens x 8 sequences" % (name, per_token / 1024, per_token * 32768 * 8 / 2 ** 30))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>MHA (32 kv heads)      512 KiB per token, 128.0 GiB for 32k tokens x 8 sequences
+GQA (8 kv heads)       128 KiB per token,  32.0 GiB for 32k tokens x 8 sequences
+MQA (1 kv head)         16 KiB per token,   4.0 GiB for 32k tokens x 8 sequences</code></pre>
+<p>Other cache reducers: <strong>sliding-window attention</strong> (each token attends only to the last <code>w</code> tokens, Mistral), <strong>attention sinks</strong> (keep the first few tokens), <strong>KV cache quantisation</strong>, <strong>PagedAttention</strong> (vLLM manages cache in fixed pages to avoid fragmentation), and <strong>prefix caching</strong> of shared prompts.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a5-q03" data-topic="LLM architectures" data-type="numeric" data-answer="131072" data-tol="0">
+        <div class="q-stem"><p>32 layers, 8 KV heads, head_dim 128, fp16. KV cache bytes per token? (a number)</p></div>
+        <div class="q-explain"><p>2 x 32 x 8 x 128 x 2 = 131,072 bytes (128 KiB).</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a5-q04" data-topic="LLM architectures" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is grouped-query attention?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Attention over groups of tokens <span class="q-why">No.</span></li>
+          <li data-key="B">Several query heads share one K and V head, shrinking the KV cache with little quality loss <span class="q-why">Correct.</span></li>
+          <li data-key="C">Attention without softmax <span class="q-why">No.</span></li>
+          <li data-key="D">A tokenizer <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It interpolates between MHA and MQA.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>MHA versus MQA versus GQA?</summary><div class="answer"><p>They differ in KV heads: one per query head, one shared, or one per group; GQA balances quality and cache size.</p></div></details>
+      </div>
+    </section>
+
+    <section id="position" data-track>
+      <h2>Positional information: RoPE and ALiBi</h2>
+<p>Attention has no notion of order, so we inject it. <strong>Rotary position embedding (RoPE)</strong> rotates each pair of query and key dimensions by an angle proportional to position, so the dot product depends on the <strong>relative</strong> distance <code>m - n</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a5-05.py">import math
+def rotate(vec, pos, theta=0.1):
+    out = []
+    for i in range(0, len(vec), 2):
+        a = pos * theta * (i // 2 + 1)
+        x, y = vec[i], vec[i + 1]
+        out += [x * math.cos(a) - y * math.sin(a), x * math.sin(a) + y * math.cos(a)]
+    return out
+q, k = [1.0, 0.5, -0.3, 0.8], [0.7, -0.2, 0.4, 0.9]
+dot = lambda a, b: sum(x * y for x, y in zip(a, b))
+print("q at 5, k at 3  :", round(dot(rotate(q, 5), rotate(k, 3)), 6))
+print("q at 12, k at 10:", round(dot(rotate(q, 12), rotate(k, 10)), 6))   # same relative offset 2
+print("q at 5, k at 4  :", round(dot(rotate(q, 5), rotate(k, 4)), 6))     # different offset</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>q at 5, k at 3  : 0.801652
+q at 12, k at 10: 0.801652
+q at 5, k at 4  : 1.012919</code></pre>
+<p>The first two scores are identical because both pairs are 2 positions apart. RoPE is the default in LLaMA-style models. Methods that extend context beyond training length: <strong>position interpolation</strong> (scale positions down), <strong>NTK-aware scaling</strong>, <strong>YaRN</strong>, and <strong>long-context fine-tuning</strong>. <strong>ALiBi</strong> adds a distance-proportional bias to scores instead.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a5-q05" data-topic="LLM architectures" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why does RoPE give a position-relative score?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It adds the position to the value <span class="q-why">No.</span></li>
+          <li data-key="B">Rotating q and k by position-dependent angles makes their dot product depend only on the difference of positions <span class="q-why">Correct.</span></li>
+          <li data-key="C">It uses a lookup table <span class="q-why">No.</span></li>
+          <li data-key="D">It only works at length 512 <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Rotation angles subtract when q and k are multiplied.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you extend context beyond training length?</summary><div class="answer"><p>Scale RoPE positions (interpolation, NTK, YaRN) and fine-tune on long sequences.</p></div></details>
+      </div>
+    </section>
+
+    <section id="moe" data-track>
+      <h2>Mixture of experts (MoE)</h2>
+<h3>The idea</h3>
+<p>Replace each dense feed-forward layer by <code>E</code> <strong>expert</strong> feed-forward networks and a small <strong>router</strong>. For every token the router picks the top <code>k</code> experts (often 2 of 8, or 8 of 256); only those run. <strong>Total parameters</strong> grow with <code>E</code>, but <strong>active parameters per token</strong> stay small, so you get a large model's capacity at a small model's compute cost.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a5-06.py">import math
+def softmax(xs):
+    m = max(xs); e = [math.exp(x - m) for x in xs]; s = sum(e)
+    return [x / s for x in e]
+router_scores = [0.1, 2.0, -0.5, 1.5, 0.0, -1.0, 0.7, 0.2]   # logits for 8 experts for one token
+k = 2
+top = sorted(range(8), key=lambda i: -router_scores[i])[:k]
+gates = softmax([router_scores[i] for i in top])
+print("chosen experts:", top, "gate weights:", [round(g, 3) for g in gates])
+# parameter accounting for an 8-expert, top-2 model
+dense_ffn, experts, shared = 100, 8, 400                       # arbitrary units of parameters
+print("total params:", shared + experts * dense_ffn, " active per token:", shared + k * dense_ffn)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>chosen experts: [1, 3] gate weights: [0.622, 0.378]
+total params: 1200  active per token: 600</code></pre>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Concern</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td><strong>Load balancing</strong></td><td>The router may favour a few experts; an <strong>auxiliary loss</strong> (or bias adjustment, in DeepSeek) pushes tokens to spread evenly</td></tr><tr><td><strong>Capacity</strong></td><td>Each expert handles a limited tokens per batch; overflow is dropped or rerouted</td></tr><tr><td><strong>Memory</strong></td><td>All experts must be in memory (or sharded across GPUs) even though few run: MoE saves <strong>compute, not memory</strong></td></tr><tr><td><strong>Communication</strong></td><td>Experts live on different GPUs, so tokens are sent with all-to-all communication (expert parallelism)</td></tr><tr><td><strong>Fine-tuning</strong></td><td>Harder; routing can be unstable</td></tr><tr><td><strong>Examples</strong></td><td>Mixtral 8x7B (about 47B total, 13B active), DeepSeek-V3 (671B total, 37B active), several frontier models</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a5-q06" data-topic="LLM architectures" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does MoE save compared with a dense model of the same total size?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Memory <span class="q-why">All experts still need to be stored.</span></li>
+          <li data-key="B">Compute per token, since only top-k experts run <span class="q-why">Correct.</span></li>
+          <li data-key="C">Training data <span class="q-why">No.</span></li>
+          <li data-key="D">Nothing <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Active parameters per token are a fraction of total parameters.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What are MoE's costs?</summary><div class="answer"><p>Memory for all experts, load balancing, communication and harder fine-tuning.</p></div></details>
+      </div>
+    </section>
+
+    <section id="ssm" data-track>
+      <h2>Alternatives to attention</h2>
+<p><strong>State space models (SSMs)</strong> and <strong>linear attention</strong> replace the quadratic cost with a recurrence of fixed-size state: <code>h_t = A h_(t-1) + B x_t</code>, <code>y_t = C h_t</code>. Cost is linear in sequence length and decoding needs constant memory instead of a growing KV cache. <strong>Mamba</strong> makes <code>A, B, C</code> depend on the input ("selective" SSM), recovering the ability to focus on or ignore tokens. <strong>RWKV</strong> and <strong>RetNet</strong> are related. Trade-offs: weaker at exact recall of arbitrary earlier tokens than attention; <strong>hybrid</strong> models interleave a few attention layers with SSM layers (Jamba, others).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a5-07.py"># A tiny linear recurrence: fixed-size state regardless of sequence length.
+A, B, C = 0.9, 1.0, 1.0
+h, outs = 0.0, []
+for x in [1, 0, 0, 0, 0, 2, 0, 0]:
+    h = A * h + B * x
+    outs.append(round(C * h, 3))
+print(outs)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[1.0, 0.9, 0.81, 0.729, 0.656, 2.59, 2.331, 2.098]</code></pre>
+<p>Information from the early input decays by <code>A</code> each step, while the second impulse is added on top: the state is a running, exponentially forgetting summary.</p>
+    </section>
+
+    <section id="quant" data-track>
+      <h2>Quantisation</h2>
+<h3>What it is</h3>
+<p>Store weights (and sometimes activations or the KV cache) in fewer bits: fp16 (16 bits) to int8 (8) to int4 (4) or lower. Memory and memory-bandwidth fall proportionally, and since decoding is memory-bound (<a href="01-inference-and-memory.html">01</a>) speed rises.</p>
+<div class="formula"><div class="f-title">Symmetric linear quantisation</div><div class="f-body">q = round(x / s) ; x_hat = q x s ; s = max(abs(x)) / (2^(b-1) - 1)</div><dl class="f-defs"><dt>s</dt><dd>scale</dd><dt>b</dt><dd>bit width</dd><dt>q</dt><dd>stored integer</dd></dl></div>
+<pre><code class="lang-py" data-embed="solutions/snippets/a5-08.py">import random, math
+random.seed(0)
+weights = [random.gauss(0, 0.05) for _ in range(4096)]
+weights[7] = 0.9                                       # one large outlier weight
+def quant_error(vals, bits, group=None):
+    qmax = 2 ** (bits - 1) - 1
+    err = 0.0
+    chunks = [vals] if group is None else [vals[i:i + group] for i in range(0, len(vals), group)]
+    for c in chunks:
+        s = max(abs(v) for v in c) / qmax
+        err += sum((v - round(v / s) * s) ** 2 for v in c)
+    return math.sqrt(err / len(vals))
+for bits in (8, 6, 4):
+    print("int%d: RMS error per-tensor %.5f | per-group-of-64 %.5f" % (bits, quant_error(weights, bits), quant_error(weights, bits, 64)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>int8: RMS error per-tensor 0.00204 | per-group-of-64 0.00039
+int6: RMS error per-tensor 0.00856 | per-group-of-64 0.00153
+int4: RMS error per-tensor 0.03581 | per-group-of-64 0.00694</code></pre>
+<p>An outlier inflates the scale for the whole tensor and hurts everyone else; <strong>grouping</strong> (a scale per 32 to 128 values) contains the damage. This is why real schemes use groups.</p>
+<h3>Common methods</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Method</th><th>Idea</th><th>Typical use</th></tr></thead>
+<tbody>
+<tr><td>Round-to-nearest (RTN)</td><td>Naive rounding</td><td>Baseline; fine at 8 bits</td></tr><tr><td><strong>GPTQ</strong></td><td>One-shot, layer by layer, uses second-order information to compensate rounding error</td><td>4-bit weights for GPUs</td></tr><tr><td><strong>AWQ</strong></td><td>Protects the 1 percent of weights tied to large activations by scaling them</td><td>4-bit, good quality</td></tr><tr><td><strong>SmoothQuant</strong></td><td>Migrates activation outliers into the weights</td><td>W8A8 (weights and activations)</td></tr><tr><td><strong>bitsandbytes NF4 / QLoRA</strong></td><td>4-bit NormalFloat for the frozen base while training LoRA in 16-bit</td><td>Fine-tuning on one GPU (<a href="02-fine-tuning.html">02</a>)</td></tr><tr><td><strong>GGUF (llama.cpp) k-quants</strong></td><td>Group-wise mixed bit widths for CPU and consumer GPUs</td><td>Local inference</td></tr><tr><td><strong>FP8</strong></td><td>8-bit floating point on recent GPUs</td><td>Training and inference at scale</td></tr><tr><td>Quantisation-aware training</td><td>Train with simulated quantisation</td><td>Best quality at 2 to 3 bits</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Memory arithmetic</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/a5-09.py">params = 70e9
+for name, bits in (("fp16/bf16", 16), ("int8", 8), ("int4", 4)):
+    print("%-10s %6.0f GB for weights of a 70B model" % (name, params * bits / 8 / 1e9))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>fp16/bf16     140 GB for weights of a 70B model
+int8           70 GB for weights of a 70B model
+int4           35 GB for weights of a 70B model</code></pre>
+<p>Quality: 8-bit is almost lossless; 4-bit loses a little (perplexity up a few percent), more for small models; below 4 bits needs careful methods. Always <strong>evaluate on your tasks</strong> after quantising.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a5-q07" data-topic="LLM architectures" data-type="numeric" data-answer="6.5" data-tol="0.1">
+        <div class="q-stem"><p>How many GB does a 13B-parameter model need for weights in int4 (4 bits)?</p></div>
+        <div class="q-explain"><p>13e9 x 4 / 8 = 6.5e9 bytes = 6.5 GB.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a5-q08" data-topic="LLM architectures" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why quantise with a scale per group rather than per tensor?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is faster to write <span class="q-why">No.</span></li>
+          <li data-key="B">A single outlier would force a large scale on the whole tensor and ruin the precision of the rest <span class="q-why">Correct.</span></li>
+          <li data-key="C">Groups are required by GPUs <span class="q-why">No.</span></li>
+          <li data-key="D">It removes outliers <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Group-wise scales localise the effect of outliers.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>GPTQ versus AWQ?</summary><div class="answer"><p>GPTQ compensates rounding error layer by layer with second-order information; AWQ protects the salient weights identified by activation magnitudes.</p></div></details>
+      </div>
+    </section>
+
+    <section id="long" data-track>
+      <h2>Long context</h2>
+<p>Why long context is hard: quadratic attention compute, linear KV cache growth, and models that <strong>lose information in the middle</strong> of long inputs ("lost in the middle"). Techniques combine: efficient kernels (FlashAttention), GQA or MLA, sliding or sparse attention, RoPE scaling plus fine-tuning on long data, KV quantisation and eviction, and retrieval instead of stuffing everything in the prompt (<a href="a12-llm-apps.html">A12</a>).</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Question</th><th>Answer</th></tr></thead>
+<tbody>
+<tr><td>Is a bigger window always better?</td><td>No: cost and latency grow, and accuracy on facts in the middle can drop; retrieve and compress</td></tr><tr><td>Needle-in-a-haystack tests</td><td>Check recall of a planted fact at various depths; necessary but not sufficient, so also test multi-hop reasoning and aggregation</td></tr><tr><td>Prefix caching</td><td>Reuse the KV cache of a shared long prefix across requests, cutting cost</td></tr>
+</tbody>
+</table>
+</div>
+    </section>
+
+    <section id="numbers" data-track>
+      <h2>Putting numbers on a model</h2>
+<pre><code class="lang-py" data-embed="solutions/snippets/a5-10.py">def llama_like(layers, d, heads, kv_heads, ffn_mult, vocab):
+    head_dim = d // heads
+    attn = d * d + 2 * d * (kv_heads * head_dim) + d * d          # Q, K, V, O
+    ffn = 3 * d * int(ffn_mult * d)                               # gated MLP: up, gate, down
+    per_layer = attn + ffn
+    return layers * per_layer + 2 * vocab * d                      # plus embeddings and output head
+p = llama_like(layers=32, d=4096, heads=32, kv_heads=8, ffn_mult=3.5, vocab=128000)
+print("about %.1f B parameters" % (p / 1e9))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>about 8.0 B parameters</code></pre>
+<p>A quick estimator like this, together with <code>6 N D</code> training FLOPs and <code>2 N</code> FLOPs per generated token, is what interviewers expect when they ask "how big is this model and what will it cost?".</p>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Every change targets one bottleneck: FlashAttention (memory traffic), GQA and MLA (KV cache), RoPE scaling (length), MoE (compute per parameter), SSMs (quadratic cost), quantisation (weight memory and bandwidth).</p></div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: LLM architectures</h2>
+      <p class="muted">13 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="LLM architectures">
+<details class="recall iq" data-level="basic" data-topic="LLM architectures"><summary><span class="tag ok">Basic</span> Write scaled dot-product attention and explain the scaling.</summary><div class="answer"><p>softmax(Q K^T / sqrt(d_k)) V. Dividing by sqrt(d_k) keeps score variance near 1 so the softmax does not saturate.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="LLM architectures"><summary><span class="tag ok">Basic</span> What is the KV cache and why does it exist?</summary><div class="answer"><p>Keys and values of past tokens are stored so each new token only computes its own query, key and value, making generation linear per token instead of recomputing the prefix.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="LLM architectures"><summary><span class="tag warn">Medium</span> MHA, MQA and GQA?</summary><div class="answer"><p>They differ in the number of K and V heads: one per query head, one total, or one per group. GQA keeps near-MHA quality with a much smaller KV cache.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="LLM architectures"><summary><span class="tag warn">Medium</span> How does FlashAttention speed up attention?</summary><div class="answer"><p>It tiles Q, K and V in on-chip memory and uses an online softmax so the n x n score matrix is never written to main memory, reducing memory traffic while staying exact.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="LLM architectures"><summary><span class="tag warn">Medium</span> What is RoPE?</summary><div class="answer"><p>Rotary position embedding rotates query and key pairs by position-dependent angles so their dot product depends on the relative distance between tokens.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="LLM architectures"><summary><span class="tag warn">Medium</span> How does a mixture of experts layer work?</summary><div class="answer"><p>A router selects the top k of E expert MLPs per token; only those run, so total parameters grow while compute per token stays small.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="LLM architectures"><summary><span class="tag warn">Medium</span> What are the costs of MoE?</summary><div class="answer"><p>All experts must be stored, routing needs load balancing, communication between devices is heavy, and fine-tuning is trickier.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="LLM architectures"><summary><span class="tag warn">Medium</span> What does quantisation buy and what does it risk?</summary><div class="answer"><p>Lower memory and bandwidth (and speed for memory-bound decoding) by using fewer bits per weight. It can reduce quality, especially below 4 bits or with outliers, so evaluate after quantising.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="LLM architectures"><summary><span class="tag bad">Advanced</span> GPTQ versus AWQ versus bitsandbytes NF4?</summary><div class="answer"><p>GPTQ corrects rounding error layer by layer with second-order information; AWQ protects salient weights identified from activations; NF4 is a 4-bit data type used to hold a frozen base model during QLoRA training.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="LLM architectures"><summary><span class="tag bad">Advanced</span> How can a model handle contexts longer than it was trained on?</summary><div class="answer"><p>Scale RoPE positions (interpolation, NTK-aware, YaRN) and fine-tune on long sequences, plus efficient attention, KV compression and retrieval.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="LLM architectures"><summary><span class="tag bad">Advanced</span> State space models versus transformers?</summary><div class="answer"><p>SSMs like Mamba process sequences with a recurrence of fixed-size state in linear time and constant memory per step, but recall arbitrary earlier tokens less precisely; hybrids combine both.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="LLM architectures"><summary><span class="tag bad">Advanced</span> Estimate parameters of a decoder-only transformer.</summary><div class="answer"><p>About 12 d^2 per layer (4 d^2 attention, 8 d^2 MLP) times layers, plus embeddings; with GQA and gated MLPs adjust the attention and MLP terms.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="LLM architectures"><summary><span class="tag bad">Advanced</span> Why does decoding tend to be memory-bandwidth bound?</summary><div class="answer"><p>Each generated token must read all weights and the KV cache from memory for little arithmetic, so speed is set by bytes moved, which quantisation, GQA and batching improve.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="a4-nlp-embeddings.html"><span class="dir">Previous</span><span>A4 NLP, tokenisation, embeddings and vector search</span></a>
+      <a class="next" href="a6-alignment-safety.html"><span class="dir">Next</span><span>A6 Alignment, RLHF and AI safety</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

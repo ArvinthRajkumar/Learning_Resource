@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="X3">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Advanced dynamic programming: knapsacks, bitmasks, intervals, trees and optimisation | DSA Master Guide</title>
+<meta name="description" content="A method for designing DP, knapsack variants, longest increasing subsequence in n log n, edit distance, interval DP, bitmask DP, DP on trees and digit DP, state compression and when greedy or other methods beat DP, all checked against brute force.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part X3</p>
+      <h1>Advanced dynamic programming: knapsacks, bitmasks, intervals, trees and optimisation</h1>
+      <p class="lede">Module 16 introduced dynamic programming. This part gives a repeatable way to design it and covers the families that decide hard interview and contest problems. Every recurrence is verified against an exhaustive search on small inputs.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~6 hours</span></div>
+    </div>
+
+    <section id="method" data-track>
+      <h2>A method for designing DP</h2>
+<h3>The five questions</h3>
+<ol><li><strong>State</strong>: what is the smallest set of numbers that describes a subproblem? (<code>dp[i]</code>, <code>dp[i][j]</code>, <code>dp[mask]</code>)</li><li><strong>Meaning</strong>: say in words what the value stores ("the best score using the first <code>i</code> items with capacity <code>c</code>").</li><li><strong>Transition</strong>: how does a state's answer come from smaller states? (the recurrence)</li><li><strong>Base cases and order</strong>: which states are known, and in what order can you fill the rest (so dependencies are ready)?</li><li><strong>Answer and cost</strong>: which state holds the final answer; time = number of states x work per state; can space be compressed?</li></ol>
+<h3>Top-down or bottom-up</h3>
+<p><strong>Top-down</strong> (memoised recursion) writes the recurrence directly and computes only needed states; <strong>bottom-up</strong> (tabulation) fills a table in order, avoids recursion limits and allows space optimisation. Python's <code>functools.lru_cache</code> makes top-down trivial for prototypes; convert to a loop when depth or speed matter.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x3-01.py">from functools import lru_cache
+import itertools, random
+random.seed(0)
+
+def coin_change_dp(coins, target):                    # minimum coins, bottom-up
+    INF = float("inf")
+    dp = [0] + [INF] * target
+    for amount in range(1, target + 1):
+        for c in coins:
+            if c &lt;= amount and dp[amount - c] + 1 &lt; dp[amount]:
+                dp[amount] = dp[amount - c] + 1
+    return dp[target] if dp[target] != INF else -1
+
+def coin_change_brute(coins, target):
+    best = [float("inf")]
+    def go(rem, used):
+        if rem == 0: best[0] = min(best[0], used); return
+        for c in coins:
+            if c &lt;= rem and used + 1 &lt; best[0]: go(rem - c, used + 1)
+    go(target, 0)
+    return best[0] if best[0] != float("inf") else -1
+
+for _ in range(60):
+    coins = random.sample(range(1, 9), random.randint(1, 4))
+    t = random.randint(0, 18)
+    assert coin_change_dp(coins, t) == coin_change_brute(coins, t)
+print("coin change DP matches brute force; example:", coin_change_dp([1, 5, 6, 9], 11))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>coin change DP matches brute force; example: 2</code></pre>
+<p>The example shows why <strong>greedy fails</strong>: for coins 1, 5, 6, 9 and target 11, greedy takes 9 + 1 + 1 (3 coins) but the optimum is 5 + 6 (2 coins). DP explores all combinations implicitly.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x3-q01" data-topic="Advanced DP" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Greedy coin selection fails for coins [1, 5, 6, 9] and target 11 because:</p></div>
+        <ul class="q-options">
+          <li data-key="A">DP is faster <span class="q-why">Not the reason.</span></li>
+          <li data-key="B">Taking the largest coin first gives 3 coins, but 5 + 6 uses only 2 <span class="q-why">Correct.</span></li>
+          <li data-key="C">11 is prime <span class="q-why">No.</span></li>
+          <li data-key="D">Coins repeat <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The local best choice is not globally best; DP considers all combinations.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>State the five DP design questions.</summary><div class="answer"><p>State, its meaning, the transition, base cases and order, and the answer and cost.</p></div></details>
+      </div>
+    </section>
+
+    <section id="knapsack" data-track>
+      <h2>Knapsack family</h2>
+<h3>0/1 knapsack</h3>
+<p>Each item has weight <code>w</code> and value <code>v</code> and can be used <strong>once</strong>; maximise value within capacity <code>W</code>. State <code>dp[c]</code> = best value with capacity <code>c</code>. Iterate items in the outer loop and capacities <strong>downwards</strong> so an item is not reused.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x3-02.py">import itertools, random
+random.seed(1)
+def knapsack(items, W):
+    dp = [0] * (W + 1)
+    for w, v in items:
+        for c in range(W, w - 1, -1):               # downwards: each item used at most once
+            dp[c] = max(dp[c], dp[c - w] + v)
+    return dp[W]
+def brute(items, W):
+    best = 0
+    for mask in range(1 &lt;&lt; len(items)):
+        w = sum(items[i][0] for i in range(len(items)) if mask &gt;&gt; i &amp; 1)
+        if w &lt;= W: best = max(best, sum(items[i][1] for i in range(len(items)) if mask &gt;&gt; i &amp; 1))
+    return best
+for _ in range(80):
+    items = [(random.randint(1, 8), random.randint(1, 20)) for _ in range(random.randint(1, 9))]
+    W = random.randint(0, 20)
+    assert knapsack(items, W) == brute(items, W)
+print("0/1 knapsack verified against 2^n enumeration")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>0/1 knapsack verified against 2^n enumeration</code></pre>
+<h3>Variants</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Variant</th><th>Change</th></tr></thead>
+<tbody>
+<tr><td><strong>Unbounded</strong> (item reusable)</td><td>Iterate capacity <strong>upwards</strong> in the inner loop</td></tr><tr><td><strong>Bounded</strong> (item limited to <code>k</code> copies)</td><td>Binary splitting into 1, 2, 4... copies, or monotone deque optimisation</td></tr><tr><td><strong>Subset sum / partition</strong></td><td>Boolean <code>dp[c]</code>: can we reach sum <code>c</code>?</td></tr><tr><td><strong>Count the ways</strong></td><td>Add instead of max (combinations versus permutations depends on loop order)</td></tr><tr><td><strong>Multi-dimensional</strong></td><td>Two capacities: <code>dp[a][b]</code> (like "ones and zeroes")</td></tr><tr><td><strong>Large capacity, small values</strong></td><td>Swap roles: <code>dp[value]</code> = minimum weight</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/x3-03.py">def can_partition(nums):                 # subset sum: split into two equal-sum halves?
+    total = sum(nums)
+    if total % 2: return False
+    target, reach = total // 2, {0}
+    for x in nums:
+        reach |= {r + x for r in reach if r + x &lt;= target}
+    return target in reach
+def ways_combinations(coins, target):    # unordered: coins outer, amount inner
+    dp = [1] + [0] * target
+    for c in coins:
+        for a in range(c, target + 1): dp[a] += dp[a - c]
+    return dp[target]
+def ways_permutations(coins, target):    # ordered: amount outer, coins inner
+    dp = [1] + [0] * target
+    for a in range(1, target + 1):
+        for c in coins:
+            if c &lt;= a: dp[a] += dp[a - c]
+    return dp[target]
+print(can_partition([1, 5, 11, 5]), can_partition([1, 2, 3, 5]))
+print("combinations:", ways_combinations([1, 2, 5], 5), "| ordered sequences:", ways_permutations([1, 2, 5], 5))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>True False
+combinations: 4 | ordered sequences: 9</code></pre>
+<p>Swapping the loops changes the count from <strong>combinations</strong> (4) to <strong>ordered sequences</strong> (9): a classic interview trap.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x3-q02" data-topic="Advanced DP" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In 0/1 knapsack with a 1D array, why iterate capacity downwards?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To use less memory <span class="q-why">Not the reason.</span></li>
+          <li data-key="B">So each item is used at most once: smaller capacities have not yet been updated by the current item <span class="q-why">Correct.</span></li>
+          <li data-key="C">To sort items <span class="q-why">No.</span></li>
+          <li data-key="D">It is faster <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Iterating upwards would reuse an item multiple times (unbounded knapsack).</p></div>
+      </div>
+      <div class="quiz" data-qid="xd-x3-q03" data-topic="Advanced DP" data-type="numeric" data-answer="9" data-tol="0">
+        <div class="q-stem"><p>Coins {1, 2, 5}, amount 5. How many ordered sequences sum to 5? (the count from the amount-outer loop)</p></div>
+        <div class="q-explain"><p>Compositions of 5 using 1, 2, 5: 9. Combinations (unordered) are 4.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How does loop order change coin-change counting?</summary><div class="answer"><p>Coins outer gives combinations; amount outer gives ordered sequences.</p></div></details>
+      </div>
+    </section>
+
+    <section id="sequences" data-track>
+      <h2>Sequences and strings</h2>
+<h3>Longest increasing subsequence in O(n log n)</h3>
+<p>The simple DP is <code>O(n^2)</code>. The <strong>patience sorting</strong> method keeps <code>tails[k]</code> = the smallest possible last element of an increasing subsequence of length <code>k + 1</code>; binary search finds where each new number goes.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x3-04.py">import bisect, random
+random.seed(2)
+def lis_fast(a):
+    tails = []
+    for x in a:
+        i = bisect.bisect_left(tails, x)
+        if i == len(tails): tails.append(x)
+        else: tails[i] = x
+    return len(tails)
+def lis_slow(a):
+    dp = [1] * len(a)
+    for i in range(len(a)):
+        for j in range(i):
+            if a[j] &lt; a[i]: dp[i] = max(dp[i], dp[j] + 1)
+    return max(dp, default=0)
+for _ in range(200):
+    a = [random.randint(0, 20) for _ in range(random.randint(0, 15))]
+    assert lis_fast(a) == lis_slow(a)
+print("O(n log n) LIS matches the O(n^2) DP; example:", lis_fast([10, 9, 2, 5, 3, 7, 101, 18]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>O(n log n) LIS matches the O(n^2) DP; example: 4</code></pre>
+<p>Note: <code>tails</code> is <strong>not</strong> the subsequence itself, only its length is meaningful (reconstruct with parent pointers).</p>
+<h3>Edit distance and LCS</h3>
+<p><code>dp[i][j]</code> = minimum operations to turn the first <code>i</code> characters of <code>a</code> into the first <code>j</code> of <code>b</code>; transitions: insert, delete, replace (or match for free).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x3-05.py">from functools import lru_cache
+def edit_distance(a, b):
+    prev = list(range(len(b) + 1))
+    for i in range(1, len(a) + 1):
+        cur = [i] + [0] * len(b)
+        for j in range(1, len(b) + 1):
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] != b[j - 1]))
+        prev = cur
+    return prev[-1]
+def lcs(a, b):
+    @lru_cache(None)
+    def go(i, j):
+        if i == len(a) or j == len(b): return 0
+        if a[i] == b[j]: return 1 + go(i + 1, j + 1)
+        return max(go(i + 1, j), go(i, j + 1))
+    return go(0, 0)
+print(edit_distance("kitten", "sitting"), edit_distance("", "abc"), lcs("ABCBDAB", "BDCABA"))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>3 3 4</code></pre>
+<p>Both are <code>O(nm)</code> time; keeping only two rows reduces space to <code>O(m)</code> (as above).</p>
+<h3>Maximum subarray product, decode ways, house robber</h3>
+<p>Track the <strong>minimum and maximum</strong> ending here (a negative flips them); for decode ways use <code>dp[i] = dp[i-1]</code> (valid single digit) <code>+ dp[i-2]</code> (valid two digits); house robber is <code>dp[i] = max(dp[i-1], dp[i-2] + a[i])</code>.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x3-q04" data-topic="Advanced DP" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In the O(n log n) LIS, what does tails[k] store?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The k-th element of the LIS <span class="q-why">Not exactly.</span></li>
+          <li data-key="B">The smallest possible last element of an increasing subsequence of length k + 1 <span class="q-why">Correct.</span></li>
+          <li data-key="C">The index of the max <span class="q-why">No.</span></li>
+          <li data-key="D">A count <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Binary search places each element in tails.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you speed up LIS?</summary><div class="answer"><p>Maintain the smallest tail per length and binary search each element, giving O(n log n).</p></div></details>
+      </div>
+    </section>
+
+    <section id="interval" data-track>
+      <h2>Interval DP</h2>
+<p>State <code>dp[l][r]</code> for the best answer on the **substring or subarray from <code>l</code> to <code>r</code>**, combining two smaller intervals by trying a split point <code>k</code>. Typical: matrix chain multiplication, burst balloons, palindromic partitioning, optimal BST. Fill by <strong>increasing interval length</strong>. Complexity <code>O(n^3)</code> for <code>O(n^2)</code> states and <code>O(n)</code> splits.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x3-06.py">import random, itertools
+random.seed(3)
+def matrix_chain(dims):                          # dims of matrices: A_i is dims[i-1] x dims[i]
+    n = len(dims) - 1
+    dp = [[0] * n for _ in range(n)]
+    for length in range(2, n + 1):
+        for l in range(n - length + 1):
+            r = l + length - 1
+            dp[l][r] = min(dp[l][k] + dp[k + 1][r] + dims[l] * dims[k + 1] * dims[r + 1] for k in range(l, r))
+    return dp[0][n - 1]
+def brute(dims):
+    def go(l, r):
+        if l == r: return 0
+        return min(go(l, k) + go(k + 1, r) + dims[l] * dims[k + 1] * dims[r + 1] for k in range(l, r))
+    return go(0, len(dims) - 2)
+for _ in range(30):
+    dims = [random.randint(1, 9) for _ in range(random.randint(2, 7))]
+    assert matrix_chain(dims) == brute(dims)
+print("matrix chain verified; classic example [40, 20, 30, 10, 30] -&gt;", matrix_chain([40, 20, 30, 10, 30]))
+
+def burst_balloons(nums):
+    a = [1] + nums + [1]; n = len(a)
+    dp = [[0] * n for _ in range(n)]
+    for length in range(2, n):
+        for l in range(n - length):
+            r = l + length
+            dp[l][r] = max(dp[l][k] + a[l] * a[k] * a[r] + dp[k][r] for k in range(l + 1, r))
+    return dp[0][n - 1]
+print("burst balloons [3, 1, 5, 8] -&gt;", burst_balloons([3, 1, 5, 8]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>matrix chain verified; classic example [40, 20, 30, 10, 30] -&gt; 26000
+burst balloons [3, 1, 5, 8] -&gt; 167</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x3-q05" data-topic="Advanced DP" data-type="numeric" data-answer="3" data-tol="0">
+        <div class="q-stem"><p>Interval DP over n elements with O(n) split points per state: what is the time complexity exponent of n?</p></div>
+        <div class="q-explain"><p>O(n^2) states x O(n) splits = O(n^3).</p></div>
+      </div>
+    </section>
+
+    <section id="bitmask" data-track>
+      <h2>Bitmask DP</h2>
+<p>When the state is <strong>which items of a small set (up to about 20) have been used</strong>, encode it as an integer mask. <code>2^n</code> states times <code>O(n)</code> work gives <code>O(2^n n)</code>, far better than <code>n!</code>.</p>
+<h3>Travelling salesman (Held-Karp)</h3>
+<p><code>dp[mask][last]</code> = shortest route visiting exactly the set <code>mask</code>, ending at <code>last</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x3-07.py">import itertools, random
+random.seed(4)
+def tsp(dist):
+    n = len(dist)
+    INF = float("inf")
+    dp = [[INF] * n for _ in range(1 &lt;&lt; n)]
+    dp[1][0] = 0                                      # start at city 0
+    for mask in range(1 &lt;&lt; n):
+        for last in range(n):
+            if dp[mask][last] == INF or not (mask &gt;&gt; last &amp; 1): continue
+            for nxt in range(n):
+                if not (mask &gt;&gt; nxt &amp; 1):
+                    nm = mask | (1 &lt;&lt; nxt)
+                    dp[nm][nxt] = min(dp[nm][nxt], dp[mask][last] + dist[last][nxt])
+    full = (1 &lt;&lt; n) - 1
+    return min(dp[full][last] + dist[last][0] for last in range(1, n))
+def tsp_brute(dist):
+    n = len(dist)
+    return min(sum(dist[a][b] for a, b in zip((0,) + p, p + (0,))) for p in itertools.permutations(range(1, n)))
+for _ in range(20):
+    n = random.randint(3, 7)
+    d = [[0 if i == j else random.randint(1, 20) for j in range(n)] for i in range(n)]
+    assert tsp(d) == tsp_brute(d)
+print("Held-Karp matches brute force over all permutations: O(2^n n^2) vs O(n!)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>Held-Karp matches brute force over all permutations: O(2^n n^2) vs O(n!)</code></pre>
+<p>Other bitmask problems: assigning <code>n</code> workers to <code>n</code> jobs, partitioning into groups, "can first player win" games over subsets, profile DP on grids (tiling), counting Hamiltonian paths, subset convolution.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x3-q06" data-topic="Advanced DP" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Held-Karp solves TSP in:</p></div>
+        <ul class="q-options">
+          <li data-key="A">O(n!) <span class="q-why">That is brute force.</span></li>
+          <li data-key="B">O(2^n n^2) <span class="q-why">Correct.</span></li>
+          <li data-key="C">O(n log n) <span class="q-why">No.</span></li>
+          <li data-key="D">Polynomial time <span class="q-why">TSP is NP-hard.</span></li>
+        </ul>
+        <div class="q-explain"><p>2^n masks x n last cities x n next cities.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>When is bitmask DP applicable?</summary><div class="answer"><p>When the state is a subset of a small set (about 20 items), giving 2^n states instead of n! orderings.</p></div></details>
+      </div>
+    </section>
+
+    <section id="trees" data-track>
+      <h2>DP on trees and digit DP</h2>
+<h3>Tree DP</h3>
+<p>Compute a value per vertex from its children using a post-order DFS. Example, <strong>maximum independent set</strong> (no two chosen vertices adjacent): for each vertex keep <code>take</code> and <code>skip</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x3-08.py">import random, itertools
+random.seed(5)
+def mis_tree(n, parent):
+    kids = [[] for _ in range(n)]
+    for v in range(1, n): kids[parent[v]].append(v)
+    take, skip = [0] * n, [0] * n
+    for v in range(n - 1, -1, -1):                    # parents have smaller index, so this is post-order
+        take[v] = 1 + sum(skip[c] for c in kids[v])
+        skip[v] = sum(max(take[c], skip[c]) for c in kids[v])
+    return max(take[0], skip[0])
+def brute(n, parent):
+    edges = [(v, parent[v]) for v in range(1, n)]
+    best = 0
+    for mask in range(1 &lt;&lt; n):
+        if all(not (mask &gt;&gt; a &amp; 1 and mask &gt;&gt; b &amp; 1) for a, b in edges):
+            best = max(best, bin(mask).count("1"))
+    return best
+for _ in range(60):
+    n = random.randint(1, 11)
+    parent = [0] + [random.randrange(v) for v in range(1, n)]
+    assert mis_tree(n, parent) == brute(n, parent)
+print("tree DP (take or skip) verified against subset enumeration")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>tree DP (take or skip) verified against subset enumeration</code></pre>
+<p>Other tree DPs: <strong>diameter</strong> (longest path through each vertex), <strong>rerooting</strong> (compute the answer for every root in <code>O(n)</code>), <strong>tree knapsack</strong>, counting paths with a property, lowest common ancestor via binary lifting.</p>
+<h3>Digit DP</h3>
+<p>Count numbers in <code>[0, N]</code> with a property of their digits (no two adjacent equal digits, digit sum equals <code>s</code>, avoiding a digit). State: position, tight bound flag, plus whatever the property needs. Handles <code>N</code> up to <code>10^18</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x3-09.py">from functools import lru_cache
+def count_no_digit_7(N):
+    digits = list(map(int, str(N)))
+    @lru_cache(None)
+    def go(pos, tight):
+        if pos == len(digits): return 1
+        total = 0
+        for d in range(0, (digits[pos] if tight else 9) + 1):
+            if d == 7: continue
+            total += go(pos + 1, tight and d == digits[pos])
+        return total
+    return go(0, True)
+brute = lambda N: sum(1 for x in range(N + 1) if "7" not in str(x))
+assert all(count_no_digit_7(N) == brute(N) for N in (0, 6, 7, 70, 99, 100, 777, 1234))
+print("digit DP verified; count up to 10^18:", count_no_digit_7(10 ** 18))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>digit DP verified; count up to 10^18: 150094635296999122</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x3-q07" data-topic="Advanced DP" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In tree DP for maximum independent set, if a vertex is taken, its children are:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Also taken <span class="q-why">They would be adjacent.</span></li>
+          <li data-key="B">Skipped <span class="q-why">Correct.</span></li>
+          <li data-key="C">Optional <span class="q-why">No.</span></li>
+          <li data-key="D">Deleted <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>take[v] = 1 + sum of skip[child].</p></div>
+      </div>
+    </section>
+
+    <section id="optimise" data-track>
+      <h2>Optimisation techniques and limits</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Technique</th><th>Idea</th><th>Example</th></tr></thead>
+<tbody>
+<tr><td><strong>Rolling array</strong></td><td>Keep only the rows you need</td><td>LCS, knapsack: space <code>O(m)</code> or <code>O(W)</code></td></tr><tr><td><strong>Monotone deque</strong></td><td>Sliding-window min or max inside a transition</td><td>Bounded knapsack, jump games with window</td></tr><tr><td><strong>Convex hull trick</strong></td><td>Transition is a min over lines <code>m x + b</code></td><td>Cost DP like <code>dp[i] = min(dp[j] + b[j] a[i])</code></td></tr><tr><td><strong>Divide and conquer optimisation</strong></td><td>Optimal split point is monotone</td><td>Partition arrays into k groups</td></tr><tr><td><strong>Knuth optimisation</strong></td><td><code>O(n^3)</code> interval DP to <code>O(n^2)</code> under conditions</td><td>Optimal BST</td></tr><tr><td><strong>Bitset speed-up</strong></td><td>Use big integers as bit sets</td><td>Subset sum in <code>O(n W / 64)</code></td></tr><tr><td><strong>Meet in the middle</strong></td><td>Split the set in two halves, enumerate and combine</td><td>Subset sum for <code>n = 40</code></td></tr><tr><td><strong>State reduction</strong></td><td>Drop redundant dimensions, sort first</td><td>Many 2D DPs become 1D</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/x3-10.py">def subset_sum_bitset(nums, target):
+    bits = 1                                     # bit i set means sum i is reachable
+    for x in nums:
+        bits |= bits &lt;&lt; x
+    return bool(bits &gt;&gt; target &amp; 1)
+print(subset_sum_bitset([3, 34, 4, 12, 5, 2], 9), subset_sum_bitset([3, 34, 4, 12, 5, 2], 30))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>True False</code></pre>
+<h3>When not to use DP</h3>
+<ul><li><strong>Greedy</strong> is enough and faster when the <strong>greedy-choice property</strong> holds (interval scheduling, Huffman, fractional knapsack); prove it, or test against DP.</li><li>The state space is too large (<code>n</code> up to 10^5 with an <code>O(n^2)</code> DP): look for structure (monotonicity, convexity, data structures) or a different model.</li><li>A <strong>graph shortest path</strong> or <strong>flow</strong> formulation is more natural.</li><li><strong>NP-hard</strong> problems (general knapsack with huge capacity, TSP) need exponential or approximate algorithms; DP is pseudo-polynomial (knapsack is <code>O(nW)</code>, not polynomial in the input length).</li></ul>
+<h3>A debugging routine for DP</h3>
+<ol><li>Write the <strong>brute force</strong> first (even exponential) and compare on tiny random inputs, as in every example above.</li><li>Print the table for a small case and check it by hand.</li><li>Check <strong>base cases</strong> and <strong>loop direction</strong> (upwards or downwards, increasing length).</li><li>Check <strong>off-by-one</strong> between 0-based items and 1-based capacities.</li></ol>
+<div class="callout key"><span class="callout-title">Key idea</span><p>State, meaning, transition, order, answer. Write the meaning of each state in a sentence; most DP bugs are a state that does not mean what the code assumes. Always validate against brute force on small cases.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x3-q08" data-topic="Advanced DP" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which technique turns subset sum for n = 40 into feasible work?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Rolling arrays <span class="q-why">Capacity is huge.</span></li>
+          <li data-key="B">Meet in the middle <span class="q-why">Correct.</span></li>
+          <li data-key="C">Memoisation <span class="q-why">States are exponential.</span></li>
+          <li data-key="D">Sorting <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Enumerate 2^20 sums from each half and combine.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>When is greedy better than DP?</summary><div class="answer"><p>When the greedy-choice property holds and can be proved, giving a faster and simpler algorithm.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Advanced DP</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Advanced DP">
+<details class="recall iq" data-level="basic" data-topic="Advanced DP"><summary><span class="tag ok">Basic</span> How do you recognise a DP problem?</summary><div class="answer"><p>Overlapping subproblems and optimal substructure: a recursive solution that recomputes the same states, where the best answer builds from best answers to smaller states.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Advanced DP"><summary><span class="tag ok">Basic</span> Top-down versus bottom-up DP?</summary><div class="answer"><p>Top-down memoises recursion and computes only needed states; bottom-up fills a table in dependency order, avoiding recursion depth and enabling space optimisation.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Advanced DP"><summary><span class="tag ok">Basic</span> Solve 0/1 knapsack and give its complexity.</summary><div class="answer"><p>dp[w] = max(dp[w], dp[w - wt] + val), iterating w downward for 0/1. O(nW) time, O(W) space; it is pseudo-polynomial.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Advanced DP"><summary><span class="tag warn">Medium</span> Why iterate capacity downward in 0/1 knapsack but upward for unbounded?</summary><div class="answer"><p>Downward prevents reusing an item within the same pass; upward intentionally allows reusing the same item.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Advanced DP"><summary><span class="tag warn">Medium</span> Longest increasing subsequence in O(n log n)?</summary><div class="answer"><p>Keep tails[k], the smallest tail of an increasing subsequence of length k + 1, and binary search each element&#x27;s position.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Advanced DP"><summary><span class="tag warn">Medium</span> Define edit distance DP.</summary><div class="answer"><p>dp[i][j] is the cost to convert the first i characters to the first j: equal characters copy dp[i-1][j-1]; otherwise 1 + min(insert, delete, replace).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Advanced DP"><summary><span class="tag warn">Medium</span> How do you reconstruct the answer, not only its value?</summary><div class="answer"><p>Store the choice (parent pointer) at each state, or walk backwards through the table checking which transition produced the value.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Advanced DP"><summary><span class="tag warn">Medium</span> Interval DP: describe the pattern.</summary><div class="answer"><p>dp[l][r] combines dp over split points k in [l, r), iterating by increasing length. Examples: matrix chain, burst balloons, optimal BST.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Advanced DP"><summary><span class="tag bad">Advanced</span> When do you use bitmask DP?</summary><div class="answer"><p>When n is small (about 20) and the state is the subset of items used, as in TSP in O(2^n n^2), assignment problems and partitioning.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Advanced DP"><summary><span class="tag bad">Advanced</span> Explain digit DP.</summary><div class="answer"><p>Count numbers up to N with a property by processing digits left to right with state (position, tight, extra info like sum or last digit), memoising when not tight.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Advanced DP"><summary><span class="tag bad">Advanced</span> What is the knapsack optimisation for large weights but small values?</summary><div class="answer"><p>Swap the dimensions: dp[value] = minimum weight, giving O(n sum of values), the basis of the FPTAS.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Advanced DP"><summary><span class="tag bad">Advanced</span> How do convex hull trick and divide-and-conquer optimisation speed up DP?</summary><div class="answer"><p>When transitions are lines or satisfy monotone optimal split points, you can reduce O(n^2) transitions to O(n log n) or O(n).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Advanced DP"><summary><span class="tag bad">Advanced</span> Tree DP: how is it structured?</summary><div class="answer"><p>Compute states for children first (post-order) and combine them, e.g. maximum independent set with dp[v][taken] or rerooting to get answers for every root.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Advanced DP"><summary><span class="tag bad">Advanced</span> Why is the coin change count different from the minimum coins DP?</summary><div class="answer"><p>Counting combinations loops over coins outside and amounts inside (order ignored); counting sequences swaps the loops. Minimum uses min instead of sum.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="x2-advanced-graphs.html"><span class="dir">Previous</span><span>X2 Advanced graph algorithms: shortest paths, MST, SCC, bridges and flow</span></a>
+      <a class="next" href="x4-strings.html"><span class="dir">Next</span><span>X4 String algorithms: KMP, Z, Rabin-Karp, Manacher, tries and suffix structures</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

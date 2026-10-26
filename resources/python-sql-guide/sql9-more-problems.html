@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="SQL9">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>More SQL interview problems: set two | Python + SQL</title>
+<meta name="description" content="Twenty-two more SQL interview problems with executed solutions across the shop, HR, events and app datasets: second highest, manager comparisons, anti-joins, running and cumulative totals, medians, pivots, deduplication, hierarchies and retention.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SQL9</p>
+      <h1>More SQL interview problems: set two</h1>
+      <p class="lede">A second set of problems for practice after SQL5. Each states the task, names the technique, gives a solution that was run on the dataset, and lists the common mistake. Cover the solution and write your own query first.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="how" data-track>
+      <h2>How to use this set</h2>
+<p>Datasets: <code>shop</code> (customers, products, orders, order_items), <code>hr</code> (departments, employees), <code>events</code> (logins, daily_sales, sessions) and <code>app</code> (users, events). Schemas appear in the earlier parts. For each problem: restate it, state the grain of the result (one row per what?), write the query, then test edge cases such as ties, NULLs and empty groups.</p>
+    </section>
+
+    <section id="ranking" data-track>
+      <h2>Ranking and comparisons</h2>
+<h3>1. Second highest salary (with ties handled)</h3>
+<p>Use <code>DENSE_RANK</code> so equal salaries share a rank. Mistake: <code>LIMIT 1 OFFSET 1</code> returns the second row, not the second distinct value.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql9-01.sql">SELECT DISTINCT salary FROM (
+  SELECT salary, DENSE_RANK() OVER (ORDER BY salary DESC) AS r FROM employees)
+WHERE r = 2;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>salary</th></tr></thead>
+<tbody><tr><td>120000</td></tr></tbody>
+</table>
+</div>
+<h3>2. Employees who earn more than their manager</h3>
+<p>Self-join employees to their manager.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql9-02.sql">SELECT e.name AS employee, e.salary, m.name AS manager, m.salary AS manager_salary
+FROM employees e JOIN employees m ON m.id = e.manager_id
+WHERE e.salary &gt; m.salary;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>employee</th><th>salary</th><th>manager</th><th>manager_salary</th></tr></thead>
+<tbody><tr><td>Eve</td><td>95000</td><td>Dan</td><td>90000</td></tr></tbody>
+</table>
+</div>
+<p>Check that the join key is right; the inner join silently drops the top of the tree (no manager), which is what you want here. An empty result would also be a valid answer.</p>
+<h3>3. Departments with no employees</h3>
+<p>Anti-join with <code>NOT EXISTS</code>.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql9-03.sql">SELECT d.name FROM departments d
+WHERE NOT EXISTS (SELECT 1 FROM employees e WHERE e.dept_id = d.id);</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th></tr></thead>
+<tbody><tr><td>HR</td></tr></tbody>
+</table>
+</div>
+<h3>4. Highest paid employee per department, with ties</h3>
+<p><code>RANK</code> keeps all tied top earners.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql9-04.sql">SELECT department, name, salary FROM (
+  SELECT d.name AS department, e.name, e.salary, RANK() OVER (PARTITION BY d.id ORDER BY e.salary DESC) AS r
+  FROM employees e JOIN departments d ON d.id = e.dept_id)
+WHERE r = 1 ORDER BY department, name;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>department</th><th>name</th><th>salary</th></tr></thead>
+<tbody><tr><td>Data</td><td>Grace</td><td>110000</td></tr><tr><td>Engineering</td><td>Alice</td><td>150000</td></tr><tr><td>Sales</td><td>Eve</td><td>95000</td></tr></tbody>
+</table>
+</div>
+<h3>5. Salary compared with the department average</h3>
+<p>Window average beside each row, no self-join needed.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql9-05.sql">SELECT name, salary,
+       ROUND(AVG(salary) OVER (PARTITION BY dept_id)) AS dept_avg,
+       salary - ROUND(AVG(salary) OVER (PARTITION BY dept_id)) AS diff
+FROM employees WHERE dept_id IS NOT NULL
+ORDER BY dept_id, salary DESC;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>salary</th><th>dept_avg</th><th>diff</th></tr></thead>
+<tbody><tr><td>Alice</td><td>150000</td><td>130000.0</td><td>20000.0</td></tr><tr><td>Bob</td><td>120000</td><td>130000.0</td><td>-10000.0</td></tr><tr><td>Carol</td><td>120000</td><td>130000.0</td><td>-10000.0</td></tr><tr><td>Eve</td><td>95000</td><td>90000.0</td><td>5000.0</td></tr><tr><td>Dan</td><td>90000</td><td>90000.0</td><td>0.0</td></tr><tr><td>Frank</td><td>85000</td><td>90000.0</td><td>-5000.0</td></tr><tr><td>Grace</td><td>110000</td><td>106667.0</td><td>3333.0</td></tr><tr><td>Heidi</td><td>105000</td><td>106667.0</td><td>-1667.0</td></tr><tr><td>Ivan</td><td>105000</td><td>106667.0</td><td>-1667.0</td></tr></tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql9-q01" data-topic="More SQL problems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which function finds the second distinct highest value even with ties?</p></div>
+        <ul class="q-options">
+          <li data-key="A">ROW_NUMBER <span class="q-why">Counts duplicates separately.</span></li>
+          <li data-key="B">DENSE_RANK <span class="q-why">Correct.</span></li>
+          <li data-key="C">LIMIT 1 OFFSET 1 <span class="q-why">Returns the second row, which may repeat the highest.</span></li>
+          <li data-key="D">COUNT <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Dense rank has no gaps for ties.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>ROW_NUMBER vs RANK vs DENSE_RANK?</summary><div class="answer"><p>ROW_NUMBER is unique; RANK leaves gaps after ties; DENSE_RANK has no gaps.</p></div></details>
+      </div>
+    </section>
+
+    <section id="existence" data-track>
+      <h2>Anti-joins, existence and division</h2>
+<h3>6. Products that were never ordered</h3>
+<p>Every product in the sample data has been ordered, so first add one that has not.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql9-06.sql">INSERT INTO products VALUES (8, 'Monitor', 'electronics', 250);
+SELECT p.name FROM products p
+LEFT JOIN order_items oi ON oi.product_id = p.id
+WHERE oi.order_id IS NULL;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th></tr></thead>
+<tbody><tr><td>Monitor</td></tr></tbody>
+</table>
+</div>
+<h3>7. Customers who bought every electronics product under 1000 (relational division)</h3>
+<p>Count distinct matches and compare with the total.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql9-07.sql">SELECT c.name
+FROM customers c
+JOIN orders o ON o.customer_id = c.id AND o.status = 'paid'
+JOIN order_items oi ON oi.order_id = o.id
+JOIN products p ON p.id = oi.product_id AND p.category = 'electronics' AND p.price &lt; 1000
+GROUP BY c.id, c.name
+HAVING COUNT(DISTINCT p.id) = (SELECT COUNT(*) FROM products WHERE category = 'electronics' AND price &lt; 1000);</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th></tr></thead>
+<tbody><tr><td>Dev</td></tr></tbody>
+</table>
+</div>
+<h3>8. Customers whose every order is paid</h3>
+<p><code>NOT EXISTS</code> of a non-paid order, plus at least one order.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql9-08.sql">SELECT c.name FROM customers c
+WHERE EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.id)
+  AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.id AND o.status &lt;&gt; 'paid');</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th></tr></thead>
+<tbody><tr><td>Ben</td></tr><tr><td>Dev</td></tr><tr><td>Eli</td></tr><tr><td>Fay</td></tr></tbody>
+</table>
+</div>
+<h3>9. Pairs of colleagues in the same department</h3>
+<p>Self-join with <code>a.id &lt; b.id</code> so each pair appears once and nobody pairs with themself.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql9-09.sql">SELECT a.name AS person_a, b.name AS person_b, d.name AS department
+FROM employees a JOIN employees b ON a.dept_id = b.dept_id AND a.id &lt; b.id
+JOIN departments d ON d.id = a.dept_id
+ORDER BY d.name, a.name, b.name;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>person_a</th><th>person_b</th><th>department</th></tr></thead>
+<tbody><tr><td>Grace</td><td>Heidi</td><td>Data</td></tr><tr><td>Grace</td><td>Ivan</td><td>Data</td></tr><tr><td>Heidi</td><td>Ivan</td><td>Data</td></tr><tr><td>Alice</td><td>Bob</td><td>Engineering</td></tr><tr><td>Alice</td><td>Carol</td><td>Engineering</td></tr><tr><td>Bob</td><td>Carol</td><td>Engineering</td></tr><tr><td>Dan</td><td>Eve</td><td>Sales</td></tr><tr><td>Dan</td><td>Frank</td><td>Sales</td></tr><tr><td>Eve</td><td>Frank</td><td>Sales</td></tr></tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql9-q02" data-topic="More SQL problems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which query pattern finds rows with no match in another table?</p></div>
+        <ul class="q-options">
+          <li data-key="A">INNER JOIN <span class="q-why">Only matches.</span></li>
+          <li data-key="B">LEFT JOIN with IS NULL or NOT EXISTS <span class="q-why">Correct.</span></li>
+          <li data-key="C">UNION <span class="q-why">No.</span></li>
+          <li data-key="D">GROUP BY <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>That is an anti-join.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-sql9-q03" data-topic="More SQL problems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you express relational division ('all of')?</p></div>
+        <ul class="q-options">
+          <li data-key="A">DISTINCT <span class="q-why">No.</span></li>
+          <li data-key="B">Group and compare the distinct matched count with the total required count <span class="q-why">Correct.</span></li>
+          <li data-key="C">ORDER BY <span class="q-why">No.</span></li>
+          <li data-key="D">LIMIT <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>HAVING COUNT(DISTINCT x) = total.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why prefer NOT EXISTS to NOT IN?</summary><div class="answer"><p>NOT IN returns nothing if the subquery contains a NULL; NOT EXISTS is NULL-safe.</p></div></details>
+      </div>
+    </section>
+
+    <section id="aggregation" data-track>
+      <h2>Aggregation and pivots</h2>
+<h3>10. Orders above the average order value</h3>
+<p>Compare per-order totals with the overall average using a CTE.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql9-10.sql">WITH totals AS (
+  SELECT o.id AS order_id, SUM(oi.qty * p.price) AS total
+  FROM orders o JOIN order_items oi ON oi.order_id = o.id JOIN products p ON p.id = oi.product_id
+  WHERE o.status = 'paid' GROUP BY o.id)
+SELECT order_id, total FROM totals WHERE total &gt; (SELECT AVG(total) FROM totals) ORDER BY total DESC;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>order_id</th><th>total</th></tr></thead>
+<tbody><tr><td>1</td><td>1250.0</td></tr><tr><td>7</td><td>1200.0</td></tr><tr><td>6</td><td>950.0</td></tr><tr><td>3</td><td>800.0</td></tr></tbody>
+</table>
+</div>
+<h3>11. Pivot order status counts per customer</h3>
+<p>Conditional aggregation.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql9-11.sql">SELECT c.name,
+       SUM(o.status = 'paid') AS paid,
+       SUM(o.status = 'pending') AS pending,
+       SUM(o.status = 'cancelled') AS cancelled
+FROM customers c LEFT JOIN orders o ON o.customer_id = c.id
+GROUP BY c.id, c.name
+ORDER BY c.id;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>paid</th><th>pending</th><th>cancelled</th></tr></thead>
+<tbody><tr><td>Ada</td><td>2</td><td>1</td><td>0</td></tr><tr><td>Ben</td><td>2</td><td>0</td><td>0</td></tr><tr><td>Chloe</td><td>1</td><td>0</td><td>1</td></tr><tr><td>Dev</td><td>1</td><td>0</td><td>0</td></tr><tr><td>Eli</td><td>1</td><td>0</td><td>0</td></tr><tr><td>Fay</td><td>1</td><td>0</td><td>0</td></tr><tr><td>Gus</td><td>NULL</td><td>NULL</td><td>NULL</td></tr><tr><td>Hana</td><td>NULL</td><td>NULL</td><td>NULL</td></tr></tbody>
+</table>
+</div>
+<h3>12. Percent of total revenue by category</h3>
+<p>A window over the grouped result.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql9-12.sql">SELECT p.category, SUM(oi.qty * p.price) AS revenue,
+       ROUND(100.0 * SUM(oi.qty * p.price) / SUM(SUM(oi.qty * p.price)) OVER (), 1) AS pct_of_total
+FROM order_items oi JOIN orders o ON o.id = oi.order_id AND o.status = 'paid'
+JOIN products p ON p.id = oi.product_id
+GROUP BY p.category ORDER BY revenue DESC;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>category</th><th>revenue</th><th>pct_of_total</th></tr></thead>
+<tbody><tr><td>electronics</td><td>4600.0</td><td>88.6</td></tr><tr><td>furniture</td><td>360.0</td><td>6.9</td></tr><tr><td>stationery</td><td>230.0</td><td>4.4</td></tr></tbody>
+</table>
+</div>
+<h3>13. Median salary</h3>
+<p>No <code>MEDIAN</code> in SQLite: average the one or two middle rows.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql9-13.sql">WITH r AS (SELECT salary, ROW_NUMBER() OVER (ORDER BY salary) AS rn, COUNT(*) OVER () AS n FROM employees)
+SELECT AVG(salary) AS median_salary FROM r WHERE rn IN ((n + 1) / 2, (n + 2) / 2);</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>median_salary</th></tr></thead>
+<tbody><tr><td>105000.0</td></tr></tbody>
+</table>
+</div>
+<h3>14. Top 2 products per category by revenue</h3>
+<p>Group first, then rank within category.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql9-14.sql">SELECT category, name, revenue FROM (
+  SELECT p.category, p.name, SUM(oi.qty * p.price) AS revenue,
+         ROW_NUMBER() OVER (PARTITION BY p.category ORDER BY SUM(oi.qty * p.price) DESC) AS rn
+  FROM order_items oi JOIN orders o ON o.id = oi.order_id AND o.status = 'paid'
+  JOIN products p ON p.id = oi.product_id GROUP BY p.id)
+WHERE rn &lt;= 2 ORDER BY category, revenue DESC;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>category</th><th>name</th><th>revenue</th></tr></thead>
+<tbody><tr><td>electronics</td><td>Laptop</td><td>2400.0</td></tr><tr><td>electronics</td><td>Phone</td><td>1600.0</td></tr><tr><td>furniture</td><td>Chair</td><td>360.0</td></tr><tr><td>stationery</td><td>Pen</td><td>140.0</td></tr><tr><td>stationery</td><td>Notebook</td><td>90.0</td></tr></tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql9-q04" data-topic="More SQL problems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you compute a percent of total in one query?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Two queries only <span class="q-why">Not required.</span></li>
+          <li data-key="B">Divide a group sum by a window SUM over all groups <span class="q-why">Correct.</span></li>
+          <li data-key="C">Use LIMIT <span class="q-why">No.</span></li>
+          <li data-key="D">Use DISTINCT <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>SUM(SUM(x)) OVER () works over grouped output.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you pivot rows to columns?</summary><div class="answer"><p>Conditional aggregation: SUM(CASE WHEN ... THEN 1 ELSE 0 END) per column.</p></div></details>
+      </div>
+    </section>
+
+    <section id="time" data-track>
+      <h2>Time and sequences</h2>
+<h3>15. Cumulative revenue per customer over time</h3>
+<p>Running sum partitioned by customer, ordered by date.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql9-15.sql">SELECT c.name, o.order_date, SUM(oi.qty * p.price) AS order_total,
+       SUM(SUM(oi.qty * p.price)) OVER (PARTITION BY c.id ORDER BY o.order_date) AS cumulative
+FROM orders o JOIN customers c ON c.id = o.customer_id
+JOIN order_items oi ON oi.order_id = o.id JOIN products p ON p.id = oi.product_id
+WHERE o.status = 'paid'
+GROUP BY c.id, o.id ORDER BY c.name, o.order_date;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>order_date</th><th>order_total</th><th>cumulative</th></tr></thead>
+<tbody><tr><td>Ada</td><td>2024-01-10</td><td>1250.0</td><td>1250.0</td></tr><tr><td>Ada</td><td>2024-02-14</td><td>340.0</td><td>1590.0</td></tr><tr><td>Ben</td><td>2024-01-20</td><td>800.0</td><td>800.0</td></tr><tr><td>Ben</td><td>2024-03-12</td><td>1200.0</td><td>2000.0</td></tr><tr><td>Chloe</td><td>2024-02-25</td><td>375.0</td><td>375.0</td></tr><tr><td>Dev</td><td>2024-03-05</td><td>950.0</td><td>950.0</td></tr><tr><td>Eli</td><td>2024-03-22</td><td>100.0</td><td>100.0</td></tr><tr><td>Fay</td><td>2024-04-01</td><td>175.0</td><td>175.0</td></tr></tbody>
+</table>
+</div>
+<h3>16. Customers' first and last paid order dates</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql9-16.sql">SELECT c.name, MIN(o.order_date) AS first_order, MAX(o.order_date) AS last_order,
+       CAST(julianday(MAX(o.order_date)) - julianday(MIN(o.order_date)) AS INT) AS days_between
+FROM customers c JOIN orders o ON o.customer_id = c.id AND o.status = 'paid'
+GROUP BY c.id HAVING COUNT(*) &gt; 1;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>first_order</th><th>last_order</th><th>days_between</th></tr></thead>
+<tbody><tr><td>Ada</td><td>2024-01-10</td><td>2024-02-14</td><td>35</td></tr><tr><td>Ben</td><td>2024-01-20</td><td>2024-03-12</td><td>52</td></tr></tbody>
+</table>
+</div>
+<h3>17. Longest login streak per user</h3>
+<p>Subtract a row number from the date to label consecutive-day groups.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql9-17.sql">WITH d AS (
+  SELECT user_id, day, julianday(day) - ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY day) AS grp FROM logins),
+s AS (SELECT user_id, grp, COUNT(*) AS streak FROM d GROUP BY user_id, grp)
+SELECT user_id, MAX(streak) AS longest_streak FROM s GROUP BY user_id ORDER BY user_id;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>user_id</th><th>longest_streak</th></tr></thead>
+<tbody><tr><td>1</td><td>3</td></tr><tr><td>2</td><td>3</td></tr></tbody>
+</table>
+</div>
+<h3>18. Days when sales beat the previous day and the 3-day average</h3>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql9-18.sql">SELECT day, amount FROM (
+  SELECT day, amount, LAG(amount) OVER (ORDER BY day) AS prev,
+         AVG(amount) OVER (ORDER BY day ROWS BETWEEN 3 PRECEDING AND 1 PRECEDING) AS prior_avg
+  FROM daily_sales)
+WHERE amount &gt; prev AND amount &gt; prior_avg;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>day</th><th>amount</th></tr></thead>
+<tbody><tr><td>2024-03-02</td><td>120</td></tr><tr><td>2024-03-04</td><td>150</td></tr><tr><td>2024-03-06</td><td>170</td></tr></tbody>
+</table>
+</div>
+<h3>19. Users who purchased within seven days of signing up</h3>
+<p>Join to <code>users</code> and compare dates.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql9-19.sql">SELECT u.name, u.signup_date, MIN(date(e.ts)) AS first_purchase
+FROM users u JOIN events e ON e.user_id = u.id AND e.event = 'purchase'
+GROUP BY u.id
+HAVING julianday(MIN(date(e.ts))) - julianday(u.signup_date) &lt;= 7
+ORDER BY u.id;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>signup_date</th><th>first_purchase</th></tr></thead>
+<tbody><tr><td>Asha</td><td>2024-02-11</td><td>2024-02-15</td></tr><tr><td>Cleo</td><td>2024-02-20</td><td>2024-02-20</td></tr><tr><td>Femi</td><td>2024-03-04</td><td>2024-03-04</td></tr><tr><td>Hugo</td><td>2024-02-14</td><td>2024-02-17</td></tr><tr><td>Lena</td><td>2024-02-29</td><td>2024-02-29</td></tr></tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql9-q05" data-topic="More SQL problems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you label consecutive-day streaks?</p></div>
+        <ul class="q-options">
+          <li data-key="A">ROW_NUMBER alone <span class="q-why">Not enough.</span></li>
+          <li data-key="B">Subtract a row number from the date; equal results mark a streak <span class="q-why">Correct.</span></li>
+          <li data-key="C">COUNT(*) <span class="q-why">No.</span></li>
+          <li data-key="D">MAX(day) <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The difference is constant within a run.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does LAG do?</summary><div class="answer"><p>Returns a value from a previous row in the window order, for comparisons and deltas.</p></div></details>
+      </div>
+    </section>
+
+    <section id="cleaning" data-track>
+      <h2>Hierarchies and cleaning</h2>
+<h3>20. Management chain with levels</h3>
+<p>A recursive CTE walks the tree from the top.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql9-20.sql">WITH RECURSIVE chain AS (
+  SELECT id, name, manager_id, 0 AS level, name AS path FROM employees WHERE manager_id IS NULL
+  UNION ALL
+  SELECT e.id, e.name, e.manager_id, c.level + 1, c.path || ' &gt; ' || e.name
+  FROM employees e JOIN chain c ON e.manager_id = c.id)
+SELECT level, name, path FROM chain ORDER BY path;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>level</th><th>name</th><th>path</th></tr></thead>
+<tbody><tr><td>0</td><td>Alice</td><td>Alice</td></tr><tr><td>1</td><td>Bob</td><td>Alice &gt; Bob</td></tr><tr><td>1</td><td>Carol</td><td>Alice &gt; Carol</td></tr><tr><td>1</td><td>Dan</td><td>Alice &gt; Dan</td></tr><tr><td>2</td><td>Eve</td><td>Alice &gt; Dan &gt; Eve</td></tr><tr><td>2</td><td>Frank</td><td>Alice &gt; Dan &gt; Frank</td></tr><tr><td>1</td><td>Grace</td><td>Alice &gt; Grace</td></tr><tr><td>2</td><td>Heidi</td><td>Alice &gt; Grace &gt; Heidi</td></tr><tr><td>2</td><td>Ivan</td><td>Alice &gt; Grace &gt; Ivan</td></tr><tr><td>1</td><td>Judy</td><td>Alice &gt; Judy</td></tr></tbody>
+</table>
+</div>
+<h3>21. Find and remove duplicates, keeping the lowest id</h3>
+<p>Show duplicates first, then delete all but the minimum id.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql9-21.sql">CREATE TABLE contact (id INTEGER PRIMARY KEY, email TEXT, name TEXT);
+INSERT INTO contact VALUES (1,'a@x.com','A'),(2,'b@x.com','B'),(3,'a@x.com','A2'),(4,'a@x.com','A3'),(5,'c@x.com','C');
+SELECT email, COUNT(*) AS copies FROM contact GROUP BY email HAVING COUNT(*) &gt; 1;
+DELETE FROM contact WHERE id NOT IN (SELECT MIN(id) FROM contact GROUP BY email);
+SELECT id, email FROM contact ORDER BY id;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>email</th><th>copies</th></tr></thead>
+<tbody><tr><td>a@x.com</td><td>3</td></tr></tbody>
+</table>
+</div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>id</th><th>email</th></tr></thead>
+<tbody><tr><td>1</td><td>a@x.com</td></tr><tr><td>2</td><td>b@x.com</td></tr><tr><td>5</td><td>c@x.com</td></tr></tbody>
+</table>
+</div>
+<h3>22. Find gaps in an id sequence</h3>
+<p>Compare each id with the next one.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql9-22.sql">CREATE TABLE seq (id INTEGER PRIMARY KEY);
+INSERT INTO seq VALUES (1),(2),(3),(7),(8),(12);
+SELECT id + 1 AS gap_starts, next_id - 1 AS gap_ends FROM (
+  SELECT id, LEAD(id) OVER (ORDER BY id) AS next_id FROM seq) WHERE next_id - id &gt; 1;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>gap_starts</th><th>gap_ends</th></tr></thead>
+<tbody><tr><td>4</td><td>6</td></tr><tr><td>9</td><td>11</td></tr></tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql9-q06" data-topic="More SQL problems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you delete duplicates but keep one row?</p></div>
+        <ul class="q-options">
+          <li data-key="A">DELETE all <span class="q-why">Loses data.</span></li>
+          <li data-key="B">Delete rows whose id is not the MIN(id) of its duplicate group <span class="q-why">Correct.</span></li>
+          <li data-key="C">DROP TABLE <span class="q-why">No.</span></li>
+          <li data-key="D">TRUNCATE <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Always preview with a SELECT first.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How does a recursive CTE end?</summary><div class="answer"><p>When the recursive step returns no new rows (or a condition stops it).</p></div></details>
+      </div>
+    </section>
+
+    <section id="checklist" data-track>
+      <h2>A checklist for these problems</h2>
+<ol><li>Write the <strong>grain</strong> of the answer in a comment first.</li><li>Handle <strong>ties</strong> deliberately (<code>ROW_NUMBER</code> vs <code>RANK</code> vs <code>DENSE_RANK</code>).</li><li>Decide whether missing groups should appear (<code>LEFT JOIN</code>) or not.</li><li>Watch <strong>NULL</strong> semantics in <code>NOT IN</code>, comparisons and aggregates.</li><li>Aggregate <strong>before</strong> joining to avoid fan-out.</li><li>Test with an empty table, one row and duplicates.</li><li>State the complexity and which index would help for large tables.</li></ol>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Most interview SQL is a handful of patterns in disguise: window ranking, anti-join, conditional aggregation, self-join, running totals, gaps-and-islands and recursion. Name the pattern, define the grain, then write the query.</p></div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: More SQL problems</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="More SQL problems">
+<details class="recall iq" data-level="basic" data-topic="More SQL problems"><summary><span class="tag ok">Basic</span> Find the second highest salary.</summary><div class="answer"><p>Rank with DENSE_RANK() OVER (ORDER BY salary DESC) and pick rank 2, or use a subquery on MAX(salary) &lt; MAX; LIMIT/OFFSET fails with ties.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="More SQL problems"><summary><span class="tag ok">Basic</span> Find customers with no orders.</summary><div class="answer"><p>LEFT JOIN orders and filter orders.id IS NULL, or use NOT EXISTS.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="More SQL problems"><summary><span class="tag warn">Medium</span> Why prefer NOT EXISTS over NOT IN?</summary><div class="answer"><p>NOT IN yields no rows if the subquery returns any NULL because of three-valued logic. NOT EXISTS is NULL-safe.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="More SQL problems"><summary><span class="tag warn">Medium</span> Find employees who earn more than their manager.</summary><div class="answer"><p>Self-join employees e to employees m on e.manager_id = m.id and filter e.salary &gt; m.salary.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="More SQL problems"><summary><span class="tag warn">Medium</span> Get the top N rows per group.</summary><div class="answer"><p>Number rows with ROW_NUMBER() OVER (PARTITION BY group ORDER BY metric DESC) in a subquery and keep rn &lt;= N; use RANK to keep ties.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="More SQL problems"><summary><span class="tag warn">Medium</span> Pivot rows into columns.</summary><div class="answer"><p>Conditional aggregation: SUM(CASE WHEN category = &#x27;x&#x27; THEN value END) AS x for each column, grouped by the row key.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="More SQL problems"><summary><span class="tag warn">Medium</span> Compute percent of total.</summary><div class="answer"><p>Divide each group&#x27;s sum by SUM(sum) OVER (), or by a scalar subquery of the total.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="More SQL problems"><summary><span class="tag warn">Medium</span> Delete duplicate rows keeping one.</summary><div class="answer"><p>DELETE rows whose id is not the MIN(id) of its duplicate group, or use ROW_NUMBER() PARTITION BY the duplicate key and delete rn &gt; 1; preview first.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="More SQL problems"><summary><span class="tag bad">Advanced</span> Find the longest consecutive login streak.</summary><div class="answer"><p>Subtract ROW_NUMBER() per user from the date to get a group key for consecutive runs, then count rows per group and take the maximum.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="More SQL problems"><summary><span class="tag bad">Advanced</span> Relational division: customers who bought all products in a set.</summary><div class="answer"><p>Join and group by customer, then HAVING COUNT(DISTINCT product) equals the number of products in the set.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="More SQL problems"><summary><span class="tag bad">Advanced</span> Find gaps in a sequence of ids.</summary><div class="answer"><p>Use LEAD(id) OVER (ORDER BY id) and report where next_id - id &gt; 1.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="More SQL problems"><summary><span class="tag bad">Advanced</span> List the management chain for each employee.</summary><div class="answer"><p>A recursive CTE: start at employees with no manager, join children each step, tracking level and path.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="More SQL problems"><summary><span class="tag bad">Advanced</span> Find the median.</summary><div class="answer"><p>ROW_NUMBER and COUNT windows, then AVG of the rows at positions (n + 1) / 2 and (n + 2) / 2 (integer division), or percentile_cont where available.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="More SQL problems"><summary><span class="tag bad">Advanced</span> Compare each row with the group average without a self-join.</summary><div class="answer"><p>Use AVG(x) OVER (PARTITION BY group) beside each row.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sql8-transactions-deep.html"><span class="dir">Previous</span><span>SQL8 Transactions in depth: isolation anomalies, locking, MVCC and two-connection experiments</span></a>
+      <a class="next" href="ps0-python-sql.html"><span class="dir">Next</span><span>PS0 Using SQL from Python: DB-API, transactions, ORMs, pandas and pipelines</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

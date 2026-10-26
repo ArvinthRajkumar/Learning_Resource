@@ -1,0 +1,848 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="P07">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Problems 7: Hashing | DSA Master Guide</title>
+<meta name="description" content="14 practice problems with hints, approach, dry run, tested Python solution and edge cases.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Practice 7</p>
+      <h1>Problems: Hashing</h1>
+      <p class="lede">Practice problems for module 7, ordered from easy to hard. Original or classic textbook problems; none claim to be real company questions.</p>
+      <div class="meta"><span class="tag ok">8 Easy</span><span class="tag warn">4 Medium</span><span class="tag bad">2 Hard</span></div>
+    </div>
+
+    <div class="callout tip"><p class="mb-0">Method for every problem: read the statement, work the sample by hand, then reveal hints one at a time. Write your own solution first, run it on the edge cases, and only then open the approach and solution. Every solution here was executed against its test cases (see <code>solutions/test_dsa.py</code>).</p></div>
+
+    <h2 id="problem-index">Problem index</h2>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="#prob-two_sum">Two Sum</a></td><td><span class="tag ok">Easy</span></td><td>Hash map</td></tr><tr><td><a href="#prob-contains_duplicate">Contains Duplicate</a></td><td><span class="tag ok">Easy</span></td><td>Hash set</td></tr><tr><td><a href="#prob-first_repeating">First Repeating Element</a></td><td><span class="tag ok">Easy</span></td><td>Hash set / map</td></tr><tr><td><a href="#prob-isomorphic">Isomorphic Strings</a></td><td><span class="tag ok">Easy</span></td><td>Two-way mapping with dicts</td></tr><tr><td><a href="#prob-intersection">Intersection of Two Arrays</a></td><td><span class="tag ok">Easy</span></td><td>Sets</td></tr><tr><td><a href="#prob-ransom_note">Ransom Note</a></td><td><span class="tag ok">Easy</span></td><td>Counting letters</td></tr><tr><td><a href="#prob-most_frequent_word">Most Frequent Word</a></td><td><span class="tag ok">Easy</span></td><td>Counter</td></tr><tr><td><a href="#prob-word_pattern">Word Pattern</a></td><td><span class="tag ok">Easy</span></td><td>Two-way hash maps</td></tr><tr><td><a href="#prob-group_anagrams">Group Anagrams</a></td><td><span class="tag warn">Medium</span></td><td>Hash map with canonical key</td></tr><tr><td><a href="#prob-valid_sudoku">Valid Sudoku</a></td><td><span class="tag warn">Medium</span></td><td>Hash sets</td></tr><tr><td><a href="#prob-four_sum_count">4Sum II</a></td><td><span class="tag warn">Medium</span></td><td>Hash map of pair sums</td></tr><tr><td><a href="#prob-randomized_set">Insert Delete GetRandom O(1)</a></td><td><span class="tag warn">Medium</span></td><td>Design: list + hash map</td></tr><tr><td><a href="#prob-longest_consecutive">Longest Consecutive Sequence</a></td><td><span class="tag bad">Hard</span></td><td>Hash set trick</td></tr><tr><td><a href="#prob-subarray_sum_k">Subarrays with Sum K</a></td><td><span class="tag bad">Hard</span></td><td>Prefix sum + hash map</td></tr>
+</tbody>
+</table>
+</div>
+
+    <section id="prob-two_sum" data-track>
+      <h2>Two Sum</h2>
+      <p><span class="tag ok">Easy</span> <span class="tag">Hash map</span> <span class="tag">LC 1</span> <span class="tag accent">must-do</span></p>
+      <p>Return the indices of the two numbers that add up to target. Exactly one solution exists; do not reuse the same element.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #1, also on widely shared must-practise lists such as Blind 75). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Hash map (Hashing)</td></tr><tr><td>Input format</td><td>List nums and target.</td></tr><tr><td>Output format</td><td>A list of two indices.</td></tr><tr><td>Constraints</td><td>2 &lt;= len(nums) &lt;= 10^5</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>nums=[2,7,11,15], target=9</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>[0, 1]</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> nums[0] + nums[1] = 2 + 7 = 9.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>What number do you need to pair with x?</p></div></details>
+      <details class="recall"><summary>Hint 2</summary><div class="answer"><p>Check the dict BEFORE inserting x (so you do not reuse it).</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Brute force checks all pairs in O(n^2). Instead store each value seen so far with its index in a dict. For every x, check whether target - x was already seen.</p></div></details>
+      <details class="box"><summary>Step-by-step dry run</summary><div class="d-body">
+<p class="muted small">Call: <code>two_sum([2, 7, 11, 15], 9)</code>, returns <code>[0, 1]</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>i (after)</th><th>x (after)</th><th>need (after)</th><th>seen (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>seen = {}                          # value -&gt; index</code></td><td>-</td><td>-</td><td>-</td><td><strong><code>{}</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>for i, x in enumerate(nums):</code></td><td><strong><code>0</code></strong></td><td><strong><code>2</code></strong></td><td>-</td><td><code>{}</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>need = target - x</code></td><td><code>0</code></td><td><code>2</code></td><td><strong><code>7</code></strong></td><td><code>{}</code></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>if need in seen:</code></td><td><code>0</code></td><td><code>2</code></td><td><code>7</code></td><td><code>{}</code></td></tr>
+<tr><td class="num">5</td><td class="num">7</td><td><code>seen[x] = i</code></td><td><code>0</code></td><td><code>2</code></td><td><code>7</code></td><td><strong><code>{2: 0}</code></strong></td></tr>
+<tr><td class="num">6</td><td class="num">3</td><td><code>for i, x in enumerate(nums):</code></td><td><strong><code>1</code></strong></td><td><strong><code>7</code></strong></td><td><code>7</code></td><td><code>{2: 0}</code></td></tr>
+<tr><td class="num">7</td><td class="num">4</td><td><code>need = target - x</code></td><td><code>1</code></td><td><code>7</code></td><td><strong><code>2</code></strong></td><td><code>{2: 0}</code></td></tr>
+<tr><td class="num">8</td><td class="num">5</td><td><code>if need in seen:</code></td><td><code>1</code></td><td><code>7</code></td><td><code>2</code></td><td><code>{2: 0}</code></td></tr>
+<tr><td class="num">9</td><td class="num">6</td><td><code>return [seen[need], i]</code></td><td><code>1</code></td><td><code>7</code></td><td><code>2</code></td><td><code>{2: 0}</code></td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/two_sum.py">def two_sum(nums, target):
+    seen = {}                          # value -&gt; index
+    for i, x in enumerate(nums):
+        need = target - x
+        if need in seen:
+            return [seen[need], i]
+        seen[x] = i
+    return []</code></pre>
+      <p><strong>Complexity:</strong> Time O(n); Space O(n).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Duplicates such as [3,3] with target 6</li><li>Negative numbers</li><li>Target 0</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>two_sum([2,7,11,15],9)</code></td><td><code>[0, 1]</code></td><td>pass</td></tr><tr><td><code>two_sum([3,2,4],6)</code></td><td><code>[1, 2]</code></td><td>pass</td></tr><tr><td><code>two_sum([3,3],6)</code></td><td><code>[0, 1]</code></td><td>pass</td></tr><tr><td><code>two_sum([-1,-2,-3,-4,-5],-8)</code></td><td><code>[2, 4]</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-contains_duplicate" data-track>
+      <h2>Contains Duplicate</h2>
+      <p><span class="tag ok">Easy</span> <span class="tag">Hash set</span> <span class="tag">LC 217</span> <span class="tag accent">must-do</span></p>
+      <p>Return True if any value appears at least twice.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #217, also on widely shared must-practise lists such as Blind 75). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Hash set (Hashing)</td></tr><tr><td>Input format</td><td>A list nums.</td></tr><tr><td>Output format</td><td>True or False.</td></tr><tr><td>Constraints</td><td>len &lt;= 10^5</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>[1,2,3,1]</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>True</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> 1 appears twice.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Membership test in a set is O(1) on average.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>A set stores each value once. Stop as soon as an element is already in the set. (One-liner: len(set(nums)) != len(nums).)</p></div></details>
+      <details class="box"><summary>Step-by-step dry run</summary><div class="d-body">
+<p class="muted small">Call: <code>contains_duplicate([1, 2, 3, 1])</code>, returns <code>True</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>x (after)</th><th>seen (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>seen = set()</code></td><td>-</td><td><strong><code>set()</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>1</code></strong></td><td><code>set()</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>if x in seen:</code></td><td><code>1</code></td><td><code>set()</code></td></tr>
+<tr><td class="num">4</td><td class="num">6</td><td><code>seen.add(x)</code></td><td><code>1</code></td><td><strong><code>{1}</code></strong></td></tr>
+<tr><td class="num">5</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>2</code></strong></td><td><code>{1}</code></td></tr>
+<tr><td class="num">6</td><td class="num">4</td><td><code>if x in seen:</code></td><td><code>2</code></td><td><code>{1}</code></td></tr>
+<tr><td class="num">7</td><td class="num">6</td><td><code>seen.add(x)</code></td><td><code>2</code></td><td><strong><code>{1, 2}</code></strong></td></tr>
+<tr><td class="num">8</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>3</code></strong></td><td><code>{1, 2}</code></td></tr>
+<tr><td class="num">9</td><td class="num">4</td><td><code>if x in seen:</code></td><td><code>3</code></td><td><code>{1, 2}</code></td></tr>
+<tr><td class="num">10</td><td class="num">6</td><td><code>seen.add(x)</code></td><td><code>3</code></td><td><strong><code>{1, 2, 3}</code></strong></td></tr>
+<tr><td class="num">11</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>1</code></strong></td><td><code>{1, 2, 3}</code></td></tr>
+<tr><td class="num">12</td><td class="num">4</td><td><code>if x in seen:</code></td><td><code>1</code></td><td><code>{1, 2, 3}</code></td></tr>
+<tr><td class="num">13</td><td class="num">5</td><td><code>return True</code></td><td><code>1</code></td><td><code>{1, 2, 3}</code></td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/contains_duplicate.py">def contains_duplicate(nums):
+    seen = set()
+    for x in nums:
+        if x in seen:
+            return True
+        seen.add(x)
+    return False</code></pre>
+      <p><strong>Complexity:</strong> Time O(n); Space O(n).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Empty list</li><li>Single element</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>contains_duplicate([1,2,3,1])</code></td><td><code>True</code></td><td>pass</td></tr><tr><td><code>contains_duplicate([1,2,3])</code></td><td><code>False</code></td><td>pass</td></tr><tr><td><code>contains_duplicate([])</code></td><td><code>False</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-first_repeating" data-track>
+      <h2>First Repeating Element</h2>
+      <p><span class="tag ok">Easy</span> <span class="tag">Hash set / map</span></p>
+      <p>Return the element that repeats and whose FIRST occurrence has the smallest index. Return -1 if all are distinct.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Hash set / map (Hashing)</td></tr><tr><td>Input format</td><td>A list nums.</td></tr><tr><td>Output format</td><td>An element or -1.</td></tr><tr><td>Constraints</td><td>len &lt;= 10^5</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>[10,5,3,4,3,5,6]</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>5</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> 5 and 3 repeat; 5 occurs first (index 1) so it is the answer.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Going right-to-left, remember the minimum index of a repeated element.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Scan from the RIGHT keeping a set of seen values. Whenever the current value is already in the set, it repeats later in the list; the last such value touched is the repeating element with the smallest first index.</p></div></details>
+      <details class="box"><summary>Step-by-step dry run</summary><div class="d-body">
+<p class="muted small">Call: <code>first_repeating([10, 5, 3, 4, 3, 5, 6])</code>, returns <code>5</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>x (after)</th><th>seen (after)</th><th>answer (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>seen = set()</code></td><td>-</td><td><strong><code>set()</code></strong></td><td>-</td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>answer = -1</code></td><td>-</td><td><code>set()</code></td><td><strong><code>-1</code></strong></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>for x in reversed(nums):</code></td><td><strong><code>6</code></strong></td><td><code>set()</code></td><td><code>-1</code></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>if x in seen:</code></td><td><code>6</code></td><td><code>set()</code></td><td><code>-1</code></td></tr>
+<tr><td class="num">5</td><td class="num">8</td><td><code>seen.add(x)</code></td><td><code>6</code></td><td><strong><code>{6}</code></strong></td><td><code>-1</code></td></tr>
+<tr><td class="num">6</td><td class="num">4</td><td><code>for x in reversed(nums):</code></td><td><strong><code>5</code></strong></td><td><code>{6}</code></td><td><code>-1</code></td></tr>
+<tr><td class="num">7</td><td class="num">5</td><td><code>if x in seen:</code></td><td><code>5</code></td><td><code>{6}</code></td><td><code>-1</code></td></tr>
+<tr><td class="num">8</td><td class="num">8</td><td><code>seen.add(x)</code></td><td><code>5</code></td><td><strong><code>{5, 6}</code></strong></td><td><code>-1</code></td></tr>
+<tr><td class="num">9</td><td class="num">4</td><td><code>for x in reversed(nums):</code></td><td><strong><code>3</code></strong></td><td><code>{5, 6}</code></td><td><code>-1</code></td></tr>
+<tr><td class="num">10</td><td class="num">5</td><td><code>if x in seen:</code></td><td><code>3</code></td><td><code>{5, 6}</code></td><td><code>-1</code></td></tr>
+<tr><td class="num">11</td><td class="num">8</td><td><code>seen.add(x)</code></td><td><code>3</code></td><td><strong><code>{3, 5, 6}</code></strong></td><td><code>-1</code></td></tr>
+<tr><td class="num">12</td><td class="num">4</td><td><code>for x in reversed(nums):</code></td><td><strong><code>4</code></strong></td><td><code>{3, 5, 6}</code></td><td><code>-1</code></td></tr>
+<tr><td class="num">13</td><td class="num">5</td><td><code>if x in seen:</code></td><td><code>4</code></td><td><code>{3, 5, 6}</code></td><td><code>-1</code></td></tr>
+<tr><td class="num">14</td><td class="num">8</td><td><code>seen.add(x)</code></td><td><code>4</code></td><td><strong><code>{3, 4, 5, 6}</code></strong></td><td><code>-1</code></td></tr>
+<tr><td class="num">15</td><td class="num">4</td><td><code>for x in reversed(nums):</code></td><td><strong><code>3</code></strong></td><td><code>{3, 4, 5, 6}</code></td><td><code>-1</code></td></tr>
+<tr><td class="num">16</td><td class="num">5</td><td><code>if x in seen:</code></td><td><code>3</code></td><td><code>{3, 4, 5, 6}</code></td><td><code>-1</code></td></tr>
+<tr><td class="num">17</td><td class="num">6</td><td><code>answer = x            # overwritten until we reach the left-most one</code></td><td><code>3</code></td><td><code>{3, 4, 5, 6}</code></td><td><strong><code>3</code></strong></td></tr>
+<tr><td class="num">18</td><td class="num">4</td><td><code>for x in reversed(nums):</code></td><td><strong><code>5</code></strong></td><td><code>{3, 4, 5, 6}</code></td><td><code>3</code></td></tr>
+<tr><td class="num">19</td><td class="num">5</td><td><code>if x in seen:</code></td><td><code>5</code></td><td><code>{3, 4, 5, 6}</code></td><td><code>3</code></td></tr>
+<tr><td class="num">20</td><td class="num">6</td><td><code>answer = x            # overwritten until we reach the left-most one</code></td><td><code>5</code></td><td><code>{3, 4, 5, 6}</code></td><td><strong><code>5</code></strong></td></tr>
+<tr><td class="num">21</td><td class="num">4</td><td><code>for x in reversed(nums):</code></td><td><strong><code>10</code></strong></td><td><code>{3, 4, 5, 6}</code></td><td><code>5</code></td></tr>
+<tr><td class="num">22</td><td class="num">5</td><td><code>if x in seen:</code></td><td><code>10</code></td><td><code>{3, 4, 5, 6}</code></td><td><code>5</code></td></tr>
+<tr><td class="num">23</td><td class="num">8</td><td><code>seen.add(x)</code></td><td><code>10</code></td><td><strong><code>{3, 4, 5, 6, 10}</code></strong></td><td><code>5</code></td></tr>
+<tr><td class="num">24</td><td class="num">4</td><td><code>for x in reversed(nums):</code></td><td><code>10</code></td><td><code>{3, 4, 5, 6, 10}</code></td><td><code>5</code></td></tr>
+<tr><td class="num">25</td><td class="num">9</td><td><code>return answer</code></td><td><code>10</code></td><td><code>{3, 4, 5, 6, 10}</code></td><td><code>5</code></td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/first_repeating.py">def first_repeating(nums):
+    seen = set()
+    answer = -1
+    for x in reversed(nums):
+        if x in seen:
+            answer = x            # overwritten until we reach the left-most one
+        else:
+            seen.add(x)
+    return answer</code></pre>
+      <p><strong>Complexity:</strong> Time O(n); Space O(n).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>No repeats -&gt; -1</li><li>All same</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>first_repeating([10,5,3,4,3,5,6])</code></td><td><code>5</code></td><td>pass</td></tr><tr><td><code>first_repeating([1,2,3])</code></td><td><code>-1</code></td><td>pass</td></tr><tr><td><code>first_repeating([2,2])</code></td><td><code>2</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-isomorphic" data-track>
+      <h2>Isomorphic Strings</h2>
+      <p><span class="tag ok">Easy</span> <span class="tag">Two-way mapping with dicts</span> <span class="tag">LC 205</span></p>
+      <p>Two strings are isomorphic if the letters of s can be replaced to get t, with one-to-one mapping and order kept.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #205). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Two-way mapping with dicts (Hashing)</td></tr><tr><td>Input format</td><td>Strings s and t.</td></tr><tr><td>Output format</td><td>True or False.</td></tr><tr><td>Constraints</td><td>len &lt;= 5*10^4</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>s="egg", t="add"</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>True</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> e-&gt;a, g-&gt;d consistently.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>One-to-one means both directions must be consistent.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Keep two dicts: s-&gt;t and t-&gt;s. If a letter is already mapped to something different (in either direction) the strings are not isomorphic.</p></div></details>
+      <details class="box"><summary>Step-by-step dry run</summary><div class="d-body">
+<p class="muted small">Call: <code>isomorphic("egg", "add")</code>, returns <code>True</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>x (after)</th><th>y (after)</th><th>a_to_b (after)</th><th>b_to_a (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>if len(s) != len(t):</code></td><td>-</td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">2</td><td class="num">4</td><td><code>a_to_b, b_to_a = {}, {}</code></td><td>-</td><td>-</td><td><strong><code>{}</code></strong></td><td><strong><code>{}</code></strong></td></tr>
+<tr><td class="num">3</td><td class="num">5</td><td><code>for x, y in zip(s, t):</code></td><td><strong><code>'e'</code></strong></td><td><strong><code>'a'</code></strong></td><td><code>{}</code></td><td><code>{}</code></td></tr>
+<tr><td class="num">4</td><td class="num">6</td><td><code>if a_to_b.setdefault(x, y) != y or b_to_a.setdefault(y, x) != x:</code></td><td><code>'e'</code></td><td><code>'a'</code></td><td><strong><code>{'e': 'a'}</code></strong></td><td><strong><code>{'a': 'e'}</code></strong></td></tr>
+<tr><td class="num">5</td><td class="num">5</td><td><code>for x, y in zip(s, t):</code></td><td><strong><code>'g'</code></strong></td><td><strong><code>'d'</code></strong></td><td><code>{'e': 'a'}</code></td><td><code>{'a': 'e'}</code></td></tr>
+<tr><td class="num">6</td><td class="num">6</td><td><code>if a_to_b.setdefault(x, y) != y or b_to_a.setdefault(y, x) != x:</code></td><td><code>'g'</code></td><td><code>'d'</code></td><td><strong><code>{'e': 'a', 'g': 'd'}</code></strong></td><td><strong><code>{'a': 'e', 'd': 'g'}</code></strong></td></tr>
+<tr><td class="num">7</td><td class="num">5</td><td><code>for x, y in zip(s, t):</code></td><td><code>'g'</code></td><td><code>'d'</code></td><td><code>{'e': 'a', 'g': 'd'}</code></td><td><code>{'a': 'e', 'd': 'g'}</code></td></tr>
+<tr><td class="num">8</td><td class="num">6</td><td><code>if a_to_b.setdefault(x, y) != y or b_to_a.setdefault(y, x) != x:</code></td><td><code>'g'</code></td><td><code>'d'</code></td><td><code>{'e': 'a', 'g': 'd'}</code></td><td><code>{'a': 'e', 'd': 'g'}</code></td></tr>
+<tr><td class="num">9</td><td class="num">5</td><td><code>for x, y in zip(s, t):</code></td><td><code>'g'</code></td><td><code>'d'</code></td><td><code>{'e': 'a', 'g': 'd'}</code></td><td><code>{'a': 'e', 'd': 'g'}</code></td></tr>
+<tr><td class="num">10</td><td class="num">8</td><td><code>return True</code></td><td><code>'g'</code></td><td><code>'d'</code></td><td><code>{'e': 'a', 'g': 'd'}</code></td><td><code>{'a': 'e', 'd': 'g'}</code></td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/isomorphic.py">def isomorphic(s, t):
+    if len(s) != len(t):
+        return False
+    a_to_b, b_to_a = {}, {}
+    for x, y in zip(s, t):
+        if a_to_b.setdefault(x, y) != y or b_to_a.setdefault(y, x) != x:
+            return False
+    return True</code></pre>
+      <p><strong>Complexity:</strong> Time O(n); Space O(k).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Different lengths</li><li>"ab" vs "aa"</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>isomorphic("egg","add")</code></td><td><code>True</code></td><td>pass</td></tr><tr><td><code>isomorphic("foo","bar")</code></td><td><code>False</code></td><td>pass</td></tr><tr><td><code>isomorphic("paper","title")</code></td><td><code>True</code></td><td>pass</td></tr><tr><td><code>isomorphic("ab","aa")</code></td><td><code>False</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-intersection" data-track>
+      <h2>Intersection of Two Arrays</h2>
+      <p><span class="tag ok">Easy</span> <span class="tag">Sets</span> <span class="tag">LC 349</span></p>
+      <p>Return the sorted list of unique values that appear in both lists.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #349). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Sets (Hashing)</td></tr><tr><td>Input format</td><td>Two lists.</td></tr><tr><td>Output format</td><td>Sorted list.</td></tr><tr><td>Constraints</td><td>len &lt;= 1000</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>[1,2,2,1], [2,2]</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>[2]</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> Only 2 is in both.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Sets remove duplicates automatically.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Convert both lists to sets and use the &amp; operator, which keeps items found in both.</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/intersection.py">def intersection(a, b):
+    return sorted(set(a) &amp; set(b))</code></pre>
+      <p><strong>Complexity:</strong> Time O(n + m); Space O(n + m).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>No common values</li><li>Empty list</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>intersection([1,2,2,1],[2,2])</code></td><td><code>[2]</code></td><td>pass</td></tr><tr><td><code>intersection([4,9,5],[9,4,9,8,4])</code></td><td><code>[4, 9]</code></td><td>pass</td></tr><tr><td><code>intersection([1],[2])</code></td><td><code>[]</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-ransom_note" data-track>
+      <h2>Ransom Note</h2>
+      <p><span class="tag ok">Easy</span> <span class="tag">Counting letters</span> <span class="tag">LC 383</span></p>
+      <p>Can the note be built using the letters of the magazine (each magazine letter used at most once)?</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #383). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Counting letters (Hashing)</td></tr><tr><td>Input format</td><td>Strings note and magazine.</td></tr><tr><td>Output format</td><td>True or False.</td></tr><tr><td>Constraints</td><td>len &lt;= 10^5</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>"aa", "aab"</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>True</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> The magazine has two a letters.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Counter(note) - Counter(magazine) is empty when the magazine has enough letters.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Count letters in the magazine, then subtract for each letter of the note. If any count goes below zero it fails. Counter subtraction does this neatly.</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/ransom_note.py">from collections import Counter
+
+def ransom_note(note, magazine):
+    return not (Counter(note) - Counter(magazine))   # nothing missing</code></pre>
+      <p><strong>Complexity:</strong> Time O(n + m); Space O(k).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Empty note</li><li>Letter missing</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>ransom_note("aa","aab")</code></td><td><code>True</code></td><td>pass</td></tr><tr><td><code>ransom_note("aa","ab")</code></td><td><code>False</code></td><td>pass</td></tr><tr><td><code>ransom_note("","x")</code></td><td><code>True</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-most_frequent_word" data-track>
+      <h2>Most Frequent Word</h2>
+      <p><span class="tag ok">Easy</span> <span class="tag">Counter</span></p>
+      <p>Return the word that appears most often (if tied, the one that is alphabetically smallest).</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Counter (Hashing)</td></tr><tr><td>Input format</td><td>List of words.</td></tr><tr><td>Output format</td><td>A word.</td></tr><tr><td>Constraints</td><td>len &lt;= 10^5</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>["b","a","b","a","c"]</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>"a"</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> a and b appear twice; a is alphabetically first.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Negate the count to find the maximum with min().</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Count with Counter, then take min of the words using the key (-count, word).</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/most_frequent_word.py">from collections import Counter
+
+def most_frequent_word(words):
+    freq = Counter(words)
+    return min(freq, key=lambda w: (-freq[w], w))</code></pre>
+      <p><strong>Complexity:</strong> Time O(n); Space O(k).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>One word</li><li>Ties</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>most_frequent_word(["b","a","b","a","c"])</code></td><td><code>'a'</code></td><td>pass</td></tr><tr><td><code>most_frequent_word(["x"])</code></td><td><code>'x'</code></td><td>pass</td></tr><tr><td><code>most_frequent_word(["z","z","y"])</code></td><td><code>'z'</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-word_pattern" data-track>
+      <h2>Word Pattern</h2>
+      <p><span class="tag ok">Easy</span> <span class="tag">Two-way hash maps</span> <span class="tag">LC 290</span></p>
+      <p>Does the string s follow the pattern? A letter must always map to the same word and different letters to different words.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #290). The guide does not claim any company asked it.</p><p><strong>Why interviewers ask this:</strong> Same two-way mapping idea as isomorphic strings but between letters and words.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Two-way hash maps (Hashing)</td></tr><tr><td>Input format</td><td>pattern and s.</td></tr><tr><td>Output format</td><td>True or False.</td></tr><tr><td>Constraints</td><td>len &lt;= 300</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>"abba", "dog cat cat dog"</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>True</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> a=dog, b=cat.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Lengths must match.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Split s into words. Map pattern letters to words and words to letters, checking both directions stay consistent.</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/word_pattern.py">def word_pattern(pattern, s):
+    words = s.split()
+    if len(words) != len(pattern):
+        return False
+    p2w, w2p = {}, {}
+    for p, w in zip(pattern, words):
+        if p2w.setdefault(p, w) != w or w2p.setdefault(w, p) != p:
+            return False
+    return True</code></pre>
+      <p><strong>Complexity:</strong> Time O(n); Space O(k).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Different lengths</li><li>Same word for different letters</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>word_pattern("abba","dog cat cat dog")</code></td><td><code>True</code></td><td>pass</td></tr><tr><td><code>word_pattern("abba","dog cat cat fish")</code></td><td><code>False</code></td><td>pass</td></tr><tr><td><code>word_pattern("aaaa","dog cat cat dog")</code></td><td><code>False</code></td><td>pass</td></tr><tr><td><code>word_pattern("abba","dog dog dog dog")</code></td><td><code>False</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-group_anagrams" data-track>
+      <h2>Group Anagrams</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Hash map with canonical key</span> <span class="tag">LC 49</span> <span class="tag accent">must-do</span></p>
+      <p>Group words that are anagrams of each other. For deterministic output, sort each group alphabetically and then sort the groups.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #49, also on widely shared must-practise lists such as Blind 75). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Hash map with canonical key (Hashing)</td></tr><tr><td>Input format</td><td>A list of words.</td></tr><tr><td>Output format</td><td>A list of groups.</td></tr><tr><td>Constraints</td><td>len &lt;= 10^4</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>["eat","tea","tan","ate","nat","bat"]</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>[["ate","eat","tea"],["bat"],["nat","tan"]]</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> Words with the same sorted letters share a key.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>sorted("eat") gives a list; join it into a string so it can be a dict key.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>The key "sorted letters of the word" is identical for all anagrams. Use a dict key -&gt; list of words.</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/group_anagrams.py">from collections import defaultdict
+
+def group_anagrams(words):
+    groups = defaultdict(list)
+    for w in words:
+        groups["".join(sorted(w))].append(w)   # canonical key
+    return sorted(sorted(g) for g in groups.values())</code></pre>
+      <p><strong>Complexity:</strong> Time O(n * k log k) for k = word length; Space O(n * k).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Empty list</li><li>Single word</li><li>Empty string as a word</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>group_anagrams(["eat","tea","tan","ate","nat","bat"])</code></td><td><code>[['ate', 'eat', 'tea'], ['bat'], ['nat', 'tan']]</code></td><td>pass</td></tr><tr><td><code>group_anagrams([""])</code></td><td><code>[['']]</code></td><td>pass</td></tr><tr><td><code>group_anagrams([])</code></td><td><code>[]</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-valid_sudoku" data-track>
+      <h2>Valid Sudoku</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Hash sets</span> <span class="tag">LC 36</span></p>
+      <p>A partially filled 9 x 9 board uses digits 1-9 and ".". Return True if no digit repeats in a row, a column or a 3 x 3 box.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #36). The guide does not claim any company asked it.</p><p><strong>Why interviewers ask this:</strong> Checks careful use of sets for rows, columns and boxes.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Hash sets (Hashing)</td></tr><tr><td>Input format</td><td>List of 9 strings.</td></tr><tr><td>Output format</td><td>True or False.</td></tr><tr><td>Constraints</td><td>board is 9 x 9</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>a valid partial board</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>True</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> Only filled cells are checked.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Use (r // 3, c // 3) as the box key.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Keep a set for every row, column and box. The box of cell (r, c) is (r // 3, c // 3). If a digit is already in any of its three sets the board is invalid.</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/valid_sudoku.py">def valid_sudoku(board):
+    rows = [set() for _ in range(9)]
+    cols = [set() for _ in range(9)]
+    boxes = {}
+    for r in range(9):
+        for c in range(9):
+            d = board[r][c]
+            if d == ".":
+                continue
+            box = boxes.setdefault((r // 3, c // 3), set())
+            if d in rows[r] or d in cols[c] or d in box:
+                return False
+            rows[r].add(d); cols[c].add(d); box.add(d)
+    return True</code></pre>
+      <p><strong>Complexity:</strong> Time O(81) = O(1); Space O(81).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Duplicate in a box only</li><li>Empty board</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>valid_sudoku(["53..7....","6..195...",".98....6.","8...6...3","4..8.3..1","7...2...6",".6....28.","...419..5","....8..79"])</code></td><td><code>True</code></td><td>pass</td></tr><tr><td><code>valid_sudoku(["83..7....","6..195...",".98....6.","8...6...3","4..8.3..1","7...2...6",".6....28.","...419..5","....8..79"])</code></td><td><code>False</code></td><td>pass</td></tr><tr><td><code>valid_sudoku(["........."] * 9)</code></td><td><code>True</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-four_sum_count" data-track>
+      <h2>4Sum II</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Hash map of pair sums</span> <span class="tag">LC 454</span></p>
+      <p>Given four lists of equal length, count tuples (i, j, k, l) with a[i] + b[j] + c[k] + d[l] = 0.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #454). The guide does not claim any company asked it.</p><p><strong>Why interviewers ask this:</strong> Teaches the meet-in-the-middle trick: split four lists into two pairs.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Hash map of pair sums (Hashing)</td></tr><tr><td>Input format</td><td>Four lists.</td></tr><tr><td>Output format</td><td>Integer.</td></tr><tr><td>Constraints</td><td>len &lt;= 200</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>[1,2],[-2,-1],[-1,2],[0,2]</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>2</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> Two index combinations sum to zero.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Split the four lists into two groups.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Store every a + b sum with its count. For every c + d look up the negative in the map. O(n^2) instead of O(n^4).</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/four_sum_count.py">from collections import Counter
+
+def four_sum_count(a, b, c, d):
+    ab = Counter(x + y for x in a for y in b)
+    return sum(ab[-(x + y)] for x in c for y in d)</code></pre>
+      <p><strong>Complexity:</strong> Time O(n^2); Space O(n^2).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Empty lists</li><li>All zeros</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>four_sum_count([1,2],[-2,-1],[-1,2],[0,2])</code></td><td><code>2</code></td><td>pass</td></tr><tr><td><code>four_sum_count([0],[0],[0],[0])</code></td><td><code>1</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-randomized_set" data-track>
+      <h2>Insert Delete GetRandom O(1)</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Design: list + hash map</span> <span class="tag">LC 380</span></p>
+      <p>Design a set with insert(val), remove(val) and get_random() all in average O(1).</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #380). The guide does not claim any company asked it.</p><p><strong>Why interviewers ask this:</strong> A design question: combine a list and a dictionary to get O(1) insert, delete and random pick.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Design: list + hash map (Hashing)</td></tr><tr><td>Input format</td><td>Sequence of operations.</td></tr><tr><td>Output format</td><td>Results.</td></tr><tr><td>Constraints</td><td>ops &lt;= 2*10^5</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>insert(1), insert(1), remove(2), insert(2), remove(1), insert(2)</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>[True, False, False, True, True, False]</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> Duplicates and missing values return False.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Swap with the last element to delete in O(1).</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Keep values in a list and a dict from value to list index. To delete, swap the target with the last element, pop, and fix the moved element's index.</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/randomized_set.py">import random
+
+class RandomizedSet:
+    def __init__(self):
+        self.items, self.pos = [], {}
+
+    def insert(self, val):
+        if val in self.pos:
+            return False
+        self.pos[val] = len(self.items)
+        self.items.append(val)
+        return True
+
+    def remove(self, val):
+        if val not in self.pos:
+            return False
+        i, last = self.pos[val], self.items[-1]
+        self.items[i], self.pos[last] = last, i    # move the last item into the hole
+        self.items.pop()
+        del self.pos[val]
+        return True
+
+    def get_random(self):
+        return random.choice(self.items)</code></pre>
+      <p><strong>Complexity:</strong> Each operation O(1) average; Space O(n).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Remove the last element</li><li>Empty set</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>(lambda s: [s.insert(1), s.insert(1), s.remove(2), s.insert(2), s.remove(1), s.insert(2)])(RandomizedSet())</code></td><td><code>[True, False, False, True, True, False]</code></td><td>pass</td></tr><tr><td><code>(lambda s: [s.insert(5), s.get_random()])(RandomizedSet())</code></td><td><code>[True, 5]</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-longest_consecutive" data-track>
+      <h2>Longest Consecutive Sequence</h2>
+      <p><span class="tag bad">Hard</span> <span class="tag">Hash set trick</span> <span class="tag">LC 128</span> <span class="tag accent">must-do</span></p>
+      <p>Return the length of the longest run of consecutive integers (e.g. 1,2,3,4) present in the unsorted list, in O(n).</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #128, also on widely shared must-practise lists such as Blind 75). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Hash set trick (Hashing)</td></tr><tr><td>Input format</td><td>Unsorted list nums.</td></tr><tr><td>Output format</td><td>Integer.</td></tr><tr><td>Constraints</td><td>len &lt;= 10^5</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>[100,4,200,1,3,2]</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>4</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> The run 1,2,3,4 has length 4.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>How do you know a number starts a run?</p></div></details>
+      <details class="recall"><summary>Hint 2</summary><div class="answer"><p>The inner while loop only runs for run starts.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Sorting is O(n log n). With a set, only start counting from numbers that are the START of a run (x - 1 not in the set), then walk upward. Every number is visited at most twice overall.</p></div></details>
+      <details class="box"><summary>Step-by-step dry run</summary><div class="d-body">
+<p class="muted small">Call: <code>longest_consecutive([100, 4, 200, 1, 3, 2])</code>, returns <code>4</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>x (after)</th><th>y (after)</th><th>best (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>s = set(nums)</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>best = 0</code></td><td>-</td><td>-</td><td><strong><code>0</code></strong></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>for x in s:</code></td><td><strong><code>1</code></strong></td><td>-</td><td><code>0</code></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>if x - 1 not in s:          # x starts a run</code></td><td><code>1</code></td><td>-</td><td><code>0</code></td></tr>
+<tr><td class="num">5</td><td class="num">6</td><td><code>y = x</code></td><td><code>1</code></td><td><strong><code>1</code></strong></td><td><code>0</code></td></tr>
+<tr><td class="num">6</td><td class="num">7</td><td><code>while y + 1 in s:</code></td><td><code>1</code></td><td><code>1</code></td><td><code>0</code></td></tr>
+<tr><td class="num">7</td><td class="num">8</td><td><code>y += 1</code></td><td><code>1</code></td><td><strong><code>2</code></strong></td><td><code>0</code></td></tr>
+<tr><td class="num">8</td><td class="num">7</td><td><code>while y + 1 in s:</code></td><td><code>1</code></td><td><code>2</code></td><td><code>0</code></td></tr>
+<tr><td class="num">9</td><td class="num">8</td><td><code>y += 1</code></td><td><code>1</code></td><td><strong><code>3</code></strong></td><td><code>0</code></td></tr>
+<tr><td class="num">10</td><td class="num">7</td><td><code>while y + 1 in s:</code></td><td><code>1</code></td><td><code>3</code></td><td><code>0</code></td></tr>
+<tr><td class="num">11</td><td class="num">8</td><td><code>y += 1</code></td><td><code>1</code></td><td><strong><code>4</code></strong></td><td><code>0</code></td></tr>
+<tr><td class="num">12</td><td class="num">7</td><td><code>while y + 1 in s:</code></td><td><code>1</code></td><td><code>4</code></td><td><code>0</code></td></tr>
+<tr><td class="num">13</td><td class="num">9</td><td><code>best = max(best, y - x + 1)</code></td><td><code>1</code></td><td><code>4</code></td><td><strong><code>4</code></strong></td></tr>
+<tr><td class="num">14</td><td class="num">4</td><td><code>for x in s:</code></td><td><strong><code>2</code></strong></td><td><code>4</code></td><td><code>4</code></td></tr>
+<tr><td class="num">15</td><td class="num">5</td><td><code>if x - 1 not in s:          # x starts a run</code></td><td><code>2</code></td><td><code>4</code></td><td><code>4</code></td></tr>
+<tr><td class="num">16</td><td class="num">4</td><td><code>for x in s:</code></td><td><strong><code>3</code></strong></td><td><code>4</code></td><td><code>4</code></td></tr>
+<tr><td class="num">17</td><td class="num">5</td><td><code>if x - 1 not in s:          # x starts a run</code></td><td><code>3</code></td><td><code>4</code></td><td><code>4</code></td></tr>
+<tr><td class="num">18</td><td class="num">4</td><td><code>for x in s:</code></td><td><strong><code>100</code></strong></td><td><code>4</code></td><td><code>4</code></td></tr>
+<tr><td class="num">19</td><td class="num">5</td><td><code>if x - 1 not in s:          # x starts a run</code></td><td><code>100</code></td><td><code>4</code></td><td><code>4</code></td></tr>
+<tr><td class="num">20</td><td class="num">6</td><td><code>y = x</code></td><td><code>100</code></td><td><strong><code>100</code></strong></td><td><code>4</code></td></tr>
+<tr><td class="num">21</td><td class="num">7</td><td><code>while y + 1 in s:</code></td><td><code>100</code></td><td><code>100</code></td><td><code>4</code></td></tr>
+<tr><td class="num">22</td><td class="num">9</td><td><code>best = max(best, y - x + 1)</code></td><td><code>100</code></td><td><code>100</code></td><td><code>4</code></td></tr>
+<tr><td class="num">23</td><td class="num">4</td><td><code>for x in s:</code></td><td><strong><code>4</code></strong></td><td><code>100</code></td><td><code>4</code></td></tr>
+<tr><td class="num">24</td><td class="num">5</td><td><code>if x - 1 not in s:          # x starts a run</code></td><td><code>4</code></td><td><code>100</code></td><td><code>4</code></td></tr>
+<tr><td class="num">25</td><td class="num">4</td><td><code>for x in s:</code></td><td><strong><code>200</code></strong></td><td><code>100</code></td><td><code>4</code></td></tr>
+<tr><td class="num">26</td><td class="num">5</td><td><code>if x - 1 not in s:          # x starts a run</code></td><td><code>200</code></td><td><code>100</code></td><td><code>4</code></td></tr>
+<tr><td class="num">27</td><td class="num">6</td><td><code>y = x</code></td><td><code>200</code></td><td><strong><code>200</code></strong></td><td><code>4</code></td></tr>
+<tr><td class="num">28</td><td class="num">7</td><td><code>while y + 1 in s:</code></td><td><code>200</code></td><td><code>200</code></td><td><code>4</code></td></tr>
+<tr><td class="num">29</td><td class="num">9</td><td><code>best = max(best, y - x + 1)</code></td><td><code>200</code></td><td><code>200</code></td><td><code>4</code></td></tr>
+<tr><td class="num">30</td><td class="num">4</td><td><code>for x in s:</code></td><td><code>200</code></td><td><code>200</code></td><td><code>4</code></td></tr>
+<tr><td class="num">31</td><td class="num">10</td><td><code>return best</code></td><td><code>200</code></td><td><code>200</code></td><td><code>4</code></td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/longest_consecutive.py">def longest_consecutive(nums):
+    s = set(nums)
+    best = 0
+    for x in s:
+        if x - 1 not in s:          # x starts a run
+            y = x
+            while y + 1 in s:
+                y += 1
+            best = max(best, y - x + 1)
+    return best</code></pre>
+      <p><strong>Complexity:</strong> Time O(n); Space O(n).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Empty list</li><li>Duplicates</li><li>Negative numbers</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>longest_consecutive([100,4,200,1,3,2])</code></td><td><code>4</code></td><td>pass</td></tr><tr><td><code>longest_consecutive([])</code></td><td><code>0</code></td><td>pass</td></tr><tr><td><code>longest_consecutive([0,3,7,2,5,8,4,6,0,1])</code></td><td><code>9</code></td><td>pass</td></tr><tr><td><code>longest_consecutive([1,1,1])</code></td><td><code>1</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-subarray_sum_k" data-track>
+      <h2>Subarrays with Sum K</h2>
+      <p><span class="tag bad">Hard</span> <span class="tag">Prefix sum + hash map</span> <span class="tag">LC 560</span></p>
+      <p>Count the contiguous subarrays whose sum equals k. Values may be negative.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #560). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Prefix sum + hash map (Hashing)</td></tr><tr><td>Input format</td><td>List nums and integer k.</td></tr><tr><td>Output format</td><td>Integer count.</td></tr><tr><td>Constraints</td><td>len &lt;= 2*10^4</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>nums=[1,2,3], k=3</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>2</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> Subarrays [1,2] and [3].</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>sum(i..j) = prefix[j] - prefix[i-1].</p></div></details>
+      <details class="recall"><summary>Hint 2</summary><div class="answer"><p>Initialise counts with {0: 1} for subarrays starting at index 0.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Sliding window fails with negatives. Let prefix be the running sum. A subarray ending here has sum k if (prefix - k) appeared earlier as a prefix. Store counts of prefixes in a dict (start with {0: 1}).</p></div></details>
+      <details class="box"><summary>Step-by-step dry run</summary><div class="d-body">
+<p class="muted small">Call: <code>subarray_sum_k([1, 2, 3], 3)</code>, returns <code>2</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>x (after)</th><th>prefix (after)</th><th>total (after)</th><th>counts (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>counts = {0: 1}          # prefix sum -&gt; times seen</code></td><td>-</td><td>-</td><td>-</td><td><strong><code>{0: 1}</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>prefix = total = 0</code></td><td>-</td><td><strong><code>0</code></strong></td><td><strong><code>0</code></strong></td><td><code>{0: 1}</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>for x in nums:</code></td><td><strong><code>1</code></strong></td><td><code>0</code></td><td><code>0</code></td><td><code>{0: 1}</code></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>prefix += x</code></td><td><code>1</code></td><td><strong><code>1</code></strong></td><td><code>0</code></td><td><code>{0: 1}</code></td></tr>
+<tr><td class="num">5</td><td class="num">6</td><td><code>total += counts.get(prefix - k, 0)</code></td><td><code>1</code></td><td><code>1</code></td><td><code>0</code></td><td><code>{0: 1}</code></td></tr>
+<tr><td class="num">6</td><td class="num">7</td><td><code>counts[prefix] = counts.get(prefix, 0) + 1</code></td><td><code>1</code></td><td><code>1</code></td><td><code>0</code></td><td><strong><code>{0: 1, 1: 1}</code></strong></td></tr>
+<tr><td class="num">7</td><td class="num">4</td><td><code>for x in nums:</code></td><td><strong><code>2</code></strong></td><td><code>1</code></td><td><code>0</code></td><td><code>{0: 1, 1: 1}</code></td></tr>
+<tr><td class="num">8</td><td class="num">5</td><td><code>prefix += x</code></td><td><code>2</code></td><td><strong><code>3</code></strong></td><td><code>0</code></td><td><code>{0: 1, 1: 1}</code></td></tr>
+<tr><td class="num">9</td><td class="num">6</td><td><code>total += counts.get(prefix - k, 0)</code></td><td><code>2</code></td><td><code>3</code></td><td><strong><code>1</code></strong></td><td><code>{0: 1, 1: 1}</code></td></tr>
+<tr><td class="num">10</td><td class="num">7</td><td><code>counts[prefix] = counts.get(prefix, 0) + 1</code></td><td><code>2</code></td><td><code>3</code></td><td><code>1</code></td><td><strong><code>{0: 1, 1: 1, 3: 1}</code></strong></td></tr>
+<tr><td class="num">11</td><td class="num">4</td><td><code>for x in nums:</code></td><td><strong><code>3</code></strong></td><td><code>3</code></td><td><code>1</code></td><td><code>{0: 1, 1: 1, 3: 1}</code></td></tr>
+<tr><td class="num">12</td><td class="num">5</td><td><code>prefix += x</code></td><td><code>3</code></td><td><strong><code>6</code></strong></td><td><code>1</code></td><td><code>{0: 1, 1: 1, 3: 1}</code></td></tr>
+<tr><td class="num">13</td><td class="num">6</td><td><code>total += counts.get(prefix - k, 0)</code></td><td><code>3</code></td><td><code>6</code></td><td><strong><code>2</code></strong></td><td><code>{0: 1, 1: 1, 3: 1}</code></td></tr>
+<tr><td class="num">14</td><td class="num">7</td><td><code>counts[prefix] = counts.get(prefix, 0) + 1</code></td><td><code>3</code></td><td><code>6</code></td><td><code>2</code></td><td><strong><code>{0: 1, 1: 1, 3: 1, 6: 1}</code></strong></td></tr>
+<tr><td class="num">15</td><td class="num">4</td><td><code>for x in nums:</code></td><td><code>3</code></td><td><code>6</code></td><td><code>2</code></td><td><code>{0: 1, 1: 1, 3: 1, 6: 1}</code></td></tr>
+<tr><td class="num">16</td><td class="num">8</td><td><code>return total</code></td><td><code>3</code></td><td><code>6</code></td><td><code>2</code></td><td><code>{0: 1, 1: 1, 3: 1, 6: 1}</code></td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/subarray_sum_k.py">def subarray_sum_k(nums, k):
+    counts = {0: 1}          # prefix sum -&gt; times seen
+    prefix = total = 0
+    for x in nums:
+        prefix += x
+        total += counts.get(prefix - k, 0)
+        counts[prefix] = counts.get(prefix, 0) + 1
+    return total</code></pre>
+      <p><strong>Complexity:</strong> Time O(n); Space O(n).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Negative numbers</li><li>k = 0 with zeros in the list</li><li>Whole array equals k</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>subarray_sum_k([1,1,1],2)</code></td><td><code>2</code></td><td>pass</td></tr><tr><td><code>subarray_sum_k([1,2,3],3)</code></td><td><code>2</code></td><td>pass</td></tr><tr><td><code>subarray_sum_k([1,-1,0],0)</code></td><td><code>3</code></td><td>pass</td></tr><tr><td><code>subarray_sum_k([],0)</code></td><td><code>0</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="m07-hashing.html"><span class="dir">Previous</span><span>M7 Hashing</span></a>
+      <a class="next" href="m08-two-pointers-sliding-window.html"><span class="dir">Next</span><span>M8 Two Pointers & Sliding Window</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

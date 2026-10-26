@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD23">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Designing ML and AI systems: feature stores, serving, recommendation, search and LLM applications | System Design</title>
+<meta name="description" content="System design for machine learning: the ML lifecycle, features and the training-serving skew, batch versus online inference, two-stage recommendation and ranking, vector search, evaluation and monitoring, and RAG and LLM serving architectures.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD23</p>
+      <h1>Designing ML and AI systems: feature stores, serving, recommendation, search and LLM applications</h1>
+      <p class="lede">Interviewers increasingly ask you to design systems with a model in the middle. The model is a small box; most of the design is the data, features, serving path, feedback loop and monitoring around it. This part gives the architecture and the numbers.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~4 hours</span></div>
+    </div>
+
+    <section id="lifecycle" data-track>
+      <h2>The ML system lifecycle</h2>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="ML systems are loops: production data feeds the next model. The loop, not the model, is what you design." style="min-width:760px"><defs><marker id="ah48" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah48a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah48b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah48d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah48)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah48)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah48)"/><line x1="747.0" y1="78.0" x2="747.0" y2="118.0" class="d-line" marker-end="url(#ah48)"/><line x1="662.0" y1="147.0" x2="618.0" y2="147.0" class="d-line" marker-end="url(#ah48)"/><line x1="448.0" y1="147.0" x2="404.0" y2="147.0" class="d-line" marker-end="url(#ah48)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle" class="d-sm">Define the objective and metric</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle" class="d-sm">Collect and label data</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle">Build features</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle" class="d-sm">Train and evaluate offline</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="151.5" text-anchor="middle">Deploy and serve</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="151.5" text-anchor="middle" class="d-sm">Monitor and collect feedback</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="151.5" text-anchor="middle">Retrain</text></svg>
+</div>
+<figcaption>ML systems are loops: production data feeds the next model. The loop, not the model, is what you design.</figcaption></figure>
+<p>Start every ML design by pinning down: the <strong>business metric</strong> (revenue, watch time, fraud loss), the <strong>model metric</strong> (precision, recall, AUC, NDCG), the <strong>latency budget</strong> (e.g. 100 ms end to end), the <strong>data available</strong> and the <strong>cost of errors</strong> (a false fraud block versus a missed fraud).</p>
+    </section>
+
+    <section id="features" data-track>
+      <h2>Data and features</h2>
+<ul><li><strong>Sources</strong>: event logs, databases (via CDC), third-party data, human labels, implicit feedback (clicks, dwell time).</li><li><strong>Label quality</strong> dominates model quality. Beware leakage (features that contain the future), selection bias (you only see outcomes for what you showed) and delayed labels (a fraud chargeback arrives weeks later).</li><li><strong>Training-serving skew</strong>: features computed one way offline and another online silently destroy accuracy. Fix with one definition of each feature, shared code, and a <strong>feature store</strong>.</li></ul>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Feature store part</th><th>Role</th></tr></thead>
+<tbody>
+<tr><td><strong>Offline store</strong> (warehouse/lake)</td><td>Large history for training, <strong>point-in-time correct</strong> joins</td></tr><tr><td><strong>Online store</strong> (Redis, DynamoDB)</td><td>Low-latency latest values for serving, single-digit ms</td></tr><tr><td><strong>Registry</strong></td><td>Names, owners, definitions, freshness SLAs</td></tr><tr><td><strong>Pipelines</strong></td><td>Batch and streaming jobs that keep both stores in sync</td></tr>
+</tbody>
+</table>
+</div>
+<p>Point-in-time correctness means a training row for time <code>t</code> uses only feature values known <strong>before</strong> <code>t</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd23-01.py">import bisect
+history = {"u1": [(1, 3), (5, 7), (9, 12)]}          # user_id -&gt; [(timestamp, purchases_so_far)]
+def feature_at(user, t):
+    ts = [x[0] for x in history[user]]
+    i = bisect.bisect_right(ts, t) - 1
+    return history[user][i][1] if i &gt;= 0 else 0
+for event_time in (4, 5, 8, 10):
+    print(f"label at t={event_time}: feature value known then = {feature_at('u1', event_time)} (using the latest value, 12, would leak the future)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>label at t=4: feature value known then = 3 (using the latest value, 12, would leak the future)
+label at t=5: feature value known then = 7 (using the latest value, 12, would leak the future)
+label at t=8: feature value known then = 7 (using the latest value, 12, would leak the future)
+label at t=10: feature value known then = 12 (using the latest value, 12, would leak the future)</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd23-q01" data-topic="ML systems design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is training-serving skew?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Slow training <span class="q-why">No.</span></li>
+          <li data-key="B">Features computed differently offline and online, degrading live accuracy <span class="q-why">Correct.</span></li>
+          <li data-key="C">A GPU bug <span class="q-why">No.</span></li>
+          <li data-key="D">Class imbalance <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>A feature store with shared definitions prevents it.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd23-q02" data-topic="ML systems design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does point-in-time correctness require?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Using the latest feature value for every row <span class="q-why">That leaks the future.</span></li>
+          <li data-key="B">Training rows use only feature values available before the label time <span class="q-why">Correct.</span></li>
+          <li data-key="C">Random sampling <span class="q-why">No.</span></li>
+          <li data-key="D">Normalising features <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Otherwise offline metrics are inflated.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why a feature store?</summary><div class="answer"><p>To share one definition of each feature across training and serving and provide both historical and low-latency access.</p></div></details>
+      </div>
+    </section>
+
+    <section id="serving" data-track>
+      <h2>Offline versus online inference</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Mode</th><th>How</th><th>Latency</th><th>Use</th></tr></thead>
+<tbody>
+<tr><td><strong>Batch</strong></td><td>Score everyone on a schedule, store results</td><td>Hours old</td><td>Email recommendations, churn lists</td></tr><tr><td><strong>Online (real time)</strong></td><td>Compute on request</td><td>ms</td><td>Fraud checks, search ranking, feeds</td></tr><tr><td><strong>Streaming</strong></td><td>Update on events</td><td>Seconds</td><td>Live features, anomaly detection</td></tr><tr><td><strong>On-device</strong></td><td>Model ships to the phone</td><td>None</td><td>Privacy, offline, keyboards</td></tr>
+</tbody>
+</table>
+</div>
+<p>Serving design: model behind a stateless service (TorchServe, Triton, TF Serving, a plain API), <strong>dynamic batching</strong> to raise GPU throughput, quantisation and distillation to cut cost, autoscaling on queue depth, a model <strong>registry</strong> with versioning, <strong>canary</strong> and <strong>shadow</strong> deployments, and a fallback (default or simple model) when the model is slow or down.</p>
+<p><strong>Capacity maths</strong>: a GPU handling a batch of 32 in 40 ms serves about 800 requests/s. For 20,000 requests/s at peak you need at least <code>ceil(20000 / 800) = 25</code> GPUs plus headroom.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd23-02.py">import math
+batch, batch_ms, peak_qps, headroom = 32, 40, 20000, 1.3
+per_gpu = batch / (batch_ms / 1000)
+print(f"per GPU: {per_gpu:.0f} req/s | GPUs for peak: {math.ceil(peak_qps / per_gpu)} | with 30% headroom: {math.ceil(peak_qps * headroom / per_gpu)}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>per GPU: 800 req/s | GPUs for peak: 25 | with 30% headroom: 33</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd23-q03" data-topic="ML systems design" data-type="numeric" data-answer="800" data-tol="0">
+        <div class="q-stem"><p>A GPU serves 32 requests per 40 ms batch. Requests per second per GPU?</p></div>
+        <div class="q-explain"><p>32 / 0.040 = 800.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name three serving optimisations.</summary><div class="answer"><p>Dynamic batching, quantisation or distillation, and caching or routing easy requests to smaller models.</p></div></details>
+      </div>
+    </section>
+
+    <section id="recsys" data-track>
+      <h2>Recommendation and ranking: funnel architecture</h2>
+<p>You cannot score millions of items per request. Use a <strong>funnel</strong>:</p>
+<ol><li><strong>Candidate generation (retrieval)</strong>: from millions to hundreds, with cheap methods: collaborative filtering, two-tower embeddings plus approximate nearest neighbours, popular and recent items, "followed accounts". Several retrievers are merged.</li><li><strong>Ranking</strong>: a heavier model (gradient boosting or a deep network) scores a few hundred with rich features and predicts click, watch, purchase.</li><li><strong>Re-ranking</strong>: apply business rules and diversity, freshness, fairness, deduplication, ads insertion.</li></ol>
+<p>Metrics: offline <strong>recall@k</strong>, <strong>NDCG</strong>, <strong>AUC</strong>; online <strong>CTR, watch time, retention</strong> via A/B tests. Handle <strong>cold start</strong> (new users and items) with content features and exploration (bandits), and the <strong>feedback loop</strong> (you train on what you showed) with exploration and counterfactual care.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd23-03.py">import math
+def dcg(rels): return sum(r / math.log2(i + 2) for i, r in enumerate(rels))
+def ndcg(rels):
+    ideal = dcg(sorted(rels, reverse=True))
+    return dcg(rels) / ideal if ideal else 0.0
+print("relevant item first :", round(ndcg([3, 2, 0, 0]), 3))
+print("relevant item last  :", round(ndcg([0, 0, 2, 3]), 3))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>relevant item first : 1.0
+relevant item last  : 0.538</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd23-q04" data-topic="ML systems design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why use a retrieval then ranking funnel?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is simpler <span class="q-why">No.</span></li>
+          <li data-key="B">Scoring millions of items with a heavy model per request is too slow; cheap retrieval narrows candidates first <span class="q-why">Correct.</span></li>
+          <li data-key="C">Models cannot rank <span class="q-why">No.</span></li>
+          <li data-key="D">It reduces accuracy <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The funnel balances recall, accuracy and latency.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd23-q05" data-topic="ML systems design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which metric rewards putting relevant items near the top?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Accuracy <span class="q-why">Position-blind.</span></li>
+          <li data-key="B">NDCG <span class="q-why">Correct.</span></li>
+          <li data-key="C">Recall at N with no order <span class="q-why">Position-blind.</span></li>
+          <li data-key="D">RMSE <span class="q-why">Regression metric.</span></li>
+        </ul>
+        <div class="q-explain"><p>Discounts relevance by log of rank.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What are the three stages of a recommender?</summary><div class="answer"><p>Candidate retrieval, ranking, and re-ranking with business rules.</p></div></details>
+      </div>
+    </section>
+
+    <section id="vectors" data-track>
+      <h2>Vector search and embeddings</h2>
+<p>An <strong>embedding</strong> maps text, images or items to vectors where similar things are close. <strong>Nearest neighbour search</strong> finds the closest vectors; exact search is <code>O(N d)</code>, so systems use <strong>approximate nearest neighbour (ANN)</strong> indexes: <strong>HNSW</strong> (graph, high recall, memory heavy), <strong>IVF</strong> (cluster then search a few clusters), <strong>PQ</strong> (compress vectors). Trade recall for latency and memory. Add metadata filters, hybrid keyword plus vector search, and periodic re-embedding when the model changes.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd23-04.py">import math, random
+random.seed(0)
+d, N = 16, 2000
+vecs = [[random.gauss(0, 1) for _ in range(d)] for _ in range(N)]
+norm = lambda v: math.sqrt(sum(x * x for x in v))
+unit = lambda v: [x / norm(v) for x in v]
+db = [unit(v) for v in vecs]
+q = unit([x + random.gauss(0, 0.3) for x in vecs[123]])          # a noisy copy of item 123
+dot = lambda a, b: sum(x * y for x, y in zip(a, b))
+best = sorted(range(N), key=lambda i: -dot(db[i], q))[:3]
+print("exact top-3 by cosine similarity:", best, "(item 123 should be first)")
+# IVF-style: assign to 20 random centroids, search only the nearest 3 clusters
+cents = random.sample(db, 20)
+assign = [max(range(20), key=lambda c: dot(db[i], cents[c])) for i in range(N)]
+near = sorted(range(20), key=lambda c: -dot(q, cents[c]))[:3]
+cand = [i for i in range(N) if assign[i] in near]
+approx = sorted(cand, key=lambda i: -dot(db[i], q))[:3]
+print(f"approximate search scanned {len(cand)} of {N} vectors, top-3:", approx, "| finds item 123:", 123 in approx)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>exact top-3 by cosine similarity: [123, 1197, 363] (item 123 should be first)
+approximate search scanned 269 of 2000 vectors, top-3: [123, 1197, 363] | finds item 123: True</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd23-q06" data-topic="ML systems design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why use approximate nearest neighbour search?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is exact <span class="q-why">No.</span></li>
+          <li data-key="B">Exact search over millions of vectors is too slow; ANN trades small recall loss for large speedups <span class="q-why">Correct.</span></li>
+          <li data-key="C">It needs no memory <span class="q-why">No.</span></li>
+          <li data-key="D">It avoids embeddings <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>HNSW, IVF and PQ are common ANN techniques.</p></div>
+      </div>
+    </section>
+
+    <section id="llm" data-track>
+      <h2>LLM and RAG application architecture</h2>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="Retrieval-augmented generation grounds the model in your own, fresh data." style="min-width:760px"><defs><marker id="ah49" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah49a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah49b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah49d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah49)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah49)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah49)"/><line x1="747.0" y1="78.0" x2="747.0" y2="118.0" class="d-line" marker-end="url(#ah49)"/><line x1="662.0" y1="147.0" x2="618.0" y2="147.0" class="d-line" marker-end="url(#ah49)"/><line x1="448.0" y1="147.0" x2="404.0" y2="147.0" class="d-line" marker-end="url(#ah49)"/><line x1="234.0" y1="147.0" x2="190.0" y2="147.0" class="d-line" marker-end="url(#ah49)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">User question</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle" class="d-sm">Rewrite and embed the query</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle" class="d-sm">Retrieve top chunks (vector plus keyword)</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle">Re-rank</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="151.5" text-anchor="middle" class="d-sm">Build prompt with context and instructions</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="151.5" text-anchor="middle">LLM generates</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="151.5" text-anchor="middle" class="d-sm">Guardrails and citations</text><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="105.0" y="151.5" text-anchor="middle">Answer</text></svg>
+</div>
+<figcaption>Retrieval-augmented generation grounds the model in your own, fresh data.</figcaption></figure>
+<ul><li><strong>Ingestion</strong>: parse documents, <strong>chunk</strong> (200 to 800 tokens with overlap), embed, store vectors plus metadata and permissions.</li><li><strong>Serving</strong>: stream tokens to the client, cache by prompt hash, set max tokens and timeouts, retry with backoff, route simple questions to a smaller, cheaper model.</li><li><strong>Cost model</strong>: cost = (input tokens x input price) + (output tokens x output price); long contexts and repeated prefixes dominate, so use prompt caching and trim context.</li><li><strong>LLM serving internals</strong>: the <strong>KV cache</strong> stores attention keys and values to avoid recomputation; <strong>continuous batching</strong> and paged attention (vLLM) raise throughput; latency is <strong>time to first token</strong> plus tokens per second.</li><li><strong>Safety and quality</strong>: prompt-injection defences (treat retrieved text as untrusted data), PII filtering, output validation (JSON schema), evaluation sets with automated and human grading, observability of prompts, retrieved context and costs.</li><li><strong>Agents</strong> add tool calls and loops: bound iterations, validate tool arguments, sandbox side effects, require approval for risky actions.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd23-05.py">price_in, price_out = 3.00, 15.00                          # dollars per million tokens (illustrative)
+def cost(tin, tout, requests): return requests * (tin * price_in + tout * price_out) / 1e6
+base = cost(6000, 400, 1_000_000)
+trimmed = cost(2500, 400, 1_000_000)
+print(f"1M requests/month: ${base:,.0f} with 6000 input tokens vs ${trimmed:,.0f} after trimming context to 2500 ({1 - trimmed / base:.0%} saved)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>1M requests/month: $24,000 with 6000 input tokens vs $13,500 after trimming context to 2500 (44% saved)</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd23-q07" data-topic="ML systems design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the main purpose of RAG?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To train a new model <span class="q-why">No.</span></li>
+          <li data-key="B">To ground the model's answers in retrieved, current, private documents <span class="q-why">Correct.</span></li>
+          <li data-key="C">To compress prompts <span class="q-why">No.</span></li>
+          <li data-key="D">To avoid tokens <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It reduces hallucination and keeps knowledge fresh without retraining.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does the KV cache do?</summary><div class="answer"><p>Stores attention keys and values of earlier tokens so each new token needs only incremental computation.</p></div></details>
+      </div>
+    </section>
+
+    <section id="monitoring" data-track>
+      <h2>Monitoring ML in production</h2>
+<p>Models decay because the world changes.</p>
+<ul><li><strong>Data drift</strong>: input distributions shift (new devices, seasons). Track feature statistics (PSI, KS test).</li><li><strong>Concept drift</strong>: the relationship between inputs and the label changes.</li><li><strong>Quality</strong>: delayed ground truth, online A/B metrics, shadow comparisons, human review samples.</li><li><strong>System metrics</strong>: latency percentiles, errors, GPU utilisation, queue depth, cost per prediction.</li><li>Triggers: scheduled retraining, drift alerts, or performance drops. Keep <strong>reproducibility</strong> (data version, code, parameters) and the ability to roll back a model like any release.</li></ul>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Design the loop: data, features (one definition, point-in-time correct), a funnel from cheap retrieval to expensive ranking, a serving path with batching and fallbacks, and monitoring for drift and cost. State the latency budget and capacity numbers, and say how you would know the model is getting worse.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd23-q08" data-topic="ML systems design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is data drift?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A broken pipeline <span class="q-why">Different problem.</span></li>
+          <li data-key="B">A change in the distribution of input features over time <span class="q-why">Correct.</span></li>
+          <li data-key="C">A GPU error <span class="q-why">No.</span></li>
+          <li data-key="D">Overfitting <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It can degrade a model silently.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Data drift versus concept drift?</summary><div class="answer"><p>Data drift changes the inputs; concept drift changes the relationship between inputs and the target.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: ML systems design</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="ML systems design">
+<details class="recall iq" data-level="basic" data-topic="ML systems design"><summary><span class="tag ok">Basic</span> What are the stages of an ML system?</summary><div class="answer"><p>Define objective and metrics, collect and label data, build features, train and evaluate, deploy and serve, monitor and retrain.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="ML systems design"><summary><span class="tag ok">Basic</span> Batch versus online inference?</summary><div class="answer"><p>Batch precomputes predictions on a schedule and stores them; online computes per request with latency limits. Choose by freshness needs and cost.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="ML systems design"><summary><span class="tag warn">Medium</span> What is training-serving skew and how do you avoid it?</summary><div class="answer"><p>Features computed differently in training and production silently hurt accuracy. Use shared feature definitions, a feature store and logging served features for training.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="ML systems design"><summary><span class="tag warn">Medium</span> What does a feature store provide?</summary><div class="answer"><p>Consistent feature definitions, an offline store for training with point-in-time joins, an online store for low-latency serving, and a registry with ownership and freshness.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="ML systems design"><summary><span class="tag warn">Medium</span> Explain the recommendation funnel.</summary><div class="answer"><p>Candidate generation narrows millions of items to hundreds cheaply, ranking scores them with a richer model, and re-ranking applies diversity, business rules and freshness.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="ML systems design"><summary><span class="tag warn">Medium</span> How do you handle cold start?</summary><div class="answer"><p>Use content features, popularity and context, explore with bandits, and ask for explicit preferences; update quickly as interactions arrive.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="ML systems design"><summary><span class="tag warn">Medium</span> How do you decide a new model is better?</summary><div class="answer"><p>Offline metrics on a held-out, time-split set, then an online A/B test on business metrics with guardrail metrics and enough statistical power.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="ML systems design"><summary><span class="tag warn">Medium</span> What is data drift and how do you detect it?</summary><div class="answer"><p>The input distribution changes over time. Monitor feature statistics with PSI or KS tests, and track prediction distributions and delayed label performance.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="ML systems design"><summary><span class="tag bad">Advanced</span> How do you serve a model at 20,000 requests per second?</summary><div class="answer"><p>Estimate per-instance throughput, use dynamic batching, quantisation or distillation, autoscaling on queue depth, caching, a fallback model and canary deployments.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="ML systems design"><summary><span class="tag bad">Advanced</span> Explain approximate nearest neighbour search.</summary><div class="answer"><p>Exact search is O(N d). ANN indexes such as HNSW, IVF and PQ trade a little recall for large speedups and memory savings.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="ML systems design"><summary><span class="tag bad">Advanced</span> Design a RAG system.</summary><div class="answer"><p>Ingest, chunk and embed documents with permissions; at query time rewrite, retrieve (vector plus keyword), re-rank, build a prompt, generate with citations, and apply guardrails, caching and evaluation.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="ML systems design"><summary><span class="tag bad">Advanced</span> How do you control LLM application cost and latency?</summary><div class="answer"><p>Trim context, cache prompts and results, route simple requests to smaller models, stream output, set token limits and batch offline work.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="ML systems design"><summary><span class="tag bad">Advanced</span> What is a feedback loop problem in recommenders?</summary><div class="answer"><p>The model is trained on what it previously showed, reinforcing its own biases. Counter with exploration, randomised traffic and counterfactual evaluation.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="ML systems design"><summary><span class="tag bad">Advanced</span> How do you avoid label leakage?</summary><div class="answer"><p>Ensure features use only information available at prediction time, split data by time, and make joins point-in-time correct.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd22-security-architecture.html"><span class="dir">Previous</span><span>SD22 Security architecture: authentication, tokens, encryption, zero trust and threat modelling</span></a>
+      <a class="next" href="sd24-case-5.html"><span class="dir">Next</span><span>SD24 Case studies 5: nearby search, maps routing, e-commerce checkout, flash sale, hotel booking</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

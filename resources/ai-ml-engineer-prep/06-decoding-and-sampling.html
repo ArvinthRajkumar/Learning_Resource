@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="06">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>06 Decoding and sampling | AI/ML Engineer Prep</title>
+<meta name="description" content="Greedy, temperature, top-k, top-p, min-p, repetition penalties, logprobs, beam search and length normalization, with numeric examples.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part 06</p>
+      <h1>Decoding and sampling</h1>
+      <p class="lede">The model outputs a score (logit) for every token in the vocabulary. Decoding is the policy that turns those scores into a choice. Each knob reshapes or truncates one distribution. Compute it once by hand and the knobs stop being magic.</p>
+      <div class="meta"><span class="tag accent">Feeds coding problem d</span><span class="tag">~1.5 hours</span></div>
+    </div>
+
+    <!-- ============================================================ 1 -->
+    <section id="softmax-temperature" data-track>
+      <h2>Softmax, temperature and greedy</h2>
+
+      <h3>Intuition</h3>
+      <p>Softmax turns arbitrary scores into probabilities: exponentiate (making everything positive and stretching differences), then divide by the total. Temperature divides the logits first. Low T exaggerates differences, so the top token dominates. High T shrinks them, flattening the distribution toward uniform. Greedy decoding always takes the top token, which is the T approaching 0 limit.</p>
+
+      <h3>The formula</h3>
+      <div class="formula">
+        <div class="f-title">Softmax with temperature (stable form)</div>
+        <div class="f-body">p_i = exp((z_i - max_j z_j) / T) / sum_k exp((z_k - max_j z_j) / T)</div>
+        <dl class="f-defs"><dt>z_i</dt><dd>logit of token i</dd><dt>T</dt><dd>temperature &gt; 0 (T = 0 is implemented as argmax)</dd><dt>max z</dt><dd>subtracted for numerical stability. It cancels in the ratio.</dd></dl>
+      </div>
+
+      <h3>Worked example: logits [2, 1, 0]</h3>
+      <div class="worked">
+        <ol class="steps">
+          <li>T = 1: exp values e^2 = 7.389, e^1 = 2.718, e^0 = 1. Sum = 11.107. p = [0.6652, 0.2447, 0.0900].</li>
+          <li>T = 0.5: logits become [4, 2, 0]. p = [0.8668, 0.1173, 0.0159]. Sharper.</li>
+          <li>T = 2: logits become [1, 0.5, 0]. p = [0.5065, 0.3072, 0.1863]. Flatter.</li>
+          <li>Greedy: token 0 regardless of T. Temperature never changes the argmax, only how likely the alternatives are.</li>
+        </ol>
+        <span class="result">T rescales confidence; the ranking of tokens never changes</span>
+      </div>
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 220" role="img" aria-label="Bar charts of probabilities for logits 2,1,0 at temperatures 0.5, 1 and 2">
+          <line x1="20" y1="180" x2="700" y2="180" class="d-line"/>
+          <text x="110" y="206" text-anchor="middle" class="d-bold">T = 0.5</text>
+          <rect x="40" y="25.7" width="40" height="154.3" class="d-a"/><rect x="90" y="159.1" width="40" height="20.9" class="d-a"/><rect x="140" y="177.2" width="40" height="2.8" class="d-a"/>
+          <text x="60" y="20" text-anchor="middle" class="d-sm">.867</text><text x="110" y="153" text-anchor="middle" class="d-sm">.117</text><text x="160" y="171" text-anchor="middle" class="d-sm">.016</text>
+          <text x="350" y="206" text-anchor="middle" class="d-bold">T = 1</text>
+          <rect x="280" y="61.6" width="40" height="118.4" class="d-b"/><rect x="330" y="136.4" width="40" height="43.6" class="d-b"/><rect x="380" y="164" width="40" height="16" class="d-b"/>
+          <text x="300" y="56" text-anchor="middle" class="d-sm">.665</text><text x="350" y="130" text-anchor="middle" class="d-sm">.245</text><text x="400" y="158" text-anchor="middle" class="d-sm">.090</text>
+          <text x="590" y="206" text-anchor="middle" class="d-bold">T = 2</text>
+          <rect x="520" y="89.8" width="40" height="90.2" class="d-c"/><rect x="570" y="125.3" width="40" height="54.7" class="d-c"/><rect x="620" y="146.8" width="40" height="33.2" class="d-c"/>
+          <text x="540" y="84" text-anchor="middle" class="d-sm">.507</text><text x="590" y="119" text-anchor="middle" class="d-sm">.307</text><text x="640" y="141" text-anchor="middle" class="d-sm">.186</text>
+        </svg>
+        </div>
+        <figcaption>Same logits, three temperatures. Bar height is the probability.</figcaption>
+      </figure>
+
+      <h3>Common traps</h3>
+      <div class="callout trap"><ul class="mb-0">
+        <li>"Temperature 0 makes outputs perfectly deterministic." Greedy is deterministic in principle, but batched GPU inference can produce tiny floating-point differences that flip near-ties. Providers generally do not guarantee bit-identical outputs.</li>
+        <li>"Higher temperature makes the model more creative and more accurate." More diverse, usually less accurate on factual tasks.</li>
+        <li>Computing exp(z) directly on large logits overflows. Subtract the max first.</li>
+      </ul></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p06-t-1" data-topic="Decoding" data-type="numeric" data-answer="0.8668" data-tol="0.002">
+        <div class="q-stem"><p>Logits [2, 1, 0], temperature 0.5. Probability of the first token? (4 decimals)</p></div>
+        <div class="q-explain"><p>Divide by T: [4, 2, 0]. e^4 / (e^4 + e^2 + 1) = 54.598 / 62.987 = 0.8668.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why subtract the max logit?</summary><div class="answer"><p>To prevent overflow in exp. The result is unchanged because it cancels in numerator and denominator.</p></div></details>
+        <details class="recall"><summary>What does T approaching infinity give?</summary><div class="answer"><p>The uniform distribution over the vocabulary.</p></div></details>
+        <details class="recall"><summary>Does temperature change which token is most likely?</summary><div class="answer"><p>No. Dividing by a positive T preserves order.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 2 -->
+    <section id="truncation-sampling" data-track>
+      <h2>Top-k, top-p (nucleus) and min-p</h2>
+
+      <h3>Intuition</h3>
+      <p>Even after temperature, thousands of tokens keep tiny probabilities. Together they add up, and sampling one occasionally derails the text. Truncation methods cut off that tail, then renormalize what is left:</p>
+      <ul>
+        <li><strong>Top-k</strong>: keep a fixed number k of most likely tokens. Simple, but the same k is too many when the model is confident and too few when it is unsure.</li>
+        <li><strong>Top-p</strong>: keep the smallest set whose total probability reaches p. Adapts to confidence: few tokens when peaked, many when flat.</li>
+        <li><strong>Min-p</strong>: keep tokens with probability at least min_p x p_max. The cutoff scales with the top token's confidence (Nguyen et al., 2024). Supported in Hugging Face transformers, vLLM and llama.cpp.</li>
+      </ul>
+
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 230" role="img" aria-label="Probabilities 0.5, 0.3, 0.15, 0.05; cumulative sum crosses 0.75 after two tokens, so top-p 0.75 keeps two; min-p 0.2 threshold 0.1 keeps three">
+          <line x1="40" y1="190" x2="460" y2="190" class="d-line"/>
+          <rect x="60" y="40" width="70" height="150" class="d-b"/><text x="95" y="34" text-anchor="middle" class="d-sm">0.50</text>
+          <rect x="160" y="100" width="70" height="90" class="d-b"/><text x="195" y="94" text-anchor="middle" class="d-sm">0.30</text>
+          <rect x="260" y="145" width="70" height="45" class="d-d"/><text x="295" y="139" text-anchor="middle" class="d-sm">0.15</text>
+          <rect x="360" y="175" width="70" height="15" class="d-d"/><text x="395" y="169" text-anchor="middle" class="d-sm">0.05</text>
+          <text x="95" y="208" text-anchor="middle" class="d-sm d-muted">cum 0.50</text>
+          <text x="195" y="208" text-anchor="middle" class="d-sm d-muted">cum 0.80</text>
+          <text x="295" y="208" text-anchor="middle" class="d-sm d-muted">cum 0.95</text>
+          <text x="395" y="208" text-anchor="middle" class="d-sm d-muted">cum 1.00</text>
+          <line x1="40" y1="160" x2="460" y2="160" class="d-line-a d-dash"/>
+          <text x="470" y="164" class="d-sm d-ta">min-p 0.2: threshold 0.1</text>
+          <text x="480" y="60" class="d-sm d-bold">top-p 0.75: keep 2</text>
+          <text x="480" y="80" class="d-sm">renormalized 0.625, 0.375</text>
+          <text x="480" y="110" class="d-sm d-bold">top-p 0.9: keep 3</text>
+          <text x="480" y="130" class="d-sm">0.526, 0.316, 0.158</text>
+          <text x="480" y="190" class="d-sm d-bold">min-p 0.2: keep 3</text>
+        </svg>
+        </div>
+        <figcaption>Green bars survive top-p 0.75. The running sum reaches 0.8 at the second token, which is at least 0.75, so stop. Min-p 0.2 also keeps the 0.15 token (above 0.1).</figcaption>
+      </figure>
+
+      <h3>Formulas</h3>
+      <div class="formula">
+        <div class="f-title">Truncation rules (then renormalize the kept set)</div>
+        <div class="f-body">top-k:  keep the k tokens with the largest p_i
+top-p:  sort descending, keep tokens 1..m where m = min{ m : p_(1) + ... + p_(m) >= p }
+min-p:  keep { i : p_i >= min_p * max_j p_j }</div>
+      </div>
+
+      <h3>Worked examples</h3>
+      <div class="worked">
+        <ol class="steps">
+          <li>Top-k = 2 on logits [2, 1, 0]: keep tokens 0 and 1. Renormalize e^2 and e^1: [0.7311, 0.2689, 0].</li>
+          <li>Top-p = 0.75 on p = [0.5, 0.3, 0.15, 0.05]: the cumulative sum is 0.5 (short), then 0.8 (reaches 0.75). Keep 2: [0.625, 0.375].</li>
+          <li>Top-p = 0.9: cumulative 0.5, 0.8, 0.95. Keep 3: divide by 0.95, giving [0.5263, 0.3158, 0.1579].</li>
+          <li>Flat distribution (five tokens at 0.12, five at 0.08): top-p 0.75 keeps 7 tokens (0.6 + 0.08 + 0.08 = 0.76). Top-p adapts to uncertainty, while top-k = 2 would keep only 2.</li>
+          <li>Min-p 0.2 on [0.5, 0.3, 0.15, 0.05]: threshold 0.1, so keep 3.</li>
+        </ol>
+      </div>
+      <p>Order matters: many libraries apply temperature, then top-k, then top-p (Hugging Face's default processor order), but this varies by library and version. Implementations are in <a href="08-extra-coding-patterns.html#top-k">part 08</a>.</p>
+
+      <h3>Common traps</h3>
+      <div class="callout trap"><ul class="mb-0">
+        <li>Forgetting to renormalize after truncation.</li>
+        <li>Top-p with "strictly greater than p" versus "at least p". Implementations differ at exact boundaries. The usual rule includes the token that crosses p.</li>
+        <li>Always keep at least one token (top-p with a tiny p).</li>
+        <li>top-k = 1 is greedy, whatever the temperature.</li>
+      </ul></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p06-p-1" data-topic="Decoding" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Probabilities [0.5, 0.3, 0.15, 0.05], top-p = 0.75. After renormalization, the probability of the second token is:</p></div>
+        <ul class="q-options">
+          <li data-key="A">0.30 <span class="q-why">Not renormalized.</span></li>
+          <li data-key="B">0.375 <span class="q-why">Keep 2 (cumulative 0.8): 0.3 / 0.8.</span></li>
+          <li data-key="C">0.316 <span class="q-why">That is the top-p 0.9 answer.</span></li>
+          <li data-key="D">0.5 <span class="q-why">That is the first token before renormalizing.</span></li>
+        </ul>
+        <div class="q-explain"><p>The kept set is the first two tokens (0.5 + 0.3 = 0.8, at least 0.75). 0.3/0.8 = 0.375.</p></div>
+      </div>
+      <div class="quiz" data-qid="p06-p-2" data-topic="Decoding" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Why does top-p adapt better than top-k across contexts?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is faster <span class="q-why">It needs a sort, so it is not faster.</span></li>
+          <li data-key="B">It never truncates <span class="q-why">It does truncate.</span></li>
+          <li data-key="C">The number of kept tokens grows when the model is uncertain and shrinks when it is confident <span class="q-why">Correct.</span></li>
+          <li data-key="D">It removes the need for temperature <span class="q-why">They are complementary.</span></li>
+        </ul>
+        <div class="q-explain"><p>A fixed k ignores the shape of the distribution. A probability-mass cutoff follows it.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Define the top-p kept set precisely.</summary><div class="answer"><p>The smallest prefix of tokens sorted by descending probability whose cumulative probability reaches p.</p></div></details>
+        <details class="recall"><summary>Min-p threshold formula?</summary><div class="answer"><p>min_p x p_max.</p></div></details>
+        <details class="recall"><summary>What must happen after any truncation?</summary><div class="answer"><p>Renormalize the kept probabilities to sum to 1.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 3 -->
+    <section id="penalties-logprobs" data-track>
+      <h2>Repetition penalties and logprobs</h2>
+
+      <h3>Penalties</h3>
+      <div class="formula">
+        <div class="f-title">Two families</div>
+        <div class="f-body">Repetition penalty (CTRL style, Hugging Face):  for tokens already generated,
+    z' = z / r  if z > 0,   z' = z * r  if z &lt; 0          (r > 1 discourages)
+Frequency / presence (OpenAI style):
+    z' = z - alpha_freq * count(token) - alpha_presence * [count(token) > 0]</div>
+      </div>
+      <ul>
+        <li>r = 1.2 on logit 2.0 gives 1.667. On logit -1.0 it gives -1.2 (pushed further down).</li>
+        <li>Frequency 0.5 with count 3, plus presence 0.6, on logit 2.0: 2.0 - 1.5 - 0.6 = -0.1.</li>
+        <li>Penalties apply to tokens, so they also hit legitimately repeated tokens (names, code syntax, JSON keys). Use them lightly for structured output.</li>
+      </ul>
+
+      <h3>Logprobs</h3>
+      <p>APIs can return the log-probability of each generated token (and often the top alternatives). log p = -0.1 means p = 0.905. A sequence's probability is exp(sum of logprobs). For [-0.1, -0.5, -2.0] that is exp(-2.6) = 0.0743. Perplexity = exp(-mean logprob) = exp(0.8667) = 2.379.</p>
+      <p>Uses: confidence scores for classification (the logprob of the label token), detecting low-confidence spans, calibration, comparing candidate answers, and building reward or verifier signals. Caveat: token probabilities are not calibrated truth probabilities, especially after RLHF.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p06-l-1" data-topic="Decoding" data-type="numeric" data-answer="2.379" data-tol="0.01">
+        <div class="q-stem"><p>Token logprobs are [-0.1, -0.5, -2.0]. Perplexity? (3 decimals)</p></div>
+        <div class="q-explain"><p>Mean = -0.8667. exp(0.8667) = 2.379.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why does the CTRL penalty multiply negative logits?</summary><div class="answer"><p>Dividing a negative logit by r &gt; 1 would raise it toward 0, which encourages the token. Multiplying pushes it down.</p></div></details>
+        <details class="recall"><summary>Perplexity formula from logprobs?</summary><div class="answer"><p>exp(-(1/n) x sum of log p_i).</p></div></details>
+        <details class="recall"><summary>Frequency vs presence penalty?</summary><div class="answer"><p>Frequency scales with the count. Presence is a flat penalty once the token has appeared at all.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 4 -->
+    <section id="beam-search" data-track>
+      <h2>Beam search, and why it is not optimal</h2>
+
+      <h3>Intuition</h3>
+      <p>Greedy decoding commits to the best token at each step and can walk into a dead end. Beam search keeps the B best partial sequences (the beam) at every step. It extends each of them by every token and keeps the best B of the results. It is a breadth-limited search. Anything that falls out of the top B is gone forever, even if it would have led to the best complete sequence.</p>
+
+      <h3>The mechanism</h3>
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 340" role="img" aria-label="Beam search tree with width 2 over 3 steps. Kept nodes [0], [1], then [1,0] and [1,2]; the prefix [0,1] is pruned at step 2 although it leads to the optimum [0,1,0] with score -3.0; beam returns [1,0,0] with score -3.5">
+          <defs><marker id="b6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker></defs>
+          <text x="20" y="20" class="d-sm d-muted">step 1</text><text x="250" y="20" class="d-sm d-muted">step 2</text><text x="520" y="20" class="d-sm d-muted">step 3</text>
+          <rect x="20" y="40" width="110" height="30" rx="5" class="d-b"/><text x="75" y="60" text-anchor="middle" class="d-sm">[0] -0.5</text>
+          <rect x="20" y="150" width="110" height="30" rx="5" class="d-b"/><text x="75" y="170" text-anchor="middle" class="d-sm">[1] -1.0</text>
+          <rect x="20" y="270" width="110" height="30" rx="5" class="d-box"/><text x="75" y="290" text-anchor="middle" class="d-sm d-muted">[2] -2.0 pruned</text>
+          <rect x="250" y="30" width="130" height="26" rx="5" class="d-box"/><text x="315" y="48" text-anchor="middle" class="d-sm d-muted">[0,0] -2.5</text>
+          <rect x="250" y="62" width="130" height="26" rx="5" class="d-d"/><text x="315" y="80" text-anchor="middle" class="d-sm">[0,1] -2.5 pruned!</text>
+          <rect x="250" y="94" width="130" height="26" rx="5" class="d-box"/><text x="315" y="112" text-anchor="middle" class="d-sm d-muted">[0,2] -2.5</text>
+          <rect x="250" y="140" width="130" height="26" rx="5" class="d-b"/><text x="315" y="158" text-anchor="middle" class="d-sm">[1,0] -1.5 kept</text>
+          <rect x="250" y="172" width="130" height="26" rx="5" class="d-box"/><text x="315" y="190" text-anchor="middle" class="d-sm d-muted">[1,1] -3.0</text>
+          <rect x="250" y="204" width="130" height="26" rx="5" class="d-b"/><text x="315" y="222" text-anchor="middle" class="d-sm">[1,2] -2.0 kept</text>
+          <line x1="130" y1="55" x2="248" y2="43" class="d-line"/><line x1="130" y1="55" x2="248" y2="75" class="d-line-d"/><line x1="130" y1="55" x2="248" y2="107" class="d-line"/>
+          <line x1="130" y1="165" x2="248" y2="153" class="d-line-b"/><line x1="130" y1="165" x2="248" y2="185" class="d-line"/><line x1="130" y1="165" x2="248" y2="217" class="d-line-b"/>
+          <rect x="520" y="40" width="180" height="28" rx="5" class="d-d"/><text x="610" y="59" text-anchor="middle" class="d-sm">[0,1,0] -3.0 OPTIMUM</text>
+          <line x1="380" y1="75" x2="518" y2="54" class="d-line-d d-dash" marker-end="url(#b6)"/>
+          <text x="420" y="92" class="d-sm d-td">never explored</text>
+          <rect x="520" y="130" width="180" height="28" rx="5" class="d-a"/><text x="610" y="149" text-anchor="middle" class="d-sm">[1,0,0] -3.5 returned</text>
+          <text x="610" y="176" text-anchor="middle" class="d-sm d-muted">[1,0,1], [1,0,2] also -3.5</text>
+          <text x="610" y="210" text-anchor="middle" class="d-sm d-muted">[1,2,0] -4.0, [1,2,2] -4.0</text>
+          <text x="610" y="230" text-anchor="middle" class="d-sm d-muted">[1,2,1] -6.0</text>
+          <line x1="380" y1="153" x2="518" y2="144" class="d-line-b" marker-end="url(#b6)"/>
+          <line x1="380" y1="217" x2="518" y2="210" class="d-line"/>
+          <text x="20" y="330" class="d-sm">start = [-0.5, -1.0, -2.0], transition rows: [-2,-2,-2], [-0.5,-2,-1], [-2,-4,-2]. Width 2.</text>
+        </svg>
+        </div>
+        <figcaption>At step 2, [0,1] (-2.5) loses to [1,2] (-2.0) and is pruned. But [0,1] would continue with a cheap transition (-0.5) to reach -3.0, better than anything beam keeps. Greedy (width 1) does worse still: [0,0,0] = -4.5.</figcaption>
+      </figure>
+
+      <h3>The algorithm</h3>
+      <div class="formula">
+        <div class="f-title">Beam search (sum of log-scores)</div>
+        <div class="f-body">beam = top_B { [v] : score = start[v] }
+repeat steps - 1 times:
+    candidates = { s + [v] : s in beam, v in vocab }, score(s+[v]) = score(s) + trans[last(s)][v]
+    beam = top_B(candidates)       (ties: a deterministic rule, e.g. lexicographically smaller)
+return best of beam</div>
+        <dl class="f-defs"><dt>B</dt><dd>beam width (B = 1 is greedy, B = all is exhaustive)</dd><dt>cost</dt><dd>O(steps x B x V log(B x V)) with a sort, O(steps x B x V) with a heap</dd></dl>
+      </div>
+
+      <h3>Why beam search misses the global optimum</h3>
+      <ul>
+        <li>Pruning is based on <em>prefix</em> scores. A prefix that looks worse now can have much better continuations. Beam search cannot see the future.</li>
+        <li>Guaranteed optimal only if B is at least V^(steps-1) (nothing pruned), or if the scoring has special structure.</li>
+        <li>When scores depend only on the previous token (a first-order chain, like coding problem d), <strong>Viterbi dynamic programming finds the exact optimum</strong> in O(steps x V^2). LLMs condition on the whole prefix, so no such shortcut exists there.</li>
+        <li>For LLMs, a larger beam can even <em>hurt</em> open-ended text: higher-likelihood sequences tend to be short, generic or repetitive (the "beam search curse" and degeneration observations). Beam search shines in constrained tasks like translation and speech recognition.</li>
+      </ul>
+
+      <h3>Length normalization</h3>
+      <p>Log-probs are at most 0, so every extra token lowers the total. Beam search with end-of-sequence tokens therefore prefers stopping early. Fix: compare finished hypotheses by score / length^alpha. Example: a 3-token hypothesis at -3.0 versus an 8-token one at -4.0. Raw scores prefer the short one. Normalized with alpha = 1: -1.0 versus -0.5, so the long one wins. GNMT's penalty is ((5 + |Y|)/6)^alpha. For |Y| = 8 and alpha = 0.6 that is 1.5903.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p06-b-1" data-topic="Decoding" data-type="multi" data-answer="A,C">
+        <div class="q-stem"><p>Select all true statements about beam search.</p></div>
+        <ul class="q-options">
+          <li data-key="A">It can miss the highest-scoring sequence because it prunes by prefix score <span class="q-why">Correct.</span></li>
+          <li data-key="B">A wider beam always produces better text for open-ended chat <span class="q-why">Often blander or more repetitive. Likelihood is not quality.</span></li>
+          <li data-key="C">Without length normalization it tends to favor shorter outputs <span class="q-why">Each token adds a negative log-prob.</span></li>
+          <li data-key="D">Width 1 is the same as top-k sampling with k = 1 at temperature 1, so it is random <span class="q-why">Width 1 is greedy and deterministic.</span></li>
+        </ul>
+        <div class="q-explain"><p>Beam search is approximate maximum-likelihood search. Likelihood favors short, generic text unless normalized.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>When is beam search guaranteed to find the optimum?</summary><div class="answer"><p>When nothing is pruned (B at least V^(steps-1)). For first-order chains, use Viterbi instead.</p></div></details>
+        <details class="recall"><summary>What does length normalization fix?</summary><div class="answer"><p>The bias toward short sequences caused by summing negative log-probs.</p></div></details>
+        <details class="recall"><summary>Beam width 1 is equal to what?</summary><div class="answer"><p>Greedy decoding.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 5 -->
+    <section id="choosing-decoding" data-track>
+      <h2>Choosing a decoding strategy</h2>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Task</th><th>Typical setting</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>Extraction, classification, JSON tool calls</td><td>T = 0 or low (0 to 0.2), constrained decoding</td><td>Stable, most-likely answers. Schema guarantees.</td></tr>
+          <tr><td>Factual QA over RAG context</td><td>low T (0 to 0.3)</td><td>Fewer off-distribution tokens. Grounded answers.</td></tr>
+          <tr><td>Creative writing, brainstorming</td><td>T 0.7 to 1.0, top-p 0.9 to 0.95 or min-p 0.05 to 0.1</td><td>Diversity without tail garbage.</td></tr>
+          <tr><td>Self-consistency / best-of-n</td><td>T about 0.7, n samples, then vote or pick with a verifier</td><td>Diverse reasoning paths. Aggregation improves accuracy.</td></tr>
+          <tr><td>Translation, ASR, short-form seq2seq</td><td>beam 4 to 5 with length penalty</td><td>The likelihood objective aligns with quality there.</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p>These are common defaults, not rules. Provider-recommended settings vary by model. Some reasoning models fix or ignore temperature entirely, so check the model's docs.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p06-c-1" data-topic="Decoding" data-type="single" data-answer="D">
+        <div class="q-stem"><p>You need the same JSON structure on every call for a data-extraction pipeline. Best decoding setup?</p></div>
+        <ul class="q-options">
+          <li data-key="A">T = 1.2 with top-p 0.95 <span class="q-why">Too random for extraction.</span></li>
+          <li data-key="B">Beam search width 10 <span class="q-why">Expensive and not structure-aware.</span></li>
+          <li data-key="C">High repetition penalty <span class="q-why">Penalizes repeated JSON keys and syntax.</span></li>
+          <li data-key="D">Temperature 0 (or low) with schema-constrained decoding <span class="q-why">Deterministic-leaning and structurally guaranteed.</span></li>
+        </ul>
+        <div class="q-explain"><p>Pick the most likely values and constrain the shape. Then measure accuracy with evals.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Setting for self-consistency?</summary><div class="answer"><p>Moderate temperature with several samples, then majority vote.</p></div></details>
+        <details class="recall"><summary>Why can repetition penalties break JSON?</summary><div class="answer"><p>JSON legitimately repeats tokens (quotes, braces, keys), and penalties push them down.</p></div></details>
+        <details class="recall"><summary>Where does beam search still win?</summary><div class="answer"><p>Translation and ASR, where likelihood correlates with quality.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ interview -->
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: decoding</h2>
+      <p class="muted">Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="13-interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Decoding">
+<details class="recall iq" data-level="basic" data-topic="Decoding"><summary><span class="tag ok">Basic</span> What does temperature do?</summary><div class="answer"><p>It divides logits before the softmax. Lower T sharpens the distribution (more deterministic), higher T flattens it (more diverse). T = 0 is treated as greedy. It never changes which token is most likely.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Decoding"><summary><span class="tag ok">Basic</span> Greedy decoding vs sampling?</summary><div class="answer"><p>Greedy takes the argmax each step (deterministic, can be repetitive). Sampling draws from the distribution (diverse), usually with temperature, top-k or top-p.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Decoding"><summary><span class="tag ok">Basic</span> What is top-p (nucleus) sampling?</summary><div class="answer"><p>Keep the smallest set of most-probable tokens whose cumulative probability reaches p, renormalize, then sample. It adapts the candidate count to the model&#x27;s confidence.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Decoding"><summary><span class="tag warn">Medium</span> Top-k vs top-p: which adapts better and why?</summary><div class="answer"><p>Top-p, because the number of kept tokens grows when the distribution is flat and shrinks when it is peaked. Top-k keeps a fixed count regardless.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Decoding"><summary><span class="tag warn">Medium</span> What is beam search and why is it not guaranteed optimal?</summary><div class="answer"><p>It keeps the best B partial sequences at each step and extends them all. Pruning by prefix score can discard prefixes whose continuations would score best, so it can miss the global optimum.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Decoding"><summary><span class="tag warn">Medium</span> Why do beam search outputs favor short sequences, and how is it fixed?</summary><div class="answer"><p>Summing negative log-probs penalizes every extra token. Length normalization (score / length^alpha, or the GNMT penalty) corrects it.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Decoding"><summary><span class="tag warn">Medium</span> What are logprobs useful for?</summary><div class="answer"><p>Confidence estimation, classification scores, detecting low-confidence spans, comparing candidate answers, and computing perplexity. They are not calibrated truth probabilities.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Decoding"><summary><span class="tag warn">Medium</span> What is min-p sampling?</summary><div class="answer"><p>Keep tokens with probability at least min_p x p_max, then renormalize. The cutoff scales with the top token&#x27;s confidence.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Decoding"><summary><span class="tag bad">Advanced</span> Why might temperature 0 still give non-deterministic outputs?</summary><div class="answer"><p>Floating-point non-associativity in batched GPU kernels (different batch compositions or kernel choices) can flip near-ties in the argmax. Providers generally do not guarantee bit-identical outputs.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Decoding"><summary><span class="tag bad">Advanced</span> When would you use Viterbi instead of beam search?</summary><div class="answer"><p>When scores factor over adjacent tokens (a first-order Markov chain, like HMMs or CRFs), Viterbi dynamic programming finds the exact best sequence in O(T x V^2). LLMs condition on full prefixes, so beam or sampling is used there.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Decoding"><summary><span class="tag bad">Advanced</span> How do repetition, frequency and presence penalties differ?</summary><div class="answer"><p>The CTRL-style repetition penalty divides positive logits (multiplies negative ones) of seen tokens by r. Frequency penalty subtracts proportional to the count. Presence penalty subtracts a flat amount once a token has appeared.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="05-agents-and-tool-use.html"><span class="dir">Previous</span><span>05 Agents and tool use</span></a>
+      <a class="next" href="12-llm-system-design.html"><span class="dir">Next</span><span>12 LLM system design</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

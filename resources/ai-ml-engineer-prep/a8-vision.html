@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="A8">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Computer vision and multimodal models | AI/ML Prep</title>
+<meta name="description" content="Images as tensors, convolution and ResNets, vision transformers, detection with IoU and non-maximum suppression, segmentation, contrastive image-text models like CLIP, vision-language models and evaluation.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part A8</p>
+      <h1>Computer vision and multimodal models</h1>
+      <p class="lede">Vision models turn pixels into labels, boxes and meaning, and multimodal models connect them to language. This part covers the building blocks and the classic computations (IoU, non-maximum suppression, contrastive loss), each run and checked.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="images" data-track>
+      <h2>Images as data</h2>
+<p>An image is a tensor <code>H x W x C</code> of numbers (0 to 255 per channel, or normalised to 0 to 1 or -1 to 1). Standard preprocessing: resize and crop to a fixed size, <strong>normalise</strong> with dataset mean and standard deviation, and apply <strong>augmentation</strong> to teach invariances (random crops, flips, colour jitter, rotation, cutout, mixup and CutMix). Never augment the validation set, and keep the same resize and normalisation at inference.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Task</th><th>Output</th><th>Typical models</th></tr></thead>
+<tbody>
+<tr><td>Classification</td><td>One label per image</td><td>ResNet, EfficientNet, ViT</td></tr><tr><td>Detection</td><td>Boxes with labels</td><td>Faster R-CNN, YOLO, DETR</td></tr><tr><td>Semantic segmentation</td><td>A class per pixel</td><td>U-Net, DeepLab, SegFormer</td></tr><tr><td>Instance segmentation</td><td>A mask per object</td><td>Mask R-CNN, SAM</td></tr><tr><td>Pose and keypoints</td><td>Landmarks</td><td>HRNet, ViTPose</td></tr><tr><td>Generation</td><td>New images</td><td>Diffusion (<a href="../diffusion-from-scratch/d3-how-diffusion-works.html">D3</a>), GANs</td></tr><tr><td>Vision-language</td><td>Captions, answers about images</td><td>CLIP, LLaVA, GPT-4V style models</td></tr>
+</tbody>
+</table>
+</div>
+    </section>
+
+    <section id="cnn" data-track>
+      <h2>Convolutional networks</h2>
+<h3>From pixels to features</h3>
+<p>Convolution layers (<a href="a3-deep-learning.html">A3</a>) detect local patterns; depth builds hierarchy: edges, textures, parts, objects. Key design elements:</p>
+<ul><li><strong>Stride and pooling</strong> reduce resolution and increase the <strong>receptive field</strong> (the region of the input each unit sees).</li><li><strong>Channels</strong> increase as resolution falls, keeping information.</li><li><strong>Batch normalisation</strong> after convolutions.</li><li><strong>Global average pooling</strong> replaces large fully connected layers.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/a8-01.py"># Receptive field growth: each layer with kernel k and stride s adds (k - 1) * product of earlier strides.
+layers = [(3, 1), (3, 1), (3, 2), (3, 1), (3, 2)]       # (kernel, stride)
+rf, jump = 1, 1
+for i, (k, s) in enumerate(layers, 1):
+    rf += (k - 1) * jump
+    jump *= s
+    print("after layer %d: receptive field %dx%d" % (i, rf, rf))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>after layer 1: receptive field 3x3
+after layer 2: receptive field 5x5
+after layer 3: receptive field 7x7
+after layer 4: receptive field 11x11
+after layer 5: receptive field 15x15</code></pre>
+<h3>ResNet and skip connections</h3>
+<p>Very deep plain networks became <strong>harder</strong> to train (not just overfit). <strong>Residual blocks</strong> compute <code>y = x + F(x)</code>: the block only learns a correction, gradients flow along the identity path, and 50, 101 or 152 layers train well. Variants: bottleneck blocks (1x1 convolutions to shrink then expand channels), ResNeXt (grouped convolutions), DenseNet (concatenate earlier features), EfficientNet (balanced scaling of depth, width and resolution), ConvNeXt (modernised design).</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Model</th><th>Parameters</th><th>Idea</th></tr></thead>
+<tbody>
+<tr><td>AlexNet (2012)</td><td>60 M</td><td>Deep CNN with ReLU, GPUs</td></tr><tr><td>VGG</td><td>138 M</td><td>Stacked 3x3 convolutions</td></tr><tr><td>ResNet-50</td><td>25 M</td><td>Residual connections</td></tr><tr><td>EfficientNet-B0</td><td>5 M</td><td>Compound scaling</td></tr><tr><td>ConvNeXt</td><td>29 to 350 M</td><td>CNN with transformer-era training and design</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Transfer learning</h3>
+<p>Reuse a network pretrained on a large dataset. <strong>Feature extraction</strong>: freeze the backbone, train a new head. <strong>Fine-tuning</strong>: unfreeze some or all layers with a <strong>small learning rate</strong> (often smaller for earlier layers). With little data, freeze more; with a similar domain and much data, fine-tune all. This is almost always better than training from scratch.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a8-q01" data-topic="Vision and multimodal" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What problem do residual connections solve?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Overfitting <span class="q-why">Not the main one.</span></li>
+          <li data-key="B">Very deep plain networks being hard to optimise; the skip path lets gradients flow and the block learns a correction <span class="q-why">Correct.</span></li>
+          <li data-key="C">Slow data loading <span class="q-why">No.</span></li>
+          <li data-key="D">Class imbalance <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>y = x + F(x) preserves a direct gradient path.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is the receptive field?</summary><div class="answer"><p>The region of the input image that influences one unit; it grows with depth, kernel size and stride.</p></div></details>
+      </div>
+    </section>
+
+    <section id="vit" data-track>
+      <h2>Vision transformers</h2>
+<p>A <strong>Vision Transformer (ViT)</strong> cuts the image into fixed <strong>patches</strong> (for example 16 x 16 pixels), flattens and linearly embeds each patch as a token, adds <strong>position embeddings</strong> and a learnable <code>[CLS]</code> token, and runs a standard transformer encoder (<a href="f2-deep-learning-transformers.html">F2</a>). For a 224 x 224 image with 16 x 16 patches there are <code>(224 / 16)^2 = 196</code> tokens.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a8-02.py">side, patch, d = 224, 16, 768
+tokens = (side // patch) ** 2
+print("patches per image:", tokens, "; with [CLS]:", tokens + 1)
+print("attention score matrix entries per head:", (tokens + 1) ** 2)
+print("patch embedding parameters:", patch * patch * 3 * d)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>patches per image: 196 ; with [CLS]: 197
+attention score matrix entries per head: 38809
+patch embedding parameters: 589824</code></pre>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>CNN</th><th>ViT</th></tr></thead>
+<tbody>
+<tr><td>Built-in bias</td><td>Locality, translation equivariance</td><td>Almost none</td></tr><tr><td>Data needs</td><td>Works with less data</td><td>Needs large data or strong pretraining and augmentation</td></tr><tr><td>Scaling</td><td>Good</td><td>Excellent with big data</td></tr><tr><td>Global context</td><td>Grows with depth</td><td>Every patch attends to every other from layer 1</td></tr><tr><td>Cost</td><td>Linear in pixels</td><td>Quadratic in tokens (use windowed attention: Swin; or larger patches)</td></tr>
+</tbody>
+</table>
+</div>
+<p>Self-supervised pretraining (<strong>DINO, MAE masked autoencoders, SimCLR</strong>) lets ViTs learn good features without labels. Hybrid and hierarchical designs (Swin, ConvNeXt, MaxViT) blend both worlds.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a8-q02" data-topic="Vision and multimodal" data-type="numeric" data-answer="196" data-tol="0">
+        <div class="q-stem"><p>A 224 x 224 image with 16 x 16 patches gives how many patch tokens?</p></div>
+        <div class="q-explain"><p>(224 / 16)^2 = 14^2 = 196.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How does ViT tokenise an image?</summary><div class="answer"><p>It splits it into patches, linearly embeds each as a token, adds position embeddings and a CLS token.</p></div></details>
+      </div>
+    </section>
+
+    <section id="detection" data-track>
+      <h2>Object detection</h2>
+<h3>Boxes, IoU and NMS</h3>
+<p>A detector outputs boxes <code>(x1, y1, x2, y2)</code> with class scores. <strong>Intersection over Union (IoU)</strong> measures overlap: <code>area of overlap / area of union</code>. A prediction is a true positive if its class is right and IoU with a ground-truth box exceeds a threshold (commonly 0.5). Detectors produce many overlapping boxes, so <strong>non-maximum suppression (NMS)</strong> keeps the highest-scoring box and removes others that overlap it above a threshold.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a8-03.py">def iou(a, b):
+    x1, y1 = max(a[0], b[0]), max(a[1], b[1])
+    x2, y2 = min(a[2], b[2]), min(a[3], b[3])
+    inter = max(0, x2 - x1) * max(0, y2 - y1)
+    area = lambda r: (r[2] - r[0]) * (r[3] - r[1])
+    return inter / (area(a) + area(b) - inter)
+def nms(boxes, scores, thr=0.5):
+    order = sorted(range(len(boxes)), key=lambda i: -scores[i])
+    keep = []
+    while order:
+        i = order.pop(0)
+        keep.append(i)
+        order = [j for j in order if iou(boxes[i], boxes[j]) &lt; thr]
+    return keep
+boxes = [(10, 10, 50, 50), (12, 12, 52, 52), (100, 100, 140, 140), (11, 9, 49, 51)]
+scores = [0.9, 0.8, 0.95, 0.7]
+print("IoU of first two:", round(iou(boxes[0], boxes[1]), 3))
+print("kept after NMS:", nms(boxes, scores))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>IoU of first two: 0.822
+kept after NMS: [2, 0]</code></pre>
+<p>The three overlapping boxes around the first object collapse to the best one (index 0), and the separate object (index 2) survives.</p>
+<h3>Detector families</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Family</th><th>Idea</th><th>Examples</th><th>Trade-off</th></tr></thead>
+<tbody>
+<tr><td>Two-stage</td><td>Propose regions, then classify and refine</td><td>R-CNN, Faster R-CNN</td><td>Accurate, slower</td></tr><tr><td>One-stage</td><td>Predict boxes densely on a grid in one pass</td><td>YOLO, SSD, RetinaNet</td><td>Fast</td></tr><tr><td>Anchor-free</td><td>Predict centres and sizes</td><td>FCOS, CenterNet</td><td>Simpler</td></tr><tr><td>Transformer</td><td>Set prediction with object queries and Hungarian matching, no NMS</td><td>DETR, RT-DETR</td><td>Elegant, needs more training</td></tr><tr><td>Open-vocabulary</td><td>Detect classes given by text</td><td>GroundingDINO, OWL-ViT</td><td>Flexible</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Metrics: AP and mAP</h3>
+<p>For each class, sort predictions by confidence, compute <strong>precision</strong> and <strong>recall</strong> as you go down the list, and take the area under the precision-recall curve: <strong>average precision (AP)</strong>. <strong>mAP</strong> averages over classes (and COCO also averages over IoU thresholds 0.5 to 0.95). Report speed (frames per second) and size with accuracy.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a8-q03" data-topic="Vision and multimodal" data-type="numeric" data-answer="0.25" data-tol="0.001">
+        <div class="q-stem"><p>Two boxes overlap with intersection area 25 and union area 100. What is the IoU?</p></div>
+        <div class="q-explain"><p>25 / 100 = 0.25.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a8-q04" data-topic="Vision and multimodal" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does NMS do?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Normalises images <span class="q-why">No.</span></li>
+          <li data-key="B">Removes lower-scoring boxes that overlap a higher-scoring box above a threshold <span class="q-why">Correct.</span></li>
+          <li data-key="C">Increases recall <span class="q-why">No.</span></li>
+          <li data-key="D">Resizes boxes <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It deduplicates multiple detections of the same object.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Define IoU and AP.</summary><div class="answer"><p>IoU is overlap area over union area; AP is the area under the precision-recall curve for a class, averaged over classes as mAP.</p></div></details>
+      </div>
+    </section>
+
+    <section id="segmentation" data-track>
+      <h2>Segmentation</h2>
+<ul><li><strong>Semantic segmentation</strong> labels every pixel with a class; models are encoder-decoder (U-Net with skip connections, DeepLab with dilated convolutions and pyramid pooling, SegFormer).</li><li><strong>Instance segmentation</strong> separates individual objects (Mask R-CNN adds a mask head to Faster R-CNN).</li><li><strong>Panoptic</strong> combines both.</li><li><strong>Segment Anything (SAM)</strong> is a promptable model: given points, boxes or text, it outputs masks, trained on over a billion masks.</li></ul>
+<p>Loss functions: pixel-wise cross-entropy, <strong>Dice loss</strong> (<code>1 - 2 |A and B| / (|A| + |B|)</code>) for imbalanced foreground, and focal loss. Metrics: <strong>IoU (Jaccard)</strong> and Dice per class, mean IoU.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a8-04.py">def dice(a, b):
+    inter = sum(x and y for x, y in zip(a, b))
+    return 2 * inter / (sum(a) + sum(b))
+pred = [1, 1, 1, 0, 0, 0, 0, 1]
+true = [1, 1, 0, 0, 0, 1, 0, 1]
+inter = sum(p and t for p, t in zip(pred, true))
+union = sum(p or t for p, t in zip(pred, true))
+print("IoU %.3f, Dice %.3f" % (inter / union, dice(pred, true)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>IoU 0.600, Dice 0.750</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a8-q05" data-topic="Vision and multimodal" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which loss helps when the foreground is a tiny fraction of pixels?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Plain accuracy <span class="q-why">Dominated by background.</span></li>
+          <li data-key="B">Dice or focal loss <span class="q-why">Correct.</span></li>
+          <li data-key="C">No loss <span class="q-why">No.</span></li>
+          <li data-key="D">L2 on labels <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>They emphasise the rare class.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Semantic versus instance segmentation?</summary><div class="answer"><p>Semantic labels each pixel by class; instance also separates individual objects of the same class.</p></div></details>
+      </div>
+    </section>
+
+    <section id="multimodal" data-track>
+      <h2>Image-text models and VLMs</h2>
+<h3>CLIP: contrastive image-text pretraining</h3>
+<p>Two encoders (an image encoder and a text encoder) map into a shared embedding space. Train on hundreds of millions of image-caption pairs so that each image is closest to its own caption: for a batch of <code>N</code> pairs, the <code>N x N</code> similarity matrix should have its <strong>diagonal</strong> large, with cross-entropy loss applied in both directions (image to text and text to image) and a learned temperature (<a href="a4-nlp-embeddings.html">A4</a>).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a8-05.py">import math
+def clip_loss(sim, temp=0.07):
+    n = len(sim)
+    total = 0.0
+    for i in range(n):                                           # image to text
+        row = [s / temp for s in sim[i]]
+        m = max(row); lse = m + math.log(sum(math.exp(v - m) for v in row))
+        total += lse - row[i]
+    for j in range(n):                                           # text to image
+        col = [sim[i][j] / temp for i in range(n)]
+        m = max(col); lse = m + math.log(sum(math.exp(v - m) for v in col))
+        total += lse - col[j]
+    return total / (2 * n)
+good = [[0.9, 0.1, 0.0], [0.1, 0.8, 0.2], [0.0, 0.2, 0.7]]
+bad = [[0.3, 0.3, 0.3], [0.3, 0.3, 0.3], [0.3, 0.3, 0.3]]
+print("matched model loss %.3f | uninformative model loss %.3f (ln 3 = %.3f)" % (clip_loss(good), clip_loss(bad), math.log(3)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>matched model loss 0.000 | uninformative model loss 1.099 (ln 3 = 1.099)</code></pre>
+<p><strong>Zero-shot classification</strong>: embed the class names as text ("a photo of a dog") and pick the one closest to the image embedding, with no task-specific training. CLIP also powers retrieval, image search, filtering training data, and conditions diffusion models (<a href="../diffusion-from-scratch/d3-how-diffusion-works.html">D3</a>). Limits: weak at counting, fine spatial relations and text in images; inherits web biases.</p>
+<h3>Vision-language models (VLMs)</h3>
+<p>Pattern: <strong>vision encoder</strong> (CLIP or SigLIP ViT) turns the image into patch features, a <strong>projector</strong> (a linear layer, MLP or a cross-attention resampler such as Q-Former or Perceiver) maps them into the LLM's embedding space as "image tokens", and the <strong>LLM</strong> reads image tokens plus text and generates text. Training stages: align the projector on caption data, then <strong>visual instruction tuning</strong> on question-answer data. Examples: LLaVA, Flamingo, BLIP-2, Qwen-VL, PaliGemma, and proprietary frontier models.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Design choice</th><th>Options</th></tr></thead>
+<tbody>
+<tr><td>Image tokens per image</td><td>A few (resampler) to thousands (high-resolution tiles); cost scales with token count</td></tr><tr><td>Resolution handling</td><td>Fixed size, multiple tiles, native-resolution encoders</td></tr><tr><td>Fusion</td><td>Prepend tokens (LLaVA) or cross-attention layers (Flamingo)</td></tr><tr><td>Tasks</td><td>Captioning, VQA, OCR and document understanding, chart reading, grounding (return boxes), video QA</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Evaluation and failure modes</h3>
+<p>Benchmarks: VQAv2, TextVQA, DocVQA, ChartQA, MMMU, MMBench. Common failures: <strong>hallucinating objects</strong> that are not there (POPE benchmark), poor counting and spatial reasoning, misreading small text, sensitivity to prompts, and bias. Mitigate with higher resolution, grounding supervision, preference tuning against hallucination, and OCR tools.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a8-q06" data-topic="Vision and multimodal" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How does CLIP perform zero-shot classification?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It retrains for each task <span class="q-why">No.</span></li>
+          <li data-key="B">It embeds the class names as text prompts and picks the one closest to the image embedding <span class="q-why">Correct.</span></li>
+          <li data-key="C">It uses a decision tree <span class="q-why">No.</span></li>
+          <li data-key="D">It needs labelled examples <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Shared embedding space lets text describe classes.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a8-q07" data-topic="Vision and multimodal" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In a LLaVA-style VLM, what does the projector do?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Generates text <span class="q-why">That is the LLM.</span></li>
+          <li data-key="B">Maps vision-encoder features into the LLM's token embedding space <span class="q-why">Correct.</span></li>
+          <li data-key="C">Computes IoU <span class="q-why">No.</span></li>
+          <li data-key="D">Trains the tokenizer <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Image features become pseudo-tokens the LLM can read.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How is CLIP trained?</summary><div class="answer"><p>Contrastively on image-caption pairs: the matching pair is the positive and other pairs in the batch are negatives, in both directions.</p></div></details>
+      </div>
+    </section>
+
+    <section id="practice" data-track>
+      <h2>Practical computer vision</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Concern</th><th>Guidance</th></tr></thead>
+<tbody>
+<tr><td>Data</td><td>Label quality beats model choice; use active learning, check inter-annotator agreement; balance classes and capture the deployment conditions (lighting, cameras)</td></tr><tr><td>Splits</td><td>Group by scene, patient or camera to avoid near-duplicate leakage</td></tr><tr><td>Baselines</td><td>Start with a pretrained ResNet or ViT and fine-tune</td></tr><tr><td>Augmentation</td><td>Match real variation; avoid label-changing augmentations (flipping text or digits)</td></tr><tr><td>Class imbalance</td><td>Weighted loss, resampling, focal loss, per-class metrics</td></tr><tr><td>Deployment</td><td>Quantise (int8), prune, distil, export (ONNX, TensorRT, Core ML), batch, run on GPU or edge accelerators</td></tr><tr><td>Monitoring</td><td>Track input statistics and confidence; images drift with new cameras or seasons (<a href="a7-mlops.html">A7</a>)</td></tr><tr><td>Ethics and safety</td><td>Face recognition bias, consent, surveillance, medical regulation</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout key"><span class="callout-title">Key idea</span><p>The whole field follows one recipe: a large pretrained backbone (CNN or ViT), a task head, and fine-tuning on your data. Contrastive image-text pretraining is what connects vision to language, and IoU, NMS and mAP are the basic vocabulary of detection.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a8-q08" data-topic="Vision and multimodal" data-type="single" data-answer="B">
+        <div class="q-stem"><p>For transfer learning with little data and a similar domain, you should usually:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Train from scratch <span class="q-why">Needs lots of data.</span></li>
+          <li data-key="B">Freeze most of the pretrained backbone and train a new head, then optionally fine-tune with a small learning rate <span class="q-why">Correct.</span></li>
+          <li data-key="C">Remove augmentation <span class="q-why">No.</span></li>
+          <li data-key="D">Use a huge learning rate <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Pretrained features are strong; protect them with freezing or small updates.</p></div>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Vision and multimodal</h2>
+      <p class="muted">12 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Vision and multimodal">
+<details class="recall iq" data-level="basic" data-topic="Vision and multimodal"><summary><span class="tag ok">Basic</span> What are IoU and NMS?</summary><div class="answer"><p>IoU is the overlap area over union area of two boxes; non-maximum suppression keeps the best box and removes other boxes overlapping it above a threshold.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Vision and multimodal"><summary><span class="tag ok">Basic</span> Why use transfer learning in vision?</summary><div class="answer"><p>Pretrained backbones already encode general visual features, so fine-tuning needs less data and training time and usually performs better than training from scratch.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Vision and multimodal"><summary><span class="tag ok">Basic</span> What is data augmentation for images?</summary><div class="answer"><p>Random label-preserving transformations (crops, flips, colour jitter, mixup) that teach invariances and reduce overfitting.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Vision and multimodal"><summary><span class="tag warn">Medium</span> How does a vision transformer process an image?</summary><div class="answer"><p>It splits it into patches, embeds each as a token with position embeddings and a CLS token, and applies transformer encoder layers.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Vision and multimodal"><summary><span class="tag warn">Medium</span> CNN versus ViT trade-offs?</summary><div class="answer"><p>CNNs have locality and translation equivariance and work with less data; ViTs have little built-in bias, need more data or strong pretraining, and scale very well with global attention.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Vision and multimodal"><summary><span class="tag warn">Medium</span> What is mAP?</summary><div class="answer"><p>Mean average precision: the area under each class&#x27;s precision-recall curve, averaged over classes (and over IoU thresholds in COCO).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Vision and multimodal"><summary><span class="tag warn">Medium</span> Semantic versus instance segmentation?</summary><div class="answer"><p>Semantic assigns a class to each pixel; instance also distinguishes separate objects of the same class.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Vision and multimodal"><summary><span class="tag warn">Medium</span> How does CLIP work?</summary><div class="answer"><p>Image and text encoders are trained contrastively on image-caption pairs so matching pairs are close in a shared space, enabling zero-shot classification and retrieval.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Vision and multimodal"><summary><span class="tag bad">Advanced</span> How is a vision-language model built?</summary><div class="answer"><p>A vision encoder produces patch features, a projector maps them into the LLM&#x27;s embedding space as image tokens, and the LLM generates text, trained first on captions then on visual instructions.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Vision and multimodal"><summary><span class="tag bad">Advanced</span> Why do VLMs hallucinate objects and how do you reduce it?</summary><div class="answer"><p>Language priors override weak visual evidence. Use higher resolution, grounded training data, preference tuning against hallucination and tools such as OCR and detectors.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Vision and multimodal"><summary><span class="tag bad">Advanced</span> When use Dice loss?</summary><div class="answer"><p>For segmentation with a small foreground, where pixel accuracy is dominated by background; Dice (or focal loss) emphasises overlap of the rare class.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Vision and multimodal"><summary><span class="tag bad">Advanced</span> What is the receptive field and how do you increase it?</summary><div class="answer"><p>The input region affecting a unit. It grows with depth, kernel size, strides and dilated convolutions, or by attention.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="a7-mlops.html"><span class="dir">Previous</span><span>A7 MLOps: shipping and running machine learning in production</span></a>
+      <a class="next" href="a9-recsys.html"><span class="dir">Next</span><span>A9 Recommender systems, ranking and bandits</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

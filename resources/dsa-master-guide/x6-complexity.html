@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="X6">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Complexity theory: amortised analysis, recurrences, NP-completeness and lower bounds | DSA Master Guide</title>
+<meta name="description" content="Amortised analysis with aggregate and potential arguments, solving recurrences with the Master theorem, the classes P, NP, NP-hard and NP-complete, reductions, approximation, and the n log n sorting lower bound.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part X6</p>
+      <h1>Complexity theory: amortised analysis, recurrences, NP-completeness and lower bounds</h1>
+      <p class="lede">Interviews ask not only for the complexity of your code but why a dynamic array append is O(1), why comparison sorts cannot beat n log n, and what NP-complete really means. This part gives rigorous, short answers with measured evidence.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~4 hours</span></div>
+    </div>
+
+    <section id="notation" data-track>
+      <h2>Asymptotic notation, precisely</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Symbol</th><th>Meaning</th><th>Reads as</th></tr></thead>
+<tbody>
+<tr><td><code>f = O(g)</code></td><td><code>f &lt;= c g</code> for large <code>n</code></td><td>upper bound</td></tr><tr><td><code>f = Omega(g)</code></td><td><code>f &gt;= c g</code> for large <code>n</code></td><td>lower bound</td></tr><tr><td><code>f = Theta(g)</code></td><td>both</td><td>tight bound</td></tr><tr><td><code>f = o(g)</code></td><td><code>f / g -&gt; 0</code></td><td>strictly smaller</td></tr>
+</tbody>
+</table>
+</div>
+<p>Big-O is about <strong>growth</strong>, not speed: it ignores constants and lower terms, and says nothing for small inputs. "Best/worst/average case" describes <em>which input</em> you analyse; O, Omega, Theta describe <em>which bound</em> you give. Typical ordering: <code>1 &lt; log n &lt; sqrt n &lt; n &lt; n log n &lt; n^2 &lt; n^3 &lt; 2^n &lt; n! </code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x6-01.py">import math
+print(f"{'n':&gt;8} {'log n':&gt;8} {'n log n':&gt;12} {'n^2':&gt;14} {'2^n':&gt;22}")
+for n in [10, 20, 40, 60]:
+    print(f"{n:&gt;8} {math.log2(n):&gt;8.1f} {n * math.log2(n):&gt;12.0f} {n * n:&gt;14} {2 ** n:&gt;22}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>       n    log n      n log n            n^2                    2^n
+      10      3.3           33            100                   1024
+      20      4.3           86            400                1048576
+      40      5.3          213           1600          1099511627776
+      60      5.9          354           3600    1152921504606846976</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x6-q01" data-topic="Complexity theory" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which statement about Big-O is correct?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It measures exact running time <span class="q-why">No.</span></li>
+          <li data-key="B">It gives an asymptotic upper bound, ignoring constants <span class="q-why">Correct.</span></li>
+          <li data-key="C">It only applies to the worst case <span class="q-why">No, cases and bounds are separate.</span></li>
+          <li data-key="D">It is always tight <span class="q-why">No, Theta is the tight bound.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use Theta when the bound is tight.</p></div>
+      </div>
+    </section>
+
+    <section id="amortised" data-track>
+      <h2>Amortised analysis</h2>
+<p>Amortised cost is the <strong>average cost per operation over a worst-case sequence</strong>, with no probability involved. Three methods: aggregate (total cost / number of operations), accounting (charge credits) and potential (a potential function <code>Phi</code>; amortised cost = actual + change in Phi).</p>
+<h3>Dynamic array doubling</h3>
+<p>Appending costs 1 normally and <code>k</code> when copying <code>k</code> elements into a double-size array. Over <code>n</code> appends the copies total <code>1 + 2 + 4 + ... &lt; 2n</code>, so the <strong>amortised cost is O(1)</strong>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x6-02.py">def total_copy_cost(n, factor=2):
+    cap, size, cost = 1, 0, 0
+    for _ in range(n):
+        if size == cap:
+            cost += size            # copy all elements
+            cap = max(cap + 1, int(cap * factor))
+        size += 1
+        cost += 1                   # the append itself
+    return cost
+for n in [10**3, 10**4, 10**5]:
+    print(f"n = {n:&gt;6}: total cost / n = {total_copy_cost(n) / n:.2f} (doubling) vs {total_copy_cost(n, 1.0) / n:.1f} (grow by +1)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>n =   1000: total cost / n = 2.02 (doubling) vs 500.5 (grow by +1)
+n =  10000: total cost / n = 2.64 (doubling) vs 5000.5 (grow by +1)
+n = 100000: total cost / n = 2.31 (doubling) vs 50000.5 (grow by +1)</code></pre>
+<p>Growing by a constant instead of a factor gives <code>O(n)</code> amortised cost per append, which is why geometric growth is essential.</p>
+<h3>Other classic examples</h3>
+<ul><li><strong>Binary counter</strong> increment: each bit flips at most once per <code>2^i</code> increments, total <code>O(n)</code> flips for <code>n</code> increments.</li><li><strong>Two-stack queue</strong>: each element moves between stacks at most once.</li><li><strong>Union-find</strong> with union by rank and path compression: inverse-Ackermann amortised.</li><li><strong>Monotonic stack / sliding window</strong>: each element is pushed and popped once.</li><li><strong>Splay trees</strong>, **Fibonacci heap <code>decrease-key</code>**: proved with potentials.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/x6-03.py">def counter_flips(n):
+    bits, flips = [0] * 40, 0
+    for _ in range(n):
+        i = 0
+        while bits[i] == 1:
+            bits[i] = 0; flips += 1; i += 1
+        bits[i] = 1; flips += 1
+    return flips
+for n in [100, 1000, 10**5]:
+    print(n, "increments -&gt;", counter_flips(n), "flips (ratio", round(counter_flips(n) / n, 3), ")")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>100 increments -&gt; 197 flips (ratio 1.97 )
+1000 increments -&gt; 1994 flips (ratio 1.994 )
+100000 increments -&gt; 199994 flips (ratio 2.0 )</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x6-q02" data-topic="Complexity theory" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is appending to a doubling dynamic array O(1) amortised?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Copies never happen <span class="q-why">They do.</span></li>
+          <li data-key="B">Copies cost a geometric series totalling under 2n over n appends <span class="q-why">Correct.</span></li>
+          <li data-key="C">Memory is free <span class="q-why">No.</span></li>
+          <li data-key="D">Appends are random <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>1 + 2 + 4 + ... + n/2 &lt; n.</p></div>
+      </div>
+      <div class="quiz" data-qid="xd-x6-q03" data-topic="Complexity theory" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What happens if the array grows by a constant instead of doubling?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Still O(1) amortised <span class="q-why">No.</span></li>
+          <li data-key="B">Appends become O(n) amortised <span class="q-why">Correct.</span></li>
+          <li data-key="C">Memory doubles <span class="q-why">No.</span></li>
+          <li data-key="D">Nothing <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Copies happen every constant number of appends, summing to O(n^2).</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Amortised versus average case?</summary><div class="answer"><p>Amortised is the worst-case average over a sequence of operations with no randomness; average case assumes a probability distribution over inputs.</p></div></details>
+      </div>
+    </section>
+
+    <section id="recurrence" data-track>
+      <h2>Recurrences and the Master theorem</h2>
+<p>Divide-and-conquer gives <code>T(n) = a T(n / b) + f(n)</code>: <code>a</code> subproblems of size <code>n/b</code> and <code>f(n)</code> work to split and combine. Compare <code>f(n)</code> with <code>n^(log_b a)</code>:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Case</th><th>Condition</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><code>f(n) = O(n^(log_b a - e))</code></td><td><code>T = Theta(n^(log_b a))</code> (leaves dominate)</td></tr><tr><td>2</td><td><code>f(n) = Theta(n^(log_b a))</code></td><td><code>T = Theta(n^(log_b a) log n)</code> (every level equal)</td></tr><tr><td>3</td><td><code>f(n) = Omega(n^(log_b a + e))</code> plus regularity</td><td><code>T = Theta(f(n))</code> (root dominates)</td></tr>
+</tbody>
+</table>
+</div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Recurrence</th><th>Algorithm</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><code>T(n) = 2T(n/2) + n</code></td><td>Merge sort</td><td><code>n log n</code></td></tr><tr><td><code>T(n) = T(n/2) + 1</code></td><td>Binary search</td><td><code>log n</code></td></tr><tr><td><code>T(n) = 2T(n/2) + 1</code></td><td>Tree traversal</td><td><code>n</code></td></tr><tr><td><code>T(n) = 3T(n/2) + n</code></td><td>Karatsuba</td><td><code>n^1.585</code></td></tr><tr><td><code>T(n) = 7T(n/2) + n^2</code></td><td>Strassen</td><td><code>n^2.807</code></td></tr><tr><td><code>T(n) = T(n - 1) + n</code></td><td>Selection sort, quicksort worst</td><td><code>n^2</code></td></tr><tr><td><code>T(n) = 2T(n - 1) + 1</code></td><td>Towers of Hanoi</td><td><code>2^n</code></td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/x6-04.py">import math
+from functools import lru_cache
+@lru_cache(None)
+def T(n):  # merge sort comparisons-like recurrence
+    return 0 if n &lt;= 1 else T(n // 2) + T(n - n // 2) + n
+@lru_cache(None)
+def K(n):  # Karatsuba-like: 3 subproblems of half size plus linear work
+    return 1 if n &lt;= 1 else 3 * K(n // 2) + n
+for n in [2**10, 2**14, 2**18]:
+    print(f"n = 2^{int(math.log2(n)):&gt;2}: T/(n log n) = {T(n) / (n * math.log2(n)):.3f} | K/n^1.585 = {K(n) / n ** math.log2(3):.3f}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>n = 2^10: T/(n log n) = 1.000 | K/n^1.585 = 2.965
+n = 2^14: T/(n log n) = 1.000 | K/n^1.585 = 2.993
+n = 2^18: T/(n log n) = 1.000 | K/n^1.585 = 2.999</code></pre>
+<p>Both ratios stay roughly constant as <code>n</code> grows, confirming <code>Theta(n log n)</code> and <code>Theta(n^1.585)</code>. When the Master theorem does not apply (unequal splits, such as <code>T(n) = T(n/3) + T(2n/3) + n</code>), draw the <strong>recursion tree</strong> or use <strong>Akra-Bazzi</strong>.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x6-q04" data-topic="Complexity theory" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Solve T(n) = 2T(n/2) + n.</p></div>
+        <ul class="q-options">
+          <li data-key="A">Theta(n) <span class="q-why">No.</span></li>
+          <li data-key="B">Theta(n log n) <span class="q-why">Correct: a = 2, b = 2, f = n = n^(log_b a).</span></li>
+          <li data-key="C">Theta(n^2) <span class="q-why">No.</span></li>
+          <li data-key="D">Theta(log n) <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Master theorem case 2.</p></div>
+      </div>
+      <div class="quiz" data-qid="xd-x6-q05" data-topic="Complexity theory" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Solve T(n) = 8T(n/2) + n^2.</p></div>
+        <ul class="q-options">
+          <li data-key="A">Theta(n^2 log n) <span class="q-why">No.</span></li>
+          <li data-key="B">Theta(n^3) <span class="q-why">Correct: log_2 8 = 3 &gt; 2.</span></li>
+          <li data-key="C">Theta(n^2) <span class="q-why">No.</span></li>
+          <li data-key="D">Theta(n log n) <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Case 1: leaves dominate.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does the Master theorem compare?</summary><div class="answer"><p>The non-recursive work f(n) against n^(log_b a), the total size of the leaves.</p></div></details>
+      </div>
+    </section>
+
+    <section id="np" data-track>
+      <h2>P, NP, NP-hard and NP-complete</h2>
+<ul><li><strong>P</strong>: decision problems solvable in polynomial time (shortest path, sorting, matching, linear programming).</li><li><strong>NP</strong>: problems whose "yes" answers can be <strong>verified</strong> in polynomial time given a certificate (a subset, a colouring, a path). <code>P</code> is contained in <code>NP</code>.</li><li><strong>NP-hard</strong>: at least as hard as every problem in NP (everything in NP reduces to it). Need not be in NP (e.g. halting problem).</li><li><strong>NP-complete</strong>: in NP <strong>and</strong> NP-hard. The hardest problems in NP.</li><li>Whether <code>P = NP</code> is open. If any NP-complete problem has a polynomial algorithm, all of NP does.</li></ul>
+<h3>Reductions</h3>
+<p>To show problem <code>B</code> is NP-hard, reduce a known NP-hard <code>A</code> to it: transform any instance of <code>A</code> into an instance of <code>B</code> in polynomial time, preserving the answer. Chain: SAT, 3-SAT, Clique, Independent Set, Vertex Cover, Hamiltonian Cycle, TSP (decision), Subset Sum, Partition, Knapsack (decision), Graph Colouring (k &gt;= 3).</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Easy sibling</th></tr></thead>
+<tbody>
+<tr><td>Hamiltonian path (hard)</td><td>Euler path (easy)</td></tr><tr><td>Longest simple path (hard)</td><td>Shortest path (easy)</td></tr><tr><td>3-SAT (hard)</td><td>2-SAT (easy, via SCC)</td></tr><tr><td>Vertex cover (hard)</td><td>Bipartite matching / vertex cover on bipartite graphs (easy)</td></tr><tr><td>0/1 knapsack (weakly hard)</td><td>Fractional knapsack (greedy)</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>Subset sum</code> and <code>knapsack</code> are <strong>pseudo-polynomial</strong> (O(nW)): polynomial in the <em>value</em> of <code>W</code> but exponential in its bit-length, so they are NP-hard yet DP solves them for small <code>W</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x6-05.py">from itertools import combinations
+# Verification is cheap, search is expensive: Subset Sum
+def verify(nums, subset, target):  # O(n)
+    return sum(subset) == target and all(x in nums for x in subset)
+def search(nums, target):  # O(2^n)
+    for r in range(len(nums) + 1):
+        for c in combinations(nums, r):
+            if sum(c) == target: return c
+nums = [3, 34, 4, 12, 5, 2]
+sol = search(nums, 9)
+print("certificate:", sol, "| verified in linear time:", verify(nums, sol, 9))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>certificate: (4, 5) | verified in linear time: True</code></pre>
+<h3>Coping with hardness</h3>
+<ol><li><strong>Exact exponential</strong> with pruning: backtracking, branch and bound, DP over subsets (<code>O(2^n n)</code> for TSP, <a href="x3-advanced-dp.html">X3</a>).</li><li><strong>Approximation</strong> with a guarantee: vertex cover by taking both endpoints of a maximal matching is within factor 2; metric TSP within 1.5 (Christofides).</li><li><strong>Heuristics</strong>: greedy, local search, simulated annealing, genetic algorithms.</li><li><strong>Special cases</strong>: trees, small treewidth, small parameters (fixed-parameter tractable).</li><li><strong>Pseudo-polynomial</strong> DP when the numbers are small.</li></ol>
+<pre><code class="lang-py" data-embed="solutions/snippets/x6-06.py">import random, itertools
+random.seed(4)
+def vc_two_approx(edges):
+    cover, used = set(), set()
+    for u, v in edges:
+        if u not in used and v not in used:
+            cover |= {u, v}; used |= {u, v}
+    return cover
+def vc_opt(n, edges):
+    for k in range(n + 1):
+        for c in itertools.combinations(range(n), k):
+            s = set(c)
+            if all(u in s or v in s for u, v in edges): return k
+worst = 0
+for _ in range(200):
+    n = 8
+    edges = [(i, j) for i in range(n) for j in range(i + 1, n) if random.random() &lt; 0.3]
+    if not edges: continue
+    approx = len(vc_two_approx(edges)); opt = vc_opt(n, edges)
+    assert approx &lt;= 2 * opt
+    worst = max(worst, approx / opt)
+print("2-approximation never exceeded factor 2; worst observed ratio:", round(worst, 2))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>2-approximation never exceeded factor 2; worst observed ratio: 2.0</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x6-q06" data-topic="Complexity theory" data-type="single" data-answer="A">
+        <div class="q-stem"><p>A problem is NP-complete if it is:</p></div>
+        <ul class="q-options">
+          <li data-key="A">In NP and NP-hard <span class="q-why">Correct.</span></li>
+          <li data-key="B">Only exponential <span class="q-why">No.</span></li>
+          <li data-key="C">Unsolvable <span class="q-why">No.</span></li>
+          <li data-key="D">In P <span class="q-why">Unless P = NP.</span></li>
+        </ul>
+        <div class="q-explain"><p>It is among the hardest problems whose solutions can be verified in polynomial time.</p></div>
+      </div>
+      <div class="quiz" data-qid="xd-x6-q07" data-topic="Complexity theory" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which of these is believed to be solvable in polynomial time?</p></div>
+        <ul class="q-options">
+          <li data-key="A">3-SAT <span class="q-why">NP-complete.</span></li>
+          <li data-key="B">2-SAT <span class="q-why">Correct, via strongly connected components.</span></li>
+          <li data-key="C">Hamiltonian cycle <span class="q-why">NP-complete.</span></li>
+          <li data-key="D">Vertex cover <span class="q-why">NP-complete in general.</span></li>
+        </ul>
+        <div class="q-explain"><p>2-SAT is in P.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does a reduction prove?</summary><div class="answer"><p>That B is at least as hard as A: an algorithm for B would solve A after a polynomial-time transformation.</p></div></details>
+        <details class="recall"><summary>What is pseudo-polynomial time?</summary><div class="answer"><p>Polynomial in the numeric value of the input (like knapsack capacity W) but exponential in its bit length.</p></div></details>
+      </div>
+    </section>
+
+    <section id="lower" data-track>
+      <h2>Lower bounds</h2>
+<p><strong>Comparison sorting needs Omega(n log n) comparisons.</strong> A decision tree distinguishing all <code>n!</code> orderings has at least <code>n!</code> leaves, so height at least <code>log2(n!)</code>, which is <code>Theta(n log n)</code> by Stirling. Counting, radix and bucket sort beat it by <em>not</em> using only comparisons.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x6-07.py">import math, itertools
+for n in [4, 8, 16, 64]:
+    print(f"n = {n:&gt;3}: ceil(log2(n!)) = {math.ceil(math.log2(math.factorial(n))):&gt;4} comparisons needed at minimum | n log2 n = {n * math.log2(n):.0f}")
+def mergesort_compares(a):
+    cnt = [0]
+    def ms(x):
+        if len(x) &lt;= 1: return x
+        L, R = ms(x[:len(x)//2]), ms(x[len(x)//2:])
+        out, i, j = [], 0, 0
+        while i &lt; len(L) and j &lt; len(R):
+            cnt[0] += 1
+            if L[i] &lt;= R[j]: out.append(L[i]); i += 1
+            else: out.append(R[j]); j += 1
+        return out + L[i:] + R[j:]
+    ms(a); return cnt[0]
+worst = max(mergesort_compares(list(p)) for p in itertools.permutations(range(8)))
+print("merge sort worst case on 8 items:", worst, "vs information-theoretic minimum", math.ceil(math.log2(math.factorial(8))))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>n =   4: ceil(log2(n!)) =    5 comparisons needed at minimum | n log2 n = 8
+n =   8: ceil(log2(n!)) =   16 comparisons needed at minimum | n log2 n = 24
+n =  16: ceil(log2(n!)) =   45 comparisons needed at minimum | n log2 n = 64
+n =  64: ceil(log2(n!)) =  296 comparisons needed at minimum | n log2 n = 384
+merge sort worst case on 8 items: 17 vs information-theoretic minimum 16</code></pre>
+<p>Other lower bounds worth knowing: searching a sorted array is <code>Omega(log n)</code> (comparisons); finding the maximum needs <code>n - 1</code> comparisons; element distinctness needs <code>Omega(n log n)</code> in the comparison model; any algorithm that must read every input item is <code>Omega(n)</code>.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x6-q08" data-topic="Complexity theory" data-type="numeric" data-answer="7" data-tol="0">
+        <div class="q-stem"><p>Minimum number of comparisons needed to sort 5 distinct items in the worst case, lower bound ceil(log2(5!))?</p></div>
+        <div class="q-explain"><p>5! = 120; log2(120) = 6.9, so at least 7.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why can radix sort beat n log n?</summary><div class="answer"><p>It is not a comparison sort, so the decision-tree argument does not apply.</p></div></details>
+      </div>
+    </section>
+
+    <section id="space" data-track>
+      <h2>Space complexity and recursion cost</h2>
+<ul><li>Recursion depth counts as space: DFS is <code>O(h)</code> on trees, up to <code>O(n)</code> on a path; merge sort uses <code>O(n)</code> auxiliary; quicksort <code>O(log n)</code> expected stack.</li><li>In-place means <code>O(1)</code> extra space (ignoring the stack). Python's default recursion limit (1000) makes deep recursion a practical limit; convert to an explicit stack.</li><li>Time-space trade-offs: memoisation, hash sets, precomputation tables, and rolling arrays in DP.</li></ul>
+<div class="callout key"><span class="callout-title">Key idea</span><p>State complexity with the <strong>input variable defined</strong> (n, m, V, E, W), say which case, count recursion stack, and use amortised bounds for data structure operations. For hard problems, name the class, the nearest tractable relative, and a realistic strategy.</p></div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Complexity theory</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Complexity theory">
+<details class="recall iq" data-level="basic" data-topic="Complexity theory"><summary><span class="tag ok">Basic</span> Difference between O, Omega and Theta?</summary><div class="answer"><p>Upper bound, lower bound, and tight bound. They are independent of best/worst/average case.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Complexity theory"><summary><span class="tag ok">Basic</span> What is the complexity of nested loops where the inner runs i times?</summary><div class="answer"><p>Sum of i from 1 to n is n(n + 1)/2, which is Theta(n^2).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Complexity theory"><summary><span class="tag ok">Basic</span> What is amortised analysis?</summary><div class="answer"><p>Averaging the cost over a worst-case sequence of operations, e.g. dynamic array append is O(1) amortised although a resize costs O(n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Complexity theory"><summary><span class="tag warn">Medium</span> State the Master theorem.</summary><div class="answer"><p>For T(n) = aT(n/b) + f(n): compare f with n^(log_b a). If f is polynomially smaller the answer is n^(log_b a); if equal, n^(log_b a) log n; if polynomially larger (with regularity), f(n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Complexity theory"><summary><span class="tag warn">Medium</span> Why do comparison sorts need Omega(n log n)?</summary><div class="answer"><p>A decision tree with n! leaves has height at least log2(n!), which is Theta(n log n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Complexity theory"><summary><span class="tag warn">Medium</span> What is the difference between P and NP?</summary><div class="answer"><p>P can be solved in polynomial time; NP can be verified in polynomial time given a certificate. P is a subset of NP; whether they are equal is open.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Complexity theory"><summary><span class="tag warn">Medium</span> What does NP-complete mean?</summary><div class="answer"><p>A problem in NP to which every problem in NP reduces in polynomial time.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Complexity theory"><summary><span class="tag warn">Medium</span> Name some NP-complete problems.</summary><div class="answer"><p>SAT, 3-SAT, clique, vertex cover, Hamiltonian cycle, subset sum, graph colouring, travelling salesman (decision).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Complexity theory"><summary><span class="tag bad">Advanced</span> What is pseudo-polynomial time?</summary><div class="answer"><p>Polynomial in the numeric value of the input rather than its bit length, like knapsack DP O(nW). The problem remains weakly NP-hard.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Complexity theory"><summary><span class="tag bad">Advanced</span> How do you prove a problem is NP-hard?</summary><div class="answer"><p>Reduce a known NP-hard problem to it in polynomial time, so a fast algorithm for the new problem would solve the known one.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Complexity theory"><summary><span class="tag bad">Advanced</span> What strategies exist for NP-hard problems in practice?</summary><div class="answer"><p>Exact search with pruning, DP over small parameters, approximation algorithms with guarantees, heuristics and local search, and exploiting special structure.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Complexity theory"><summary><span class="tag bad">Advanced</span> Give an approximation algorithm and its guarantee.</summary><div class="answer"><p>Vertex cover: take both endpoints of each edge in a maximal matching, giving at most twice the optimum.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Complexity theory"><summary><span class="tag bad">Advanced</span> Why is the 2-SAT problem in P but 3-SAT NP-complete?</summary><div class="answer"><p>2-SAT reduces to reachability in an implication graph, solved by SCCs in linear time; no such structure exists for three-literal clauses.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Complexity theory"><summary><span class="tag bad">Advanced</span> What is the time complexity of recursive Fibonacci and how do you improve it?</summary><div class="answer"><p>Exponential, about 1.618^n. Memoisation or iteration makes it O(n), matrix exponentiation O(log n).</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="x5-number-theory.html"><span class="dir">Previous</span><span>X5 Number theory, combinatorics and probability for interviews</span></a>
+      <a class="next" href="x7-more-problems.html"><span class="dir">Next</span><span>X7 More interview problems with verified solutions</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

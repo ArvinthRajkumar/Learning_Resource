@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="A1">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Classical machine learning algorithms from scratch | AI/ML Prep</title>
+<meta name="description" content="Linear and logistic regression, regularisation, k-nearest neighbours, naive Bayes, decision trees, bagging and boosting, SVMs, k-means and PCA, built in plain Python with the maths and the trade-offs of each.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part A1</p>
+      <h1>Classical machine learning algorithms from scratch</h1>
+      <p class="lede">Before neural networks, a toolbox of simple algorithms solved most prediction problems, and still does for tabular data. Knowing how each works, and what it assumes, is a core interview skill. Every algorithm here is implemented in a few lines and run.</p>
+      <div class="meta"><span class="tag ok">Basic</span><span class="tag warn">Medium</span><span class="tag">~6 hours</span></div>
+    </div>
+
+    <section id="linear" data-track>
+      <h2>Linear regression</h2>
+<h3>Intuition</h3>
+<p>Fit a straight line (or plane) through the data so the predictions are as close as possible to the answers. Prediction: <code>y_hat = w x + b</code>. The usual error to minimise is the <strong>mean squared error (MSE)</strong>: the average of <code>(y - y_hat)^2</code>.</p>
+<h3>Two ways to solve it</h3>
+<ol><li><strong>Closed form</strong> (normal equation): for one feature, <code>w = Cov(x, y) / Var(x)</code> and <code>b = mean(y) - w mean(x)</code>. For many features <code>w = (X^T X)^(-1) X^T y</code>.</li><li><strong>Gradient descent</strong>: repeatedly move the parameters opposite to the gradient: <code>w &lt;- w - lr x dMSE/dw</code>. Works for any model, scales to huge data.</li></ol>
+<pre><code class="lang-py" data-embed="solutions/snippets/a1-01.py">import random
+random.seed(0)
+xs = [i / 10 for i in range(100)]
+ys = [2.0 * x + 1.0 + random.gauss(0, 0.3) for x in xs]       # true line: y = 2x + 1 plus noise
+
+n = len(xs)
+mx, my = sum(xs) / n, sum(ys) / n
+w = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sum((x - mx) ** 2 for x in xs)
+b = my - w * mx
+print("closed form      w=%.3f b=%.3f" % (w, b))
+
+w2, b2, lr = 0.0, 0.0, 0.01
+for _ in range(5000):
+    gw = sum(2 * (w2 * x + b2 - y) * x for x, y in zip(xs, ys)) / n
+    gb = sum(2 * (w2 * x + b2 - y) for x, y in zip(xs, ys)) / n
+    w2, b2 = w2 - lr * gw, b2 - lr * gb
+print("gradient descent w=%.3f b=%.3f" % (w2, b2))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>closed form      w=1.996 b=0.996
+gradient descent w=1.996 b=0.996</code></pre>
+<h3>Assumptions (and how to check them)</h3>
+<p>Linearity, independent errors, constant error variance, roughly normal errors (for inference), and no extreme multicollinearity. Look at <strong>residual plots</strong>. Outliers pull the line strongly because errors are squared; use <strong>Huber</strong> or <strong>MAE</strong> loss for robustness.</p>
+<h3>Overfitting and regularisation</h3>
+<p>With many features or high-degree polynomials the model memorises noise. <strong>Regularisation</strong> adds a penalty on the weights:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Method</th><th>Penalty</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td>Ridge (L2)</td><td><code>lambda x sum(w^2)</code></td><td>Shrinks all weights smoothly, handles correlated features</td></tr><tr><td>Lasso (L1)</td><td><code>lambda x sum(abs(w))</code></td><td>Drives some weights exactly to zero: feature selection</td></tr><tr><td>Elastic net</td><td>Both</td><td>Compromise</td></tr>
+</tbody>
+</table>
+</div>
+<p>For ridge with one feature the solution becomes <code>w = Cov(x, y) / (Var(x) + lambda)</code>: the penalty shrinks the slope.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a1-02.py">import random
+random.seed(1)
+xs = [random.gauss(0, 1) for _ in range(20)]
+ys = [3.0 * x + random.gauss(0, 2) for x in xs]
+mx, my = sum(xs) / 20, sum(ys) / 20
+cov = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / 20
+var = sum((x - mx) ** 2 for x in xs) / 20
+for lam in (0, 0.5, 2, 10):
+    print("lambda %4.1f -&gt; slope %.3f" % (lam, cov / (var + lam)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>lambda  0.0 -&gt; slope 2.783
+lambda  0.5 -&gt; slope 1.799
+lambda  2.0 -&gt; slope 0.873
+lambda 10.0 -&gt; slope 0.233</code></pre>
+<p>Choose <code>lambda</code> by <strong>cross-validation</strong>. Always standardise features before regularising, or the penalty depends on units.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a1-q01" data-topic="Classical ML" data-type="numeric" data-answer="2" data-tol="0.001">
+        <div class="q-stem"><p>For points (1, 2), (2, 4), (3, 6), what is the least-squares slope?</p></div>
+        <div class="q-explain"><p>The points lie exactly on y = 2x, so the slope is 2.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a1-q02" data-topic="Classical ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How does L1 (lasso) regularisation differ from L2 (ridge)?</p></div>
+        <ul class="q-options">
+          <li data-key="A">L1 never shrinks weights <span class="q-why">It does.</span></li>
+          <li data-key="B">L1 can set weights exactly to zero, giving feature selection; L2 shrinks them smoothly <span class="q-why">Correct.</span></li>
+          <li data-key="C">L2 sets weights to zero <span class="q-why">No.</span></li>
+          <li data-key="D">They are identical <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The L1 penalty has a corner at zero that creates sparse solutions.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Normal equation versus gradient descent?</summary><div class="answer"><p>The normal equation solves least squares directly (expensive for many features); gradient descent iterates and scales to any model and data size.</p></div></details>
+      </div>
+    </section>
+
+    <section id="logistic" data-track>
+      <h2>Logistic regression and classification</h2>
+<h3>From a score to a probability</h3>
+<p>For two classes, compute a linear score <code>z = w . x + b</code>, squash it with the <strong>sigmoid</strong> <code>p = 1 / (1 + e^(-z))</code>, and predict class 1 if <code>p &gt; threshold</code>. Train by minimising <strong>log loss</strong> (binary cross-entropy): <code>-[y log p + (1 - y) log(1 - p)]</code>. Its gradient is simply <code>(p - y) x</code>, as for linear regression.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a1-03.py">import math, random
+random.seed(2)
+# two clusters
+data = [((random.gauss(-1, 0.8), random.gauss(-1, 0.8)), 0) for _ in range(100)] + \
+       [((random.gauss(1, 0.8), random.gauss(1, 0.8)), 1) for _ in range(100)]
+random.shuffle(data)
+w, b, lr = [0.0, 0.0], 0.0, 0.1
+sig = lambda z: 1 / (1 + math.exp(-z))
+for epoch in range(200):
+    for (x1, x2), y in data:
+        p = sig(w[0] * x1 + w[1] * x2 + b)
+        g = p - y
+        w[0] -= lr * g * x1; w[1] -= lr * g * x2; b -= lr * g
+acc = sum((sig(w[0] * x1 + w[1] * x2 + b) &gt; 0.5) == bool(y) for (x1, x2), y in data) / len(data)
+print("weights", [round(v, 2) for v in w], "bias", round(b, 2), "accuracy", acc)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>weights [4.57, 3.59] bias 0.57 accuracy 0.975</code></pre>
+<p>Multi-class: <strong>softmax</strong> regression. The decision boundary of logistic regression is <strong>linear</strong>; add polynomial or interaction features for curved boundaries. The weights are interpretable as <strong>log-odds</strong>: <code>e^(w_j)</code> is the odds ratio for a one-unit increase of feature <code>j</code>.</p>
+<h3>Metrics beyond accuracy</h3>
+<p>Precision, recall, F1, ROC-AUC and PR-AUC (see <a href="f1-ml-foundations.html">F1</a>). Choose the threshold from the business cost of false positives versus false negatives, and <strong>calibrate</strong> probabilities (Platt scaling, isotonic regression) if you need them to be trustworthy.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a1-q03" data-topic="Classical ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the gradient of log loss with respect to the weights for one example?</p></div>
+        <ul class="q-options">
+          <li data-key="A">(y - p) x <span class="q-why">Sign reversed.</span></li>
+          <li data-key="B">(p - y) x <span class="q-why">Correct.</span></li>
+          <li data-key="C">p x <span class="q-why">Missing the label.</span></li>
+          <li data-key="D">(p - y)^2 <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It has the same form as linear regression: error times the input.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why is logistic regression's boundary linear?</summary><div class="answer"><p>The predicted probability is monotonic in the linear score, so the 0.5 contour is where w.x + b = 0.</p></div></details>
+      </div>
+    </section>
+
+    <section id="knn" data-track>
+      <h2>k-nearest neighbours and naive Bayes</h2>
+<h3>k-NN</h3>
+<p>No training: store the data. To predict, find the <code>k</code> closest points and take a majority vote (or mean). Needs a <strong>distance</strong> (Euclidean, cosine), <strong>feature scaling</strong>, and a good <code>k</code> (small <code>k</code> overfits, large <code>k</code> underfits). Prediction cost is high (scan all points, or use a KD-tree or an approximate index), and it suffers from the <strong>curse of dimensionality</strong>: in high dimensions all points become nearly equidistant.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a1-04.py">import math
+train = [((1, 1), "a"), ((1, 2), "a"), ((2, 1), "a"), ((6, 6), "b"), ((7, 6), "b"), ((6, 7), "b")]
+def knn(q, k):
+    nearest = sorted(train, key=lambda p: math.dist(p[0], q))[:k]
+    votes = {}
+    for _, label in nearest:
+        votes[label] = votes.get(label, 0) + 1
+    return max(votes, key=votes.get)
+print(knn((2, 2), 3), knn((5, 5), 3), knn((4, 4), 1))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>a b b</code></pre>
+<h3>Naive Bayes</h3>
+<p>Apply <strong>Bayes' rule</strong>, assuming features are <strong>independent given the class</strong> (the "naive" part): <code>P(class | features) is proportional to P(class) x product of P(feature | class)</code>. Despite the false assumption it works well for text. Use <strong>Laplace smoothing</strong> so an unseen word does not zero the product, and work in <strong>log space</strong>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a1-05.py">import math
+spam = ["win money now", "free money offer", "win a free prize"]
+ham = ["meeting at noon", "project status update", "lunch at noon tomorrow"]
+def counts(docs):
+    c = {}
+    for d in docs:
+        for w in d.split():
+            c[w] = c.get(w, 0) + 1
+    return c
+cs, ch = counts(spam), counts(ham)
+vocab = set(cs) | set(ch)
+def score(msg, c, prior):
+    total = sum(c.values())
+    return math.log(prior) + sum(math.log((c.get(w, 0) + 1) / (total + len(vocab))) for w in msg.split() if w in vocab)
+for msg in ("free money", "status at noon"):
+    s_spam, s_ham = score(msg, cs, 0.5), score(msg, ch, 0.5)
+    print(msg, "-&gt;", "spam" if s_spam &gt; s_ham else "ham")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>free money -&gt; spam
+status at noon -&gt; ham</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a1-q04" data-topic="Classical ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why does k-NN struggle in very high dimensions?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It has too few parameters <span class="q-why">No.</span></li>
+          <li data-key="B">Distances concentrate: all points look nearly equally far apart <span class="q-why">Correct.</span></li>
+          <li data-key="C">It cannot use labels <span class="q-why">No.</span></li>
+          <li data-key="D">It needs a GPU <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>This is the curse of dimensionality.</p></div>
+      </div>
+    </section>
+
+    <section id="trees" data-track>
+      <h2>Decision trees and ensembles</h2>
+<h3>Decision tree</h3>
+<p>Repeatedly split the data on the feature and threshold that make the groups most <strong>pure</strong>. Impurity measures: <strong>Gini</strong> <code>1 - sum(p_k^2)</code> or <strong>entropy</strong> <code>-sum(p_k log p_k)</code>. The <strong>information gain</strong> of a split is the impurity before minus the weighted impurity after.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a1-06.py">def gini(labels):
+    n = len(labels)
+    return 1 - sum((labels.count(c) / n) ** 2 for c in set(labels)) if n else 0
+data = [(2.0, 0), (3.0, 0), (4.0, 0), (6.0, 1), (7.0, 1), (8.0, 1), (5.0, 0), (5.5, 1)]
+data.sort()
+best = None
+for i in range(1, len(data)):
+    thr = (data[i - 1][0] + data[i][0]) / 2
+    left = [y for x, y in data if x &lt;= thr]
+    right = [y for x, y in data if x &gt; thr]
+    g = (len(left) * gini(left) + len(right) * gini(right)) / len(data)
+    if best is None or g &lt; best[0]:
+        best = (g, thr)
+print("best threshold %.2f with weighted gini %.3f (parent gini %.3f)" % (best[1], best[0], gini([y for _, y in data])))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>best threshold 5.25 with weighted gini 0.000 (parent gini 0.500)</code></pre>
+<p>Trees handle mixed feature types, need no scaling, capture interactions and are readable, but a single deep tree <strong>overfits</strong> (high variance). Control with maximum depth, minimum samples per leaf, and pruning.</p>
+<h3>Bagging and random forests</h3>
+<p><strong>Bagging</strong> trains many trees on <strong>bootstrap samples</strong> and averages them, which cuts variance. A <strong>random forest</strong> also picks a <strong>random subset of features at each split</strong>, decorrelating the trees. The average of <code>n</code> models with variance <code>sigma^2</code> and pairwise correlation <code>rho</code> has variance <code>rho sigma^2 + (1 - rho) sigma^2 / n</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a1-07.py">import random
+random.seed(3)
+def one_model():           # a noisy estimator of the true value 10
+    return 10 + random.gauss(0, 3)
+single = [one_model() for _ in range(4000)]
+bagged = [sum(one_model() for _ in range(25)) / 25 for _ in range(4000)]
+var = lambda v: sum((x - sum(v) / len(v)) ** 2 for x in v) / len(v)
+print("variance single %.2f, averaged over 25 independent models %.2f" % (var(single), var(bagged)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>variance single 8.98, averaged over 25 independent models 0.36</code></pre>
+<h3>Boosting</h3>
+<p>Build models <strong>sequentially</strong>, each fixing the previous ones' mistakes. <strong>Gradient boosting</strong> fits each new small tree to the <strong>negative gradient of the loss</strong> (the residuals for squared error) and adds it with a small learning rate. XGBoost, LightGBM and CatBoost add regularisation, histogram speedups and handling of categories. Boosting reduces bias; random forests reduce variance.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a1-08.py"># Gradient boosting with stumps on a 1D regression problem.
+xs = [i / 5 for i in range(50)]
+ys = [x * x / 10 for x in xs]                    # a curve; a linear model cannot fit it
+def best_stump(res):
+    best = None
+    for thr in [x + 0.1 for x in xs]:
+        l = [r for x, r in zip(xs, res) if x &lt;= thr]; rr = [r for x, r in zip(xs, res) if x &gt; thr]
+        if not l or not rr: continue
+        lm, rm = sum(l) / len(l), sum(rr) / len(rr)
+        err = sum((r - (lm if x &lt;= thr else rm)) ** 2 for x, r in zip(xs, res))
+        if best is None or err &lt; best[0]: best = (err, thr, lm, rm)
+    return best
+pred, lr = [0.0] * len(xs), 0.3
+for m in range(40):
+    res = [y - p for y, p in zip(ys, pred)]
+    _, thr, lm, rm = best_stump(res)
+    pred = [p + lr * (lm if x &lt;= thr else rm) for p, x in zip(pred, xs)]
+    if m in (0, 9, 39):
+        print("after %2d stumps: MSE %.3f" % (m + 1, sum((y - p) ** 2 for y, p in zip(ys, pred)) / len(ys)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>after  1 stumps: MSE 10.295
+after 10 stumps: MSE 0.220
+after 40 stumps: MSE 0.049</code></pre>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>Random forest</th><th>Gradient boosting</th></tr></thead>
+<tbody>
+<tr><td>Trees</td><td>Independent, deep</td><td>Sequential, shallow</td></tr><tr><td>Reduces</td><td>Variance</td><td>Bias (and variance with regularisation)</td></tr><tr><td>Tuning</td><td>Easy, robust defaults</td><td>More sensitive (learning rate, depth, rounds)</td></tr><tr><td>Parallel training</td><td>Yes</td><td>Sequential (but fast histograms)</td></tr><tr><td>Typical winner on tabular data</td><td>Strong baseline</td><td>Usually the best</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a1-q05" data-topic="Classical ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Random forests reduce which source of error most?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Bias <span class="q-why">Boosting targets bias.</span></li>
+          <li data-key="B">Variance, by averaging decorrelated trees <span class="q-why">Correct.</span></li>
+          <li data-key="C">Noise in labels <span class="q-why">No.</span></li>
+          <li data-key="D">Data size <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Averaging many de-correlated high-variance trees lowers variance.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a1-q06" data-topic="Classical ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In gradient boosting with squared error, what does each new tree fit?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The original targets <span class="q-why">No.</span></li>
+          <li data-key="B">The residuals (negative gradient) of the current ensemble <span class="q-why">Correct.</span></li>
+          <li data-key="C">Random noise <span class="q-why">No.</span></li>
+          <li data-key="D">The features <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Each tree is a step of functional gradient descent.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Bagging versus boosting?</summary><div class="answer"><p>Bagging trains independent models on bootstrap samples and averages them (variance); boosting trains sequentially on residuals (bias).</p></div></details>
+      </div>
+    </section>
+
+    <section id="svm" data-track>
+      <h2>Support vector machines</h2>
+<p>An SVM finds the separating line with the <strong>largest margin</strong>: the widest gap between the classes. Only the <strong>support vectors</strong> (points on the margin) define it. The soft-margin form minimises <code>(1/2)||w||^2 + C sum(hinge loss)</code>, with hinge loss <code>max(0, 1 - y (w.x + b))</code> for labels <code>y</code> in <code>{-1, +1}</code>. Large <code>C</code> fits the training data tightly; small <code>C</code> allows margin violations for a wider margin.</p>
+<p>The <strong>kernel trick</strong> replaces dot products by a kernel <code>K(x, x')</code> such as the RBF <code>exp(-gamma ||x - x'||^2)</code>, implicitly working in a higher-dimensional space so a linear boundary there is curved in the original space.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a1-09.py">import random
+random.seed(4)
+data = [((random.gauss(-1.5, 0.6), random.gauss(-1.5, 0.6)), -1) for _ in range(60)] + \
+       [((random.gauss(1.5, 0.6), random.gauss(1.5, 0.6)), 1) for _ in range(60)]
+w, b, lam, lr = [0.0, 0.0], 0.0, 0.01, 0.05
+for epoch in range(100):
+    for (x1, x2), y in data:
+        margin = y * (w[0] * x1 + w[1] * x2 + b)
+        if margin &lt; 1:                                  # hinge loss active
+            w[0] += lr * (y * x1 - lam * w[0]); w[1] += lr * (y * x2 - lam * w[1]); b += lr * y
+        else:
+            w[0] -= lr * lam * w[0]; w[1] -= lr * lam * w[1]
+acc = sum(y * (w[0] * x1 + w[1] * x2 + b) &gt; 0 for (x1, x2), y in data) / len(data)
+print("linear SVM accuracy", acc)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>linear SVM accuracy 1.0</code></pre>
+<p>SVMs work well on small to medium, high-dimensional data (text) and have a convex objective, but kernel SVMs scale poorly with sample count (<code>O(n^2)</code> to <code>O(n^3)</code>) and need scaled features.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a1-q07" data-topic="Classical ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What do support vectors determine?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Nothing <span class="q-why">No.</span></li>
+          <li data-key="B">The separating hyperplane: only points on or inside the margin matter <span class="q-why">Correct.</span></li>
+          <li data-key="C">The learning rate <span class="q-why">No.</span></li>
+          <li data-key="D">The kernel <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Points far from the margin do not affect the solution.</p></div>
+      </div>
+    </section>
+
+    <section id="unsup" data-track>
+      <h2>Clustering and dimensionality reduction</h2>
+<h3>k-means</h3>
+<p>Alternate two steps until nothing changes: <strong>assign</strong> each point to the nearest centroid, then <strong>update</strong> each centroid to the mean of its points. It minimises within-cluster squared distance, finds only a <strong>local optimum</strong> (use several random starts, k-means++ initialisation), assumes round clusters of similar size, and needs <code>k</code> (use the elbow method or silhouette score).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a1-10.py">import random, math
+random.seed(5)
+pts = [(random.gauss(0, 0.5), random.gauss(0, 0.5)) for _ in range(40)] + [(random.gauss(4, 0.5), random.gauss(4, 0.5)) for _ in range(40)]
+cent = [pts[0], pts[1]]
+for _ in range(10):
+    groups = [[], []]
+    for p in pts:
+        groups[min((0, 1), key=lambda i: math.dist(p, cent[i]))].append(p)
+    cent = [(sum(x for x, _ in g) / len(g), sum(y for _, y in g) / len(g)) for g in groups]
+print("centroids:", [(round(x, 2), round(y, 2)) for x, y in cent], "sizes:", [len(g) for g in groups])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>centroids: [(0.09, 0.03), (3.95, 3.98)] sizes: [40, 40]</code></pre>
+<p>Other clustering: <strong>hierarchical</strong> (dendrograms), <strong>DBSCAN</strong> (density-based, finds arbitrary shapes and noise, no <code>k</code>), <strong>Gaussian mixture models</strong> (soft assignments with EM).</p>
+<h3>PCA</h3>
+<p>Find orthogonal directions of <strong>maximum variance</strong> and project the data onto the top few. The directions are the eigenvectors of the covariance matrix; the eigenvalues give the variance explained. Uses: compression, visualisation, denoising, decorrelating features. Standardise first. It is linear and unsupervised (it ignores labels).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a1-11.py">import random, math
+random.seed(6)
+pts = []
+for _ in range(500):
+    t = random.gauss(0, 3)
+    pts.append((t + random.gauss(0, 0.5), 0.5 * t + random.gauss(0, 0.5)))   # data stretched along a diagonal
+mx = sum(x for x, _ in pts) / len(pts); my = sum(y for _, y in pts) / len(pts)
+c = [[sum((p[i] - (mx, my)[i]) * (p[j] - (mx, my)[j]) for p in pts) / len(pts) for j in range(2)] for i in range(2)]
+# power iteration finds the top eigenvector of the 2x2 covariance matrix
+v = [1.0, 0.0]
+for _ in range(100):
+    v = [c[0][0] * v[0] + c[0][1] * v[1], c[1][0] * v[0] + c[1][1] * v[1]]
+    n = math.hypot(*v); v = [v[0] / n, v[1] / n]
+eig = v[0] * (c[0][0] * v[0] + c[0][1] * v[1]) + v[1] * (c[1][0] * v[0] + c[1][1] * v[1])
+total = c[0][0] + c[1][1]
+print("first component direction", [round(v[0], 2), round(v[1], 2)], "explains %.0f%% of variance" % (100 * eig / total))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>first component direction [0.89, 0.45] explains 98% of variance</code></pre>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does PCA compute?</summary><div class="answer"><p>Orthogonal directions of maximum variance (covariance eigenvectors), used to compress or visualise data.</p></div></details>
+      </div>
+    </section>
+
+    <section id="select" data-track>
+      <h2>Choosing and validating models</h2>
+<h3>The bias-variance trade-off</h3>
+<p>Expected error = <strong>bias squared</strong> (model too simple) + <strong>variance</strong> (model too sensitive to the training sample) + <strong>irreducible noise</strong>. Complex models lower bias and raise variance. Regularisation, more data, bagging and early stopping reduce variance; richer features, boosting and larger models reduce bias.</p>
+<h3>Validation</h3>
+<ul><li>Split into <strong>train / validation / test</strong>. Tune on validation; touch the test set once.</li><li><strong>k-fold cross-validation</strong> for small data; <strong>stratified</strong> folds for imbalanced classes; <strong>time-series split</strong> (train on the past, test on the future) for temporal data; <strong>group k-fold</strong> when rows from one entity must not leak across folds.</li><li>Avoid <strong>data leakage</strong>: fit scalers, imputers and feature selection <strong>inside</strong> each fold or pipeline.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/a1-12.py">import random
+random.seed(7)
+n, k = 20, 5
+idx = list(range(n)); random.shuffle(idx)
+folds = [idx[i::k] for i in range(k)]
+for i, test in enumerate(folds):
+    train = [j for f in folds[:i] + folds[i + 1:] for j in f]
+    print("fold", i, "train", len(train), "test", len(test), "disjoint:", not set(train) &amp; set(test))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>fold 0 train 16 test 4 disjoint: True
+fold 1 train 16 test 4 disjoint: True
+fold 2 train 16 test 4 disjoint: True
+fold 3 train 16 test 4 disjoint: True
+fold 4 train 16 test 4 disjoint: True</code></pre>
+<h3>Which algorithm when</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Situation</th><th>Try first</th></tr></thead>
+<tbody>
+<tr><td>Tabular data, any size</td><td>Gradient boosting, then random forest</td></tr><tr><td>Need interpretability or a baseline</td><td>Linear or logistic regression, shallow tree</td></tr><tr><td>Small data, many features, text</td><td>Regularised linear models, naive Bayes, SVM</td></tr><tr><td>Distances meaningful, small data</td><td>k-NN</td></tr><tr><td>No labels</td><td>k-means, DBSCAN, PCA, then investigate</td></tr><tr><td>Images, audio, text at scale</td><td>Deep learning (<a href="a3-deep-learning.html">A3</a>)</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout key"><span class="callout-title">Key idea</span><p>For structured data, strong feature engineering with a well-tuned gradient boosting model usually beats a neural network. Always compare against a <strong>simple baseline</strong> (predict the mean or majority class; a logistic regression) so you know whether complexity pays.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a1-q08" data-topic="Classical ML" data-type="single" data-answer="B">
+        <div class="q-stem"><p>You standardise all data before cross-validation. What problem can this cause?</p></div>
+        <ul class="q-options">
+          <li data-key="A">None <span class="q-why">There is one.</span></li>
+          <li data-key="B">Data leakage: the test fold influenced the scaler <span class="q-why">Correct.</span></li>
+          <li data-key="C">Faster training <span class="q-why">No.</span></li>
+          <li data-key="D">Overflow <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Fit the scaler on the training fold only, inside a pipeline.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Bias-variance trade-off?</summary><div class="answer"><p>Simple models have high bias; complex models have high variance; choose complexity using validation error.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Classical ML</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Classical ML">
+<details class="recall iq" data-level="basic" data-topic="Classical ML"><summary><span class="tag ok">Basic</span> Linear regression: what does it minimise and how is it solved?</summary><div class="answer"><p>The sum or mean of squared errors. Solve in closed form with the normal equation (X^T X)^(-1) X^T y, or by gradient descent for large data and other models.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Classical ML"><summary><span class="tag ok">Basic</span> Why regularise a model, and what do L1 and L2 do?</summary><div class="answer"><p>To limit overfitting. L2 (ridge) shrinks weights smoothly; L1 (lasso) drives some weights to exactly zero, performing feature selection.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Classical ML"><summary><span class="tag ok">Basic</span> How does logistic regression produce a probability?</summary><div class="answer"><p>A linear score is passed through the sigmoid; it is trained by minimising log loss, whose gradient is (p - y) x.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Classical ML"><summary><span class="tag ok">Basic</span> Explain k-nearest neighbours and its main weaknesses.</summary><div class="answer"><p>Predict by a vote or mean of the k closest training points. It needs scaled features, is slow at prediction time and degrades in high dimensions.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Classical ML"><summary><span class="tag warn">Medium</span> Bagging versus boosting?</summary><div class="answer"><p>Bagging trains models independently on bootstrap samples and averages them to reduce variance. Boosting trains models sequentially on the errors of the previous ones to reduce bias.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Classical ML"><summary><span class="tag warn">Medium</span> What makes a random forest different from bagged trees?</summary><div class="answer"><p>It also samples a random subset of features at each split, decorrelating the trees so averaging reduces variance more.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Classical ML"><summary><span class="tag warn">Medium</span> How does gradient boosting work?</summary><div class="answer"><p>Each new small tree fits the negative gradient (residuals for squared error) of the current ensemble, added with a learning rate. XGBoost, LightGBM and CatBoost add regularisation and speedups.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Classical ML"><summary><span class="tag warn">Medium</span> How do decision trees choose splits?</summary><div class="answer"><p>By the largest impurity reduction (Gini or entropy information gain) over candidate features and thresholds.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Classical ML"><summary><span class="tag warn">Medium</span> What is the kernel trick?</summary><div class="answer"><p>Replace dot products with a kernel function, such as RBF, so a linear model works in an implicit high-dimensional space without computing it.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Classical ML"><summary><span class="tag warn">Medium</span> What assumptions does naive Bayes make, and why does it still work?</summary><div class="answer"><p>Features are conditionally independent given the class. The assumption is false, but the ranking of classes is often right, especially for text, and the model is fast and robust with little data.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Classical ML"><summary><span class="tag bad">Advanced</span> Explain the bias-variance trade-off.</summary><div class="answer"><p>Expected error is bias squared plus variance plus irreducible noise. Simple models underfit (bias), flexible models overfit (variance). Choose complexity by validation, and use regularisation, ensembles and more data to manage it.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Classical ML"><summary><span class="tag bad">Advanced</span> When does k-means fail and what are alternatives?</summary><div class="answer"><p>It assumes round, similar-size clusters, depends on initialisation and needs k. Use k-means++, Gaussian mixtures, DBSCAN for arbitrary shapes and noise, or hierarchical clustering.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Classical ML"><summary><span class="tag bad">Advanced</span> How does PCA work and what are its limits?</summary><div class="answer"><p>It projects onto the orthogonal directions of maximum variance (covariance eigenvectors). It is linear, unsupervised, sensitive to scaling and may discard low-variance but predictive directions.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Classical ML"><summary><span class="tag bad">Advanced</span> Why might a tuned gradient boosting model beat a neural network on tabular data?</summary><div class="answer"><p>Tabular features are heterogeneous with irregular interactions and modest sample sizes. Trees handle mixed types, missing values and non-smooth functions without heavy tuning.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="index.html"><span class="dir">Previous</span><span>Hub</span></a>
+      <a class="next" href="a2-math-for-ml.html"><span class="dir">Next</span><span>A2 Math for machine learning: linear algebra, calculus, probability and information theory</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

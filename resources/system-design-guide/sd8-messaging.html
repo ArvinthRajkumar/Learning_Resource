@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD8">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Queues, streams and asynchronous processing | System Design</title>
+<meta name="description" content="Message queues, pub/sub, Kafka-style logs, delivery guarantees, idempotency, the outbox pattern, retries, dead-letter queues, backpressure and batch versus stream processing.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD8</p>
+      <h1>Queues, streams and asynchronous processing</h1>
+      <p class="lede">Not every task should be done while the user waits. Queues and streams let you accept work quickly, process it at a safe pace, survive spikes and decouple services. They also bring duplicates, ordering and failure questions you must answer.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~3 hours</span></div>
+    </div>
+
+    <section id="why" data-track>
+      <h2>Why go asynchronous</h2>
+<h3>Intuition</h3>
+<p>At a restaurant the waiter does not stand at the stove until your dish is ready. They hand a ticket to the kitchen and serve other tables. The ticket rail is a <strong>queue</strong>: the waiter (producer) is not blocked by the speed of the cook (consumer).</p>
+<h3>What a queue buys you</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Benefit</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Decoupling</td><td>Producer and consumer need not know each other or be up at the same time</td></tr><tr><td>Load levelling</td><td>A spike is absorbed by the queue and drained at a steady rate</td></tr><tr><td>Resilience</td><td>If the consumer is down, work waits instead of failing</td></tr><tr><td>Scalability</td><td>Add more consumers to drain faster</td></tr><tr><td>Faster responses</td><td>Return to the user immediately, finish slow work later</td></tr>
+</tbody>
+</table>
+</div>
+<h3>What it costs</h3>
+<p>Eventual results (the user does not see the outcome instantly), more moving parts, duplicates and reordering, harder debugging and the need for monitoring (queue depth, age).</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 294" role="img" aria-label="Synchronous work blocks the user. Asynchronous work returns at once and a worker finishes later." style="min-width:760px"><defs><marker id="ah15" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah15a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah15b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah15d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="147.0" x2="234.0" y2="147.0" class="d-line" marker-end="url(#ah15)"/><text x="212.0" y="142.0" text-anchor="middle" class="d-sm d-muted">enqueue (fast)</text><line x1="382.3" y1="118.0" x2="469.7" y2="78.0" class="d-line" marker-end="url(#ah15)"/><line x1="382.3" y1="176.0" x2="469.7" y2="216.0" class="d-line" marker-end="url(#ah15)"/><line x1="596.3" y1="78.0" x2="683.7" y2="118.0" class="d-line" marker-end="url(#ah15)"/><line x1="596.3" y1="216.0" x2="683.7" y2="176.0" class="d-line" marker-end="url(#ah15)"/><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-b"/><text x="105.0" y="151.5" text-anchor="middle">API server</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-e"/><text x="319.0" y="151.5" text-anchor="middle">Message queue</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="53.5" text-anchor="middle">Worker 1</text><rect x="448.0" y="216.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="249.5" text-anchor="middle">Worker 2</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-a"/><text x="747.0" y="151.5" text-anchor="middle" class="d-sm">Storage / email / third party</text></svg>
+</div>
+<figcaption>Synchronous work blocks the user. Asynchronous work returns at once and a worker finishes later.</figcaption></figure>
+<h3>Good candidates for async</h3>
+<p>Sending email or push notifications, image and video processing, report generation, payment settlement, search indexing, webhooks, analytics events, anything calling a slow or flaky third party.</p>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What do queues give you?</summary><div class="answer"><p>Decoupling, load levelling, resilience, scalability and fast responses.</p></div></details>
+      </div>
+    </section>
+
+    <section id="models" data-track>
+      <h2>Queues versus pub/sub versus logs</h2>
+<h3>Point-to-point queue</h3>
+<p>Each message is delivered to <strong>one</strong> consumer (a worker pool). After processing and acknowledgement it is removed. Used for task distribution. Examples: Amazon SQS, RabbitMQ queues, Celery with a broker.</p>
+<h3>Publish/subscribe</h3>
+<p>A publisher sends to a <strong>topic</strong>. Every <strong>subscriber</strong> gets a copy. Used for fan-out: an <code>order_placed</code> event goes to inventory, email, analytics. Examples: SNS, Google Pub/Sub, RabbitMQ exchanges, Redis pub/sub (no durability).</p>
+<h3>Distributed log (Kafka)</h3>
+<p>Messages are appended to a durable, ordered <strong>log</strong> split into <strong>partitions</strong>. The log is <strong>retained</strong> for days (or forever), not deleted on read. Each <strong>consumer group</strong> keeps its own <strong>offset</strong>, so many independent consumers can read the same data, and new consumers can replay history.</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 638 294" role="img" aria-label="Kafka-style topic: partitions give parallelism and per-key ordering; each consumer group tracks its own offset." style="min-width:638px"><defs><marker id="ah16" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah16a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah16b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah16d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="168.3" y1="118.0" x2="255.7" y2="78.0" class="d-line" marker-end="url(#ah16)"/><text x="212.0" y="93.0" text-anchor="middle" class="d-sm d-muted">key hash</text><line x1="190.0" y1="147.0" x2="234.0" y2="147.0" class="d-line" marker-end="url(#ah16)"/><line x1="168.3" y1="176.0" x2="255.7" y2="216.0" class="d-line" marker-end="url(#ah16)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah16)"/><line x1="382.3" y1="118.0" x2="469.7" y2="78.0" class="d-line" marker-end="url(#ah16)"/><line x1="404.0" y1="245.0" x2="448.0" y2="245.0" class="d-line" marker-end="url(#ah16)"/><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-b"/><text x="105.0" y="151.5" text-anchor="middle">Producers</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-e"/><text x="319.0" y="53.5" text-anchor="middle">Partition 0</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-e"/><text x="319.0" y="151.5" text-anchor="middle">Partition 1</text><rect x="234.0" y="216.0" width="170" height="58" rx="8" class="d-e"/><text x="319.0" y="249.5" text-anchor="middle">Partition 2</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="533.0" y="46.0" text-anchor="middle">Consumer group A</text><text x="533.0" y="61.0" text-anchor="middle">(billing)</text><rect x="448.0" y="216.0" width="170" height="58" rx="8" class="d-a"/><text x="533.0" y="242.0" text-anchor="middle">Consumer group B</text><text x="533.0" y="257.0" text-anchor="middle">(analytics)</text></svg>
+</div>
+<figcaption>Kafka-style topic: partitions give parallelism and per-key ordering; each consumer group tracks its own offset.</figcaption></figure>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>Queue (SQS, RabbitMQ)</th><th>Log (Kafka, Pulsar, Kinesis)</th></tr></thead>
+<tbody>
+<tr><td>After consume</td><td>Message deleted</td><td>Message stays until retention expires</td></tr><tr><td>Replay</td><td>No</td><td>Yes, by resetting the offset</td></tr><tr><td>Ordering</td><td>Best effort, FIFO queues available</td><td>Strict per partition</td></tr><tr><td>Fan-out to many apps</td><td>Needs copies</td><td>Native: independent consumer groups</td></tr><tr><td>Throughput</td><td>Moderate</td><td>Very high (millions of messages per second)</td></tr><tr><td>Best for</td><td>Task queues, retries, delays</td><td>Event streaming, event sourcing, pipelines</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Partitions and ordering</h3>
+<p>Kafka guarantees order only <strong>within a partition</strong>. Choose the partition key (for example <code>user_id</code>) so that all events that must stay ordered share a partition. The number of partitions caps consumer parallelism in one group: 10 partitions can be read by at most 10 consumers in a group.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd8-01.py">import hashlib
+def partition(key, n=4):
+    return int(hashlib.md5(key.encode()).hexdigest(), 16) % n
+events = [("alice", "login"), ("bob", "login"), ("alice", "buy"), ("alice", "logout"), ("bob", "buy")]
+parts = {}
+for key, ev in events:
+    parts.setdefault(partition(key), []).append((key, ev))
+for p in sorted(parts):
+    print("partition", p, parts[p])     # per key, the order is preserved</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>partition 0 [('alice', 'login'), ('bob', 'login'), ('alice', 'buy'), ('alice', 'logout'), ('bob', 'buy')]</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd8-q01" data-topic="Messaging" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which gives you the ability to replay old events for a new consumer?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A classic task queue (message deleted after ack) <span class="q-why">Data is gone.</span></li>
+          <li data-key="B">A log with retention, such as Kafka <span class="q-why">Correct.</span></li>
+          <li data-key="C">A direct HTTP call <span class="q-why">No history.</span></li>
+          <li data-key="D">Redis pub/sub <span class="q-why">Messages are not stored.</span></li>
+        </ul>
+        <div class="q-explain"><p>Logs keep data for the retention period and consumers track their own offsets.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd8-q02" data-topic="Messaging" data-type="numeric" data-answer="6" data-tol="0">
+        <div class="q-stem"><p>A Kafka topic has 6 partitions. What is the maximum number of consumers in one consumer group that can read in parallel?</p></div>
+        <div class="q-explain"><p>Each partition is consumed by at most one consumer in a group, so 6.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Queue versus pub/sub versus log?</summary><div class="answer"><p>Queue: one consumer per message. Pub/sub: every subscriber gets a copy. Log: ordered, retained, consumers track offsets.</p></div></details>
+      </div>
+    </section>
+
+    <section id="delivery" data-track>
+      <h2>Delivery guarantees</h2>
+<h3>The three semantics</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Semantics</th><th>Meaning</th><th>How</th></tr></thead>
+<tbody>
+<tr><td>At most once</td><td>A message may be lost, never duplicated</td><td>Acknowledge before processing</td></tr><tr><td>At least once</td><td>Never lost, may be duplicated</td><td>Acknowledge after processing, retry on failure</td></tr><tr><td>Exactly once</td><td>Processed once in effect</td><td>At least once <strong>plus</strong> idempotent processing, or transactions inside one system</td></tr>
+</tbody>
+</table>
+</div>
+<p>True exactly-once delivery over an unreliable network is impossible: if an acknowledgement is lost the sender cannot know whether the work happened. Practical systems get <strong>effectively once</strong> by combining at-least-once delivery with <strong>idempotent consumers</strong>. Kafka offers idempotent producers and transactions that give exactly-once <strong>within Kafka</strong>; once you touch an external system you still need idempotency.</p>
+<h3>Idempotency</h3>
+<p>An operation is <strong>idempotent</strong> if doing it twice has the same effect as doing it once. Techniques:</p>
+<ul><li><strong>Idempotency key</strong>: the client sends a unique id with each request. The server stores <code>(key, result)</code> and returns the stored result on retries.</li><li><strong>Natural idempotency</strong>: <code>SET balance = 100</code> is idempotent; <code>balance = balance + 10</code> is not.</li><li><strong>Deduplication table</strong>: record processed message ids and skip repeats (with a unique constraint).</li><li><strong>Conditional writes</strong>: <code>UPDATE ... WHERE version = 7</code>.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd8-02.py">processed = set()
+balance = {"acct": 100}
+
+def handle(msg):
+    if msg["id"] in processed:          # deduplicate
+        return "duplicate ignored"
+    balance["acct"] += msg["amount"]
+    processed.add(msg["id"])
+    return "applied"
+
+m = {"id": "pay-123", "amount": 25}
+print(handle(m), handle(m), handle(m), balance)   # redelivered three times</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>applied duplicate ignored duplicate ignored {'acct': 125}</code></pre>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Assume every message can arrive twice. Design consumers so that is harmless.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd8-q03" data-topic="Messaging" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A consumer acknowledges a message <strong>after</strong> processing it. Which semantics does this give?</p></div>
+        <ul class="q-options">
+          <li data-key="A">At most once <span class="q-why">That is acknowledge before processing.</span></li>
+          <li data-key="B">At least once <span class="q-why">Correct: a crash before the ack causes redelivery.</span></li>
+          <li data-key="C">Exactly once, automatically <span class="q-why">Not by itself.</span></li>
+          <li data-key="D">None <span class="q-why">It gives at-least-once.</span></li>
+        </ul>
+        <div class="q-explain"><p>Redelivery after a crash means duplicates are possible, so consumers must be idempotent.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd8-q04" data-topic="Messaging" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do practical systems achieve 'effectively once' processing?</p></div>
+        <ul class="q-options">
+          <li data-key="A">By turning off retries <span class="q-why">That would lose messages.</span></li>
+          <li data-key="B">At-least-once delivery plus idempotent consumers <span class="q-why">Correct.</span></li>
+          <li data-key="C">Using larger messages <span class="q-why">No.</span></li>
+          <li data-key="D">Using UDP <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Duplicates are tolerated because applying them twice has the same effect as once.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why is exactly-once delivery impossible over a network?</summary><div class="answer"><p>A lost acknowledgement leaves the sender unable to know whether the work happened, so it must retry, which can duplicate.</p></div></details>
+      </div>
+    </section>
+
+    <section id="patterns" data-track>
+      <h2>Reliability patterns</h2>
+<h3>Acknowledgements, visibility timeout and redelivery</h3>
+<p>A consumer receives a message, which becomes <strong>invisible</strong> for a <strong>visibility timeout</strong>. If the consumer acknowledges in time, the message is deleted. If it crashes or is slow, the timeout expires and the message is redelivered. Set the timeout above your worst-case processing time.</p>
+<h3>Retries with backoff</h3>
+<p>Retry transient failures with <strong>exponential backoff and jitter</strong>: wait <code>base x 2^attempt</code> plus a random amount, up to a cap. Without jitter, all clients retry together and overload the recovering service.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd8-03.py">import random
+random.seed(7)
+def backoff(attempt, base=0.1, cap=5.0):
+    return random.uniform(0, min(cap, base * 2 ** attempt))   # "full jitter"
+print([round(backoff(a), 2) for a in range(8)])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[0.03, 0.03, 0.26, 0.06, 0.86, 1.17, 0.29, 2.54]</code></pre>
+<h3>Dead-letter queues</h3>
+<p>A <strong>poison message</strong> always fails (bad data, bug). After N attempts move it to a <strong>dead-letter queue (DLQ)</strong> for inspection, so it does not block everything or retry forever. Alert on DLQ depth, and build a way to replay after fixing.</p>
+<h3>The transactional outbox</h3>
+<p>Problem: you update the database and publish an event. If the process dies between the two, they disagree. The <strong>outbox</strong> pattern writes the event into an <code>outbox</code> table <strong>in the same database transaction</strong> as the business data. A separate relay (a poller, or <strong>change data capture</strong> from the transaction log such as Debezium) publishes the outbox rows and marks them sent. Delivery is at least once, so consumers deduplicate.</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 98" role="img" aria-label="The outbox pattern avoids the dual-write problem." style="min-width:760px"><defs><marker id="ah17" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah17a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah17b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah17d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah17)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah17)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah17)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle" class="d-sm">One DB transaction (data + outbox row)</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle">Relay / CDC</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle">Message broker</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle">Idempotent consumers</text></svg>
+</div>
+<figcaption>The outbox pattern avoids the dual-write problem.</figcaption></figure>
+<h3>Ordering</h3>
+<p>Queues generally do not guarantee global order. If order matters per entity, partition by that entity's key and process each partition sequentially. Global ordering across everything limits you to one consumer and is rarely worth it.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd8-q05" data-topic="Messaging" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A message fails every time because of malformed data. What should happen?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Retry forever <span class="q-why">Blocks progress.</span></li>
+          <li data-key="B">After several attempts move it to a dead-letter queue and alert <span class="q-why">Correct.</span></li>
+          <li data-key="C">Delete it silently <span class="q-why">Loses data.</span></li>
+          <li data-key="D">Restart the broker <span class="q-why">Does not help.</span></li>
+        </ul>
+        <div class="q-explain"><p>DLQs isolate poison messages so the rest of the queue flows.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd8-q06" data-topic="Messaging" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What problem does the transactional outbox solve?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Slow queries <span class="q-why">No.</span></li>
+          <li data-key="B">The dual-write problem: updating the DB and publishing an event atomically <span class="q-why">Correct.</span></li>
+          <li data-key="C">Cache stampedes <span class="q-why">No.</span></li>
+          <li data-key="D">DNS failover <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The event is written in the same transaction as the data, and a relay publishes it later.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How should retries be spaced?</summary><div class="answer"><p>Exponential backoff with jitter and a cap, so clients do not retry in lockstep.</p></div></details>
+      </div>
+    </section>
+
+    <section id="backpressure" data-track>
+      <h2>Backpressure and flow control</h2>
+<p>If producers outpace consumers the queue grows without bound. Choices:</p>
+<ul><li><strong>Bound the queue</strong> and block or reject new work when full (load shedding).</li><li><strong>Scale consumers</strong> with autoscaling on queue depth or message age.</li><li><strong>Rate limit producers</strong> or slow them (backpressure signals in reactive streams, TCP windows).</li><li><strong>Drop or sample</strong> low-value work (metrics, logs).</li></ul>
+<p>Watch <strong>queue depth</strong> and especially <strong>age of the oldest message</strong>: depth can look fine while work is stuck.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd8-q07" data-topic="Messaging" data-type="fill" data-answer="oldest">
+        <div class="q-stem"><p>A useful health signal for a queue is the age of the <input class="q-input" aria-label="blank 1"> message, not just its depth.</p></div>
+        <div class="q-explain"><p>Depth can stay low while a stuck message keeps ageing; the oldest message's age shows real delay.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you handle producers faster than consumers?</summary><div class="answer"><p>Bound the queue, scale consumers, rate limit producers, shed or sample low-value work.</p></div></details>
+      </div>
+    </section>
+
+    <section id="stream" data-track>
+      <h2>Batch versus stream processing</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>Batch</th><th>Stream</th></tr></thead>
+<tbody>
+<tr><td>Data</td><td>Bounded set, processed periodically</td><td>Unbounded, processed continuously</td></tr><tr><td>Latency</td><td>Minutes to hours</td><td>Milliseconds to seconds</td></tr><tr><td>Tools</td><td>Hadoop MapReduce, Spark, SQL warehouses</td><td>Kafka Streams, Flink, Spark Streaming, Beam</td></tr><tr><td>Use</td><td>Nightly reports, ML training, backfills</td><td>Fraud detection, live dashboards, alerting</td></tr>
+</tbody>
+</table>
+</div>
+<p>Stream processing ideas: <strong>windows</strong> (tumbling, sliding, session), <strong>event time versus processing time</strong> (events arrive late, so use <strong>watermarks</strong>), <strong>stateful</strong> operators and <strong>exactly-once</strong> state updates through checkpoints. More in <a href="sd12-data-systems.html">SD12</a>.</p>
+    </section>
+
+    <section id="choosing" data-track>
+      <h2>Choosing a broker</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Need</th><th>Pick</th></tr></thead>
+<tbody>
+<tr><td>Simple task queue, managed, scales itself</td><td>SQS or a cloud queue</td></tr><tr><td>Rich routing, priorities, low volume</td><td>RabbitMQ</td></tr><tr><td>High-throughput events, replay, many consumers</td><td>Kafka, Pulsar, Kinesis</td></tr><tr><td>Light fan-out inside one service</td><td>Redis pub/sub or streams</td></tr><tr><td>Delayed or scheduled jobs</td><td>Queue with delay, or a scheduler (Celery beat, cron, Temporal)</td></tr><tr><td>Long-running workflows with retries and state</td><td>A workflow engine (Temporal, Step Functions)</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout tip"><span class="callout-title">Interview tip</span><p>When you add a queue to a design, always say three things: what happens on duplicates (idempotency), what happens on poison messages (DLQ), and what happens when the queue grows (backpressure and scaling).</p></div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Messaging</h2>
+      <p class="muted">11 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Messaging">
+<details class="recall iq" data-level="basic" data-topic="Messaging"><summary><span class="tag ok">Basic</span> Why use a message queue?</summary><div class="answer"><p>It decouples producers and consumers, absorbs spikes, enables retries, and lets slow work happen after returning to the user.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Messaging"><summary><span class="tag ok">Basic</span> Queue versus pub/sub?</summary><div class="answer"><p>A queue delivers each message to one consumer in a pool. Pub/sub delivers each message to every subscriber.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Messaging"><summary><span class="tag warn">Medium</span> At-most-once, at-least-once and exactly-once?</summary><div class="answer"><p>At most once may lose messages. At least once may duplicate. Exactly once in effect needs at-least-once plus idempotent consumers or transactional processing within one system.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Messaging"><summary><span class="tag warn">Medium</span> What is idempotency and how do you implement it?</summary><div class="answer"><p>Repeating an operation has the same effect as doing it once. Use idempotency keys with stored results, deduplication tables with unique constraints, natural idempotent updates, or conditional writes.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Messaging"><summary><span class="tag warn">Medium</span> What is a dead-letter queue?</summary><div class="answer"><p>A queue for messages that repeatedly fail, so poison messages do not block processing. Alert on its depth and provide a way to inspect and replay.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Messaging"><summary><span class="tag warn">Medium</span> How does Kafka differ from a traditional queue?</summary><div class="answer"><p>Kafka is a partitioned, replicated, retained log. Consumers track offsets, can replay, and many consumer groups read independently. Ordering holds within a partition.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Messaging"><summary><span class="tag warn">Medium</span> How do you preserve ordering?</summary><div class="answer"><p>Partition by the entity key so related events share a partition and process each partition sequentially. Global ordering is expensive and rarely needed.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Messaging"><summary><span class="tag bad">Advanced</span> Explain the transactional outbox.</summary><div class="answer"><p>Write the event to an outbox table in the same transaction as the business data. A relay or CDC publishes it afterwards, which avoids the dual-write inconsistency. Delivery is at least once so consumers deduplicate.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Messaging"><summary><span class="tag bad">Advanced</span> How do you handle backpressure?</summary><div class="answer"><p>Bound queues, autoscale consumers on lag or message age, rate limit or slow producers, and shed or sample low-value work. Monitor oldest message age.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Messaging"><summary><span class="tag bad">Advanced</span> Batch versus stream processing and watermarks?</summary><div class="answer"><p>Batch processes bounded data periodically; stream processes unbounded data continuously. Watermarks track event-time progress so windows can close despite late events.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Messaging"><summary><span class="tag bad">Advanced</span> Lambda versus Kappa architecture?</summary><div class="answer"><p>Lambda runs batch and speed layers and merges them (two code paths). Kappa uses only a stream layer and reprocesses by replaying the log.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd7-caching.html"><span class="dir">Previous</span><span>SD7 Caching</span></a>
+      <a class="next" href="sd9-apis.html"><span class="dir">Next</span><span>SD9 APIs, microservices and service communication</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

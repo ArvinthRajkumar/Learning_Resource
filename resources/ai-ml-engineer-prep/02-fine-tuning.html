@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="02">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>02 Fine-tuning | AI/ML Engineer Prep</title>
+<meta name="description" content="LoRA parameter math, QLoRA, PEFT vs full fine-tuning, when to fine-tune, DPO and its relatives, SFT data hygiene.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part 02</p>
+      <h1>Fine-tuning: LoRA, QLoRA, DPO</h1>
+      <p class="lede">Select-all questions here test whether you know exactly what is trained, what is frozen, and which memory is saved. Learn the mechanics and each option answers itself.</p>
+      <div class="meta"><span class="tag accent">Select-all heavy</span><span class="tag">~1.5 hours</span></div>
+    </div>
+
+    <!-- ============================================================ basics -->
+    <section id="fine-tuning-basics" data-track>
+      <h2>Basics first: what fine-tuning is</h2>
+
+      <h3>Intuition</h3>
+      <p>Pretraining gives a model general language skill. Fine-tuning continues training on a smaller, focused dataset so the model adopts a specific behavior: answer in your format, use your domain's style, follow your labeling rules. It is <strong>transfer learning</strong>: start from learned weights instead of random ones, so a few thousand examples go a long way.</p>
+
+      <h3>The mechanism</h3>
+      <ul>
+        <li><strong>Data</strong>: (input, desired output) pairs, rendered with the model's chat template.</li>
+        <li><strong>Loss</strong>: next-token cross-entropy on the output tokens (part F1 covers cross-entropy).</li>
+        <li><strong>What gets updated</strong>: all weights (full fine-tuning) or a small set of added weights (parameter-efficient fine-tuning, PEFT, such as LoRA).</li>
+        <li><strong>Key hyperparameters</strong>: learning rate (much smaller than pretraining, for example 1e-5 to 2e-4 depending on full vs LoRA), epochs (1 to 3), batch size, max sequence length, LoRA rank and alpha.</li>
+        <li><strong>Outputs</strong>: a new checkpoint, or a small adapter file loaded on top of the base model.</li>
+      </ul>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Family</th><th>Examples</th><th>Trains</th></tr></thead>
+        <tbody>
+          <tr><td>Full fine-tuning</td><td>all weights</td><td>100% of the parameters</td></tr>
+          <tr><td>Adapter / low-rank (PEFT)</td><td>LoRA, QLoRA, DoRA</td><td>about 0.1 to 1%</td></tr>
+          <tr><td>Prompt-based (PEFT)</td><td>prefix tuning, prompt tuning</td><td>virtual token embeddings only</td></tr>
+          <tr><td>Preference tuning</td><td>DPO, KTO, ORPO, RLHF</td><td>full or PEFT, on comparisons</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>Common traps</h3>
+      <div class="callout trap"><ul class="mb-0">
+        <li>Fine-tuning before trying prompting and RAG, or without an eval set to show it helped.</li>
+        <li>Too high a learning rate or too many epochs: the model memorizes and forgets general skills.</li>
+        <li>Training and inference chat templates that do not match.</li>
+      </ul></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p02-basic-1" data-topic="Fine-tuning" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Which is the best reason to fine-tune rather than prompt?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To give the model this week's product prices <span class="q-why">Changing facts belong in RAG.</span></li>
+          <li data-key="B">Because prompting is unscientific <span class="q-why">Prompting can be measured just as rigorously.</span></li>
+          <li data-key="C">To get a consistent output style and format at scale, or a cheaper, smaller model with the same behavior <span class="q-why">Correct.</span></li>
+          <li data-key="D">To fix a retrieval bug <span class="q-why">Fix retrieval.</span></li>
+        </ul>
+        <div class="q-explain"><p>Fine-tuning changes behavior. RAG supplies knowledge.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is transfer learning?</summary><div class="answer"><p>Starting from a model trained on a large general task and adapting it to a specific task with less data.</p></div></details>
+        <details class="recall"><summary>Typical number of epochs for LLM fine-tuning?</summary><div class="answer"><p>About 1 to 3. More risks overfitting.</p></div></details>
+        <details class="recall"><summary>Full fine-tuning vs PEFT?</summary><div class="answer"><p>Full updates all weights. PEFT trains a small number of added or selected parameters.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 1 -->
+    <section id="lora" data-track>
+      <h2>LoRA: low-rank adaptation</h2>
+
+      <h3>Intuition</h3>
+      <p>Fine-tuning changes a weight matrix W into W + ΔW. The LoRA paper's bet is that the useful ΔW for a new task has <strong>low rank</strong>: it can be written as a tall thin matrix times a short wide one. Instead of learning 16.8 million numbers for a 4096 x 4096 update, you learn two thin matrices with 131 thousand numbers total. The original W never changes.</p>
+      <p>Analogy: instead of reprinting a 1,000-page manual, you ship a short errata sheet. Readers apply the errata on top. Later you can even print a new edition with the errata merged in.</p>
+
+      <h3>The mechanism</h3>
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 250" role="img" aria-label="LoRA: frozen W of size d by d plus scaled product of B (d by r) and A (r by d); only A and B are trained">
+          <text x="20" y="22" class="d-lg">h = W x + (alpha / r) B A x</text>
+          <rect x="20" y="50" width="160" height="160" rx="4" class="d-box"/>
+          <text x="100" y="125" text-anchor="middle" class="d-bold">W (frozen)</text>
+          <text x="100" y="145" text-anchor="middle" class="d-sm">d_out x d_in</text>
+          <text x="100" y="163" text-anchor="middle" class="d-sm">4096 x 4096</text>
+          <text x="210" y="138" text-anchor="middle" class="d-lg">+</text>
+          <text x="262" y="138" text-anchor="middle" class="d-sm">alpha/r</text>
+          <rect x="300" y="50" width="26" height="160" rx="3" class="d-a"/>
+          <text x="313" y="232" text-anchor="middle" class="d-sm">B</text>
+          <text x="345" y="138" text-anchor="middle" class="d-lg">x</text>
+          <rect x="365" y="117" width="160" height="26" rx="3" class="d-b"/>
+          <text x="445" y="135" text-anchor="middle" class="d-sm">A: r x d_in</text>
+          <text x="313" y="40" text-anchor="middle" class="d-sm">d_out x r</text>
+          <text x="560" y="70" class="d-sm d-bold">Trained: A and B only</text>
+          <text x="560" y="92" class="d-sm">A init: random</text>
+          <text x="560" y="110" class="d-sm">B init: zeros</text>
+          <text x="560" y="128" class="d-sm">so BA = 0 at step 0</text>
+          <text x="560" y="160" class="d-sm d-bold">r = 16:</text>
+          <text x="560" y="180" class="d-sm">16 x (4096 + 4096)</text>
+          <text x="560" y="198" class="d-sm">= 131,072 params</text>
+          <text x="560" y="216" class="d-sm d-muted">vs 16,777,216 for full W</text>
+        </svg>
+        </div>
+        <figcaption>The update ΔW = (alpha/r) B A has rank at most r. Because B starts at zero, training begins exactly at the base model.</figcaption>
+      </figure>
+
+      <h3>The formulas</h3>
+      <div class="formula">
+        <div class="f-title">LoRA forward pass and parameter count</div>
+        <div class="f-body">h = W x + (alpha / r) * B (A x)
+trainable params per module = r x (d_in + d_out)
+merged weight:  W' = W + (alpha / r) * B A</div>
+        <dl class="f-defs">
+          <dt>W</dt><dd>frozen pretrained weight, d_out x d_in</dd>
+          <dt>A</dt><dd>r x d_in, trained (random init)</dd>
+          <dt>B</dt><dd>d_out x r, trained (zero init)</dd>
+          <dt>r</dt><dd>rank, e.g. 8, 16, 64</dd>
+          <dt>alpha</dt><dd>scaling hyperparameter. The update is scaled by alpha / r, so changing r does not require retuning the learning rate as much. (rsLoRA proposes alpha / sqrt(r) instead.)</dd>
+        </dl>
+      </div>
+
+      <h3>Worked example: r = 16 on q_proj and v_proj of a 7B model</h3>
+      <div class="worked">
+        <span class="w-title">Llama 2 7B: hidden 4096, 32 layers, MHA so q_proj and v_proj are both 4096 x 4096</span>
+        <ol class="steps">
+          <li>One module: r x (d_in + d_out) = 16 x (4096 + 4096) = 16 x 8192 = 131,072.</li>
+          <li>Two modules per layer (q and v): 2 x 131,072 = 262,144.</li>
+          <li>32 layers: 262,144 x 32 = 8,388,608, about 8.4M trainable parameters.</li>
+          <li>As a fraction of 6.74B: about 0.124%.</li>
+          <li>Scale: alpha / r = 32 / 16 = 2.</li>
+        </ol>
+        <span class="result">8,388,608 trainable params; scale = 2</span>
+      </div>
+      <p>Variations to practice: r = 8 halves it to 4,194,304. Llama-3-8B has GQA, so v_proj is 4096 to 1024: 16 x (4096 + 1024) = 81,920, and q+v over 32 layers gives 6,815,744. Targeting all seven linear modules of Llama 2 7B (q, k, v, o at 4096 x 4096; gate and up at 4096 x 11008; down at 11008 x 4096) at r = 16 gives 39,976,960.</p>
+      <pre><code class="lang-py">r, d, layers = 16, 4096, 32
+per_module = r * (d + d)                 # 131072
+print(per_module * 2 * layers)            # 8388608  (q and v)
+print(32 / 16)                            # alpha / r = 2.0</code></pre>
+
+      <h3>What LoRA saves, and what it does not</h3>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Memory item</th><th>Full fine-tune</th><th>LoRA</th></tr></thead>
+        <tbody>
+          <tr><td>Base weights</td><td>bf16 + fp32 master copy</td><td>bf16, frozen (same size, no master copy)</td></tr>
+          <tr><td>Gradients</td><td>for all params</td><td><strong>only A, B</strong></td></tr>
+          <tr><td>Optimizer state (Adam m, v)</td><td>for all params</td><td><strong>only A, B</strong></td></tr>
+          <tr><td>Activations</td><td>needed for backprop</td><td><strong>still needed</strong>: gradients must flow back through the frozen layers to reach earlier adapters</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p>Full fine-tuning a 7B model with Adam in mixed precision needs about 16 bytes per parameter, so about 112 GB before activations. With LoRA the adapter state is 8.39M x 16 bytes, about 134 MB. The frozen bf16 base (14 GB) and activations dominate.</p>
+
+      <h3>Merging and serving</h3>
+      <ul>
+        <li>After training, compute W' = W + (alpha/r) BA once. The merged model has the same shape as the base, so there is <strong>zero extra inference latency</strong>.</li>
+        <li>Or keep adapters separate and serve many of them on one base model (multi-LoRA serving, as in S-LoRA and vLLM's LoRA support). The small extra matmul per request is the price of per-request adapter swapping.</li>
+      </ul>
+
+      <h3>Common traps</h3>
+      <div class="callout trap"><ul class="mb-0">
+        <li>"LoRA removes activation memory." No. It removes most gradient and optimizer memory. Activations stay. (Gradient checkpointing is the tool for activations.)</li>
+        <li>"Higher rank is always better." No. Returns diminish quickly. A higher rank adds parameters and overfitting risk, and the LoRA paper found small ranks competitive. Tune it like any hyperparameter.</li>
+        <li>"LoRA adds inference latency." Only if you leave it unmerged.</li>
+        <li>"The base model is updated slightly." No, it stays frozen. Only A and B receive gradients.</li>
+        <li>"Scale is alpha x r" or "r / alpha". It is alpha / r.</li>
+      </ul></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p02-lora-1" data-topic="Fine-tuning" data-type="multi" data-answer="A,C,D">
+        <div class="q-stem"><p>LoRA with r = 16, alpha = 32, applied to the q and v projections. Select all that are true.</p></div>
+        <ul class="q-options">
+          <li data-key="A">Adapters can be merged into the base weights for no extra inference latency <span class="q-why">W' = W + (alpha/r)BA has the original shape.</span></li>
+          <li data-key="B">It removes activation memory during training <span class="q-why">Activations are still needed for backprop through the frozen layers.</span></li>
+          <li data-key="C">The update is scaled by alpha / r = 2 <span class="q-why">32 / 16 = 2.</span></li>
+          <li data-key="D">Only the A and B matrices are trained <span class="q-why">The base weights are frozen.</span></li>
+          <li data-key="E">A higher rank is always better <span class="q-why">Returns diminish, and overfitting and cost grow.</span></li>
+        </ul>
+        <div class="q-explain"><p>LoRA saves gradient and optimizer memory, not activations, and rank is a hyperparameter to tune.</p></div>
+      </div>
+      <div class="quiz" data-qid="p02-lora-2" data-topic="Fine-tuning" data-type="numeric" data-answer="8388608" data-tol="0">
+        <div class="q-stem"><p>Trainable parameters for LoRA r = 16 on q_proj and v_proj (both 4096 x 4096) in each of 32 layers?</p></div>
+        <div class="q-explain"><p>16 x (4096 + 4096) x 2 x 32 = 8,388,608.</p></div>
+      </div>
+      <div class="quiz" data-qid="p02-lora-3" data-topic="Fine-tuning" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is B initialized to zeros?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To make the adapter sparse <span class="q-why">B becomes dense once training starts.</span></li>
+          <li data-key="B">So that BA = 0 and training starts exactly from the pretrained model <span class="q-why">Correct. The first forward pass equals the base model.</span></li>
+          <li data-key="C">Because zeros quantize better <span class="q-why">This has nothing to do with initialization.</span></li>
+          <li data-key="D">To reduce the rank <span class="q-why">Rank is fixed by the shapes.</span></li>
+        </ul>
+        <div class="q-explain"><p>If both A and B were random, the model would start perturbed away from the base. Zero B with random A gives a no-op start, while gradients still flow to B.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Trainable params formula for one LoRA module?</summary><div class="answer"><p>r x (d_in + d_out).</p></div></details>
+        <details class="recall"><summary>Which memory does LoRA save during training?</summary><div class="answer"><p>Gradients and optimizer states (and the fp32 master copy) for the frozen weights. Not activations.</p></div></details>
+        <details class="recall"><summary>How do you get zero inference overhead?</summary><div class="answer"><p>Merge: W' = W + (alpha/r) BA.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 2 -->
+    <section id="qlora-peft" data-track>
+      <h2>QLoRA, PEFT and full fine-tuning</h2>
+
+      <h3>Intuition</h3>
+      <p>LoRA froze the base weights. QLoRA adds a twist: since they are frozen anyway, store them in 4 bits. Train the small adapters in bf16 on top. A 7B base shrinks from 14 GB to about 3.5 GB, so fine-tuning fits on a single consumer or T4-class GPU.</p>
+
+      <h3>The mechanism</h3>
+      <ul>
+        <li><strong>NF4</strong> (4-bit NormalFloat): a 4-bit data type whose 16 levels are placed for normally distributed weights, so precision lands where weights actually are.</li>
+        <li><strong>Double quantization</strong>: the per-block scales are themselves quantized, saving roughly another 0.4 bits per parameter (per the QLoRA paper).</li>
+        <li><strong>Paged optimizers</strong>: optimizer state can spill to CPU memory on spikes, avoiding out-of-memory crashes.</li>
+        <li>Forward and backward: 4-bit weights are dequantized to bf16 on the fly for each matmul. Gradients flow through them to the LoRA adapters, but the 4-bit weights get no updates.</li>
+      </ul>
+
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th></th><th>Full fine-tune</th><th>LoRA</th><th>QLoRA</th></tr></thead>
+        <tbody>
+          <tr><td>Trainable</td><td>all weights</td><td>adapters (~0.1 to 1%)</td><td>adapters</td></tr>
+          <tr><td>Base storage</td><td>bf16 + fp32 master</td><td>bf16 frozen</td><td>4-bit NF4 frozen</td></tr>
+          <tr><td>7B memory (rough, before activations)</td><td>~112 GB</td><td>~15 GB</td><td>~4 to 5 GB</td></tr>
+          <tr><td>Quality</td><td>highest ceiling, more forgetting risk</td><td>close to full on many tasks</td><td>close to LoRA (small hit possible)</td></tr>
+          <tr><td>Speed</td><td>fast per step, many GPUs</td><td>fast</td><td>slower per step (dequantization)</td></tr>
+          <tr><td>Artifacts</td><td>a full model copy per task</td><td>small adapter files (MBs)</td><td>small adapter files</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p>Other PEFT methods: prefix or prompt tuning (learned virtual tokens), IA3 (learned scaling vectors), DoRA (splits each weight into magnitude and direction, applying LoRA to the direction). In practice LoRA and QLoRA dominate.</p>
+
+      <h3>Common traps</h3>
+      <div class="callout trap"><ul class="mb-0">
+        <li>"QLoRA trains the model in 4-bit." The adapters train in bf16. Only the frozen base is stored in 4-bit.</li>
+        <li>"Merge a QLoRA adapter into the 4-bit base." Merging into quantized weights loses precision. The usual path is to merge into a bf16 copy of the base, then re-quantize for serving if needed.</li>
+      </ul></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p02-q-1" data-topic="Fine-tuning" data-type="single" data-answer="C">
+        <div class="q-stem"><p>What does QLoRA quantize to 4 bits?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The LoRA adapters <span class="q-why">Adapters are trained in 16-bit.</span></li>
+          <li data-key="B">The gradients <span class="q-why">Gradients are 16-bit and exist only for the adapters.</span></li>
+          <li data-key="C">The frozen base model weights <span class="q-why">Correct: NF4 storage, dequantized on the fly.</span></li>
+          <li data-key="D">The activations <span class="q-why">Activations stay 16-bit.</span></li>
+        </ul>
+        <div class="q-explain"><p>QLoRA = 4-bit frozen base + bf16 LoRA adapters + paged optimizers + double quantization.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Three ingredients of QLoRA besides LoRA itself?</summary><div class="answer"><p>NF4 data type, double quantization, paged optimizers.</p></div></details>
+        <details class="recall"><summary>Why is QLoRA slower per step than LoRA?</summary><div class="answer"><p>Weights must be dequantized from 4-bit to bf16 for every matmul in the forward and backward passes.</p></div></details>
+        <details class="recall"><summary>Roughly how big is a 7B base in 4-bit?</summary><div class="answer"><p>About 3.5 GB plus scales.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 3 -->
+    <section id="when-to-fine-tune" data-track>
+      <h2>Prompting vs RAG vs fine-tuning</h2>
+
+      <h3>Intuition</h3>
+      <p>Fine-tuning changes <strong>behavior</strong> (format, style, a narrow skill, latency and cost by distilling into a smaller model). RAG supplies <strong>knowledge</strong> at query time, especially knowledge that changes or must be cited. Prompting is the cheapest experiment and should come first.</p>
+
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Need</th><th>Best first tool</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>Answers from your docs, which change weekly</td><td>RAG</td><td>Update the index, not the weights. Citations come free.</td></tr>
+          <tr><td>Strict output format or house style, consistently</td><td>Prompting, then fine-tune</td><td>Fine-tuning bakes in behavior and shortens prompts.</td></tr>
+          <tr><td>Cut cost or latency of a working big-model pipeline</td><td>Fine-tune a smaller model (distillation)</td><td>Same behavior at a fraction of the inference cost.</td></tr>
+          <tr><td>New facts the model must "know" without retrieval</td><td>Usually RAG, not fine-tuning</td><td>Fine-tuning is unreliable for injecting facts and can raise hallucination rates.</td></tr>
+          <tr><td>Domain jargon, classification of your labels</td><td>Fine-tune (if prompting plateaus)</td><td>Many labeled examples teach the decision boundary.</td></tr>
+          <tr><td>Align tone and preferences (helpful, safe, concise)</td><td>Preference optimization (DPO and similar)</td><td>Learns from comparisons rather than gold answers.</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <div class="callout key"><p class="mb-0">Order of operations: prompt engineering, then add RAG for knowledge, then fine-tune for behavior or efficiency. Always build the eval set first, so you can tell whether each step helped.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p02-w-1" data-topic="Fine-tuning" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A support bot must answer from a policy manual updated weekly and quote the relevant section. Best approach?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Fine-tune weekly on the manual <span class="q-why">Expensive, slow to update, unreliable at fact recall, and no citations.</span></li>
+          <li data-key="B">RAG over the manual with citations <span class="q-why">Fresh knowledge at query time, with sources to quote.</span></li>
+          <li data-key="C">A longer system prompt with the whole manual and temperature 0 <span class="q-why">This can work if it fits, but it is costly per request and does not scale. RAG is the standard answer.</span></li>
+          <li data-key="D">DPO on manual excerpts <span class="q-why">DPO aligns preferences. It does not inject a changing knowledge base.</span></li>
+        </ul>
+        <div class="q-explain"><p>Changing knowledge plus citations is the textbook RAG case.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>One sentence: when fine-tune, when RAG?</summary><div class="answer"><p>Fine-tune for behavior, format and efficiency. Use RAG for knowledge that changes or needs citations.</p></div></details>
+        <details class="recall"><summary>What should exist before any of these?</summary><div class="answer"><p>An eval set with a metric.</p></div></details>
+        <details class="recall"><summary>Why is fine-tuning a weak way to add facts?</summary><div class="answer"><p>Facts seen a few times are poorly memorized and can increase hallucination. Updates also need retraining.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 4 -->
+    <section id="preference-optimization" data-track>
+      <h2>DPO and preference optimization</h2>
+
+      <h3>Intuition</h3>
+      <p>For many tasks it is easier to say which of two answers is better than to write the perfect answer. Preference data is triples (prompt, chosen, rejected). Classic RLHF first trains a reward model on these pairs, then runs RL (PPO) to maximize that reward. DPO showed the same objective can be optimized directly with a simple classification-style loss on the pairs. There is no reward model and no RL loop.</p>
+
+      <h3>The mechanism</h3>
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 230" role="img" aria-label="RLHF pipeline: SFT, reward model, PPO with policy, reference, reward and value models. DPO: SFT then a direct loss using policy and frozen reference only">
+          <defs><marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker></defs>
+          <text x="20" y="22" class="d-lg">RLHF (PPO)</text>
+          <rect x="20" y="36" width="110" height="40" rx="6" class="d-box"/><text x="75" y="61" text-anchor="middle" class="d-sm">SFT model</text>
+          <line x1="132" y1="56" x2="168" y2="56" class="d-line" marker-end="url(#a2)"/>
+          <rect x="170" y="36" width="160" height="40" rx="6" class="d-c"/><text x="250" y="61" text-anchor="middle" class="d-sm">train reward model</text>
+          <line x1="332" y1="56" x2="368" y2="56" class="d-line" marker-end="url(#a2)"/>
+          <rect x="370" y="36" width="330" height="40" rx="6" class="d-d"/><text x="535" y="61" text-anchor="middle" class="d-sm">PPO: sample, score, update (policy, ref, reward, value)</text>
+          <text x="20" y="124" class="d-lg">DPO</text>
+          <rect x="20" y="138" width="110" height="40" rx="6" class="d-box"/><text x="75" y="163" text-anchor="middle" class="d-sm">SFT model</text>
+          <line x1="132" y1="158" x2="168" y2="158" class="d-line" marker-end="url(#a2)"/>
+          <rect x="170" y="138" width="530" height="40" rx="6" class="d-b"/><text x="435" y="163" text-anchor="middle" class="d-sm">one supervised loss on (prompt, chosen, rejected): policy + FROZEN reference</text>
+          <text x="20" y="214" class="d-sm d-muted">DPO: no separately trained reward model, no sampling during training, no value network.</text>
+        </svg>
+        </div>
+        <figcaption>DPO collapses the reward-model and RL stages into one offline loss. The frozen reference model (usually the SFT model) plays the role that the KL penalty plays in RLHF.</figcaption>
+      </figure>
+
+      <h3>The DPO loss</h3>
+      <div class="formula">
+        <div class="f-title">Direct Preference Optimization (Rafailov et al., 2023)</div>
+        <div class="f-body">L = - log sigmoid( beta * [ (log pi(y_w|x) - log pi_ref(y_w|x))
+                              - (log pi(y_l|x) - log pi_ref(y_l|x)) ] )</div>
+        <dl class="f-defs">
+          <dt>pi</dt><dd>the policy being trained</dd>
+          <dt>pi_ref</dt><dd>frozen reference model (usually the SFT checkpoint)</dd>
+          <dt>y_w, y_l</dt><dd>chosen (winner) and rejected (loser) responses</dd>
+          <dt>beta</dt><dd>strength of staying close to the reference (like the KL coefficient). Typical 0.1.</dd>
+          <dt>log pi(y|x)</dt><dd>sum of token log-probs of the response</dd>
+        </dl>
+      </div>
+      <p>The quantity beta x (log pi - log pi_ref) acts as an <strong>implicit reward</strong>. The loss pushes the chosen response's implicit reward above the rejected one's. The reference keeps the model from drifting arbitrarily far just to separate the pair.</p>
+
+      <h3>Worked example</h3>
+      <div class="worked">
+        <span class="w-title">beta = 0.1. Chosen: policy -12, ref -14. Rejected: policy -15, ref -13 (sequence log-probs)</span>
+        <ol class="steps">
+          <li>Chosen log-ratio: -12 - (-14) = +2. Rejected log-ratio: -15 - (-13) = -2.</li>
+          <li>Margin: 2 - (-2) = 4. Times beta: 0.4.</li>
+          <li>sigmoid(0.4) = 0.5987. Loss = -ln(0.5987) = 0.513.</li>
+          <li>At initialization the policy equals the reference: margin 0, loss = -ln(0.5) = 0.693.</li>
+        </ol>
+        <span class="result">loss 0.513 (down from 0.693 at init)</span>
+      </div>
+
+      <h3>The family</h3>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Method</th><th>Data</th><th>Reward model?</th><th>Reference model?</th><th>Key idea</th></tr></thead>
+        <tbody>
+          <tr><td>RLHF / PPO</td><td>preference pairs (to train the RM), prompts for RL</td><td>yes</td><td>yes (KL penalty)</td><td>RL against a learned reward. Needs policy, reference, reward and value models in memory.</td></tr>
+          <tr><td>DPO</td><td>pairs</td><td>no</td><td>yes, frozen</td><td>Closed-form reparameterization gives a logistic loss on log-ratio margins.</td></tr>
+          <tr><td>KTO</td><td>unpaired "good" / "bad" labels</td><td>no</td><td>yes</td><td>Prospect-theory-inspired loss. Works when you only have thumbs up or down.</td></tr>
+          <tr><td>ORPO</td><td>pairs</td><td>no</td><td><strong>no</strong></td><td>Adds an odds-ratio penalty to the SFT loss, so SFT and alignment happen in one stage.</td></tr>
+          <tr><td>SimPO</td><td>pairs</td><td>no</td><td>no</td><td>Length-normalized average log-prob as the implicit reward, plus a margin.</td></tr>
+          <tr><td>GRPO</td><td>prompts + a reward function (often rule-based or verifiable)</td><td>a reward signal, but no value/critic model</td><td>yes (KL)</td><td>PPO variant (DeepSeekMath). Samples a group of answers per prompt and uses group-normalized rewards as advantages. Popular for reasoning with verifiable rewards.</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>Common traps</h3>
+      <div class="callout trap"><ul class="mb-0">
+        <li>"DPO needs a reward model." No, that is the point of DPO. It still needs a frozen reference model.</li>
+        <li>"DPO is online RL." It is offline: a fixed preference dataset and no sampling during training.</li>
+        <li>"The reference model is updated." It stays frozen.</li>
+        <li>Large beta means staying closer to the reference, small beta allows more drift. People often invert this.</li>
+      </ul></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p02-dpo-1" data-topic="Fine-tuning" data-type="fill" data-answer="reference|ref|reference policy|sft||reward|reward model">
+        <div class="q-stem"><p>DPO uses a frozen <input class="q-input" aria-label="blank 1"> model and needs no separately trained <input class="q-input" aria-label="blank 2"> model.</p></div>
+        <div class="q-explain"><p>Reference (usually the SFT checkpoint), and reward. DPO's loss contains log pi_ref terms, and the reward model is implicit in the log-ratio.</p></div>
+      </div>
+      <div class="quiz" data-qid="p02-dpo-2" data-topic="Fine-tuning" data-type="single" data-answer="D">
+        <div class="q-stem"><p>You only have thumbs up and down on single responses (no pairs). Which method fits best without building pairs?</p></div>
+        <ul class="q-options">
+          <li data-key="A">DPO <span class="q-why">DPO needs chosen and rejected for the same prompt.</span></li>
+          <li data-key="B">ORPO <span class="q-why">ORPO also uses pairs.</span></li>
+          <li data-key="C">Plain SFT on the thumbs-down responses <span class="q-why">That would teach the bad behavior.</span></li>
+          <li data-key="D">KTO <span class="q-why">KTO is designed for unpaired desirable or undesirable labels.</span></li>
+        </ul>
+        <div class="q-explain"><p>KTO works on binary per-example feedback. You could also SFT on only the thumbs-up examples as a baseline.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Write the DPO loss.</summary><div class="answer"><p>-log sigmoid(beta x [(log pi(y_w) - log pi_ref(y_w)) - (log pi(y_l) - log pi_ref(y_l))]).</p></div></details>
+        <details class="recall"><summary>What is the DPO loss value when policy equals reference?</summary><div class="answer"><p>ln 2, about 0.693.</p></div></details>
+        <details class="recall"><summary>Which of DPO, ORPO, KTO, GRPO need no reference model?</summary><div class="answer"><p>ORPO (and SimPO). DPO, KTO and GRPO use one.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 5 -->
+    <section id="sft-data" data-track>
+      <h2>SFT data, loss masking and failure modes</h2>
+
+      <h3>Intuition</h3>
+      <p>Supervised fine-tuning is next-token prediction on example conversations. The model copies what it sees, including mistakes, inconsistencies and formatting quirks. A few thousand clean, diverse, consistent examples usually beat a large noisy set.</p>
+
+      <h3>The mechanism</h3>
+      <ul>
+        <li><strong>Loss masking</strong>: compute loss only on the assistant's response tokens. Prompt and system tokens get label -100 (ignored by PyTorch's cross-entropy). Otherwise the model spends capacity learning to generate user prompts, and the long shared system prompt dominates the gradient.</li>
+        <li><strong>Chat templates</strong>: train with exactly the template the model will see at inference (special tokens, role markers, end-of-turn token). A mismatch causes rambling, missing stop tokens or role confusion. In Hugging Face, <code>tokenizer.apply_chat_template</code> renders the model's own template.</li>
+        <li><strong>EOS</strong>: make sure each training response ends with the end-of-turn token, or the model never learns to stop.</li>
+        <li><strong>Packing</strong>: concatenating short examples into one sequence improves throughput. Use attention masking that prevents cross-example attention if your framework supports it.</li>
+      </ul>
+
+      <h3>Failure modes</h3>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Problem</th><th>Symptom</th><th>Fix</th></tr></thead>
+        <tbody>
+          <tr><td>Catastrophic forgetting</td><td>General skills (math, coding, safety) degrade after narrow tuning</td><td>LoRA or a lower learning rate, fewer epochs, mixing in general data (replay), evaluating on general benchmarks too</td></tr>
+          <tr><td>Overfitting</td><td>Train loss keeps falling while validation loss rises. Outputs parrot training phrases.</td><td>Early stopping, more diverse data, fewer epochs (often 1 to 3), dropout, smaller rank</td></tr>
+          <tr><td>Data leakage</td><td>Great eval scores, poor production</td><td>Deduplicate train vs eval (exact and near-duplicate)</td></tr>
+          <tr><td>Inconsistent labels</td><td>Model hedges or flips styles</td><td>Annotation guidelines, an agreement check, a relabel pass</td></tr>
+          <tr><td>No stopping</td><td>Generates past the answer, invents a new "user:" turn</td><td>Correct template and EOS in the labels</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p02-sft-1" data-topic="Fine-tuning" data-type="single" data-answer="A">
+        <div class="q-stem"><p>During SFT, why set the labels of prompt tokens to -100?</p></div>
+        <ul class="q-options">
+          <li data-key="A">So the loss is computed only on the response, and the model learns to answer instead of learning to reproduce prompts <span class="q-why">Correct: -100 is ignored by cross-entropy.</span></li>
+          <li data-key="B">To shorten the sequence <span class="q-why">The tokens are still in the input. Only the loss ignores them.</span></li>
+          <li data-key="C">To freeze the embedding layer <span class="q-why">Unrelated.</span></li>
+          <li data-key="D">To enable LoRA <span class="q-why">Unrelated.</span></li>
+        </ul>
+        <div class="q-explain"><p>The prompt is still attended to as context. It just contributes no gradient as a target.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is loss masking?</summary><div class="answer"><p>Excluding non-response tokens from the loss by setting their labels to the ignore index.</p></div></details>
+        <details class="recall"><summary>Two ways to reduce catastrophic forgetting?</summary><div class="answer"><p>Mix in general replay data. Use PEFT or a lower learning rate with fewer epochs.</p></div></details>
+        <details class="recall"><summary>Why must the training chat template match inference?</summary><div class="answer"><p>The model learns token patterns, including role markers and stop tokens. A different template at inference is out of distribution.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ interview -->
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: fine-tuning</h2>
+      <p class="muted">Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="13-interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Fine-tuning">
+<details class="recall iq" data-level="basic" data-topic="Fine-tuning"><summary><span class="tag ok">Basic</span> What is fine-tuning?</summary><div class="answer"><p>Continuing training of a pretrained model on task-specific data so it adapts its behavior (format, style, domain), instead of training from scratch.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Fine-tuning"><summary><span class="tag ok">Basic</span> What is LoRA in one sentence?</summary><div class="answer"><p>Freeze the pretrained weights and learn a low-rank update B x A (scaled by alpha/r) added to selected weight matrices, training only about 0.1 to 1% of the parameters.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Fine-tuning"><summary><span class="tag ok">Basic</span> When should you fine-tune vs use RAG vs prompt?</summary><div class="answer"><p>Prompt first. Use RAG for knowledge that changes or needs citations. Fine-tune for consistent behavior or format, domain style, or cheaper and faster distilled models.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Fine-tuning"><summary><span class="tag ok">Basic</span> What is SFT?</summary><div class="answer"><p>Supervised fine-tuning on (prompt, ideal response) pairs with next-token loss, usually computed only on the response tokens.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Fine-tuning"><summary><span class="tag warn">Medium</span> Compute LoRA trainable parameters for r = 16 on q and v (4096 x 4096) over 32 layers.</summary><div class="answer"><p>Per module r(d_in + d_out) = 16 x 8192 = 131,072. Times 2 modules times 32 layers = 8,388,608.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Fine-tuning"><summary><span class="tag warn">Medium</span> What memory does LoRA save and not save?</summary><div class="answer"><p>It saves gradients and optimizer states (and the fp32 master copy) for the frozen weights. It does not remove activation memory, because backprop still passes through the frozen layers.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Fine-tuning"><summary><span class="tag warn">Medium</span> What is QLoRA?</summary><div class="answer"><p>LoRA on top of a frozen base stored in 4-bit NF4, with double quantization and paged optimizers. Adapters train in bf16. It lets 7B to 70B fine-tunes fit on far less GPU memory.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Fine-tuning"><summary><span class="tag warn">Medium</span> Explain DPO and how it differs from RLHF with PPO.</summary><div class="answer"><p>DPO optimizes preferences directly with a logistic loss on the policy&#x27;s log-probability ratios versus a frozen reference for chosen vs rejected responses. No reward model and no RL sampling loop. PPO-RLHF trains a reward model and runs online RL with a KL penalty.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Fine-tuning"><summary><span class="tag warn">Medium</span> What is catastrophic forgetting and how do you mitigate it?</summary><div class="answer"><p>Losing general capabilities after narrow fine-tuning. Mitigate with PEFT or a lower learning rate, fewer epochs, mixing general replay data, and evaluating general benchmarks alongside the task.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Fine-tuning"><summary><span class="tag warn">Medium</span> Why mask prompt tokens in the SFT loss?</summary><div class="answer"><p>So gradients come only from the response tokens. The model learns to answer rather than to reproduce prompts, and long shared system prompts do not dominate the loss.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Fine-tuning"><summary><span class="tag warn">Medium</span> What is the role of alpha in LoRA?</summary><div class="answer"><p>The update is scaled by alpha/r, which keeps the effective update magnitude stable when changing rank. With r = 16 and alpha = 32 the scale is 2.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Fine-tuning"><summary><span class="tag bad">Advanced</span> KTO, ORPO, GRPO: what problem does each address?</summary><div class="answer"><p>KTO learns from unpaired good/bad labels. ORPO folds preference alignment into SFT with an odds-ratio term and no reference model. GRPO is a PPO variant without a critic, using group-normalized rewards over several samples per prompt, popular for verifiable reasoning rewards.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Fine-tuning"><summary><span class="tag bad">Advanced</span> How would you build a dataset for fine-tuning a support model?</summary><div class="answer"><p>Collect real conversations, clean and deduplicate them, remove PII, label or rewrite to the target style, balance intents, include refusals and edge cases, split by customer or time to avoid leakage, and hold out an eval set that mirrors production.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Fine-tuning"><summary><span class="tag bad">Advanced</span> Can fine-tuning reliably inject new facts?</summary><div class="answer"><p>Not reliably. Facts seen few times are poorly memorized and fine-tuning on new knowledge can increase hallucination. Prefer RAG for facts, and fine-tune for behavior and format.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="01-inference-and-memory.html"><span class="dir">Previous</span><span>01 Inference and memory</span></a>
+      <a class="next" href="03-rag-and-retrieval.html"><span class="dir">Next</span><span>03 RAG and retrieval</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

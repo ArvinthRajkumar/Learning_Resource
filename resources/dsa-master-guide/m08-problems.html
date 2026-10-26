@@ -1,0 +1,838 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="P08">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Problems 8: Two Pointers & Sliding Window | DSA Master Guide</title>
+<meta name="description" content="11 practice problems with hints, approach, dry run, tested Python solution and edge cases.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Practice 8</p>
+      <h1>Problems: Two Pointers &amp; Sliding Window</h1>
+      <p class="lede">Practice problems for module 8, ordered from easy to hard. Original or classic textbook problems; none claim to be real company questions.</p>
+      <div class="meta"><span class="tag ok">3 Easy</span><span class="tag warn">7 Medium</span><span class="tag bad">1 Hard</span></div>
+    </div>
+
+    <div class="callout tip"><p class="mb-0">Method for every problem: read the statement, work the sample by hand, then reveal hints one at a time. Write your own solution first, run it on the edge cases, and only then open the approach and solution. Every solution here was executed against its test cases (see <code>solutions/test_dsa.py</code>).</p></div>
+
+    <h2 id="problem-index">Problem index</h2>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="#prob-two_sum_sorted">Pair Sum in a Sorted Array</a></td><td><span class="tag ok">Easy</span></td><td>Two pointers (opposite ends)</td></tr><tr><td><a href="#prob-max_sum_window">Maximum Sum of K Consecutive Elements</a></td><td><span class="tag ok">Easy</span></td><td>Fixed-size sliding window</td></tr><tr><td><a href="#prob-remove_element">Remove Element</a></td><td><span class="tag ok">Easy</span></td><td>Reader / writer pointers</td></tr><tr><td><a href="#prob-max_area">Container With Most Water</a></td><td><span class="tag warn">Medium</span></td><td>Two pointers (greedy shrink)</td></tr><tr><td><a href="#prob-min_subarray_len">Smallest Subarray With Sum &gt;= Target</a></td><td><span class="tag warn">Medium</span></td><td>Variable-size sliding window</td></tr><tr><td><a href="#prob-longest_unique_substring">Longest Substring Without Repeating Characters</a></td><td><span class="tag warn">Medium</span></td><td>Variable sliding window + hash map</td></tr><tr><td><a href="#prob-longest_ones">Longest Run of 1s With K Flips</a></td><td><span class="tag warn">Medium</span></td><td>Variable sliding window</td></tr><tr><td><a href="#prob-check_inclusion">Permutation in String</a></td><td><span class="tag warn">Medium</span></td><td>Fixed window + frequency</td></tr><tr><td><a href="#prob-three_sum_closest">3Sum Closest</a></td><td><span class="tag warn">Medium</span></td><td>Sort + two pointers</td></tr><tr><td><a href="#prob-fruit_baskets">Fruit Into Baskets</a></td><td><span class="tag warn">Medium</span></td><td>Variable window (at most 2 distinct)</td></tr><tr><td><a href="#prob-three_sum">Three Sum</a></td><td><span class="tag bad">Hard</span></td><td>Sort + two pointers</td></tr>
+</tbody>
+</table>
+</div>
+
+    <section id="prob-two_sum_sorted" data-track>
+      <h2>Pair Sum in a Sorted Array</h2>
+      <p><span class="tag ok">Easy</span> <span class="tag">Two pointers (opposite ends)</span> <span class="tag">LC 167</span></p>
+      <p>The list is sorted ascending. Return the indices [i, j] (i &lt; j) of two numbers adding up to target, or [-1, -1].</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #167). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Two pointers (opposite ends) (Two Pointers &amp; Sliding Window)</td></tr><tr><td>Input format</td><td>Sorted list, target.</td></tr><tr><td>Output format</td><td>Two indices.</td></tr><tr><td>Constraints</td><td>len &lt;= 10^5</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>[2,7,11,15], 9</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>[0, 1]</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> 2 + 7 = 9.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Why can you safely discard nums[lo] when the sum is too small?</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Put one pointer at each end. If the sum is too small move the left pointer right (bigger value); if too big move the right pointer left. Each step discards one element for good.</p></div></details>
+      <details class="box"><summary>Step-by-step dry run</summary><div class="d-body">
+<p class="muted small">Call: <code>two_sum_sorted([2, 7, 11, 15], 9)</code>, returns <code>[0, 1]</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>lo (after)</th><th>hi (after)</th><th>s (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>lo, hi = 0, len(nums) - 1</code></td><td><strong><code>0</code></strong></td><td><strong><code>3</code></strong></td><td>-</td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>while lo &lt; hi:</code></td><td><code>0</code></td><td><code>3</code></td><td>-</td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>s = nums[lo] + nums[hi]</code></td><td><code>0</code></td><td><code>3</code></td><td><strong><code>17</code></strong></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>if s == target:</code></td><td><code>0</code></td><td><code>3</code></td><td><code>17</code></td></tr>
+<tr><td class="num">5</td><td class="num">7</td><td><code>if s &lt; target:</code></td><td><code>0</code></td><td><code>3</code></td><td><code>17</code></td></tr>
+<tr><td class="num">6</td><td class="num">10</td><td><code>hi -= 1</code></td><td><code>0</code></td><td><strong><code>2</code></strong></td><td><code>17</code></td></tr>
+<tr><td class="num">7</td><td class="num">3</td><td><code>while lo &lt; hi:</code></td><td><code>0</code></td><td><code>2</code></td><td><code>17</code></td></tr>
+<tr><td class="num">8</td><td class="num">4</td><td><code>s = nums[lo] + nums[hi]</code></td><td><code>0</code></td><td><code>2</code></td><td><strong><code>13</code></strong></td></tr>
+<tr><td class="num">9</td><td class="num">5</td><td><code>if s == target:</code></td><td><code>0</code></td><td><code>2</code></td><td><code>13</code></td></tr>
+<tr><td class="num">10</td><td class="num">7</td><td><code>if s &lt; target:</code></td><td><code>0</code></td><td><code>2</code></td><td><code>13</code></td></tr>
+<tr><td class="num">11</td><td class="num">10</td><td><code>hi -= 1</code></td><td><code>0</code></td><td><strong><code>1</code></strong></td><td><code>13</code></td></tr>
+<tr><td class="num">12</td><td class="num">3</td><td><code>while lo &lt; hi:</code></td><td><code>0</code></td><td><code>1</code></td><td><code>13</code></td></tr>
+<tr><td class="num">13</td><td class="num">4</td><td><code>s = nums[lo] + nums[hi]</code></td><td><code>0</code></td><td><code>1</code></td><td><strong><code>9</code></strong></td></tr>
+<tr><td class="num">14</td><td class="num">5</td><td><code>if s == target:</code></td><td><code>0</code></td><td><code>1</code></td><td><code>9</code></td></tr>
+<tr><td class="num">15</td><td class="num">6</td><td><code>return [lo, hi]</code></td><td><code>0</code></td><td><code>1</code></td><td><code>9</code></td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/two_sum_sorted.py">def two_sum_sorted(nums, target):
+    lo, hi = 0, len(nums) - 1
+    while lo &lt; hi:
+        s = nums[lo] + nums[hi]
+        if s == target:
+            return [lo, hi]
+        if s &lt; target:
+            lo += 1
+        else:
+            hi -= 1
+    return [-1, -1]</code></pre>
+      <p><strong>Complexity:</strong> Time O(n); Space O(1).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>No pair</li><li>Fewer than two elements</li><li>Duplicate values</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>two_sum_sorted([2,7,11,15],9)</code></td><td><code>[0, 1]</code></td><td>pass</td></tr><tr><td><code>two_sum_sorted([1,2,3,4],8)</code></td><td><code>[-1, -1]</code></td><td>pass</td></tr><tr><td><code>two_sum_sorted([3,3],6)</code></td><td><code>[0, 1]</code></td><td>pass</td></tr><tr><td><code>two_sum_sorted([5],5)</code></td><td><code>[-1, -1]</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-max_sum_window" data-track>
+      <h2>Maximum Sum of K Consecutive Elements</h2>
+      <p><span class="tag ok">Easy</span> <span class="tag">Fixed-size sliding window</span></p>
+      <p>Return the maximum sum of any k consecutive elements, or -1 if k &gt; len(nums).</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Fixed-size sliding window (Two Pointers &amp; Sliding Window)</td></tr><tr><td>Input format</td><td>List nums and integer k.</td></tr><tr><td>Output format</td><td>Integer.</td></tr><tr><td>Constraints</td><td>len &lt;= 10^5</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>[2,1,5,1,3,2], k=3</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>9</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> Window [5,1,3] has sum 9.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>window_sum += nums[i] - nums[i - k].</p></div></details>
+      <details class="recall"><summary>Hint 2</summary><div class="answer"><p>Build the first window before sliding.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Brute force re-adds k numbers for every window: O(nk). Slide: add the new element entering on the right, subtract the element leaving on the left.</p></div></details>
+      <details class="box"><summary>Step-by-step dry run</summary><div class="d-body">
+<p class="muted small">Call: <code>max_sum_window([2, 1, 5, 1, 3, 2], 3)</code>, returns <code>9</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>i (after)</th><th>window (after)</th><th>best (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>if k &gt; len(nums):</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">2</td><td class="num">4</td><td><code>window = sum(nums[:k])            # first window</code></td><td>-</td><td><strong><code>8</code></strong></td><td>-</td></tr>
+<tr><td class="num">3</td><td class="num">5</td><td><code>best = window</code></td><td>-</td><td><code>8</code></td><td><strong><code>8</code></strong></td></tr>
+<tr><td class="num">4</td><td class="num">6</td><td><code>for i in range(k, len(nums)):</code></td><td><strong><code>3</code></strong></td><td><code>8</code></td><td><code>8</code></td></tr>
+<tr><td class="num">5</td><td class="num">7</td><td><code>window += nums[i] - nums[i - k]   # slide by one</code></td><td><code>3</code></td><td><strong><code>7</code></strong></td><td><code>8</code></td></tr>
+<tr><td class="num">6</td><td class="num">8</td><td><code>best = max(best, window)</code></td><td><code>3</code></td><td><code>7</code></td><td><code>8</code></td></tr>
+<tr><td class="num">7</td><td class="num">6</td><td><code>for i in range(k, len(nums)):</code></td><td><strong><code>4</code></strong></td><td><code>7</code></td><td><code>8</code></td></tr>
+<tr><td class="num">8</td><td class="num">7</td><td><code>window += nums[i] - nums[i - k]   # slide by one</code></td><td><code>4</code></td><td><strong><code>9</code></strong></td><td><code>8</code></td></tr>
+<tr><td class="num">9</td><td class="num">8</td><td><code>best = max(best, window)</code></td><td><code>4</code></td><td><code>9</code></td><td><strong><code>9</code></strong></td></tr>
+<tr><td class="num">10</td><td class="num">6</td><td><code>for i in range(k, len(nums)):</code></td><td><strong><code>5</code></strong></td><td><code>9</code></td><td><code>9</code></td></tr>
+<tr><td class="num">11</td><td class="num">7</td><td><code>window += nums[i] - nums[i - k]   # slide by one</code></td><td><code>5</code></td><td><strong><code>6</code></strong></td><td><code>9</code></td></tr>
+<tr><td class="num">12</td><td class="num">8</td><td><code>best = max(best, window)</code></td><td><code>5</code></td><td><code>6</code></td><td><code>9</code></td></tr>
+<tr><td class="num">13</td><td class="num">6</td><td><code>for i in range(k, len(nums)):</code></td><td><code>5</code></td><td><code>6</code></td><td><code>9</code></td></tr>
+<tr><td class="num">14</td><td class="num">9</td><td><code>return best</code></td><td><code>5</code></td><td><code>6</code></td><td><code>9</code></td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/max_sum_window.py">def max_sum_window(nums, k):
+    if k &gt; len(nums):
+        return -1
+    window = sum(nums[:k])            # first window
+    best = window
+    for i in range(k, len(nums)):
+        window += nums[i] - nums[i - k]   # slide by one
+        best = max(best, window)
+    return best</code></pre>
+      <p><strong>Complexity:</strong> Time O(n); Space O(1).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>k equals n</li><li>k greater than n</li><li>Negative numbers</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>max_sum_window([2,1,5,1,3,2],3)</code></td><td><code>9</code></td><td>pass</td></tr><tr><td><code>max_sum_window([1,2],3)</code></td><td><code>-1</code></td><td>pass</td></tr><tr><td><code>max_sum_window([-1,-2,-3],2)</code></td><td><code>-3</code></td><td>pass</td></tr><tr><td><code>max_sum_window([4],1)</code></td><td><code>4</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-remove_element" data-track>
+      <h2>Remove Element</h2>
+      <p><span class="tag ok">Easy</span> <span class="tag">Reader / writer pointers</span> <span class="tag">LC 27</span></p>
+      <p>Remove all occurrences of val from the list in place. Return the new length k; the first k items must be the kept values.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #27). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Reader / writer pointers (Two Pointers &amp; Sliding Window)</td></tr><tr><td>Input format</td><td>List and val.</td></tr><tr><td>Output format</td><td>Integer k.</td></tr><tr><td>Constraints</td><td>len &lt;= 100</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>[3,2,2,3], val = 3</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>2</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> Kept values: 2, 2.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Same idea as moving zeroes.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Reader scans every item, writer only stores items that are not val.</p></div></details>
+      <details class="box"><summary>Step-by-step dry run</summary><div class="d-body">
+<p class="muted small">Call: <code>remove_element([3, 2, 2, 3], 3)</code>, returns <code>2</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>x (after)</th><th>w (after)</th><th>nums (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>w = 0</code></td><td>-</td><td><strong><code>0</code></strong></td><td><strong><code>[3, 2, 2, 3]</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>3</code></strong></td><td><code>0</code></td><td><code>[3, 2, 2, 3]</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>if x != val:</code></td><td><code>3</code></td><td><code>0</code></td><td><code>[3, 2, 2, 3]</code></td></tr>
+<tr><td class="num">4</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>2</code></strong></td><td><code>0</code></td><td><code>[3, 2, 2, 3]</code></td></tr>
+<tr><td class="num">5</td><td class="num">4</td><td><code>if x != val:</code></td><td><code>2</code></td><td><code>0</code></td><td><code>[3, 2, 2, 3]</code></td></tr>
+<tr><td class="num">6</td><td class="num">5</td><td><code>nums[w] = x</code></td><td><code>2</code></td><td><code>0</code></td><td><strong><code>[2, 2, 2, 3]</code></strong></td></tr>
+<tr><td class="num">7</td><td class="num">6</td><td><code>w += 1</code></td><td><code>2</code></td><td><strong><code>1</code></strong></td><td><code>[2, 2, 2, 3]</code></td></tr>
+<tr><td class="num">8</td><td class="num">3</td><td><code>for x in nums:</code></td><td><code>2</code></td><td><code>1</code></td><td><code>[2, 2, 2, 3]</code></td></tr>
+<tr><td class="num">9</td><td class="num">4</td><td><code>if x != val:</code></td><td><code>2</code></td><td><code>1</code></td><td><code>[2, 2, 2, 3]</code></td></tr>
+<tr><td class="num">10</td><td class="num">5</td><td><code>nums[w] = x</code></td><td><code>2</code></td><td><code>1</code></td><td><code>[2, 2, 2, 3]</code></td></tr>
+<tr><td class="num">11</td><td class="num">6</td><td><code>w += 1</code></td><td><code>2</code></td><td><strong><code>2</code></strong></td><td><code>[2, 2, 2, 3]</code></td></tr>
+<tr><td class="num">12</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>3</code></strong></td><td><code>2</code></td><td><code>[2, 2, 2, 3]</code></td></tr>
+<tr><td class="num">13</td><td class="num">4</td><td><code>if x != val:</code></td><td><code>3</code></td><td><code>2</code></td><td><code>[2, 2, 2, 3]</code></td></tr>
+<tr><td class="num">14</td><td class="num">3</td><td><code>for x in nums:</code></td><td><code>3</code></td><td><code>2</code></td><td><code>[2, 2, 2, 3]</code></td></tr>
+<tr><td class="num">15</td><td class="num">7</td><td><code>return w</code></td><td><code>3</code></td><td><code>2</code></td><td><code>[2, 2, 2, 3]</code></td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/remove_element.py">def remove_element(nums, val):
+    w = 0
+    for x in nums:
+        if x != val:
+            nums[w] = x
+            w += 1
+    return w</code></pre>
+      <p><strong>Complexity:</strong> Time O(n); Space O(1).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Value absent</li><li>All values equal val</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>remove_element([3,2,2,3],3)</code></td><td><code>2</code></td><td>pass</td></tr><tr><td><code>remove_element([1,2],5)</code></td><td><code>2</code></td><td>pass</td></tr><tr><td><code>remove_element([4,4],4)</code></td><td><code>0</code></td><td>pass</td></tr><tr><td><code>remove_element([],1)</code></td><td><code>0</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-max_area" data-track>
+      <h2>Container With Most Water</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Two pointers (greedy shrink)</span> <span class="tag">LC 11</span> <span class="tag accent">must-do</span></p>
+      <p>Each value is the height of a vertical line at its index. Choose two lines that, with the x-axis, hold the most water.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #11, also on widely shared must-practise lists such as Blind 75). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Two pointers (greedy shrink) (Two Pointers &amp; Sliding Window)</td></tr><tr><td>Input format</td><td>List of heights.</td></tr><tr><td>Output format</td><td>Maximum area.</td></tr><tr><td>Constraints</td><td>2 &lt;= len &lt;= 10^5</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>[1,8,6,2,5,4,8,3,7]</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>49</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> Lines at index 1 (8) and 8 (7): width 7, height 7, area 49.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>The shorter line limits the height.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Start with the widest container. Area = width * min(height). Moving the taller line can only reduce area (width shrinks, min cannot grow), so always move the shorter line inward.</p></div></details>
+      <details class="box"><summary>Step-by-step dry run</summary><div class="d-body">
+<p class="muted small">Call: <code>max_area([1, 8, 6, 2, 5])</code>, returns <code>15</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>lo (after)</th><th>hi (after)</th><th>best (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>lo, hi, best = 0, len(h) - 1, 0</code></td><td><strong><code>0</code></strong></td><td><strong><code>4</code></strong></td><td><strong><code>0</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>while lo &lt; hi:</code></td><td><code>0</code></td><td><code>4</code></td><td><code>0</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>best = max(best, (hi - lo) * min(h[lo], h[hi]))</code></td><td><code>0</code></td><td><code>4</code></td><td><strong><code>4</code></strong></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>if h[lo] &lt; h[hi]:</code></td><td><code>0</code></td><td><code>4</code></td><td><code>4</code></td></tr>
+<tr><td class="num">5</td><td class="num">6</td><td><code>lo += 1</code></td><td><strong><code>1</code></strong></td><td><code>4</code></td><td><code>4</code></td></tr>
+<tr><td class="num">6</td><td class="num">3</td><td><code>while lo &lt; hi:</code></td><td><code>1</code></td><td><code>4</code></td><td><code>4</code></td></tr>
+<tr><td class="num">7</td><td class="num">4</td><td><code>best = max(best, (hi - lo) * min(h[lo], h[hi]))</code></td><td><code>1</code></td><td><code>4</code></td><td><strong><code>15</code></strong></td></tr>
+<tr><td class="num">8</td><td class="num">5</td><td><code>if h[lo] &lt; h[hi]:</code></td><td><code>1</code></td><td><code>4</code></td><td><code>15</code></td></tr>
+<tr><td class="num">9</td><td class="num">8</td><td><code>hi -= 1</code></td><td><code>1</code></td><td><strong><code>3</code></strong></td><td><code>15</code></td></tr>
+<tr><td class="num">10</td><td class="num">3</td><td><code>while lo &lt; hi:</code></td><td><code>1</code></td><td><code>3</code></td><td><code>15</code></td></tr>
+<tr><td class="num">11</td><td class="num">4</td><td><code>best = max(best, (hi - lo) * min(h[lo], h[hi]))</code></td><td><code>1</code></td><td><code>3</code></td><td><code>15</code></td></tr>
+<tr><td class="num">12</td><td class="num">5</td><td><code>if h[lo] &lt; h[hi]:</code></td><td><code>1</code></td><td><code>3</code></td><td><code>15</code></td></tr>
+<tr><td class="num">13</td><td class="num">8</td><td><code>hi -= 1</code></td><td><code>1</code></td><td><strong><code>2</code></strong></td><td><code>15</code></td></tr>
+<tr><td class="num">14</td><td class="num">3</td><td><code>while lo &lt; hi:</code></td><td><code>1</code></td><td><code>2</code></td><td><code>15</code></td></tr>
+<tr><td class="num">15</td><td class="num">4</td><td><code>best = max(best, (hi - lo) * min(h[lo], h[hi]))</code></td><td><code>1</code></td><td><code>2</code></td><td><code>15</code></td></tr>
+<tr><td class="num">16</td><td class="num">5</td><td><code>if h[lo] &lt; h[hi]:</code></td><td><code>1</code></td><td><code>2</code></td><td><code>15</code></td></tr>
+<tr><td class="num">17</td><td class="num">8</td><td><code>hi -= 1</code></td><td><code>1</code></td><td><strong><code>1</code></strong></td><td><code>15</code></td></tr>
+<tr><td class="num">18</td><td class="num">3</td><td><code>while lo &lt; hi:</code></td><td><code>1</code></td><td><code>1</code></td><td><code>15</code></td></tr>
+<tr><td class="num">19</td><td class="num">9</td><td><code>return best</code></td><td><code>1</code></td><td><code>1</code></td><td><code>15</code></td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/max_area.py">def max_area(h):
+    lo, hi, best = 0, len(h) - 1, 0
+    while lo &lt; hi:
+        best = max(best, (hi - lo) * min(h[lo], h[hi]))
+        if h[lo] &lt; h[hi]:
+            lo += 1
+        else:
+            hi -= 1
+    return best</code></pre>
+      <p><strong>Complexity:</strong> Time O(n); Space O(1).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Two lines only</li><li>All equal heights</li><li>Zeros</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>max_area([1,8,6,2,5,4,8,3,7])</code></td><td><code>49</code></td><td>pass</td></tr><tr><td><code>max_area([1,1])</code></td><td><code>1</code></td><td>pass</td></tr><tr><td><code>max_area([4,3,2,1,4])</code></td><td><code>16</code></td><td>pass</td></tr><tr><td><code>max_area([0,0])</code></td><td><code>0</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-min_subarray_len" data-track>
+      <h2>Smallest Subarray With Sum &gt;= Target</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Variable-size sliding window</span> <span class="tag">LC 209</span></p>
+      <p>All numbers are positive. Return the length of the shortest contiguous subarray whose sum is at least target, or 0.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #209). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Variable-size sliding window (Two Pointers &amp; Sliding Window)</td></tr><tr><td>Input format</td><td>target and list nums.</td></tr><tr><td>Output format</td><td>Integer length.</td></tr><tr><td>Constraints</td><td>len &lt;= 10^5</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>target=7, nums=[2,3,1,2,4,3]</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>2</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> The subarray [4,3] has sum 7.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Use a while loop (not an if) for shrinking.</p></div></details>
+      <details class="recall"><summary>Hint 2</summary><div class="answer"><p>Positive numbers are what makes this work.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Expand the right edge adding numbers. While the window sum is &gt;= target, record the length and shrink from the left. Because numbers are positive, shrinking always reduces the sum - this is why the window technique works.</p></div></details>
+      <details class="box"><summary>Step-by-step dry run</summary><div class="d-body">
+<p class="muted small">Call: <code>min_subarray_len(7, [2, 3, 1, 2, 4, 3])</code>, returns <code>2</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>right (after)</th><th>left (after)</th><th>total (after)</th><th>best (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>left = total = 0</code></td><td>-</td><td><strong><code>0</code></strong></td><td><strong><code>0</code></strong></td><td>-</td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>best = float("inf")</code></td><td>-</td><td><code>0</code></td><td><code>0</code></td><td><strong><code>inf</code></strong></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>for right, x in enumerate(nums):</code></td><td><strong><code>0</code></strong></td><td><code>0</code></td><td><code>0</code></td><td><code>inf</code></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>total += x                       # expand</code></td><td><code>0</code></td><td><code>0</code></td><td><strong><code>2</code></strong></td><td><code>inf</code></td></tr>
+<tr><td class="num">5</td><td class="num">6</td><td><code>while total &gt;= target:           # shrink while still valid</code></td><td><code>0</code></td><td><code>0</code></td><td><code>2</code></td><td><code>inf</code></td></tr>
+<tr><td class="num">6</td><td class="num">4</td><td><code>for right, x in enumerate(nums):</code></td><td><strong><code>1</code></strong></td><td><code>0</code></td><td><code>2</code></td><td><code>inf</code></td></tr>
+<tr><td class="num">7</td><td class="num">5</td><td><code>total += x                       # expand</code></td><td><code>1</code></td><td><code>0</code></td><td><strong><code>5</code></strong></td><td><code>inf</code></td></tr>
+<tr><td class="num">8</td><td class="num">6</td><td><code>while total &gt;= target:           # shrink while still valid</code></td><td><code>1</code></td><td><code>0</code></td><td><code>5</code></td><td><code>inf</code></td></tr>
+<tr><td class="num">9</td><td class="num">4</td><td><code>for right, x in enumerate(nums):</code></td><td><strong><code>2</code></strong></td><td><code>0</code></td><td><code>5</code></td><td><code>inf</code></td></tr>
+<tr><td class="num">10</td><td class="num">5</td><td><code>total += x                       # expand</code></td><td><code>2</code></td><td><code>0</code></td><td><strong><code>6</code></strong></td><td><code>inf</code></td></tr>
+<tr><td class="num">11</td><td class="num">6</td><td><code>while total &gt;= target:           # shrink while still valid</code></td><td><code>2</code></td><td><code>0</code></td><td><code>6</code></td><td><code>inf</code></td></tr>
+<tr><td class="num">12</td><td class="num">4</td><td><code>for right, x in enumerate(nums):</code></td><td><strong><code>3</code></strong></td><td><code>0</code></td><td><code>6</code></td><td><code>inf</code></td></tr>
+<tr><td class="num">13</td><td class="num">5</td><td><code>total += x                       # expand</code></td><td><code>3</code></td><td><code>0</code></td><td><strong><code>8</code></strong></td><td><code>inf</code></td></tr>
+<tr><td class="num">14</td><td class="num">6</td><td><code>while total &gt;= target:           # shrink while still valid</code></td><td><code>3</code></td><td><code>0</code></td><td><code>8</code></td><td><code>inf</code></td></tr>
+<tr><td class="num">15</td><td class="num">7</td><td><code>best = min(best, right - left + 1)</code></td><td><code>3</code></td><td><code>0</code></td><td><code>8</code></td><td><strong><code>4</code></strong></td></tr>
+<tr><td class="num">16</td><td class="num">8</td><td><code>total -= nums[left]</code></td><td><code>3</code></td><td><code>0</code></td><td><strong><code>6</code></strong></td><td><code>4</code></td></tr>
+<tr><td class="num">17</td><td class="num">9</td><td><code>left += 1</code></td><td><code>3</code></td><td><strong><code>1</code></strong></td><td><code>6</code></td><td><code>4</code></td></tr>
+<tr><td class="num">18</td><td class="num">6</td><td><code>while total &gt;= target:           # shrink while still valid</code></td><td><code>3</code></td><td><code>1</code></td><td><code>6</code></td><td><code>4</code></td></tr>
+<tr><td class="num">19</td><td class="num">4</td><td><code>for right, x in enumerate(nums):</code></td><td><strong><code>4</code></strong></td><td><code>1</code></td><td><code>6</code></td><td><code>4</code></td></tr>
+<tr><td class="num">20</td><td class="num">5</td><td><code>total += x                       # expand</code></td><td><code>4</code></td><td><code>1</code></td><td><strong><code>10</code></strong></td><td><code>4</code></td></tr>
+<tr><td class="num">21</td><td class="num">6</td><td><code>while total &gt;= target:           # shrink while still valid</code></td><td><code>4</code></td><td><code>1</code></td><td><code>10</code></td><td><code>4</code></td></tr>
+<tr><td class="num">22</td><td class="num">7</td><td><code>best = min(best, right - left + 1)</code></td><td><code>4</code></td><td><code>1</code></td><td><code>10</code></td><td><code>4</code></td></tr>
+<tr><td class="num">23</td><td class="num">8</td><td><code>total -= nums[left]</code></td><td><code>4</code></td><td><code>1</code></td><td><strong><code>7</code></strong></td><td><code>4</code></td></tr>
+<tr><td class="num">24</td><td class="num">9</td><td><code>left += 1</code></td><td><code>4</code></td><td><strong><code>2</code></strong></td><td><code>7</code></td><td><code>4</code></td></tr>
+<tr><td class="num">25</td><td class="num">6</td><td><code>while total &gt;= target:           # shrink while still valid</code></td><td><code>4</code></td><td><code>2</code></td><td><code>7</code></td><td><code>4</code></td></tr>
+<tr><td class="num">26</td><td class="num">7</td><td><code>best = min(best, right - left + 1)</code></td><td><code>4</code></td><td><code>2</code></td><td><code>7</code></td><td><strong><code>3</code></strong></td></tr>
+<tr><td class="num">27</td><td class="num">8</td><td><code>total -= nums[left]</code></td><td><code>4</code></td><td><code>2</code></td><td><strong><code>6</code></strong></td><td><code>3</code></td></tr>
+<tr><td class="num">28</td><td class="num">9</td><td><code>left += 1</code></td><td><code>4</code></td><td><strong><code>3</code></strong></td><td><code>6</code></td><td><code>3</code></td></tr>
+<tr><td class="num">29</td><td class="num">6</td><td><code>while total &gt;= target:           # shrink while still valid</code></td><td><code>4</code></td><td><code>3</code></td><td><code>6</code></td><td><code>3</code></td></tr>
+<tr><td class="num">30</td><td class="num">4</td><td><code>for right, x in enumerate(nums):</code></td><td><strong><code>5</code></strong></td><td><code>3</code></td><td><code>6</code></td><td><code>3</code></td></tr>
+<tr><td class="num">31</td><td class="num">5</td><td><code>total += x                       # expand</code></td><td><code>5</code></td><td><code>3</code></td><td><strong><code>9</code></strong></td><td><code>3</code></td></tr>
+<tr><td class="num">32</td><td class="num">6</td><td><code>while total &gt;= target:           # shrink while still valid</code></td><td><code>5</code></td><td><code>3</code></td><td><code>9</code></td><td><code>3</code></td></tr>
+<tr><td class="num">33</td><td class="num">7</td><td><code>best = min(best, right - left + 1)</code></td><td><code>5</code></td><td><code>3</code></td><td><code>9</code></td><td><code>3</code></td></tr>
+<tr><td class="num">34</td><td class="num">8</td><td><code>total -= nums[left]</code></td><td><code>5</code></td><td><code>3</code></td><td><strong><code>7</code></strong></td><td><code>3</code></td></tr>
+<tr><td class="num">35</td><td class="num">9</td><td><code>left += 1</code></td><td><code>5</code></td><td><strong><code>4</code></strong></td><td><code>7</code></td><td><code>3</code></td></tr>
+<tr><td class="num">36</td><td class="num">6</td><td><code>while total &gt;= target:           # shrink while still valid</code></td><td><code>5</code></td><td><code>4</code></td><td><code>7</code></td><td><code>3</code></td></tr>
+<tr><td class="num">37</td><td class="num">7</td><td><code>best = min(best, right - left + 1)</code></td><td><code>5</code></td><td><code>4</code></td><td><code>7</code></td><td><strong><code>2</code></strong></td></tr>
+<tr><td class="num">38</td><td class="num">8</td><td><code>total -= nums[left]</code></td><td><code>5</code></td><td><code>4</code></td><td><strong><code>3</code></strong></td><td><code>2</code></td></tr>
+<tr><td class="num">39</td><td class="num">9</td><td><code>left += 1</code></td><td><code>5</code></td><td><strong><code>5</code></strong></td><td><code>3</code></td><td><code>2</code></td></tr>
+<tr><td class="num">40</td><td class="num">6</td><td><code>while total &gt;= target:           # shrink while still valid</code></td><td><code>5</code></td><td><code>5</code></td><td><code>3</code></td><td><code>2</code></td></tr>
+<tr><td class="num">41</td><td class="num">4</td><td><code>for right, x in enumerate(nums):</code></td><td><code>5</code></td><td><code>5</code></td><td><code>3</code></td><td><code>2</code></td></tr>
+<tr><td class="num">42</td><td class="num">10</td><td><code>return 0 if best == float("inf") else best</code></td><td><code>5</code></td><td><code>5</code></td><td><code>3</code></td><td><code>2</code></td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/min_subarray_len.py">def min_subarray_len(target, nums):
+    left = total = 0
+    best = float("inf")
+    for right, x in enumerate(nums):
+        total += x                       # expand
+        while total &gt;= target:           # shrink while still valid
+            best = min(best, right - left + 1)
+            total -= nums[left]
+            left += 1
+    return 0 if best == float("inf") else best</code></pre>
+      <p><strong>Complexity:</strong> Time O(n) - each index enters and leaves the window once; Space O(1).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>No valid subarray -&gt; 0</li><li>A single element is enough</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>min_subarray_len(7,[2,3,1,2,4,3])</code></td><td><code>2</code></td><td>pass</td></tr><tr><td><code>min_subarray_len(4,[1,4,4])</code></td><td><code>1</code></td><td>pass</td></tr><tr><td><code>min_subarray_len(11,[1,1,1,1])</code></td><td><code>0</code></td><td>pass</td></tr><tr><td><code>min_subarray_len(1,[1])</code></td><td><code>1</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-longest_unique_substring" data-track>
+      <h2>Longest Substring Without Repeating Characters</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Variable sliding window + hash map</span> <span class="tag">LC 3</span> <span class="tag accent">must-do</span></p>
+      <p>Return the length of the longest substring with all distinct characters.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #3, also on widely shared must-practise lists such as Blind 75). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Variable sliding window + hash map (Two Pointers &amp; Sliding Window)</td></tr><tr><td>Input format</td><td>A string s.</td></tr><tr><td>Output format</td><td>Integer.</td></tr><tr><td>Constraints</td><td>0 &lt;= len(s) &lt;= 5*10^4</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>"abcabcbb"</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>3</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> "abc" is the longest.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Only move left forward (use max).</p></div></details>
+      <details class="recall"><summary>Hint 2</summary><div class="answer"><p>Window length = right - left + 1.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Keep a window [left, right] with no duplicates and a dict of the last index of every character. When s[right] is already inside the window, jump left to just after its previous index.</p></div></details>
+      <details class="box"><summary>Step-by-step dry run</summary><div class="d-body">
+<p class="muted small">Call: <code>longest_unique_substring("abcabcbb")</code>, returns <code>3</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>right (after)</th><th>ch (after)</th><th>left (after)</th><th>best (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>last = {}                    # char -&gt; last index</code></td><td>-</td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>left = best = 0</code></td><td>-</td><td>-</td><td><strong><code>0</code></strong></td><td><strong><code>0</code></strong></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>for right, ch in enumerate(s):</code></td><td><strong><code>0</code></strong></td><td><strong><code>'a'</code></strong></td><td><code>0</code></td><td><code>0</code></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>if ch in last and last[ch] &gt;= left:</code></td><td><code>0</code></td><td><code>'a'</code></td><td><code>0</code></td><td><code>0</code></td></tr>
+<tr><td class="num">5</td><td class="num">7</td><td><code>last[ch] = right</code></td><td><code>0</code></td><td><code>'a'</code></td><td><code>0</code></td><td><code>0</code></td></tr>
+<tr><td class="num">6</td><td class="num">8</td><td><code>best = max(best, right - left + 1)</code></td><td><code>0</code></td><td><code>'a'</code></td><td><code>0</code></td><td><strong><code>1</code></strong></td></tr>
+<tr><td class="num">7</td><td class="num">4</td><td><code>for right, ch in enumerate(s):</code></td><td><strong><code>1</code></strong></td><td><strong><code>'b'</code></strong></td><td><code>0</code></td><td><code>1</code></td></tr>
+<tr><td class="num">8</td><td class="num">5</td><td><code>if ch in last and last[ch] &gt;= left:</code></td><td><code>1</code></td><td><code>'b'</code></td><td><code>0</code></td><td><code>1</code></td></tr>
+<tr><td class="num">9</td><td class="num">7</td><td><code>last[ch] = right</code></td><td><code>1</code></td><td><code>'b'</code></td><td><code>0</code></td><td><code>1</code></td></tr>
+<tr><td class="num">10</td><td class="num">8</td><td><code>best = max(best, right - left + 1)</code></td><td><code>1</code></td><td><code>'b'</code></td><td><code>0</code></td><td><strong><code>2</code></strong></td></tr>
+<tr><td class="num">11</td><td class="num">4</td><td><code>for right, ch in enumerate(s):</code></td><td><strong><code>2</code></strong></td><td><strong><code>'c'</code></strong></td><td><code>0</code></td><td><code>2</code></td></tr>
+<tr><td class="num">12</td><td class="num">5</td><td><code>if ch in last and last[ch] &gt;= left:</code></td><td><code>2</code></td><td><code>'c'</code></td><td><code>0</code></td><td><code>2</code></td></tr>
+<tr><td class="num">13</td><td class="num">7</td><td><code>last[ch] = right</code></td><td><code>2</code></td><td><code>'c'</code></td><td><code>0</code></td><td><code>2</code></td></tr>
+<tr><td class="num">14</td><td class="num">8</td><td><code>best = max(best, right - left + 1)</code></td><td><code>2</code></td><td><code>'c'</code></td><td><code>0</code></td><td><strong><code>3</code></strong></td></tr>
+<tr><td class="num">15</td><td class="num">4</td><td><code>for right, ch in enumerate(s):</code></td><td><strong><code>3</code></strong></td><td><strong><code>'a'</code></strong></td><td><code>0</code></td><td><code>3</code></td></tr>
+<tr><td class="num">16</td><td class="num">5</td><td><code>if ch in last and last[ch] &gt;= left:</code></td><td><code>3</code></td><td><code>'a'</code></td><td><code>0</code></td><td><code>3</code></td></tr>
+<tr><td class="num">17</td><td class="num">6</td><td><code>left = last[ch] + 1  # skip past the previous copy</code></td><td><code>3</code></td><td><code>'a'</code></td><td><strong><code>1</code></strong></td><td><code>3</code></td></tr>
+<tr><td class="num">18</td><td class="num">7</td><td><code>last[ch] = right</code></td><td><code>3</code></td><td><code>'a'</code></td><td><code>1</code></td><td><code>3</code></td></tr>
+<tr><td class="num">19</td><td class="num">8</td><td><code>best = max(best, right - left + 1)</code></td><td><code>3</code></td><td><code>'a'</code></td><td><code>1</code></td><td><code>3</code></td></tr>
+<tr><td class="num">20</td><td class="num">4</td><td><code>for right, ch in enumerate(s):</code></td><td><strong><code>4</code></strong></td><td><strong><code>'b'</code></strong></td><td><code>1</code></td><td><code>3</code></td></tr>
+<tr><td class="num">21</td><td class="num">5</td><td><code>if ch in last and last[ch] &gt;= left:</code></td><td><code>4</code></td><td><code>'b'</code></td><td><code>1</code></td><td><code>3</code></td></tr>
+<tr><td class="num">22</td><td class="num">6</td><td><code>left = last[ch] + 1  # skip past the previous copy</code></td><td><code>4</code></td><td><code>'b'</code></td><td><strong><code>2</code></strong></td><td><code>3</code></td></tr>
+<tr><td class="num">23</td><td class="num">7</td><td><code>last[ch] = right</code></td><td><code>4</code></td><td><code>'b'</code></td><td><code>2</code></td><td><code>3</code></td></tr>
+<tr><td class="num">24</td><td class="num">8</td><td><code>best = max(best, right - left + 1)</code></td><td><code>4</code></td><td><code>'b'</code></td><td><code>2</code></td><td><code>3</code></td></tr>
+<tr><td class="num">25</td><td class="num">4</td><td><code>for right, ch in enumerate(s):</code></td><td><strong><code>5</code></strong></td><td><strong><code>'c'</code></strong></td><td><code>2</code></td><td><code>3</code></td></tr>
+<tr><td class="num">26</td><td class="num">5</td><td><code>if ch in last and last[ch] &gt;= left:</code></td><td><code>5</code></td><td><code>'c'</code></td><td><code>2</code></td><td><code>3</code></td></tr>
+<tr><td class="num">27</td><td class="num">6</td><td><code>left = last[ch] + 1  # skip past the previous copy</code></td><td><code>5</code></td><td><code>'c'</code></td><td><strong><code>3</code></strong></td><td><code>3</code></td></tr>
+<tr><td class="num">28</td><td class="num">7</td><td><code>last[ch] = right</code></td><td><code>5</code></td><td><code>'c'</code></td><td><code>3</code></td><td><code>3</code></td></tr>
+<tr><td class="num">29</td><td class="num">8</td><td><code>best = max(best, right - left + 1)</code></td><td><code>5</code></td><td><code>'c'</code></td><td><code>3</code></td><td><code>3</code></td></tr>
+<tr><td class="num">30</td><td class="num">4</td><td><code>for right, ch in enumerate(s):</code></td><td><strong><code>6</code></strong></td><td><strong><code>'b'</code></strong></td><td><code>3</code></td><td><code>3</code></td></tr>
+<tr><td class="num">31</td><td class="num">5</td><td><code>if ch in last and last[ch] &gt;= left:</code></td><td><code>6</code></td><td><code>'b'</code></td><td><code>3</code></td><td><code>3</code></td></tr>
+<tr><td class="num">32</td><td class="num">6</td><td><code>left = last[ch] + 1  # skip past the previous copy</code></td><td><code>6</code></td><td><code>'b'</code></td><td><strong><code>5</code></strong></td><td><code>3</code></td></tr>
+<tr><td class="num">33</td><td class="num">7</td><td><code>last[ch] = right</code></td><td><code>6</code></td><td><code>'b'</code></td><td><code>5</code></td><td><code>3</code></td></tr>
+<tr><td class="num">34</td><td class="num">8</td><td><code>best = max(best, right - left + 1)</code></td><td><code>6</code></td><td><code>'b'</code></td><td><code>5</code></td><td><code>3</code></td></tr>
+<tr><td class="num">35</td><td class="num">4</td><td><code>for right, ch in enumerate(s):</code></td><td><strong><code>7</code></strong></td><td><code>'b'</code></td><td><code>5</code></td><td><code>3</code></td></tr>
+<tr><td class="num">36</td><td class="num">5</td><td><code>if ch in last and last[ch] &gt;= left:</code></td><td><code>7</code></td><td><code>'b'</code></td><td><code>5</code></td><td><code>3</code></td></tr>
+<tr><td class="num">37</td><td class="num">6</td><td><code>left = last[ch] + 1  # skip past the previous copy</code></td><td><code>7</code></td><td><code>'b'</code></td><td><strong><code>7</code></strong></td><td><code>3</code></td></tr>
+<tr><td class="num">38</td><td class="num">7</td><td><code>last[ch] = right</code></td><td><code>7</code></td><td><code>'b'</code></td><td><code>7</code></td><td><code>3</code></td></tr>
+<tr><td class="num">39</td><td class="num">8</td><td><code>best = max(best, right - left + 1)</code></td><td><code>7</code></td><td><code>'b'</code></td><td><code>7</code></td><td><code>3</code></td></tr>
+<tr><td class="num">40</td><td class="num">4</td><td><code>for right, ch in enumerate(s):</code></td><td><code>7</code></td><td><code>'b'</code></td><td><code>7</code></td><td><code>3</code></td></tr>
+<tr><td class="num">41</td><td class="num">9</td><td><code>return best</code></td><td><code>7</code></td><td><code>'b'</code></td><td><code>7</code></td><td><code>3</code></td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/longest_unique_substring.py">def longest_unique_substring(s):
+    last = {}                    # char -&gt; last index
+    left = best = 0
+    for right, ch in enumerate(s):
+        if ch in last and last[ch] &gt;= left:
+            left = last[ch] + 1  # skip past the previous copy
+        last[ch] = right
+        best = max(best, right - left + 1)
+    return best</code></pre>
+      <p><strong>Complexity:</strong> Time O(n); Space O(min(n, alphabet)).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Empty string</li><li>All same character</li><li>Repeat outside the current window ("abba")</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>longest_unique_substring("abcabcbb")</code></td><td><code>3</code></td><td>pass</td></tr><tr><td><code>longest_unique_substring("bbbbb")</code></td><td><code>1</code></td><td>pass</td></tr><tr><td><code>longest_unique_substring("pwwkew")</code></td><td><code>3</code></td><td>pass</td></tr><tr><td><code>longest_unique_substring("")</code></td><td><code>0</code></td><td>pass</td></tr><tr><td><code>longest_unique_substring("abba")</code></td><td><code>2</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-longest_ones" data-track>
+      <h2>Longest Run of 1s With K Flips</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Variable sliding window</span> <span class="tag">LC 1004</span></p>
+      <p>A list holds 0s and 1s. You may flip at most k zeros to 1. Return the longest run of 1s you can get.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #1004). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Variable sliding window (Two Pointers &amp; Sliding Window)</td></tr><tr><td>Input format</td><td>List and k.</td></tr><tr><td>Output format</td><td>Integer.</td></tr><tr><td>Constraints</td><td>len &lt;= 10^5</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>[1,1,0,0,1,1,1,0,1], k = 2</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>7</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> Flip the two zeros in the middle: positions 0 to 6 all become 1.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Count zeros inside the window.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Keep a window that contains at most k zeros. Expand right; if zeros &gt; k, shrink from the left until it is valid. The best window length is the answer.</p></div></details>
+      <details class="box"><summary>Step-by-step dry run</summary><div class="d-body">
+<p class="muted small">Call: <code>longest_ones([1, 0, 0, 1, 1], 1)</code>, returns <code>3</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>right (after)</th><th>x (after)</th><th>zeros (after)</th><th>left (after)</th><th>best (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>left = zeros = best = 0</code></td><td>-</td><td>-</td><td><strong><code>0</code></strong></td><td><strong><code>0</code></strong></td><td><strong><code>0</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>for right, x in enumerate(nums):</code></td><td><strong><code>0</code></strong></td><td><strong><code>1</code></strong></td><td><code>0</code></td><td><code>0</code></td><td><code>0</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>if x == 0:</code></td><td><code>0</code></td><td><code>1</code></td><td><code>0</code></td><td><code>0</code></td><td><code>0</code></td></tr>
+<tr><td class="num">4</td><td class="num">6</td><td><code>while zeros &gt; k:              # too many zeros: shrink</code></td><td><code>0</code></td><td><code>1</code></td><td><code>0</code></td><td><code>0</code></td><td><code>0</code></td></tr>
+<tr><td class="num">5</td><td class="num">10</td><td><code>best = max(best, right - left + 1)</code></td><td><code>0</code></td><td><code>1</code></td><td><code>0</code></td><td><code>0</code></td><td><strong><code>1</code></strong></td></tr>
+<tr><td class="num">6</td><td class="num">3</td><td><code>for right, x in enumerate(nums):</code></td><td><strong><code>1</code></strong></td><td><strong><code>0</code></strong></td><td><code>0</code></td><td><code>0</code></td><td><code>1</code></td></tr>
+<tr><td class="num">7</td><td class="num">4</td><td><code>if x == 0:</code></td><td><code>1</code></td><td><code>0</code></td><td><code>0</code></td><td><code>0</code></td><td><code>1</code></td></tr>
+<tr><td class="num">8</td><td class="num">5</td><td><code>zeros += 1</code></td><td><code>1</code></td><td><code>0</code></td><td><strong><code>1</code></strong></td><td><code>0</code></td><td><code>1</code></td></tr>
+<tr><td class="num">9</td><td class="num">6</td><td><code>while zeros &gt; k:              # too many zeros: shrink</code></td><td><code>1</code></td><td><code>0</code></td><td><code>1</code></td><td><code>0</code></td><td><code>1</code></td></tr>
+<tr><td class="num">10</td><td class="num">10</td><td><code>best = max(best, right - left + 1)</code></td><td><code>1</code></td><td><code>0</code></td><td><code>1</code></td><td><code>0</code></td><td><strong><code>2</code></strong></td></tr>
+<tr><td class="num">11</td><td class="num">3</td><td><code>for right, x in enumerate(nums):</code></td><td><strong><code>2</code></strong></td><td><code>0</code></td><td><code>1</code></td><td><code>0</code></td><td><code>2</code></td></tr>
+<tr><td class="num">12</td><td class="num">4</td><td><code>if x == 0:</code></td><td><code>2</code></td><td><code>0</code></td><td><code>1</code></td><td><code>0</code></td><td><code>2</code></td></tr>
+<tr><td class="num">13</td><td class="num">5</td><td><code>zeros += 1</code></td><td><code>2</code></td><td><code>0</code></td><td><strong><code>2</code></strong></td><td><code>0</code></td><td><code>2</code></td></tr>
+<tr><td class="num">14</td><td class="num">6</td><td><code>while zeros &gt; k:              # too many zeros: shrink</code></td><td><code>2</code></td><td><code>0</code></td><td><code>2</code></td><td><code>0</code></td><td><code>2</code></td></tr>
+<tr><td class="num">15</td><td class="num">7</td><td><code>if nums[left] == 0:</code></td><td><code>2</code></td><td><code>0</code></td><td><code>2</code></td><td><code>0</code></td><td><code>2</code></td></tr>
+<tr><td class="num">16</td><td class="num">9</td><td><code>left += 1</code></td><td><code>2</code></td><td><code>0</code></td><td><code>2</code></td><td><strong><code>1</code></strong></td><td><code>2</code></td></tr>
+<tr><td class="num">17</td><td class="num">6</td><td><code>while zeros &gt; k:              # too many zeros: shrink</code></td><td><code>2</code></td><td><code>0</code></td><td><code>2</code></td><td><code>1</code></td><td><code>2</code></td></tr>
+<tr><td class="num">18</td><td class="num">7</td><td><code>if nums[left] == 0:</code></td><td><code>2</code></td><td><code>0</code></td><td><code>2</code></td><td><code>1</code></td><td><code>2</code></td></tr>
+<tr><td class="num">19</td><td class="num">8</td><td><code>zeros -= 1</code></td><td><code>2</code></td><td><code>0</code></td><td><strong><code>1</code></strong></td><td><code>1</code></td><td><code>2</code></td></tr>
+<tr><td class="num">20</td><td class="num">9</td><td><code>left += 1</code></td><td><code>2</code></td><td><code>0</code></td><td><code>1</code></td><td><strong><code>2</code></strong></td><td><code>2</code></td></tr>
+<tr><td class="num">21</td><td class="num">6</td><td><code>while zeros &gt; k:              # too many zeros: shrink</code></td><td><code>2</code></td><td><code>0</code></td><td><code>1</code></td><td><code>2</code></td><td><code>2</code></td></tr>
+<tr><td class="num">22</td><td class="num">10</td><td><code>best = max(best, right - left + 1)</code></td><td><code>2</code></td><td><code>0</code></td><td><code>1</code></td><td><code>2</code></td><td><code>2</code></td></tr>
+<tr><td class="num">23</td><td class="num">3</td><td><code>for right, x in enumerate(nums):</code></td><td><strong><code>3</code></strong></td><td><strong><code>1</code></strong></td><td><code>1</code></td><td><code>2</code></td><td><code>2</code></td></tr>
+<tr><td class="num">24</td><td class="num">4</td><td><code>if x == 0:</code></td><td><code>3</code></td><td><code>1</code></td><td><code>1</code></td><td><code>2</code></td><td><code>2</code></td></tr>
+<tr><td class="num">25</td><td class="num">6</td><td><code>while zeros &gt; k:              # too many zeros: shrink</code></td><td><code>3</code></td><td><code>1</code></td><td><code>1</code></td><td><code>2</code></td><td><code>2</code></td></tr>
+<tr><td class="num">26</td><td class="num">10</td><td><code>best = max(best, right - left + 1)</code></td><td><code>3</code></td><td><code>1</code></td><td><code>1</code></td><td><code>2</code></td><td><code>2</code></td></tr>
+<tr><td class="num">27</td><td class="num">3</td><td><code>for right, x in enumerate(nums):</code></td><td><strong><code>4</code></strong></td><td><code>1</code></td><td><code>1</code></td><td><code>2</code></td><td><code>2</code></td></tr>
+<tr><td class="num">28</td><td class="num">4</td><td><code>if x == 0:</code></td><td><code>4</code></td><td><code>1</code></td><td><code>1</code></td><td><code>2</code></td><td><code>2</code></td></tr>
+<tr><td class="num">29</td><td class="num">6</td><td><code>while zeros &gt; k:              # too many zeros: shrink</code></td><td><code>4</code></td><td><code>1</code></td><td><code>1</code></td><td><code>2</code></td><td><code>2</code></td></tr>
+<tr><td class="num">30</td><td class="num">10</td><td><code>best = max(best, right - left + 1)</code></td><td><code>4</code></td><td><code>1</code></td><td><code>1</code></td><td><code>2</code></td><td><strong><code>3</code></strong></td></tr>
+<tr><td class="num">31</td><td class="num">3</td><td><code>for right, x in enumerate(nums):</code></td><td><code>4</code></td><td><code>1</code></td><td><code>1</code></td><td><code>2</code></td><td><code>3</code></td></tr>
+<tr><td class="num">32</td><td class="num">11</td><td><code>return best</code></td><td><code>4</code></td><td><code>1</code></td><td><code>1</code></td><td><code>2</code></td><td><code>3</code></td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/longest_ones.py">def longest_ones(nums, k):
+    left = zeros = best = 0
+    for right, x in enumerate(nums):
+        if x == 0:
+            zeros += 1
+        while zeros &gt; k:              # too many zeros: shrink
+            if nums[left] == 0:
+                zeros -= 1
+            left += 1
+        best = max(best, right - left + 1)
+    return best</code></pre>
+      <p><strong>Complexity:</strong> Time O(n); Space O(1).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>k = 0</li><li>k larger than number of zeros</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>longest_ones([1,1,0,0,1,1,1,0,1],2)</code></td><td><code>7</code></td><td>pass</td></tr><tr><td><code>longest_ones([0,0,0],0)</code></td><td><code>0</code></td><td>pass</td></tr><tr><td><code>longest_ones([0,0],5)</code></td><td><code>2</code></td><td>pass</td></tr><tr><td><code>longest_ones([1,1],0)</code></td><td><code>2</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-check_inclusion" data-track>
+      <h2>Permutation in String</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Fixed window + frequency</span> <span class="tag">LC 567</span></p>
+      <p>Return True if some substring of s2 is a permutation (rearrangement) of s1.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #567). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Fixed window + frequency (Two Pointers &amp; Sliding Window)</td></tr><tr><td>Input format</td><td>Strings s1 and s2.</td></tr><tr><td>Output format</td><td>True or False.</td></tr><tr><td>Constraints</td><td>len &lt;= 10^4</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>s1="ab", s2="eidbaooo"</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>True</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> "ba" is a rearrangement of "ab".</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Window size is fixed.</p></div></details>
+      <details class="recall"><summary>Hint 2</summary><div class="answer"><p>Counter equality compares all letters.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Slide a window of length len(s1) over s2 and compare letter counts with those of s1. Update counts by adding the new letter and removing the old one.</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/check_inclusion.py">from collections import Counter
+
+def check_inclusion(s1, s2):
+    k = len(s1)
+    if k &gt; len(s2):
+        return False
+    need = Counter(s1)
+    window = Counter(s2[:k])
+    if window == need:
+        return True
+    for i in range(k, len(s2)):
+        window[s2[i]] += 1                 # letter enters
+        out = s2[i - k]
+        window[out] -= 1                   # letter leaves
+        if window[out] == 0:
+            del window[out]
+        if window == need:
+            return True
+    return False</code></pre>
+      <p><strong>Complexity:</strong> Time O(n * alphabet); Space O(alphabet).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>s1 longer than s2</li><li>Repeated letters</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>check_inclusion("ab","eidbaooo")</code></td><td><code>True</code></td><td>pass</td></tr><tr><td><code>check_inclusion("ab","eidboaoo")</code></td><td><code>False</code></td><td>pass</td></tr><tr><td><code>check_inclusion("abc","ab")</code></td><td><code>False</code></td><td>pass</td></tr><tr><td><code>check_inclusion("a","a")</code></td><td><code>True</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-three_sum_closest" data-track>
+      <h2>3Sum Closest</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Sort + two pointers</span> <span class="tag">LC 16</span></p>
+      <p>Return the sum of three numbers that is closest to the target.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #16). The guide does not claim any company asked it.</p><p><strong>Why interviewers ask this:</strong> A natural follow-up to 3Sum that tests whether you can adapt the two-pointer idea to "closest" instead of "equal".</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Sort + two pointers (Two Pointers &amp; Sliding Window)</td></tr><tr><td>Input format</td><td>List nums and target.</td></tr><tr><td>Output format</td><td>Integer sum.</td></tr><tr><td>Constraints</td><td>3 &lt;= len &lt;= 500</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>[-1,2,1,-4], target 1</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>2</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> -1 + 2 + 1 = 2.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Track abs(sum - target).</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Sort. For each i run two pointers on the rest; move lo if the sum is too small and hi if too big, remembering the closest sum seen.</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/three_sum_closest.py">def three_sum_closest(nums, target):
+    nums.sort()
+    best = nums[0] + nums[1] + nums[2]
+    for i in range(len(nums) - 2):
+        lo, hi = i + 1, len(nums) - 1
+        while lo &lt; hi:
+            s = nums[i] + nums[lo] + nums[hi]
+            if abs(s - target) &lt; abs(best - target):
+                best = s
+            if s &lt; target:
+                lo += 1
+            elif s &gt; target:
+                hi -= 1
+            else:
+                return s
+    return best</code></pre>
+      <p><strong>Complexity:</strong> Time O(n^2); Space O(1).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>Exact match</li><li>Exactly three numbers</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>three_sum_closest([-1,2,1,-4],1)</code></td><td><code>2</code></td><td>pass</td></tr><tr><td><code>three_sum_closest([0,0,0],1)</code></td><td><code>0</code></td><td>pass</td></tr><tr><td><code>three_sum_closest([1,1,1,0],-100)</code></td><td><code>2</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-fruit_baskets" data-track>
+      <h2>Fruit Into Baskets</h2>
+      <p><span class="tag warn">Medium</span> <span class="tag">Variable window (at most 2 distinct)</span> <span class="tag">LC 904</span></p>
+      <p>Trees in a row produce fruit types. With two baskets (one type each) pick consecutive trees. Return the maximum number of fruits you can collect.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #904). The guide does not claim any company asked it.</p><p><strong>Why interviewers ask this:</strong> A disguised "longest subarray with at most k distinct values" question.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Variable window (at most 2 distinct) (Two Pointers &amp; Sliding Window)</td></tr><tr><td>Input format</td><td>List fruits.</td></tr><tr><td>Output format</td><td>Integer.</td></tr><tr><td>Constraints</td><td>len &lt;= 10^5</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>[1,2,3,2,2]</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>4</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> Take 2,3,2,2 (types 2 and 3).</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Delete a key when its count reaches 0.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Longest subarray with at most two distinct values. Keep counts in a window; when more than two types appear, shrink from the left.</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/fruit_baskets.py">from collections import defaultdict
+
+def fruit_baskets(fruits):
+    count = defaultdict(int)
+    left = best = 0
+    for right, f in enumerate(fruits):
+        count[f] += 1
+        while len(count) &gt; 2:
+            count[fruits[left]] -= 1
+            if count[fruits[left]] == 0:
+                del count[fruits[left]]
+            left += 1
+        best = max(best, right - left + 1)
+    return best</code></pre>
+      <p><strong>Complexity:</strong> Time O(n); Space O(1).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>One type only</li><li>Empty list</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>fruit_baskets([1,2,1])</code></td><td><code>3</code></td><td>pass</td></tr><tr><td><code>fruit_baskets([0,1,2,2])</code></td><td><code>3</code></td><td>pass</td></tr><tr><td><code>fruit_baskets([1,2,3,2,2])</code></td><td><code>4</code></td><td>pass</td></tr><tr><td><code>fruit_baskets([3,3,3,1,2,1,1,2,3,3,4])</code></td><td><code>5</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <section id="prob-three_sum" data-track>
+      <h2>Three Sum</h2>
+      <p><span class="tag bad">Hard</span> <span class="tag">Sort + two pointers</span> <span class="tag">LC 15</span> <span class="tag accent">must-do</span></p>
+      <p>Return all unique triplets that sum to zero. Each triplet in non-decreasing order, and the list of triplets sorted.</p>
+      <div class="callout note"><p>This is a well-known public interview classic (LeetCode-style problem #15, also on widely shared must-practise lists such as Blind 75). The guide does not claim any company asked it.</p></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>DSA concept</td><td>Sort + two pointers (Two Pointers &amp; Sliding Window)</td></tr><tr><td>Input format</td><td>List nums.</td></tr><tr><td>Output format</td><td>List of triplets.</td></tr><tr><td>Constraints</td><td>3 &lt;= len &lt;= 3000</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="two-col">
+        <div><h4>Sample input</h4><pre class="no-enhance"><code>[-1,0,1,2,-1,-4]</code></pre></div>
+        <div><h4>Sample output</h4><pre class="no-enhance"><code>[[-1,-1,2],[-1,0,1]]</code></pre></div>
+      </div>
+      <p><strong>Explanation:</strong> Two unique triplets.</p>
+      <h4>Stuck? Reveal hints one at a time</h4>
+      <details class="recall"><summary>Hint 1</summary><div class="answer"><p>Sorting makes duplicate skipping easy.</p></div></details>
+      <details class="recall"><summary>Hint 2</summary><div class="answer"><p>After finding a triplet, move both pointers and skip equal values.</p></div></details>
+      <details class="recall"><summary>Recommended approach (spoiler)</summary><div class="answer"><p>Sort. Fix the first number a (skipping duplicates). For the rest, run the sorted pair-sum two-pointer search for -a. Skip duplicates after finding a triplet. O(n^2) instead of O(n^3).</p></div></details>
+      <h4>Python solution (try first)</h4>
+      <pre><code class="lang-py" data-embed="solutions/problems/three_sum.py">def three_sum(nums):
+    nums.sort()
+    res = []
+    for i in range(len(nums) - 2):
+        if i &gt; 0 and nums[i] == nums[i - 1]:
+            continue                      # skip duplicate first numbers
+        lo, hi = i + 1, len(nums) - 1
+        while lo &lt; hi:
+            s = nums[i] + nums[lo] + nums[hi]
+            if s &lt; 0:
+                lo += 1
+            elif s &gt; 0:
+                hi -= 1
+            else:
+                res.append([nums[i], nums[lo], nums[hi]])
+                lo += 1
+                hi -= 1
+                while lo &lt; hi and nums[lo] == nums[lo - 1]:
+                    lo += 1
+    return res</code></pre>
+      <p><strong>Complexity:</strong> Time O(n^2); Space O(1) extra (ignoring output and sort).</p>
+      <h4>Edge cases to test</h4>
+      <ul><li>All zeros [0,0,0,0]</li><li>No triplet</li><li>Fewer than 3 numbers</li></ul>
+      <details class="box"><summary>Additional test cases (verified by running the solution)</summary><div class="d-body">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Call</th><th>Expected result</th><th>Verified</th></tr></thead>
+<tbody>
+<tr><td><code>three_sum([-1,0,1,2,-1,-4])</code></td><td><code>[[-1, -1, 2], [-1, 0, 1]]</code></td><td>pass</td></tr><tr><td><code>three_sum([0,0,0,0])</code></td><td><code>[[0, 0, 0]]</code></td><td>pass</td></tr><tr><td><code>three_sum([1,2])</code></td><td><code>[]</code></td><td>pass</td></tr><tr><td><code>three_sum([1,2,-2,-1])</code></td><td><code>[]</code></td><td>pass</td></tr>
+</tbody>
+</table>
+</div>
+</div></details>
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="m08-two-pointers-sliding-window.html"><span class="dir">Previous</span><span>M8 Two Pointers & Sliding Window</span></a>
+      <a class="next" href="m06-sorting.html"><span class="dir">Next</span><span>M6 Sorting Algorithms</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

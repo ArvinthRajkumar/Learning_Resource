@@ -1,0 +1,1089 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="M18">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>M18 Additional Important Topics | DSA Master Guide</title>
+<meta name="description" content="Tries, Union-Find, intervals, matrices, difference arrays, KMP and Fenwick trees. Learn after Modules 1-17.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<link rel="stylesheet" href="viz.css">
+<script src="viz.js" defer></script>
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Module 18</p>
+      <h1>Additional Important Topics</h1>
+      <p class="lede">Tries, Union-Find, intervals, matrices, difference arrays, KMP and Fenwick trees. Learn after Modules 1-17. Topics in this module: Tries (prefix trees); disjoint set union (union-find); intervals and merging; matrix traversal and spiral order; prefix sums, difference arrays and 2d prefix sums; kmp pattern matching; segment trees and fenwick trees (optional advanced).</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">7 topics</span><span class="tag">12 problems</span><span class="tag">126 interview questions</span></div>
+    </div>
+
+    <section id="why-this-module" data-track>
+      <h2>Start from scratch: why this module exists</h2>
+      <p>These topics extend the core toolbox: tries for prefix queries, Union-Find for dynamic connectivity, intervals, matrices, prefix/difference arrays, KMP and Fenwick trees. Each solves a specific class of problems very efficiently.</p>
+      <p>They are labelled Advanced or Important because entry-level rounds use them less often, but knowing them lifts you above the baseline.</p>
+      <p><strong>Who needs it:</strong> Search and autocomplete engineers, network and graph engineers, analytics teams and stronger interview rounds.</p>
+      <p><strong>Before you start:</strong> Modules 1-17, especially hashing, trees, graphs and arrays.</p>
+      <h3>After this module you can</h3>
+      <ul><li>Implement a trie and Union-Find.</li><li>Merge intervals and handle matrix traversals.</li><li>Use difference arrays and 2D prefix sums.</li><li>Explain KMP and Fenwick trees.</li></ul>
+      <p><strong>Common pitfalls:</strong> Learning these before the essentials, forgetting end-of-word flags, forgetting path compression, off-by-one in prefix tables.</p>
+      <p><strong>Typical interview questions here:</strong> Implement trie, number of provinces, merge intervals, spiral matrix, rotate image, range sum queries, strStr with KMP.</p>
+    </section>
+
+    <section id="c18_1" data-track>
+      <h2>Tries (prefix trees)</h2>
+      <p><span class="tag bad">Advanced</span> <span class="tag">Topic 18.1</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>A trie is a tree where each edge is a character; the path from the root spells a prefix. A flag on a node marks the end of a stored word.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Tries answer "does any word start with this prefix?" in O(length of prefix), powering autocomplete and word-search puzzles.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>A dictionary's thumb index: first letter, then second letter, then third - each step narrows the section.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Autocomplete: type 'app' and the phone suggests 'apple', 'application', 'apply'. How can it do that instantly with a dictionary of 100,000 words? A hash set can tell you if 'app' is a word, but cannot list everything that starts with 'app' without scanning every word.</p>
+      <p>Notice the structure of the problem: words that start the same share a beginning. Why store the shared beginning many times? Store it once as a path, and branch only where words differ. That is a trie: every node is a prefix, and each word is a path from the root.</p>
+      <p>Lookup cost depends only on the length of the word, not on how many words are stored, and prefix queries are free: just walk to the prefix node. Listing all words with that prefix means exploring the subtree below it.</p>
+      <p>The cost is memory: many small nodes. Compressed tries (radix trees) merge chains of single-child nodes to cut this down.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="trie"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Insert: for each character go to (or create) the child; at the end mark is_end.</li><li>Search: follow the characters; success only if the final node is marked as a word end.</li><li>Prefix check: just follow the characters; no end flag needed.</li><li>Time is O(L) per operation regardless of the number of words; space is O(total characters).</li><li>Insert words in the visualiser and search for prefixes.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>A trie (say 'try') is a tree for storing words where each edge is one letter. All words sharing a beginning share the same path. To store 'tea', 'ten' and 'to', you go t -&gt; e -&gt; a, t -&gt; e -&gt; n and t -&gt; o; the first two letters of 'tea' and 'ten' are shared.</p>
+      <p>Each node needs: its children (a dictionary from letter to node) and a flag that says 'a word ends here'. Without the flag you could not tell 'app' (a prefix) from 'app' (a stored word).</p>
+      <p>Operations take time proportional to the length of the word (L), not the number of words stored. Insert: walk and create missing nodes, set the flag. Search: walk; success only if every letter exists and the end flag is set. Starts-with: walk; success if every letter exists.</p>
+      <p>When to use: autocomplete, spell checking, longest common prefix of many words, word search on a board with many words, and 'count words with a given prefix'. If you only need exact lookups, a Python set is simpler.</p>
+      <p>Memory can be large (a node per letter). A dictionary per node is compact for sparse alphabets; use a list of 26 for dense lowercase words.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Dictionary-based nodes (dict per node) are flexible and memory efficient for sparse alphabets; arrays of size 26 give faster indexing for lowercase words.</li><li>Each insertion creates at most len(word) nodes. Total nodes &lt;= total characters stored.</li><li>To delete a word, unmark the end flag and optionally prune nodes with no children on the way back up.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Phones and search boxes</td><td>Autocomplete and predictive text.</td></tr><tr><td>Routers</td><td>IP routing tables use trie-like structures for longest-prefix matching.</td></tr><tr><td>Spell checkers and word games</td><td>Fast prefix pruning in board searches like Boggle.</td></tr><tr><td>Interviewers</td><td>Implement-trie and word-search-II problems.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Trie vs hash set</td><td>Set: exact membership only, simpler. Trie: prefix queries and ordered listing.</td></tr><tr><td>Trie vs sorted list + bisect</td><td>A sorted list can also answer prefix queries via binary search on the prefix range, with far less memory.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>node = node.setdefault(ch, {}) walks and creates in one line.</li><li>node['$'] = True marks the end of a word (any key that is not a letter).</li><li>A class with __slots__ can save memory when making millions of nodes.</li><li>Use Python sets for simple membership; use a trie when prefixes matter.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c18_1.py">class Trie:
+    def __init__(self):
+        self.root = {}
+
+    def insert(self, word):
+        node = self.root
+        for ch in word:
+            node = node.setdefault(ch, {})   # create the child if missing
+        node["$"] = True                     # end-of-word marker
+
+    def _find(self, text):
+        node = self.root
+        for ch in text:
+            if ch not in node:
+                return None
+            node = node[ch]
+        return node
+
+    def search(self, word):
+        node = self._find(word)
+        return node is not None and "$" in node
+
+    def starts_with(self, prefix):
+        return self._find(prefix) is not None</code></pre>
+      <h3>Dry run (variable values at every step)</h3>
+      <p>Trace the code by hand on a tiny input and write down every variable after each line.</p>
+      <h3>Time and space complexity</h3>
+      <p>O(L) time per insert/search/prefix; O(total characters) space.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Treating a prefix as a stored word.</li><li>Using a list of 26 slots per node when a dict is simpler and smaller.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>Many words + prefix queries, autocomplete, word search on a board -&gt; trie.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m18-problems.html#prob-trie_class">Implement a Trie</a> <span class="tag">LC 208</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Trie (prefix tree)</td></tr><tr><td><a href="m18-problems.html#prob-word_dictionary">Design Add and Search Words</a> <span class="tag">LC 211</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Trie with wildcard search</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why use a trie for autocomplete?</summary><div class="answer"><p>Words with the same prefix share a path, so prefix queries follow one path regardless of how many words exist.</p></div></details>
+        <details class="recall"><summary>Why an end-of-word flag?</summary><div class="answer"><p>To tell a stored word from a prefix of another word.</p></div></details>
+        <details class="recall"><summary>Why not use a set?</summary><div class="answer"><p>A set cannot list words by prefix without scanning all words.</p></div></details>
+        <details class="recall"><summary>Why can tries use a lot of memory?</summary><div class="answer"><p>Each character may create a node. Compressed tries merge single-child chains.</p></div></details>
+        <details class="recall"><summary>Why use a dict per node?</summary><div class="answer"><p>It stores only existing children, saving memory for sparse alphabets.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c18_1-q1" data-topic="Additional Important Topics" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Time to search a word of length L in a trie?</p></div>
+        <ul class="q-options">
+          <li data-key="A">O(1)</li>
+          <li data-key="B">O(L)</li>
+          <li data-key="C">O(n)</li>
+          <li data-key="D">O(n log n)</li>
+        </ul>
+        <div class="q-explain"><p>One step per character.</p></div>
+      </div>
+      <div class="quiz" data-qid="c18_1-q2" data-topic="Additional Important Topics" data-type="single" data-answer="A">
+        <div class="q-stem"><p>What does the end-of-word flag distinguish?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Words from prefixes</li>
+          <li data-key="B">Letters from digits</li>
+          <li data-key="C">Upper from lower case</li>
+          <li data-key="D">Nothing</li>
+        </ul>
+        <div class="q-explain"><p>"app" can be a prefix of "apple" without being a stored word.</p></div>
+      </div>
+    </section>
+
+    <section id="c18_2" data-track>
+      <h2>Disjoint Set Union (Union-Find)</h2>
+      <p><span class="tag bad">Advanced</span> <span class="tag">Topic 18.2</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>Union-Find tracks which elements belong to the same group. find(x) returns the representative (root) of x's group; union(a, b) merges two groups.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>It answers connectivity questions on dynamically growing graphs in almost O(1) time per operation: cycle detection, Kruskal MST, components, accounts merge.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Friend circles at a party: introducing two people merges their whole circles into one.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Imagine adding friendships one at a time and, at any moment, asking 'are A and B in the same friend circle?'. Recomputing connectivity with BFS after every new friendship is too slow. You need to maintain groups as they merge.</p>
+      <p>Represent each group by a leader. To ask whether A and B are together, ask each for their leader and compare. To merge two groups, make one leader point to the other. The structure is a forest where each node points to its parent and a root points to itself.</p>
+      <p>Naively, chains can grow long, making 'find the leader' slow. Two cheap fixes make it nearly constant: union by size (hang the smaller tree under the bigger) keeps trees shallow, and path compression (point nodes straight at the root while searching) flattens trees for the future.</p>
+      <p>Union-Find answers only connectivity questions, but it answers them extremely fast. It cannot give shortest paths or split groups, which is why graph traversals still exist.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="dsu"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>parent[i] = i initially (every element is its own group).</li><li>find(x): follow parent pointers to the root. Path compression flattens the path while returning.</li><li>union(a, b): ra, rb = find(a), find(b); if different, attach one root under the other (union by size/rank keeps trees shallow).</li><li>With both optimisations each operation is O(alpha(n)) - effectively constant.</li><li>Cycle detection: union returns False when ra == rb (the edge closes a cycle). Number of components = n - successful unions.</li><li>Enter unions like "0-1,2-3,1-3" in the visualiser to see parent[] change.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Union-Find (also called DSU, disjoint set union) keeps track of groups. Each group has a leader (root). find(x) returns the leader of x's group; union(a, b) merges the two groups. Two elements are connected exactly when they have the same leader.</p>
+      <p>Store a parent array: parent[x] = x means x is a leader. find follows parent pointers until it reaches a leader. Path compression makes every visited node point directly closer to the leader, so later finds are faster. Union by size attaches the smaller tree under the bigger tree, keeping trees shallow.</p>
+      <p>With both tricks each operation is almost O(1) (inverse Ackermann). That makes DSU perfect for problems that add connections over time and ask 'are these two connected now?'.</p>
+      <p>Uses: count connected components (start with n groups; each successful union lowers the count), detect a cycle in an undirected graph (an edge whose endpoints already have the same leader closes a cycle), Kruskal's minimum spanning tree, grouping accounts or friends.</p>
+      <p>DSU is for 'merge and ask connectivity'. It cannot easily split groups or find shortest paths; use BFS/DFS or Dijkstra for those.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>With union by rank/size and path compression, the amortised cost per operation is the inverse Ackermann function, below 5 for any realistic input.</li><li>Path halving (parent[x] = parent[parent[x]]) is an iterative way to compress.</li><li>Total components = n minus the number of successful unions.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Image processing</td><td>Connected-component labelling of pixels.</td></tr><tr><td>Network engineers</td><td>Tracking which machines are connected as links are added.</td></tr><tr><td>Kruskal's MST and clustering</td><td>Merging clusters of points.</td></tr><tr><td>Interviewers</td><td>Number of provinces, redundant connection, accounts merge, MST.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>DSU vs BFS/DFS for components</td><td>DFS is simpler for a static graph. DSU is better when edges arrive over time (online) or for Kruskal.</td></tr><tr><td>DSU vs adjacency list</td><td>DSU only stores connectivity, not the edges, so it uses O(n) memory.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>parent = list(range(n)); size = [1] * n.</li><li>Iterative find with path halving: while parent[x] != x: parent[x] = parent[parent[x]]; x = parent[x].</li><li>Return False from union when roots are equal; this signals a cycle.</li><li>Components = number of x where find(x) == x.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c18_2.py">class DSU:
+    def __init__(self, n):
+        self.parent = list(range(n))
+        self.size = [1] * n
+        self.groups = n
+
+    def find(self, x):
+        while self.parent[x] != x:
+            self.parent[x] = self.parent[self.parent[x]]   # path compression
+            x = self.parent[x]
+        return x
+
+    def union(self, a, b):
+        ra, rb = self.find(a), self.find(b)
+        if ra == rb:
+            return False                  # already connected
+        if self.size[ra] &lt; self.size[rb]:
+            ra, rb = rb, ra
+        self.parent[rb] = ra              # attach smaller under larger
+        self.size[ra] += self.size[rb]
+        self.groups -= 1
+        return True</code></pre>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - find by walking up</h4>
+      <p>Correct but chains can become long: O(n) per find.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c18_2_stage1.py">class DSU:
+    def __init__(self, n):
+        self.p = list(range(n))
+    def find(self, x):
+        while self.p[x] != x:
+            x = self.p[x]
+        return x
+    def union(self, a, b):
+        ra, rb = self.find(a), self.find(b)
+        if ra == rb:
+            return False
+        self.p[ra] = rb
+        return True</code></pre>
+      <p class="muted small">Check: <code>(lambda d: [d.union(0, 1), d.union(1, 2), d.union(0, 2)])(DSU(3))</code> returns <code>[True, True, False]</code></p>
+      <h4>Stage 2 - path compression</h4>
+      <p>Point nodes closer to the root while searching, so later finds are almost O(1).</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c18_2_stage2.py">class DSU:
+    def __init__(self, n):
+        self.p = list(range(n))
+    def find(self, x):
+        while self.p[x] != x:
+            self.p[x] = self.p[self.p[x]]
+            x = self.p[x]
+        return x
+    def union(self, a, b):
+        ra, rb = self.find(a), self.find(b)
+        if ra == rb:
+            return False
+        self.p[ra] = rb
+        return True</code></pre>
+      <p class="muted small">Check: <code>(lambda d: [d.union(0, 1), d.union(1, 2), d.union(0, 2)])(DSU(3))</code> returns <code>[True, True, False]</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p>Trace the code by hand on a tiny input and write down every variable after each line.</p>
+      <h3>Time and space complexity</h3>
+      <p>Near O(1) amortised per operation; O(n) space.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Comparing parent[a] == parent[b] instead of roots.</li><li>No compression leading to O(n) chains.</li><li>Forgetting to count components properly.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"Are x and y connected?", "merge groups", "cycle when adding edges", "minimum spanning tree" -&gt; DSU.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m14-problems.html#prob-has_cycle_undirected">Cycle in an Undirected Graph</a></td><td><span class="tag warn">Medium</span></td><td>Union-Find / DFS</td></tr><tr><td><a href="m14-problems.html#prob-count_components">Connected Components</a> <span class="tag">LC 323</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>DFS / Union-Find</td></tr><tr><td><a href="m14-problems.html#prob-number_of_provinces">Number of Provinces</a> <span class="tag">LC 547</span></td><td><span class="tag warn">Medium</span></td><td>Union-Find / DFS</td></tr><tr><td><a href="m14-problems.html#prob-redundant_connection">Redundant Connection</a> <span class="tag">LC 684</span></td><td><span class="tag warn">Medium</span></td><td>Union-Find</td></tr><tr><td><a href="m14-problems.html#prob-mst_weight">Minimum Spanning Tree (Kruskal)</a></td><td><span class="tag bad">Hard</span></td><td>Greedy + Union-Find (Advanced)</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why store a parent array?</summary><div class="answer"><p>A node needs only a pointer to its parent to find its leader.</p></div></details>
+        <details class="recall"><summary>Why path compression?</summary><div class="answer"><p>It flattens trees so future finds are almost O(1).</p></div></details>
+        <details class="recall"><summary>Why union by size?</summary><div class="answer"><p>Attaching the smaller tree under the larger keeps trees shallow.</p></div></details>
+        <details class="recall"><summary>Why compare roots, not parents?</summary><div class="answer"><p>Two nodes in the same group may have different parents but share a root.</p></div></details>
+        <details class="recall"><summary>Why not use BFS to answer connectivity?</summary><div class="answer"><p>It re-explores the graph each time; DSU answers each query in near O(1) after merging.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c18_2-q1" data-topic="Additional Important Topics" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Path compression makes find() faster by...</p></div>
+        <ul class="q-options">
+          <li data-key="A">Sorting nodes</li>
+          <li data-key="B">Pointing nodes directly closer to the root</li>
+          <li data-key="C">Deleting nodes</li>
+          <li data-key="D">Using recursion only</li>
+        </ul>
+        <div class="q-explain"><p>Later finds on the same path are shorter.</p></div>
+      </div>
+      <div class="quiz" data-qid="c18_2-q2" data-topic="Additional Important Topics" data-type="single" data-answer="B">
+        <div class="q-stem"><p>union(a, b) returns False in our code when...</p></div>
+        <ul class="q-options">
+          <li data-key="A">a or b is invalid</li>
+          <li data-key="B">they already share a root</li>
+          <li data-key="C">sizes are equal</li>
+          <li data-key="D">n is zero</li>
+        </ul>
+        <div class="q-explain"><p>Same root means the edge would create a cycle.</p></div>
+      </div>
+    </section>
+
+    <section id="c18_3" data-track>
+      <h2>Intervals and merging</h2>
+      <p><span class="tag warn">Important</span> <span class="tag">Topic 18.3</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>An interval is a pair [start, end]. Merging combines overlapping intervals into larger ones.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Calendars, meeting rooms and ranges all use this, and it needs one sort plus one scan.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Highlighting overlapping time slots in a calendar to see when you are busy.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Calendar apps highlight 'busy' blocks by combining overlapping appointments. The input is a jumble of [start, end] pairs in random order. Checking each pair for overlap would be quadratic. The key move is to sort by start time: after that, any interval that overlaps the current block must come right after it.</p>
+      <p>So one pass suffices: keep the last merged interval; if the next one starts before it ends, extend the end (to the larger end, because the next interval might be shorter and fully inside); otherwise start a new block.</p>
+      <p>Variants reuse the pattern. Insert an interval: three phases (before, overlapping, after). Free time: gaps between merged blocks. Maximum overlap: sort events and sweep. Intersection of two interval lists: two pointers over both sorted lists.</p>
+      <p>The main source of wrong answers is the boundary rule: do intervals that touch overlap? Read the statement and pick &lt; or &lt;= accordingly.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="interval"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Sort by start.</li><li>Keep a result list. For each interval: if it starts &lt;= the end of the last merged interval, they overlap -&gt; set last end = max(last end, this end). Otherwise append it as a new interval.</li><li>Insert an interval into a sorted list: copy those before, merge overlaps, copy those after.</li><li>Check overlap of two intervals: a_start &lt;= b_end and b_start &lt;= a_end.</li><li>Watch the merging process in the visualiser.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Intervals are ranges with a start and end. Questions: merge overlaps, insert a new range, find free time, count the maximum number of overlaps, remove the fewest ranges. The first move is almost always to SORT by start (or by end for selection problems).</p>
+      <p>After sorting by start, two intervals overlap exactly when the next one starts before or at the current end. Merge by setting end = max(end, next_end). Using max matters because the next interval may be completely inside the current one.</p>
+      <p>Insert interval: add all intervals that end before the new one starts, merge all that overlap with it, then add the rest.</p>
+      <p>Counting maximum overlaps: sort the starts and ends separately, or create events (time, +1) and (time, -1), sort them and keep a running count; the maximum count is the answer.</p>
+      <p>Complexity is dominated by sorting: O(n log n), then O(n) for the scan.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Sorting O(n log n) dominates; the scan is O(n). Python sorts lists of lists lexicographically, so sorted(intervals) orders by start then end.</li><li>Interval trees support dynamic insertion and overlap queries in O(log n + k) when intervals change.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Calendar and scheduling apps</td><td>Merging busy times and finding free slots.</td></tr><tr><td>Video and audio editors</td><td>Combining overlapping clips and regions.</td></tr><tr><td>Databases</td><td>Range locks and interval indexes.</td></tr><tr><td>Interviewers</td><td>Merge intervals and its variants are very frequent.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Sort-and-sweep vs interval tree</td><td>Sorting is ideal for a static set; interval trees suit dynamic sets.</td></tr><tr><td>Heap vs sweep for rooms</td><td>Equivalent complexity; heap yields actual room assignments.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>intervals.sort(key=lambda x: x[0]).</li><li>merged[-1][1] = max(merged[-1][1], end).</li><li>events = sorted([(s, 1) for s, e in iv] + [(e, -1) for s, e in iv]).</li><li>Be careful that tuples sort (time, delta) with -1 before +1 at equal times.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c18_3.py">def merge_intervals(intervals):
+    merged = []
+    for start, end in sorted(intervals):
+        if merged and start &lt;= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)   # overlap: extend
+        else:
+            merged.append([start, end])
+    return merged</code></pre>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>merge_intervals([[1, 3], [2, 6], [8, 10]])</code>, returns <code>[[1, 6], [8, 10]]</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>start (after)</th><th>end (after)</th><th>merged (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>merged = []</code></td><td>-</td><td>-</td><td><strong><code>[]</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>for start, end in sorted(intervals):</code></td><td><strong><code>1</code></strong></td><td><strong><code>3</code></strong></td><td><code>[]</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>if merged and start &lt;= merged[-1][1]:</code></td><td><code>1</code></td><td><code>3</code></td><td><code>[]</code></td></tr>
+<tr><td class="num">4</td><td class="num">7</td><td><code>merged.append([start, end])</code></td><td><code>1</code></td><td><code>3</code></td><td><strong><code>[[1, 3]]</code></strong></td></tr>
+<tr><td class="num">5</td><td class="num">3</td><td><code>for start, end in sorted(intervals):</code></td><td><strong><code>2</code></strong></td><td><strong><code>6</code></strong></td><td><code>[[1, 3]]</code></td></tr>
+<tr><td class="num">6</td><td class="num">4</td><td><code>if merged and start &lt;= merged[-1][1]:</code></td><td><code>2</code></td><td><code>6</code></td><td><code>[[1, 3]]</code></td></tr>
+<tr><td class="num">7</td><td class="num">5</td><td><code>merged[-1][1] = max(merged[-1][1], end)   # overlap: extend</code></td><td><code>2</code></td><td><code>6</code></td><td><strong><code>[[1, 6]]</code></strong></td></tr>
+<tr><td class="num">8</td><td class="num">3</td><td><code>for start, end in sorted(intervals):</code></td><td><strong><code>8</code></strong></td><td><strong><code>10</code></strong></td><td><code>[[1, 6]]</code></td></tr>
+<tr><td class="num">9</td><td class="num">4</td><td><code>if merged and start &lt;= merged[-1][1]:</code></td><td><code>8</code></td><td><code>10</code></td><td><code>[[1, 6]]</code></td></tr>
+<tr><td class="num">10</td><td class="num">7</td><td><code>merged.append([start, end])</code></td><td><code>8</code></td><td><code>10</code></td><td><strong><code>[[1, 6], [8, 10]]</code></strong></td></tr>
+<tr><td class="num">11</td><td class="num">3</td><td><code>for start, end in sorted(intervals):</code></td><td><code>8</code></td><td><code>10</code></td><td><code>[[1, 6], [8, 10]]</code></td></tr>
+<tr><td class="num">12</td><td class="num">8</td><td><code>return merged</code></td><td><code>8</code></td><td><code>10</code></td><td><code>[[1, 6], [8, 10]]</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>O(n log n) time (sorting), O(n) space.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Forgetting max() for nested intervals.</li><li>Not sorting first.</li><li>Modifying the input list objects unintentionally.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>Ranges/time slots/"overlapping" -&gt; sort + sweep.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m18-problems.html#prob-merge_intervals">Merge Intervals</a> <span class="tag">LC 56</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Intervals, sorting</td></tr><tr><td><a href="m15-problems.html#prob-max_activities">Activity Selection</a></td><td><span class="tag warn">Medium</span></td><td>Greedy: sort by finish time</td></tr><tr><td><a href="m18-problems.html#prob-insert_interval">Insert Interval</a> <span class="tag">LC 57</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Intervals</td></tr><tr><td><a href="m15-problems.html#prob-min_platforms">Minimum Platforms (Meeting Rooms)</a></td><td><span class="tag bad">Hard</span></td><td>Greedy with sorting / sweep line</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why sort by start before merging?</summary><div class="answer"><p>It puts overlapping intervals next to each other.</p></div></details>
+        <details class="recall"><summary>Why use max(end)?</summary><div class="answer"><p>A later interval can be fully inside the current one.</p></div></details>
+        <details class="recall"><summary>Why does the boundary rule matter?</summary><div class="answer"><p>Whether touching intervals overlap depends on the problem, so choose &lt; or &lt;= carefully.</p></div></details>
+        <details class="recall"><summary>Why is it O(n log n)?</summary><div class="answer"><p>Sorting dominates; the merge pass is linear.</p></div></details>
+        <details class="recall"><summary>Why not compare every pair?</summary><div class="answer"><p>That is O(n^2) and unnecessary after sorting.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c18_3-q1" data-topic="Additional Important Topics" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Merging intervals requires sorting by...</p></div>
+        <ul class="q-options">
+          <li data-key="A">End</li>
+          <li data-key="B">Start</li>
+          <li data-key="C">Length</li>
+          <li data-key="D">Random</li>
+        </ul>
+        <div class="q-explain"><p>After sorting by start, overlaps are adjacent.</p></div>
+      </div>
+      <div class="quiz" data-qid="c18_3-q2" data-topic="Additional Important Topics" data-type="single" data-answer="B">
+        <div class="q-stem"><p>merge [1,4] and [4,5]?</p></div>
+        <ul class="q-options">
+          <li data-key="A">[1,4],[4,5]</li>
+          <li data-key="B">[1,5]</li>
+          <li data-key="C">[4,4]</li>
+          <li data-key="D">Error</li>
+        </ul>
+        <div class="q-explain"><p>Touching intervals share the point 4 and merge.</p></div>
+      </div>
+    </section>
+
+    <section id="c18_4" data-track>
+      <h2>Matrix traversal and spiral order</h2>
+      <p><span class="tag warn">Important</span> <span class="tag">Topic 18.4</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>A matrix is a list of lists. Matrix problems rely on careful index arithmetic: rows, columns, diagonals, boundaries and four-direction moves.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Spiral order, rotation, transpose, diagonal sums and search in a sorted matrix are frequent.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Reading a page: left to right, top to bottom. A spiral is reading while walking inward along the edges.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Tables of numbers (spreadsheets, game boards, images) are naturally two-dimensional. A matrix organises data in rows and columns. The challenge is purely geometric: moving around correctly without leaving the table.</p>
+      <p>Always draw a tiny example (3 x 3) with indices written in each cell. Row index first, then column. Diagonals have r == c (main) and r + c == n - 1 (anti). Boundaries shrink for layered traversals like spiral order.</p>
+      <p>Many 'rotate/flip' tasks are compositions of two simple moves: transpose (swap across the main diagonal) and reverse rows. Rotating 90 degrees clockwise is transpose then reverse each row; counter-clockwise is reverse each row then transpose.</p>
+      <p>Sorted matrices permit staircase search from a corner: at each step one comparison eliminates an entire row or column, giving O(rows + cols) instead of O(rows x cols).</p>
+      <p>Always check how matrices are created. [[0] * c] * r aliases rows; a comprehension creates independent rows.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="matrix"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>matrix[r][c]: r = row, c = column. rows = len(m), cols = len(m[0]).</li><li>Main diagonal: (i, i). Anti-diagonal: (i, n-1-i). Cells on the same diagonal share r - c; the same anti-diagonal share r + c.</li><li>Transpose: swap m[r][c] with m[c][r]. Rotate 90 degrees clockwise: transpose and then reverse every row.</li><li>Spiral: keep four boundaries top/bottom/left/right; walk the top row, the right column, the bottom row, the left column, then shrink the boundaries.</li><li>Row-wise sorted and column-wise sorted matrix search: start at the top-right, go left if too big, down if too small: O(rows + cols).</li><li>Watch the spiral numbering in the visualiser.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>A matrix is a list of lists: matrix[r][c] means row r, column c. rows = len(matrix), cols = len(matrix[0]). Most matrix questions are careful index work. Draw a small 3 x 3 grid with the indices written in each cell before you code.</p>
+      <p>Useful patterns: cells on the main diagonal have r == c; on the anti-diagonal r + c == n - 1. Transpose swaps m[r][c] with m[c][r]. Rotate 90 degrees clockwise = transpose, then reverse each row. Spiral order uses four shrinking boundaries: top, bottom, left, right.</p>
+      <p>Row and column sums, searching in a sorted matrix (start at a corner and move left or down), setting rows/columns to zero (first record which, then change), and checking diagonals (Toeplitz) all fit this pattern.</p>
+      <p>Build a matrix correctly: [[0] * cols for _ in range(rows)]. The shortcut [[0] * cols] * rows repeats ONE row object. Printing a matrix: for row in matrix: print(*row).</p>
+      <p>Complexity is usually O(rows x cols) because you touch every cell once.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>A Python matrix is a list of row lists; each row is separate in memory, so column access (m[r][c] varying r) is less cache friendly than row access. NumPy stores one contiguous block.</li><li>zip(*matrix) unpacks rows as arguments and pairs up their items, producing columns, which is why it transposes.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Game developers</td><td>Boards, tile maps and collision grids.</td></tr><tr><td>Image and ML engineers</td><td>Images and tensors are matrices.</td></tr><tr><td>Spreadsheets and databases</td><td>Tabular processing.</td></tr><tr><td>Interviewers</td><td>Spiral order, rotate image, set matrix zeroes and search a 2D matrix.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>List of lists vs NumPy</td><td>List of lists is fine for interview-size data; NumPy is better for heavy numeric work.</td></tr><tr><td>In-place rotation vs new matrix</td><td>In-place needs layer-by-layer four-way swaps (O(1) space); a new matrix is simpler (O(n^2) space).</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>list(zip(*matrix)) transposes (tuples); [list(r) for r in zip(*matrix)] gives lists.</li><li>Rotate clockwise: [list(r) for r in zip(*matrix[::-1])].</li><li>sum(map(sum, matrix)) adds all elements; max(map(max, matrix)) finds the largest.</li><li>Read a matrix: grid = [list(map(int, input().split())) for _ in range(r)].</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c18_4.py">def transpose(m):
+    return [list(row) for row in zip(*m)]
+
+def rotate_clockwise(m):
+    return [list(row) for row in zip(*m[::-1])]
+
+def search_sorted_matrix(m, target):
+    r, c = 0, len(m[0]) - 1               # start top-right
+    while r &lt; len(m) and c &gt;= 0:
+        if m[r][c] == target:
+            return True
+        if m[r][c] &gt; target:
+            c -= 1                         # too big: move left
+        else:
+            r += 1                         # too small: move down
+    return False</code></pre>
+      <h3>Dry run (variable values at every step)</h3>
+      <p>Trace the code by hand on a tiny input and write down every variable after each line.</p>
+      <h3>Time and space complexity</h3>
+      <p>Transpose/rotate O(rows*cols); sorted-matrix search O(rows + cols).</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Mixing up rows and columns.</li><li>Shallow copies of rows: [[0] * c] * r makes all rows the same list! Use a comprehension.</li><li>Missing single row/column edge cases in spiral.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>2D grid + order of visiting/boundaries -&gt; boundary pointers; sorted rows &amp; columns -&gt; staircase search.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m18-problems.html#prob-diagonal_sum">Diagonal Sum of a Matrix</a> <span class="tag">LC 1572</span></td><td><span class="tag ok">Easy</span></td><td>Matrix indices</td></tr><tr><td><a href="m18-problems.html#prob-is_toeplitz">Toeplitz Matrix</a> <span class="tag">LC 766</span></td><td><span class="tag ok">Easy</span></td><td>Matrix diagonals</td></tr><tr><td><a href="m18-problems.html#prob-spiral_order">Spiral Matrix Traversal</a> <span class="tag">LC 54</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Matrix traversal with boundaries</td></tr><tr><td><a href="m18-problems.html#prob-rotate_matrix">Rotate Matrix 90 Degrees</a> <span class="tag">LC 48</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Matrix manipulation</td></tr><tr><td><a href="m18-problems.html#prob-game_of_life">Game of Life</a> <span class="tag">LC 289</span></td><td><span class="tag warn">Medium</span></td><td>Matrix simulation</td></tr><tr><td><a href="m18-problems.html#prob-set_matrix_zeroes">Set Matrix Zeroes</a> <span class="tag">LC 73</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Matrix, two passes</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why transpose then reverse rows for a clockwise rotation?</summary><div class="answer"><p>Transpose swaps rows and columns; reversing each row then turns it into a clockwise rotation.</p></div></details>
+        <details class="recall"><summary>Why do spiral boundaries shrink?</summary><div class="answer"><p>After each side is walked, that row or column is done.</p></div></details>
+        <details class="recall"><summary>Why does staircase search work on a sorted matrix?</summary><div class="answer"><p>From the top-right corner, each comparison eliminates a whole row or column.</p></div></details>
+        <details class="recall"><summary>Why not use [[0] * c] * r?</summary><div class="answer"><p>It repeats the same row object.</p></div></details>
+        <details class="recall"><summary>Why check boundaries before the last two spiral walks?</summary><div class="answer"><p>A single remaining row or column would otherwise be walked twice.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c18_4-q1" data-topic="Additional Important Topics" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which creates independent rows?</p></div>
+        <ul class="q-options">
+          <li data-key="A">[[0]*3]*3</li>
+          <li data-key="B">[[0]*3 for _ in range(3)]</li>
+          <li data-key="C">[0]*3*3</li>
+          <li data-key="D">list(3)</li>
+        </ul>
+        <div class="q-explain"><p>Multiplying a list of lists copies references to the same row.</p></div>
+      </div>
+      <div class="quiz" data-qid="c18_4-q2" data-topic="Additional Important Topics" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Clockwise rotation equals...</p></div>
+        <ul class="q-options">
+          <li data-key="A">Reverse rows then transpose</li>
+          <li data-key="B">Transpose then reverse each row</li>
+          <li data-key="C">Only transpose</li>
+          <li data-key="D">Sort rows</li>
+        </ul>
+        <div class="q-explain"><p>Transpose and then reverse every row gives a 90-degree clockwise turn.</p></div>
+      </div>
+    </section>
+
+    <section id="c18_5" data-track>
+      <h2>Prefix sums, difference arrays and 2D prefix sums</h2>
+      <p><span class="tag warn">Important</span> <span class="tag">Topic 18.5</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>A prefix sum answers "sum of a range" quickly. A difference array does the opposite: it applies "add v to a range" quickly, then rebuilds the final array with one prefix sum.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Together they turn O(n) per query/update into O(1), essential when there are up to 10^5 queries.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Prefix sum: the odometer. Difference array: marking only where a change starts and where it stops, instead of repainting every metre.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>If many questions ask 'what is the total of this rectangle?' on a fixed table, recomputing each rectangle costs the rectangle's area every time. Precompute totals of every rectangle anchored at the top-left corner. Any rectangle then equals a big one minus two strips plus the corner subtracted twice: four lookups, constant time. This is inclusion-exclusion, the same idea you use with Venn diagrams.</p>
+      <p>The reverse situation: many 'add v to everything in this range' updates and only one final question. Applying each update to every cell is slow. Instead record only where each update begins and ends: +v at l and -v just after r. A running total sweeping left to right reconstructs the final array. Updates become O(1).</p>
+      <p>Prefix sums and difference arrays are inverses: one integrates, one differentiates. Knowing both lets you flip between 'values' and 'changes' whichever makes the question easy.</p>
+      <p>With remainders as the keys, the same idea counts subarrays whose sum is divisible by k: two prefixes with equal remainder cancel out to a multiple of k.</p>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Prefix: P[i+1] = P[i] + nums[i]. Range sum l..r = P[r+1] - P[l].</li><li>Difference: diff[l] += v and diff[r+1] -= v for each update; prefix-sum diff to get the result array.</li><li>2D prefix: P[r+1][c+1] = grid[r][c] + P[r][c+1] + P[r+1][c] - P[r][c]. Rectangle sum = P[r2+1][c2+1] - P[r1][c2+1] - P[r2+1][c1] + P[r1][c1].</li><li>Prefix sums combined with a hash map count subarrays with a given sum even with negative numbers.</li><li>Monotonic stacks and queues (Module 10) are the other key "advanced array" tools; see sliding window maximum.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Prefix sums answer 'sum of a range' in O(1) after one O(n) pass. The 2D version does the same for rectangles: P[r][c] holds the sum of the rectangle from the top-left corner to (r-1, c-1). The sum of any rectangle is four lookups: the big corner, minus the strip above, minus the strip on the left, plus the overlap that was subtracted twice.</p>
+      <p>A difference array is the reverse tool. If you must add v to every element from l to r many times, do not touch every element. Record diff[l] += v and diff[r + 1] -= v. At the end a running sum over diff gives the final array. It turns O(n) updates into O(1).</p>
+      <p>Together: use prefix sums when the data is fixed and the questions are many; use difference arrays when the questions are updates and you only need the final result. If updates and queries are mixed, you need a Fenwick tree or segment tree.</p>
+      <p>Prefix sums + dictionary also count subarrays with a given sum, and prefix remainders solve 'subarray sum divisible by k'.</p>
+      <p>Careful with indices: use a prefix array of length n + 1 with prefix[0] = 0 so the formula prefix[r+1] - prefix[l] works for l = 0.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>A 2D prefix table has size (R+1) x (C+1); build in O(RC); each query O(1).</li><li>Difference array of length n + 1 lets updates at r + 1 = n be written without a bounds check.</li><li>Both rely on associativity and invertibility of addition; for min/max you need other structures.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Analytics dashboards</td><td>Instant range totals over large tables.</td></tr><tr><td>Graphics</td><td>Summed-area tables compute box filters and integral images in constant time per pixel.</td></tr><tr><td>Event systems</td><td>Offline range updates such as booking seats in ranges.</td></tr><tr><td>Interviewers</td><td>Range sum queries, car pooling, corporate flight bookings.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Prefix vs Fenwick vs segment tree</td><td>Prefix: static data. Fenwick/segment: updates interleaved with queries.</td></tr><tr><td>Difference array vs lazy segment tree</td><td>Difference array: offline updates then one read. Lazy tree: online queries between updates.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>from itertools import accumulate; prefix = [0, *accumulate(nums)].</li><li>for l, r, v in updates: diff[l] += v; diff[r + 1] -= v (size n + 1).</li><li>running = 0; for d in diff[:n]: running += d; result.append(running).</li><li>2D prefix needs (rows + 1) x (cols + 1) table.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c18_5.py">def build_2d_prefix(grid):
+    rows, cols = len(grid), len(grid[0])
+    P = [[0] * (cols + 1) for _ in range(rows + 1)]
+    for r in range(rows):
+        for c in range(cols):
+            P[r + 1][c + 1] = grid[r][c] + P[r][c + 1] + P[r + 1][c] - P[r][c]
+    return P
+
+def rect_sum(P, r1, c1, r2, c2):
+    return P[r2 + 1][c2 + 1] - P[r1][c2 + 1] - P[r2 + 1][c1] + P[r1][c1]</code></pre>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Dry run of the related problem "Range Sum Queries": Call: <code>range_sum_queries([2, 4, 1, 3], [[0, 1], [1, 3]])</code>, returns <code>[6, 8]</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>x (after)</th><th>prefix (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>prefix = [0]</code></td><td>-</td><td><strong><code>[0]</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>2</code></strong></td><td><code>[0]</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>prefix.append(prefix[-1] + x)</code></td><td><code>2</code></td><td><strong><code>[0, 2]</code></strong></td></tr>
+<tr><td class="num">4</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>4</code></strong></td><td><code>[0, 2]</code></td></tr>
+<tr><td class="num">5</td><td class="num">4</td><td><code>prefix.append(prefix[-1] + x)</code></td><td><code>4</code></td><td><strong><code>[0, 2, 6]</code></strong></td></tr>
+<tr><td class="num">6</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>1</code></strong></td><td><code>[0, 2, 6]</code></td></tr>
+<tr><td class="num">7</td><td class="num">4</td><td><code>prefix.append(prefix[-1] + x)</code></td><td><code>1</code></td><td><strong><code>[0, 2, 6, 7]</code></strong></td></tr>
+<tr><td class="num">8</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>3</code></strong></td><td><code>[0, 2, 6, 7]</code></td></tr>
+<tr><td class="num">9</td><td class="num">4</td><td><code>prefix.append(prefix[-1] + x)</code></td><td><code>3</code></td><td><strong><code>[0, 2, 6, 7, 10]</code></strong></td></tr>
+<tr><td class="num">10</td><td class="num">3</td><td><code>for x in nums:</code></td><td><code>3</code></td><td><code>[0, 2, 6, 7, 10]</code></td></tr>
+<tr><td class="num">11</td><td class="num">5</td><td><code>return [prefix[r + 1] - prefix[l] for l, r in queries]</code></td><td><code>3</code></td><td><code>[0, 2, 6, 7, 10]</code></td></tr>
+<tr><td class="num">12</td><td class="num">5</td><td><code>return [prefix[r + 1] - prefix[l] for l, r in queries]</code></td><td><code>3</code></td><td><code>[0, 2, 6, 7, 10]</code></td></tr>
+<tr><td class="num">13</td><td class="num">5</td><td><code>return [prefix[r + 1] - prefix[l] for l, r in queries]</code></td><td><code>3</code></td><td><code>[0, 2, 6, 7, 10]</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>Build O(rows*cols); each query O(1).</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Off-by-one on the +1 offsets.</li><li>Forgetting to add back the overlap in inclusion-exclusion.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>Many range queries/updates offline -&gt; prefix or difference arrays.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m03-problems.html#prob-range_sum_queries">Range Sum Queries</a></td><td><span class="tag ok">Easy</span></td><td>Prefix sums</td></tr><tr><td><a href="m18-problems.html#prob-difference_array">Range Updates with a Difference Array</a></td><td><span class="tag warn">Medium</span></td><td>Prefix sums / difference array</td></tr><tr><td><a href="m03-problems.html#prob-equilibrium_index">Equilibrium Index</a></td><td><span class="tag warn">Medium</span></td><td>Prefix sums</td></tr><tr><td><a href="m03-problems.html#prob-subarrays_div_k">Subarray Sums Divisible by K</a> <span class="tag">LC 974</span></td><td><span class="tag warn">Medium</span></td><td>Prefix sums + remainders</td></tr><tr><td><a href="m18-problems.html#prob-range_sum_2d">2D Range Sum Queries</a></td><td><span class="tag warn">Medium</span></td><td>2D prefix sums</td></tr><tr><td><a href="m07-problems.html#prob-subarray_sum_k">Subarrays with Sum K</a> <span class="tag">LC 560</span></td><td><span class="tag bad">Hard</span></td><td>Prefix sum + hash map</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why does the 2D formula add back P[r1][c1]?</summary><div class="answer"><p>Subtracting the top strip and left strip removes the overlapping corner twice.</p></div></details>
+        <details class="recall"><summary>Why a difference array for range updates?</summary><div class="answer"><p>It records only the endpoints, making each update O(1).</p></div></details>
+        <details class="recall"><summary>Why a prefix sum of the difference array?</summary><div class="answer"><p>It adds each change to every later cell until the matching negative change cancels it.</p></div></details>
+        <details class="recall"><summary>Why use remainders for 'divisible by k' subarrays?</summary><div class="answer"><p>Equal prefix remainders mean the sum between them is a multiple of k.</p></div></details>
+        <details class="recall"><summary>Why not use these when values change between queries?</summary><div class="answer"><p>Updates would force a rebuild; use Fenwick or segment trees.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c18_5-q1" data-topic="Additional Important Topics" data-type="single" data-answer="A">
+        <div class="q-stem"><p>Difference array update for adding v on [l, r]?</p></div>
+        <ul class="q-options">
+          <li data-key="A">diff[l] += v; diff[r+1] -= v</li>
+          <li data-key="B">diff[l..r] += v</li>
+          <li data-key="C">diff[r] += v</li>
+          <li data-key="D">diff[l] = v</li>
+        </ul>
+        <div class="q-explain"><p>Only the boundaries change; a prefix sum later spreads v across the range.</p></div>
+      </div>
+      <div class="quiz" data-qid="c18_5-q2" data-topic="Additional Important Topics" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Prefix array of [3, 1, 2] (with leading 0)?</p></div>
+        <ul class="q-options">
+          <li data-key="A">[3,4,6]</li>
+          <li data-key="B">[0,3,4,6]</li>
+          <li data-key="C">[3,1,2]</li>
+          <li data-key="D">[0,3,1,2]</li>
+        </ul>
+        <div class="q-explain"><p>P = [0, 3, 3+1, 3+1+2].</p></div>
+      </div>
+    </section>
+
+    <section id="c18_6" data-track>
+      <h2>KMP pattern matching</h2>
+      <p><span class="tag bad">Advanced</span> <span class="tag">Topic 18.6</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>KMP (Knuth-Morris-Pratt) finds a pattern in a text in O(n + m) by precomputing, for each prefix of the pattern, the length of the longest proper prefix that is also a suffix (the LPS table).</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>It avoids re-comparing characters after a mismatch, which naive search does, giving a worst-case guarantee.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>When you misread a word halfway through, you do not restart from the beginning of the sentence - you reuse what you already matched.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Searching 'ababc' inside 'ababababc' by comparing at each start position wastes effort: after matching 'abab' and failing on the next letter, naive search restarts at the second letter of the text and re-reads letters it has already seen. The failure itself taught us something: we know the last four text letters were 'abab'.</p>
+      <p>That knowledge should let us continue matching from where we are, but at a position inside the pattern consistent with what we saw. The pattern's own structure answers where: the longest part of the matched prefix that is also a suffix of what we matched ('ab' in 'abab'). We resume with two letters already matched.</p>
+      <p>That quantity, for every prefix of the pattern, is the LPS table. It depends only on the pattern, so it is built once in O(m). Using it, the text pointer never moves backwards, and the overall time is O(n + m).</p>
+      <p>Building the table uses the same trick on the pattern against itself: it is like KMP searching the pattern inside itself, falling back via earlier table entries when letters mismatch.</p>
+      <p>KMP is a rare algorithm whose cleverness is in the preprocessing: spend O(m) to organise knowledge about the pattern so the search never repeats work.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="kmp"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>LPS for "ababaca" = [0,0,1,2,3,0,1]. For "abab": [0,0,1,2].</li><li>Build: k tracks the length of the current match. For each i, while k &gt; 0 and pat[i] != pat[k]: k = lps[k-1]. If pat[i] == pat[k]: k++. lps[i] = k.</li><li>Search: walk through the text; on a mismatch fall back with k = lps[k-1] instead of restarting; when k == m a match ends at i.</li><li>The text pointer never moves backwards, so total work is O(n + m).</li><li>Enter a pattern in the visualiser to build the LPS table step by step.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>KMP solves 'find a pattern in a text' without ever moving backwards in the text. It uses the pattern's own structure: after a partial match fails, part of what you already matched may still be a valid start of a new match, so you do not start over.</p>
+      <p>LPS table: lps[i] is the length of the longest proper prefix of pattern[0..i] that is also a suffix of it. For 'ababaca' it is [0, 0, 1, 2, 3, 0, 1]. 'Proper' means not the whole string. This table tells you how far back to jump in the pattern after a mismatch.</p>
+      <p>Building the table: use a variable k for the current matched prefix length. For each position i, while k &gt; 0 and the letters differ, set k = lps[k - 1] (fall back). If the letters match, k += 1. Store lps[i] = k.</p>
+      <p>Searching uses the same idea: walk through the text; on mismatch fall back with the table; when k reaches the pattern length you found a match, then set k = lps[k - 1] to continue (this allows overlapping matches).</p>
+      <p>In practice Python's 'pat in text' is fast and enough. Learn KMP for interviews, for questions about the longest prefix that is also a suffix, repeated-substring checks and string periodicity.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>lps[i] = k means pattern[0:k] equals pattern[i-k+1:i+1]. A string of length m is periodic with period m - lps[m-1] if that divides m.</li><li>Total fallback steps in the build are bounded by total increments of k, hence linear amortised time.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Text editors and grep-like tools</td><td>Fast substring search in large files.</td></tr><tr><td>Intrusion detection and antivirus</td><td>Scanning streams for signatures.</td></tr><tr><td>Bioinformatics</td><td>Finding motifs in DNA.</td></tr><tr><td>Interviewers</td><td>Implement strStr, repeated substring pattern, shortest palindrome via LPS.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>KMP vs Z-algorithm</td><td>Both linear; Z computes, for each position, the longest match with the string's prefix. Z is sometimes easier to explain.</td></tr><tr><td>KMP vs Rabin-Karp</td><td>KMP: deterministic guaranteed O(n + m). Rabin-Karp: simple, good for multiple patterns, probabilistic.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>text.find(pat) and re.finditer handle everyday needs.</li><li>lps = [0] * len(pat); k = 0; for i in range(1, len(pat)): ...</li><li>A string has period p if its lps[-1] makes len(s) - lps[-1] divide len(s).</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c18_6.py">def build_lps(pat):
+    lps = [0] * len(pat)
+    k = 0
+    for i in range(1, len(pat)):
+        while k &gt; 0 and pat[i] != pat[k]:
+            k = lps[k - 1]               # fall back
+        if pat[i] == pat[k]:
+            k += 1
+        lps[i] = k
+    return lps</code></pre>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>build_lps("ababaca")</code>, returns <code>[0, 0, 1, 2, 3, 0, 1]</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>i (after)</th><th>k (after)</th><th>lps (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>lps = [0] * len(pat)</code></td><td>-</td><td>-</td><td><strong><code>[0, 0, 0, 0, 0, 0, 0]</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>k = 0</code></td><td>-</td><td><strong><code>0</code></strong></td><td><code>[0, 0, 0, 0, 0, 0, 0]</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>for i in range(1, len(pat)):</code></td><td><strong><code>1</code></strong></td><td><code>0</code></td><td><code>[0, 0, 0, 0, 0, 0, 0]</code></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>while k &gt; 0 and pat[i] != pat[k]:</code></td><td><code>1</code></td><td><code>0</code></td><td><code>[0, 0, 0, 0, 0, 0, 0]</code></td></tr>
+<tr><td class="num">5</td><td class="num">7</td><td><code>if pat[i] == pat[k]:</code></td><td><code>1</code></td><td><code>0</code></td><td><code>[0, 0, 0, 0, 0, 0, 0]</code></td></tr>
+<tr><td class="num">6</td><td class="num">9</td><td><code>lps[i] = k</code></td><td><code>1</code></td><td><code>0</code></td><td><code>[0, 0, 0, 0, 0, 0, 0]</code></td></tr>
+<tr><td class="num">7</td><td class="num">4</td><td><code>for i in range(1, len(pat)):</code></td><td><strong><code>2</code></strong></td><td><code>0</code></td><td><code>[0, 0, 0, 0, 0, 0, 0]</code></td></tr>
+<tr><td class="num">8</td><td class="num">5</td><td><code>while k &gt; 0 and pat[i] != pat[k]:</code></td><td><code>2</code></td><td><code>0</code></td><td><code>[0, 0, 0, 0, 0, 0, 0]</code></td></tr>
+<tr><td class="num">9</td><td class="num">7</td><td><code>if pat[i] == pat[k]:</code></td><td><code>2</code></td><td><code>0</code></td><td><code>[0, 0, 0, 0, 0, 0, 0]</code></td></tr>
+<tr><td class="num">10</td><td class="num">8</td><td><code>k += 1</code></td><td><code>2</code></td><td><strong><code>1</code></strong></td><td><code>[0, 0, 0, 0, 0, 0, 0]</code></td></tr>
+<tr><td class="num">11</td><td class="num">9</td><td><code>lps[i] = k</code></td><td><code>2</code></td><td><code>1</code></td><td><strong><code>[0, 0, 1, 0, 0, 0, 0]</code></strong></td></tr>
+<tr><td class="num">12</td><td class="num">4</td><td><code>for i in range(1, len(pat)):</code></td><td><strong><code>3</code></strong></td><td><code>1</code></td><td><code>[0, 0, 1, 0, 0, 0, 0]</code></td></tr>
+<tr><td class="num">13</td><td class="num">5</td><td><code>while k &gt; 0 and pat[i] != pat[k]:</code></td><td><code>3</code></td><td><code>1</code></td><td><code>[0, 0, 1, 0, 0, 0, 0]</code></td></tr>
+<tr><td class="num">14</td><td class="num">7</td><td><code>if pat[i] == pat[k]:</code></td><td><code>3</code></td><td><code>1</code></td><td><code>[0, 0, 1, 0, 0, 0, 0]</code></td></tr>
+<tr><td class="num">15</td><td class="num">8</td><td><code>k += 1</code></td><td><code>3</code></td><td><strong><code>2</code></strong></td><td><code>[0, 0, 1, 0, 0, 0, 0]</code></td></tr>
+<tr><td class="num">16</td><td class="num">9</td><td><code>lps[i] = k</code></td><td><code>3</code></td><td><code>2</code></td><td><strong><code>[0, 0, 1, 2, 0, 0, 0]</code></strong></td></tr>
+<tr><td class="num">17</td><td class="num">4</td><td><code>for i in range(1, len(pat)):</code></td><td><strong><code>4</code></strong></td><td><code>2</code></td><td><code>[0, 0, 1, 2, 0, 0, 0]</code></td></tr>
+<tr><td class="num">18</td><td class="num">5</td><td><code>while k &gt; 0 and pat[i] != pat[k]:</code></td><td><code>4</code></td><td><code>2</code></td><td><code>[0, 0, 1, 2, 0, 0, 0]</code></td></tr>
+<tr><td class="num">19</td><td class="num">7</td><td><code>if pat[i] == pat[k]:</code></td><td><code>4</code></td><td><code>2</code></td><td><code>[0, 0, 1, 2, 0, 0, 0]</code></td></tr>
+<tr><td class="num">20</td><td class="num">8</td><td><code>k += 1</code></td><td><code>4</code></td><td><strong><code>3</code></strong></td><td><code>[0, 0, 1, 2, 0, 0, 0]</code></td></tr>
+<tr><td class="num">21</td><td class="num">9</td><td><code>lps[i] = k</code></td><td><code>4</code></td><td><code>3</code></td><td><strong><code>[0, 0, 1, 2, 3, 0, 0]</code></strong></td></tr>
+<tr><td class="num">22</td><td class="num">4</td><td><code>for i in range(1, len(pat)):</code></td><td><strong><code>5</code></strong></td><td><code>3</code></td><td><code>[0, 0, 1, 2, 3, 0, 0]</code></td></tr>
+<tr><td class="num">23</td><td class="num">5</td><td><code>while k &gt; 0 and pat[i] != pat[k]:</code></td><td><code>5</code></td><td><code>3</code></td><td><code>[0, 0, 1, 2, 3, 0, 0]</code></td></tr>
+<tr><td class="num">24</td><td class="num">6</td><td><code>k = lps[k - 1]               # fall back</code></td><td><code>5</code></td><td><strong><code>1</code></strong></td><td><code>[0, 0, 1, 2, 3, 0, 0]</code></td></tr>
+<tr><td class="num">25</td><td class="num">5</td><td><code>while k &gt; 0 and pat[i] != pat[k]:</code></td><td><code>5</code></td><td><code>1</code></td><td><code>[0, 0, 1, 2, 3, 0, 0]</code></td></tr>
+<tr><td class="num">26</td><td class="num">6</td><td><code>k = lps[k - 1]               # fall back</code></td><td><code>5</code></td><td><strong><code>0</code></strong></td><td><code>[0, 0, 1, 2, 3, 0, 0]</code></td></tr>
+<tr><td class="num">27</td><td class="num">5</td><td><code>while k &gt; 0 and pat[i] != pat[k]:</code></td><td><code>5</code></td><td><code>0</code></td><td><code>[0, 0, 1, 2, 3, 0, 0]</code></td></tr>
+<tr><td class="num">28</td><td class="num">7</td><td><code>if pat[i] == pat[k]:</code></td><td><code>5</code></td><td><code>0</code></td><td><code>[0, 0, 1, 2, 3, 0, 0]</code></td></tr>
+<tr><td class="num">29</td><td class="num">9</td><td><code>lps[i] = k</code></td><td><code>5</code></td><td><code>0</code></td><td><code>[0, 0, 1, 2, 3, 0, 0]</code></td></tr>
+<tr><td class="num">30</td><td class="num">4</td><td><code>for i in range(1, len(pat)):</code></td><td><strong><code>6</code></strong></td><td><code>0</code></td><td><code>[0, 0, 1, 2, 3, 0, 0]</code></td></tr>
+<tr><td class="num">31</td><td class="num">5</td><td><code>while k &gt; 0 and pat[i] != pat[k]:</code></td><td><code>6</code></td><td><code>0</code></td><td><code>[0, 0, 1, 2, 3, 0, 0]</code></td></tr>
+<tr><td class="num">32</td><td class="num">7</td><td><code>if pat[i] == pat[k]:</code></td><td><code>6</code></td><td><code>0</code></td><td><code>[0, 0, 1, 2, 3, 0, 0]</code></td></tr>
+<tr><td class="num">33</td><td class="num">8</td><td><code>k += 1</code></td><td><code>6</code></td><td><strong><code>1</code></strong></td><td><code>[0, 0, 1, 2, 3, 0, 0]</code></td></tr>
+<tr><td class="num">34</td><td class="num">9</td><td><code>lps[i] = k</code></td><td><code>6</code></td><td><code>1</code></td><td><strong><code>[0, 0, 1, 2, 3, 0, 1]</code></strong></td></tr>
+<tr><td class="num">35</td><td class="num">4</td><td><code>for i in range(1, len(pat)):</code></td><td><code>6</code></td><td><code>1</code></td><td><code>[0, 0, 1, 2, 3, 0, 1]</code></td></tr>
+<tr><td class="num">36</td><td class="num">10</td><td><code>return lps</code></td><td><code>6</code></td><td><code>1</code></td><td><code>[0, 0, 1, 2, 3, 0, 1]</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>LPS O(m); search O(n + m); extra space O(m).</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Not falling back inside a while loop (using if).</li><li>Using the table without understanding it - re-derive on paper.</li><li>Empty pattern edge case.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>Repeated pattern search, "longest prefix which is also suffix", periodic strings -&gt; KMP/LPS.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m04-problems.html#prob-find_all">Find All Pattern Occurrences</a></td><td><span class="tag warn">Medium</span></td><td>String matching (naive and KMP)</td></tr><tr><td><a href="m04-problems.html#prob-is_rotation">String Rotation Check</a></td><td><span class="tag warn">Medium</span></td><td>Strings, clever trick</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why precompute the LPS table?</summary><div class="answer"><p>It tells how far the pattern can safely fall back after a mismatch, avoiding re-reading text.</p></div></details>
+        <details class="recall"><summary>Why a while loop for fallback?</summary><div class="answer"><p>You may need to fall back several times before a mismatch resolves.</p></div></details>
+        <details class="recall"><summary>Why use KMP rather than naive search?</summary><div class="answer"><p>It guarantees O(n + m) even on adversarial input.</p></div></details>
+        <details class="recall"><summary>Why set k = lps[k-1] after a full match?</summary><div class="answer"><p>It lets overlapping matches be found.</p></div></details>
+        <details class="recall"><summary>Why not always implement KMP?</summary><div class="answer"><p>Python's built-in search is faster and simpler for everyday use.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c18_6-q1" data-topic="Additional Important Topics" data-type="single" data-answer="B">
+        <div class="q-stem"><p>LPS of "aabaa" ends with?</p></div>
+        <ul class="q-options">
+          <li data-key="A">1</li>
+          <li data-key="B">2</li>
+          <li data-key="C">3</li>
+          <li data-key="D">0</li>
+        </ul>
+        <div class="q-explain"><p>The prefix "aa" equals the suffix "aa".</p></div>
+      </div>
+      <div class="quiz" data-qid="c18_6-q2" data-topic="Additional Important Topics" data-type="single" data-answer="B">
+        <div class="q-stem"><p>KMP total time?</p></div>
+        <ul class="q-options">
+          <li data-key="A">O(n*m)</li>
+          <li data-key="B">O(n + m)</li>
+          <li data-key="C">O(n^2)</li>
+          <li data-key="D">O(m^2)</li>
+        </ul>
+        <div class="q-explain"><p>The text pointer never moves backwards.</p></div>
+      </div>
+    </section>
+
+    <section id="c18_7" data-track>
+      <h2>Segment trees and Fenwick trees (optional advanced)</h2>
+      <p><span class="tag bad">Advanced</span> <span class="tag">Topic 18.7</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>A Fenwick tree (Binary Indexed Tree) and a segment tree support "update one element" and "query a range sum/min/max" both in O(log n).</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Prefix sums are fast to query but slow to update. When updates and queries are interleaved, these trees give O(log n) for both.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>A company with regional totals: when one store's sales change you update only its regions' totals, and any combined total is the sum of a few regional totals.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Consider a game leaderboard where scores change constantly and players ask 'what is the total score of ranks 100 to 5000?'. A prefix sum answers range sums in O(1) but one score change forces rebuilding up to n entries. A plain array has fast updates but slow range sums. We need both to be cheap.</p>
+      <p>The idea: store sums of blocks of different sizes so that any prefix is made of a few blocks, and any single change touches only a few blocks. A Fenwick tree chooses block sizes as powers of two using the binary representation of the index: each cell covers a block whose length is the lowest set bit of its index.</p>
+      <p>To get a prefix sum, add the block ending at i, then jump to the block ending just before it (remove the lowest set bit), and repeat: at most log n blocks. To update, add the delta to the block containing the position, then to the next larger block that also contains it (add the lowest set bit): again at most log n blocks.</p>
+      <p>A segment tree stores the answer for whole ranges in a binary tree. It supports more operations (min, max, gcd, range assignment with lazy propagation) at the cost of more code.</p>
+      <p>These structures are advanced for entry-level rounds; learn them after the essentials, mainly to recognise the situation: many updates AND many range queries.</p>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Fenwick tree: tree[i] stores the sum of a range ending at i whose length is the lowest set bit of i (i &amp; -i).</li><li>Update index i by delta: while i &lt;= n: tree[i] += delta; i += i &amp; -i.</li><li>Prefix sum up to i: while i &gt; 0: total += tree[i]; i -= i &amp; -i. Range sum l..r = prefix(r) - prefix(l-1).</li><li>A segment tree stores aggregates for ranges in a binary tree; it also supports range min/max and lazy range updates (more code).</li><li>These are rarely required in entry-level rounds; learn them after everything else is solid.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Sometimes you need two things on the same array: change one value AND ask for a range sum. A plain prefix array answers sums instantly but changing one value breaks everything after it (O(n) to rebuild). A Fenwick tree (binary indexed tree) and a segment tree answer both in O(log n).</p>
+      <p>Fenwick tree idea: cell i stores the sum of a block that ends at i and whose length is the lowest set bit of i (i &amp; -i). To get a prefix sum, add cells while removing the lowest set bit from i. To update, add the change to cells while adding the lowest set bit to i. Both take at most about log n steps. The array is 1-indexed.</p>
+      <p>Segment tree idea: a binary tree where each node stores the answer (sum, min or max) of a range, the root covers everything and the leaves cover single elements. Queries combine a few nodes; updates fix the nodes on one path from leaf to root. It is more flexible (min/max, range updates with lazy propagation) but longer to write.</p>
+      <p>In entry-level coding rounds these are rare. Learn them only after arrays, hashing, trees, graphs and DP feel comfortable. If you meet a problem with many updates and many range queries on up to 10^5 elements, that is the clue.</p>
+      <p>Alternatives for simpler cases: sqrt decomposition (blocks of size sqrt n) is easy to code, and offline tricks (sort the queries) sometimes avoid trees completely.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Fenwick is 1-indexed. i &amp; -i gives the lowest set bit. Memory O(n), update and query O(log n); build O(n log n) or O(n) with a linear construction.</li><li>Segment tree is often stored in an array of size 4n with node i's children at 2i and 2i + 1. Queries combine O(log n) nodes.</li><li>Lazy propagation postpones range updates by marking nodes and pushing updates down only when needed.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Gaming and ranking systems</td><td>Dynamic leaderboards and rank queries.</td></tr><tr><td>Financial systems</td><td>Running totals with corrections to individual entries.</td></tr><tr><td>Competitive programmers</td><td>Fenwick/segment trees are everyday tools for range queries with updates.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Fenwick vs segment tree</td><td>Fenwick: shorter, faster for sums. Segment tree: supports min/max/other merges and range updates.</td></tr><tr><td>sqrt decomposition</td><td>Simpler idea (blocks of size sqrt n) with O(sqrt n) per operation; useful when coding time is short.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>i &amp; -i gives the lowest set bit.</li><li>Use a 1-indexed tree list of size n + 1.</li><li>Build a Fenwick tree in O(n log n) by updating each element, or O(n) with a linear build.</li><li>bisect and sorted lists cover many 'ordered statistics' needs more simply.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c18_7.py">class Fenwick:
+    def __init__(self, n):
+        self.n = n
+        self.tree = [0] * (n + 1)         # 1-indexed
+
+    def update(self, i, delta):           # add delta to position i (1-indexed)
+        while i &lt;= self.n:
+            self.tree[i] += delta
+            i += i &amp; -i
+
+    def prefix(self, i):                  # sum of positions 1..i
+        total = 0
+        while i &gt; 0:
+            total += self.tree[i]
+            i -= i &amp; -i
+        return total
+
+    def range_sum(self, l, r):
+        return self.prefix(r) - self.prefix(l - 1)</code></pre>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Dry run of the related problem "Range Sum Queries": Call: <code>range_sum_queries([2, 4, 1, 3], [[0, 1], [1, 3]])</code>, returns <code>[6, 8]</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>x (after)</th><th>prefix (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>prefix = [0]</code></td><td>-</td><td><strong><code>[0]</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>2</code></strong></td><td><code>[0]</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>prefix.append(prefix[-1] + x)</code></td><td><code>2</code></td><td><strong><code>[0, 2]</code></strong></td></tr>
+<tr><td class="num">4</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>4</code></strong></td><td><code>[0, 2]</code></td></tr>
+<tr><td class="num">5</td><td class="num">4</td><td><code>prefix.append(prefix[-1] + x)</code></td><td><code>4</code></td><td><strong><code>[0, 2, 6]</code></strong></td></tr>
+<tr><td class="num">6</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>1</code></strong></td><td><code>[0, 2, 6]</code></td></tr>
+<tr><td class="num">7</td><td class="num">4</td><td><code>prefix.append(prefix[-1] + x)</code></td><td><code>1</code></td><td><strong><code>[0, 2, 6, 7]</code></strong></td></tr>
+<tr><td class="num">8</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>3</code></strong></td><td><code>[0, 2, 6, 7]</code></td></tr>
+<tr><td class="num">9</td><td class="num">4</td><td><code>prefix.append(prefix[-1] + x)</code></td><td><code>3</code></td><td><strong><code>[0, 2, 6, 7, 10]</code></strong></td></tr>
+<tr><td class="num">10</td><td class="num">3</td><td><code>for x in nums:</code></td><td><code>3</code></td><td><code>[0, 2, 6, 7, 10]</code></td></tr>
+<tr><td class="num">11</td><td class="num">5</td><td><code>return [prefix[r + 1] - prefix[l] for l, r in queries]</code></td><td><code>3</code></td><td><code>[0, 2, 6, 7, 10]</code></td></tr>
+<tr><td class="num">12</td><td class="num">5</td><td><code>return [prefix[r + 1] - prefix[l] for l, r in queries]</code></td><td><code>3</code></td><td><code>[0, 2, 6, 7, 10]</code></td></tr>
+<tr><td class="num">13</td><td class="num">5</td><td><code>return [prefix[r + 1] - prefix[l] for l, r in queries]</code></td><td><code>3</code></td><td><code>[0, 2, 6, 7, 10]</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>Update and query O(log n); space O(n).</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Using index 0 (Fenwick is 1-indexed).</li><li>Forgetting that update adds a delta, not a new value.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>Point updates + range queries mixed together, n and q up to 10^5.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m03-problems.html#prob-range_sum_queries">Range Sum Queries</a></td><td><span class="tag ok">Easy</span></td><td>Prefix sums</td></tr><tr><td><a href="m18-problems.html#prob-range_sum_2d">2D Range Sum Queries</a></td><td><span class="tag warn">Medium</span></td><td>2D prefix sums</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why do we need Fenwick or segment trees?</summary><div class="answer"><p>They give O(log n) point updates AND range queries, unlike plain arrays or prefix sums.</p></div></details>
+        <details class="recall"><summary>Why does Fenwick use the lowest set bit?</summary><div class="answer"><p>It defines the block each cell covers and the next cell to visit in updates and queries.</p></div></details>
+        <details class="recall"><summary>Why is the Fenwick array 1-indexed?</summary><div class="answer"><p>Index 0 has no set bit, so the bit tricks would not work.</p></div></details>
+        <details class="recall"><summary>Why choose a segment tree over Fenwick?</summary><div class="answer"><p>It supports min, max and range updates with lazy propagation.</p></div></details>
+        <details class="recall"><summary>Why learn them last?</summary><div class="answer"><p>They are rarely needed in entry-level rounds; the other topics matter more.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c18_7-q1" data-topic="Additional Important Topics" data-type="single" data-answer="A">
+        <div class="q-stem"><p>Which operation returns the lowest set bit of i?</p></div>
+        <ul class="q-options">
+          <li data-key="A">i &amp; -i</li>
+          <li data-key="B">i | -i</li>
+          <li data-key="C">i ^ i</li>
+          <li data-key="D">i &gt;&gt; 1</li>
+        </ul>
+        <div class="q-explain"><p>i &amp; -i isolates the lowest set bit; Fenwick jumps use it.</p></div>
+      </div>
+      <div class="quiz" data-qid="c18_7-q2" data-topic="Additional Important Topics" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Fenwick update/query complexity?</p></div>
+        <ul class="q-options">
+          <li data-key="A">O(1)</li>
+          <li data-key="B">O(log n)</li>
+          <li data-key="C">O(n)</li>
+          <li data-key="D">O(n log n)</li>
+        </ul>
+        <div class="q-explain"><p>The index loses or gains its lowest set bit each step.</p></div>
+      </div>
+    </section>
+
+    <h2 id="practice-problems">Practice problems for this module</h2>
+
+    <p>12 problems with hints, approach, dry run and tested solutions on the <a href="m18-problems.html">problem set for this module</a>.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m18-problems.html#prob-diagonal_sum">Diagonal Sum of a Matrix</a> <span class="tag">LC 1572</span></td><td><span class="tag ok">Easy</span></td><td>Matrix indices</td></tr><tr><td><a href="m18-problems.html#prob-is_toeplitz">Toeplitz Matrix</a> <span class="tag">LC 766</span></td><td><span class="tag ok">Easy</span></td><td>Matrix diagonals</td></tr><tr><td><a href="m18-problems.html#prob-merge_intervals">Merge Intervals</a> <span class="tag">LC 56</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Intervals, sorting</td></tr><tr><td><a href="m18-problems.html#prob-spiral_order">Spiral Matrix Traversal</a> <span class="tag">LC 54</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Matrix traversal with boundaries</td></tr><tr><td><a href="m18-problems.html#prob-rotate_matrix">Rotate Matrix 90 Degrees</a> <span class="tag">LC 48</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Matrix manipulation</td></tr><tr><td><a href="m18-problems.html#prob-trie_class">Implement a Trie</a> <span class="tag">LC 208</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Trie (prefix tree)</td></tr><tr><td><a href="m18-problems.html#prob-difference_array">Range Updates with a Difference Array</a></td><td><span class="tag warn">Medium</span></td><td>Prefix sums / difference array</td></tr><tr><td><a href="m18-problems.html#prob-range_sum_2d">2D Range Sum Queries</a></td><td><span class="tag warn">Medium</span></td><td>2D prefix sums</td></tr><tr><td><a href="m18-problems.html#prob-set_matrix_zeroes">Set Matrix Zeroes</a> <span class="tag">LC 73</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Matrix, two passes</td></tr><tr><td><a href="m18-problems.html#prob-word_dictionary">Design Add and Search Words</a> <span class="tag">LC 211</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Trie with wildcard search</td></tr><tr><td><a href="m18-problems.html#prob-insert_interval">Insert Interval</a> <span class="tag">LC 57</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Intervals</td></tr><tr><td><a href="m18-problems.html#prob-game_of_life">Game of Life</a> <span class="tag">LC 289</span></td><td><span class="tag warn">Medium</span></td><td>Matrix simulation</td></tr>
+</tbody>
+</table>
+</div>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Additional Important Topics</h2>
+      <p class="muted">126 questions: try to answer aloud in under a minute, then reveal. All questions from every module are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Additional Important Topics">
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is a trie and what is it used for?</summary><div class="answer"><p>A prefix tree storing strings letter by letter. Used for autocomplete, prefix search, spell checkers and word games.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Time complexity of trie operations?</summary><div class="answer"><p>O(L) per insert, search or prefix check, where L is the word length.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why do we need an end-of-word flag?</summary><div class="answer"><p>To distinguish stored words from mere prefixes of other words.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Trie vs hash set of words?</summary><div class="answer"><p>A set gives O(L) exact search but cannot do prefix queries efficiently. A trie supports prefix queries and ordered traversal.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How would you find all words with a given prefix?</summary><div class="answer"><p>Walk to the prefix node and DFS below it collecting words where the end flag is set.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why is trie lookup independent of the number of words?</summary><div class="answer"><p>It follows one edge per character of the query, so the cost is O(L).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is Union-Find and what operations does it support?</summary><div class="answer"><p>A data structure for disjoint sets supporting find(x) (which set?) and union(a, b) (merge sets), both nearly O(1) with path compression and union by size.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you detect a cycle in an undirected graph with DSU?</summary><div class="answer"><p>For each edge (a, b): if find(a) == find(b) then the edge forms a cycle; otherwise union them.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is path compression?</summary><div class="answer"><p>During find, point every visited node directly to the root (or to its grandparent) so future finds are shorter.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you count connected components with DSU?</summary><div class="answer"><p>Start with n components; every successful union decreases the count by one.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is Kruskal&#x27;s algorithm?</summary><div class="answer"><p>Sort edges by weight and add an edge to the MST if it connects two different components (checked with DSU). Stop after V - 1 edges.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What do union by size and path compression each achieve?</summary><div class="answer"><p>Union by size keeps trees shallow; path compression flattens them during finds. Together they give nearly constant amortised time.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you merge overlapping intervals?</summary><div class="answer"><p>Sort by start; keep a result list; extend the last interval if the next one overlaps, else append.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you check if a person can attend all meetings?</summary><div class="answer"><p>Sort by start and check whether any meeting starts before the previous one ends.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you find the minimum number of meeting rooms?</summary><div class="answer"><p>Sort starts and ends and sweep, or use a min-heap of end times. The maximum overlap is the answer.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the time complexity of interval merging?</summary><div class="answer"><p>O(n log n) for sorting plus O(n) for the pass.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What are common mistakes?</summary><div class="answer"><p>Not sorting first, forgetting max for contained intervals, off-by-one when touching intervals count as overlapping or not.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why sort by start for merging but by end for selection?</summary><div class="answer"><p>Merging needs overlapping intervals adjacent in order of start; selection wants the earliest finishing interval to maximise remaining room.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you rotate a matrix 90 degrees clockwise?</summary><div class="answer"><p>Transpose it and reverse every row. In Python: [list(r) for r in zip(*matrix[::-1])].</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you traverse a matrix in spiral order?</summary><div class="answer"><p>Keep top, bottom, left, right boundaries; walk the top row, right column, bottom row, left column, shrink the boundaries and repeat (check the boundaries before the last two walks).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you search in a matrix where rows and columns are sorted?</summary><div class="answer"><p>Start at the top-right corner: if the value is bigger than the target move left, if smaller move down. O(rows + cols).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the bug in [[0] * 3] * 3?</summary><div class="answer"><p>All three rows are the same list object; changing one row changes all. Use a list comprehension.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you find the diagonal and anti-diagonal sums?</summary><div class="answer"><p>Sum m[i][i] and m[i][n - 1 - i]; if n is odd subtract the centre once.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you traverse a matrix in diagonal order?</summary><div class="answer"><p>Cells on the same anti-diagonal share r + c; loop s from 0 to rows + cols - 2 and collect cells with r + c = s.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is a difference array and when do you use it?</summary><div class="answer"><p>An array that stores changes between neighbours. It lets you apply many range additions in O(1) each and rebuild the final array with one prefix sum.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you query a rectangle sum in O(1)?</summary><div class="answer"><p>Build a 2D prefix table P and compute P[r2+1][c2+1] - P[r1][c2+1] - P[r2+1][c1] + P[r1][c1].</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Count subarrays whose sum is divisible by k?</summary><div class="answer"><p>Track the count of each prefix remainder (prefix % k). Pairs with the same remainder give a subarray divisible by k.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Prefix sum vs difference array?</summary><div class="answer"><p>They are inverse operations: prefix sum turns values into running totals; difference array turns values into changes. Prefix sum is for fast queries, difference array is for fast range updates.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why is the prefix array of length n + 1?</summary><div class="answer"><p>The extra leading 0 makes range sums work uniformly, including ranges that start at index 0.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why does the 2D formula add back P[r1][c1]?</summary><div class="answer"><p>The two subtracted strips both include that corner region, so it was removed twice.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the LPS array?</summary><div class="answer"><p>For each prefix of the pattern, the length of the longest proper prefix that is also a suffix. KMP uses it to skip comparisons after a mismatch.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Time complexity of KMP?</summary><div class="answer"><p>O(n + m): O(m) to build the table and O(n) to scan the text.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why does KMP never move the text pointer backwards?</summary><div class="answer"><p>On a mismatch it only moves the pattern pointer using the LPS table, reusing information about the already matched text.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Compute the LPS of &#x27;aabaa&#x27;.</summary><div class="answer"><p>[0, 1, 0, 1, 2].</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> When would you use KMP over Python&#x27;s built-in search?</summary><div class="answer"><p>When asked to implement it, or when you need the LPS information itself (periodic strings, longest border).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What does lps[i] represent?</summary><div class="answer"><p>The length of the longest proper prefix of pattern[0..i] that is also a suffix of it.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> When would you use a Fenwick tree?</summary><div class="answer"><p>When you have many point updates and many prefix/range sum queries; both are O(log n).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why does a Fenwick tree use i &amp; -i?</summary><div class="answer"><p>It isolates the lowest set bit of i, which gives the length of the block that cell i is responsible for and the step to jump to the next cell.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Segment tree vs Fenwick tree?</summary><div class="answer"><p>Segment tree supports more operations (min, max, range updates with lazy propagation) but needs more code and memory. Fenwick is shorter and faster for sums.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Complexity of building and querying?</summary><div class="answer"><p>Query and update O(log n); build O(n) or O(n log n); space O(n).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Prefix sums vs Fenwick?</summary><div class="answer"><p>Prefix sums: O(1) query but O(n) update. Fenwick: O(log n) for both.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Additional Important Topics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How does a Fenwick tree achieve O(log n) updates and queries?</summary><div class="answer"><p>Each index is responsible for a block sized by its lowest set bit; updates and queries touch at most log n blocks by adding/removing the lowest set bit.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Return up to 3 autocomplete suggestions for a prefix.</summary><div class="answer"><p>Walk to the prefix node, then DFS the subtree in alphabetical order collecting words until you have 3.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> After inserting &#x27;app&#x27; and &#x27;apple&#x27;, does search(&#x27;ap&#x27;) return True?</summary><div class="answer"><p>No. &#x27;ap&#x27; is a prefix but not a stored word (no end marker).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> Where does a router use trie-like structures?</summary><div class="answer"><p>Longest-prefix matching of IP addresses to choose the next hop.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use a trie for autocomplete?</summary><div class="answer"><p>Words with the same prefix share a path, so prefix queries follow one path regardless of how many words exist.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why an end-of-word flag?</summary><div class="answer"><p>To tell a stored word from a prefix of another word.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use a set?</summary><div class="answer"><p>A set cannot list words by prefix without scanning all words.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why can tries use a lot of memory?</summary><div class="answer"><p>Each character may create a node. Compressed tries merge single-child chains.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use a dict per node?</summary><div class="answer"><p>It stores only existing children, saving memory for sparse alphabets.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use sorting + bisect for prefix queries?</summary><div class="answer"><p>It works for static data with less memory but is awkward for frequent inserts.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Count words starting with a given prefix.</summary><div class="answer"><p>Store a pass-through count in each node when inserting; return the count at the prefix node.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Find the redundant edge that creates a cycle in an undirected graph.</summary><div class="answer"><p>Process edges in order with DSU; the first edge whose endpoints already share a root is the redundant one.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> Why compare find(a) == find(b) rather than parent[a] == parent[b]?</summary><div class="answer"><p>Parents may differ even when two nodes are in the same group; only roots identify the group.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How could DSU be used in image segmentation?</summary><div class="answer"><p>Each pixel starts alone; neighbouring pixels of similar colour are unioned, and the resulting components are the segments.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why store a parent array?</summary><div class="answer"><p>A node needs only a pointer to its parent to find its leader.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why path compression?</summary><div class="answer"><p>It flattens trees so future finds are almost O(1).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why union by size?</summary><div class="answer"><p>Attaching the smaller tree under the larger keeps trees shallow.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why compare roots, not parents?</summary><div class="answer"><p>Two nodes in the same group may have different parents but share a root.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use BFS to answer connectivity?</summary><div class="answer"><p>It re-explores the graph each time; DSU answers each query in near O(1) after merging.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why can&#x27;t DSU split a group?</summary><div class="answer"><p>It has no way to undo a union efficiently; it supports only merging.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Number of provinces from an adjacency matrix.</summary><div class="answer"><p>Union connected pairs; count roots (or subtract successful unions from n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How does a network monitor track connected machines?</summary><div class="answer"><p>Union machines when links come up; query whether two machines share a root.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Find the free time slots between meetings.</summary><div class="answer"><p>Merge the meetings, then output the gaps between the end of one merged interval and the start of the next.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> Merge [[1, 4], [2, 3]].</summary><div class="answer"><p>[[1, 4]]. The second interval is inside the first; using max(end) keeps 4.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How does a meeting scheduler detect conflicts?</summary><div class="answer"><p>It checks the new meeting against neighbours in a sorted structure or interval tree.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why sort by start before merging?</summary><div class="answer"><p>It puts overlapping intervals next to each other.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use max(end)?</summary><div class="answer"><p>A later interval can be fully inside the current one.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does the boundary rule matter?</summary><div class="answer"><p>Whether touching intervals overlap depends on the problem, so choose &lt; or &lt;= carefully.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is it O(n log n)?</summary><div class="answer"><p>Sorting dominates; the merge pass is linear.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not compare every pair?</summary><div class="answer"><p>That is O(n^2) and unnecessary after sorting.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use an interval tree?</summary><div class="answer"><p>It is more complex and only needed for dynamic data with many overlap queries.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Insert a new interval into a sorted non-overlapping list.</summary><div class="answer"><p>Add intervals ending before it, merge the overlapping ones, then add the rest.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> merge [[1, 2], [3, 4]] with touching = overlap = False gives?</summary><div class="answer"><p>[[1, 2], [3, 4]]: they do not overlap.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Rotate an n x n matrix 90 degrees clockwise in place.</summary><div class="answer"><pre><code class="lang-py">def rotate(m):
+    n = len(m)
+    for i in range(n):
+        for j in range(i + 1, n):
+            m[i][j], m[j][i] = m[j][i], m[i][j]
+    for row in m:
+        row.reverse()</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What does the matrix [[0] * 2] * 2 become after m[0][0] = 1?</summary><div class="answer"><p>[[1, 0], [1, 0]]. Both rows are the same list.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How do image filters use matrices?</summary><div class="answer"><p>A small kernel matrix slides over the image matrix, computing weighted sums (convolution) for blur, sharpen or edge detection.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why transpose then reverse rows for a clockwise rotation?</summary><div class="answer"><p>Transpose swaps rows and columns; reversing each row then turns it into a clockwise rotation.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why do spiral boundaries shrink?</summary><div class="answer"><p>After each side is walked, that row or column is done.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does staircase search work on a sorted matrix?</summary><div class="answer"><p>From the top-right corner, each comparison eliminates a whole row or column.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use [[0] * c] * r?</summary><div class="answer"><p>It repeats the same row object.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why check boundaries before the last two spiral walks?</summary><div class="answer"><p>A single remaining row or column would otherwise be walked twice.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why do image libraries use NumPy arrays instead of lists of lists?</summary><div class="answer"><p>A contiguous block is far faster and compact for numeric processing.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Print a matrix diagonal by diagonal.</summary><div class="answer"><p>For each s from 0 to rows + cols - 2 collect cells with r + c == s.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What is zip(*[[1, 2], [3, 4]]) as a list?</summary><div class="answer"><p>[(1, 3), (2, 4)], the transpose.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Car pooling: given trips [passengers, start, end] and a capacity, can you complete all trips?</summary><div class="answer"><p>Difference array over stops: add passengers at start, subtract at end; prefix-sum and check that the running total never exceeds the capacity.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What is the difference array of [3, 3, 5, 5, 5]?</summary><div class="answer"><p>[3, 0, 2, 0, 0]: the first value then the change between neighbours.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How can an airline compute seat occupancy per flight leg after many bookings?</summary><div class="answer"><p>Each booking adds +seats at its first leg and -seats after its last leg; a running sum gives occupancy per leg.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does the 2D formula add back P[r1][c1]?</summary><div class="answer"><p>Subtracting the top strip and left strip removes the overlapping corner twice.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why a difference array for range updates?</summary><div class="answer"><p>It records only the endpoints, making each update O(1).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why a prefix sum of the difference array?</summary><div class="answer"><p>It adds each change to every later cell until the matching negative change cancels it.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use remainders for &#x27;divisible by k&#x27; subarrays?</summary><div class="answer"><p>Equal prefix remainders mean the sum between them is a multiple of k.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use these when values change between queries?</summary><div class="answer"><p>Updates would force a rebuild; use Fenwick or segment trees.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why a (n + 1)-length difference array?</summary><div class="answer"><p>The update at r + 1 may equal n, which would be out of bounds otherwise.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Add 1 to the range [l, r] many times, then print the array.</summary><div class="answer"><p>Use diff[l] += 1 and diff[r + 1] -= 1, then take a running sum.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How are seat bookings per flight leg tallied?</summary><div class="answer"><p>Add seats at the first leg of each booking and subtract after the last, then sweep a running total.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Check if a string is made by repeating a substring.</summary><div class="answer"><p>Compute lps; let p = n - lps[-1]; the string is a repetition if lps[-1] &gt; 0 and n % p == 0.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> LPS of &#x27;aaaa&#x27;?</summary><div class="answer"><p>[0, 1, 2, 3].</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> Why are linear-time search guarantees important?</summary><div class="answer"><p>Adversarial inputs can force naive search into quadratic time, causing slowdowns or denial-of-service in real systems.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why precompute the LPS table?</summary><div class="answer"><p>It tells how far the pattern can safely fall back after a mismatch, avoiding re-reading text.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why a while loop for fallback?</summary><div class="answer"><p>You may need to fall back several times before a mismatch resolves.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use KMP rather than naive search?</summary><div class="answer"><p>It guarantees O(n + m) even on adversarial input.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why set k = lps[k-1] after a full match?</summary><div class="answer"><p>It lets overlapping matches be found.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not always implement KMP?</summary><div class="answer"><p>Python&#x27;s built-in search is faster and simpler for everyday use.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why can the LPS be built in linear time?</summary><div class="answer"><p>k increases by at most one per character and each fallback decreases it, so total fallbacks are bounded by total increases.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Find the longest happy prefix (prefix that is also a suffix).</summary><div class="answer"><p>Compute the LPS of the string; the last value gives its length.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> LPS of &#x27;abcab&#x27;?</summary><div class="answer"><p>[0, 0, 0, 1, 2].</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Count how many numbers to the right of each element are smaller (O(n log n)).</summary><div class="answer"><p>Process from right to left; use a Fenwick tree over compressed values: query the count of smaller values then add the current value.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What are the lowest set bits of 6, 8 and 12?</summary><div class="answer"><p>2, 8 and 4.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> Where would a database use such a structure?</summary><div class="answer"><p>For fast cumulative statistics (counts, sums) on columns that change over time, in time-series and analytics engines.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why do we need Fenwick or segment trees?</summary><div class="answer"><p>They give O(log n) point updates AND range queries, unlike plain arrays or prefix sums.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does Fenwick use the lowest set bit?</summary><div class="answer"><p>It defines the block each cell covers and the next cell to visit in updates and queries.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is the Fenwick array 1-indexed?</summary><div class="answer"><p>Index 0 has no set bit, so the bit tricks would not work.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why choose a segment tree over Fenwick?</summary><div class="answer"><p>It supports min, max and range updates with lazy propagation.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why learn them last?</summary><div class="answer"><p>They are rarely needed in entry-level rounds; the other topics matter more.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not just rebuild prefix sums after every update?</summary><div class="answer"><p>That costs O(n) per update; with many updates it is far too slow.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Update and query with a Fenwick tree.</summary><div class="answer"><p>See the Fenwick class in this topic: update(i, delta) adds along i += i &amp; -i; prefix(i) sums along i -= i &amp; -i.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Additional Important Topics"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> Which cells does update(5, d) touch in a Fenwick tree of size 8?</summary><div class="answer"><p>5, 6 and 8 (5 + 1 = 6; 6 + 2 = 8).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Additional Important Topics"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Count words that have a given prefix.</summary><div class="answer"><p>Store a count at each node (how many words pass through it) and return the count at the prefix node.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Additional Important Topics"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Find the longest common prefix of many words using a trie.</summary><div class="answer"><p>Walk from the root while the node has exactly one child and is not a word end.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Additional Important Topics"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> How do you track the size of each component?</summary><div class="answer"><p>Store sizes at roots and add them on union; size[find(x)] gives the component size.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Additional Important Topics"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Intersection of two lists of sorted intervals.</summary><div class="answer"><p>Two pointers: intersect the current pair, then advance the one that ends first.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Additional Important Topics"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Search a matrix where each row and column is sorted.</summary><div class="answer"><p>Start at the top-right: move left if the value is larger than the target, down if smaller; O(rows + cols).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Additional Important Topics"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Count subarrays with sum divisible by k.</summary><div class="answer"><p>Track counts of prefix % k; for each prefix add the number of earlier prefixes with the same remainder.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Additional Important Topics"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Find the shortest palindrome you can make by adding characters in front.</summary><div class="answer"><p>Compute LPS of s + &#x27;#&#x27; + reverse(s); the last value is the longest palindromic prefix length; prepend the reverse of the remainder.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Additional Important Topics"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> When prefer a segment tree?</summary><div class="answer"><p>When you need range minimum/maximum, range assignment or other non-invertible operations.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="m17-problems.html"><span class="dir">Previous</span><span>Problems 17: Bit Manipulation & Mathematics</span></a>
+      <a class="next" href="m18-problems.html"><span class="dir">Next</span><span>Problems 18: Additional Important Topics</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

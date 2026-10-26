@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD3">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Scaling, load balancing and proxies | System Design</title>
+<meta name="description" content="Vertical and horizontal scaling, stateless services, load balancing algorithms, layer 4 versus layer 7, reverse proxies, sessions, autoscaling and health checks.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD3</p>
+      <h1>Scaling, load balancing and proxies</h1>
+      <p class="lede">Scaling means handling more work by adding resources. The art is to add them in a way that keeps the system simple, fast and cheap. Load balancers are the first component almost every large design introduces.</p>
+      <div class="meta"><span class="tag ok">Basic</span><span class="tag warn">Medium</span><span class="tag">~2 hours</span></div>
+    </div>
+
+    <section id="scaling" data-track>
+      <h2>Scaling up and scaling out</h2>
+<h3>Intuition</h3>
+<p>One cashier serves customers until the queue gets long. You can hire a faster cashier (scale <strong>up</strong>) or open more registers (scale <strong>out</strong>). A faster cashier has a limit and costs more per extra speed. More registers are easier to extend but need someone to direct customers to the shortest line: the load balancer.</p>
+<h3>Vertical versus horizontal</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>Vertical (scale up)</th><th>Horizontal (scale out)</th></tr></thead>
+<tbody>
+<tr><td>What changes</td><td>Bigger machine: more CPU, RAM, disk</td><td>More machines</td></tr><tr><td>Complexity</td><td>Low: no code change</td><td>Higher: needs load balancing, shared state design</td></tr><tr><td>Limit</td><td>Hardware ceiling, cost grows faster than capacity</td><td>Practically very high</td></tr><tr><td>Failure</td><td>Single point of failure</td><td>Survives losing a node</td></tr><tr><td>Downtime to scale</td><td>Often a restart</td><td>Usually none</td></tr><tr><td>Good for</td><td>Early stage, databases</td><td>Stateless web tier, caches, workers</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout tip"><span class="callout-title">Rule of thumb</span><p>Scale up first while it is cheap and simple. Design the web tier so it can scale out. Databases scale up first, then read replicas, then sharding (<a href="sd5-replication-sharding.html">SD5</a>).</p></div>
+<h3>Stateless services</h3>
+<p>A service is <strong>stateless</strong> if any instance can handle any request, because nothing needed to answer is stored in that instance's memory or disk between requests. State lives elsewhere: a database, a cache, a token in the client.</p>
+<p>Why it matters: stateless instances can be added, removed, restarted and load balanced freely. If instance A holds a user's session in RAM, the load balancer must always send that user to A, and when A dies the session is lost.</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 638 294" role="img" aria-label="Stateless web tier behind a load balancer, with state kept in shared stores." style="min-width:638px"><defs><marker id="ah6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah6a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah6b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah6d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="168.3" y1="118.0" x2="255.7" y2="78.0" class="d-line" marker-end="url(#ah6)"/><line x1="190.0" y1="147.0" x2="234.0" y2="147.0" class="d-line" marker-end="url(#ah6)"/><line x1="168.3" y1="176.0" x2="255.7" y2="216.0" class="d-line" marker-end="url(#ah6)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah6)"/><line x1="382.3" y1="118.0" x2="469.7" y2="78.0" class="d-line" marker-end="url(#ah6)"/><line x1="404.0" y1="245.0" x2="448.0" y2="245.0" class="d-line" marker-end="url(#ah6)"/><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-c"/><text x="105.0" y="151.5" text-anchor="middle">Load balancer</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-b"/><text x="319.0" y="53.5" text-anchor="middle">App server 1</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-b"/><text x="319.0" y="151.5" text-anchor="middle">App server 2</text><rect x="234.0" y="216.0" width="170" height="58" rx="8" class="d-b"/><text x="319.0" y="249.5" text-anchor="middle">App server 3</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-d"/><text x="533.0" y="46.0" text-anchor="middle">Session store</text><text x="533.0" y="61.0" text-anchor="middle">(Redis)</text><rect x="448.0" y="216.0" width="170" height="58" rx="8" class="d-a"/><text x="533.0" y="249.5" text-anchor="middle">Database</text></svg>
+</div>
+<figcaption>Stateless web tier behind a load balancer, with state kept in shared stores.</figcaption></figure>
+<h3>Where session state can live</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Option</th><th>How</th><th>Pros</th><th>Cons</th></tr></thead>
+<tbody>
+<tr><td>Sticky sessions</td><td>LB pins a user to one server</td><td>No code change</td><td>Uneven load, lost on failure</td></tr><tr><td>Shared session store</td><td>Redis or database holds sessions</td><td>Any server can serve</td><td>Extra dependency and hop</td></tr><tr><td>Client-side token</td><td>Signed token (JWT) holds the claims</td><td>No server lookup</td><td>Hard to revoke, size limit</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd3-q01" data-topic="Load balancing" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is a stateless web tier easier to scale out?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It uses less memory <span class="q-why">Not the reason.</span></li>
+          <li data-key="B">Any instance can serve any request, so instances can be added or removed freely <span class="q-why">Correct.</span></li>
+          <li data-key="C">It does not need a load balancer <span class="q-why">It needs one.</span></li>
+          <li data-key="D">It avoids TLS <span class="q-why">Unrelated.</span></li>
+        </ul>
+        <div class="q-explain"><p>No per-instance state means the load balancer is free to send any request anywhere and instances are disposable.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd3-q02" data-topic="Load balancing" data-type="numeric" data-answer="1400" data-tol="0">
+        <div class="q-stem"><p>Four servers each handle 500 requests per second at 70 percent target utilisation. What total QPS can the pool take while staying at target?</p></div>
+        <div class="q-explain"><p>4 x 500 x 0.7 = 1,400 requests per second.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>When do you scale up and when out?</summary><div class="answer"><p>Scale up while simple and cheap, especially databases; scale out stateless tiers that are designed for it.</p></div></details>
+        <details class="recall"><summary>Where can session state live?</summary><div class="answer"><p>Sticky servers, a shared store such as Redis, or a signed client-side token.</p></div></details>
+      </div>
+    </section>
+
+    <section id="algorithms" data-track>
+      <h2>Load balancing algorithms</h2>
+<h3>What a load balancer does</h3>
+<p>A <strong>load balancer</strong> receives requests and distributes them across a pool of servers. It also performs health checks, removes bad servers, can terminate TLS, and presents a single stable address.</p>
+<h3>Common algorithms</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Algorithm</th><th>How it picks</th><th>Best when</th><th>Weakness</th></tr></thead>
+<tbody>
+<tr><td>Round robin</td><td>Next server in order</td><td>Equal servers, similar requests</td><td>Ignores current load</td></tr><tr><td>Weighted round robin</td><td>More requests to bigger servers</td><td>Mixed hardware</td><td>Static weights</td></tr><tr><td>Least connections</td><td>Server with fewest active connections</td><td>Long, uneven requests</td><td>Needs connection tracking</td></tr><tr><td>Least response time</td><td>Fastest recent responses</td><td>Heterogeneous latency</td><td>Needs measurement</td></tr><tr><td>IP hash</td><td>Hash of client IP</td><td>Simple stickiness</td><td>Uneven when many users share an IP</td></tr><tr><td>Consistent hashing</td><td>Hash of a key onto a ring</td><td>Caches and sharded backends (<a href="sd5-replication-sharding.html">SD5</a>)</td><td>More complex</td></tr><tr><td>Random with two choices</td><td>Pick two at random, take the less loaded</td><td>Large pools, no coordination</td><td>Slightly more logic</td></tr>
+</tbody>
+</table>
+</div>
+<p>Here is round robin versus least connections on uneven requests, simulated.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd3-01.py">import random
+random.seed(1)
+servers = 3
+# each request has a "cost" in time units; a few are very expensive
+reqs = [1] * 40 + [20] * 4
+random.shuffle(reqs)
+
+# round robin: assign in order
+load_rr = [0] * servers
+for i, c in enumerate(reqs):
+    load_rr[i % servers] += c
+
+# least loaded (a proxy for least connections / least work)
+load_lc = [0] * servers
+for c in reqs:
+    j = min(range(servers), key=lambda k: load_lc[k])
+    load_lc[j] += c
+
+print("round robin  :", load_rr, "max", max(load_rr))
+print("least loaded :", load_lc, "max", max(load_lc))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>round robin  : [34, 34, 52] max 52
+least loaded : [38, 38, 44] max 44</code></pre>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Round robin is fine for uniform requests. When request costs vary, balance on actual load. The "power of two choices" gets most of the benefit without global state.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd3-q03" data-topic="Load balancing" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Request costs vary a lot (some take 20 times longer). Which algorithm handles this best?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Round robin <span class="q-why">Ignores cost, so one server can get several heavy requests in a row.</span></li>
+          <li data-key="B">Least connections or least load <span class="q-why">Correct.</span></li>
+          <li data-key="C">IP hash <span class="q-why">Distributes by client, not by cost.</span></li>
+          <li data-key="D">Always the first server <span class="q-why">Obviously poor.</span></li>
+        </ul>
+        <div class="q-explain"><p>Balance on actual load when request cost varies. Round robin is fine only when requests are uniform.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is the power of two choices?</summary><div class="answer"><p>Pick two servers at random and send the request to the less loaded one. It nearly matches global least-load with no coordination.</p></div></details>
+      </div>
+    </section>
+
+    <section id="layers" data-track>
+      <h2>Layer 4 versus layer 7</h2>
+<h3>Two levels of understanding traffic</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>Layer 4 (transport)</th><th>Layer 7 (application)</th></tr></thead>
+<tbody>
+<tr><td>Sees</td><td>IP addresses and ports</td><td>Full HTTP: path, headers, cookies, body</td></tr><tr><td>Decision</td><td>Forward TCP or UDP connection</td><td>Route by URL, host, header, cookie</td></tr><tr><td>Speed</td><td>Faster, simpler</td><td>Slower, more CPU</td></tr><tr><td>Features</td><td>Basic balancing, TLS passthrough</td><td>TLS termination, path routing, rewrites, compression, auth, rate limiting, caching</td></tr><tr><td>Examples</td><td>AWS NLB, HAProxy in TCP mode, LVS</td><td>AWS ALB, NGINX, Envoy, HAProxy HTTP mode</td></tr>
+</tbody>
+</table>
+</div>
+<p>Path-based routing is the reason layer 7 matters for microservices: <code>/api/users</code> goes to the users service, <code>/api/orders</code> to the orders service, <code>/static</code> to a bucket.</p>
+<h3>High availability of the load balancer itself</h3>
+<p>A single load balancer is a single point of failure. Run at least two as an <strong>active-passive</strong> pair (a failover with a shared virtual IP) or <strong>active-active</strong> (both serve, with DNS or anycast spreading clients). Cloud load balancers do this for you across availability zones.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd3-q04" data-topic="Load balancing" data-type="multi" data-answer="A,B,D">
+        <div class="q-stem"><p>Which are things a layer 7 load balancer can do that a layer 4 one cannot? Select all.</p></div>
+        <ul class="q-options">
+          <li data-key="A">Route by URL path</li>
+          <li data-key="B">Route by HTTP header or cookie</li>
+          <li data-key="C">Forward raw TCP by IP and port</li>
+          <li data-key="D">Terminate TLS and inspect the request</li>
+        </ul>
+        <div class="q-explain"><p>Layer 4 sees only addresses and ports. Layer 7 understands HTTP. Forwarding raw TCP is something both can do, so it is not a distinguishing capability.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why use layer 7 for microservices?</summary><div class="answer"><p>It can route by path, host and headers and also terminate TLS, apply auth and rate limits.</p></div></details>
+      </div>
+    </section>
+
+    <section id="proxies" data-track>
+      <h2>Reverse proxy, forward proxy and gateways</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Component</th><th>Sits in front of</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td>Forward proxy</td><td>Clients</td><td>Hide client identity, filter traffic, cache for an organisation</td></tr><tr><td>Reverse proxy</td><td>Servers</td><td>Hide servers, terminate TLS, cache, compress, balance load</td></tr><tr><td>API gateway</td><td>A set of services</td><td>Auth, rate limiting, routing, request shaping (<a href="sd9-apis.html">SD9</a>)</td></tr><tr><td>Service mesh sidecar</td><td>Each service instance</td><td>Service-to-service retries, mTLS, telemetry</td></tr>
+</tbody>
+</table>
+</div>
+<p>A load balancer is a reverse proxy that specialises in distribution. In practice NGINX, HAProxy and Envoy do both.</p>
+    </section>
+
+    <section id="health" data-track>
+      <h2>Health checks and failure handling</h2>
+<h3>Health checks</h3>
+<p>The load balancer probes each server and removes unhealthy ones from rotation.</p>
+<ul><li><strong>Passive</strong>: watch real traffic for errors and timeouts.</li><li><strong>Active</strong>: send a probe request (<code>GET /healthz</code>) every few seconds. Require several failures to eject and several successes to re-add, to avoid flapping.</li><li>Distinguish <strong>liveness</strong> (the process is running, restart it if not) from <strong>readiness</strong> (it can serve traffic now, for example after warmup and with dependencies available).</li></ul>
+<div class="callout trap"><span class="callout-title">Trap</span><p>A health endpoint that checks the database means a database blip marks every server unhealthy, and the load balancer ejects the entire fleet. Keep health checks shallow, or protect against removing everyone at once ("panic mode" that keeps at least a minimum number in rotation).</p></div>
+<h3>Connection draining</h3>
+<p>Before removing a server for deploy or scale-in, stop sending new requests and let in-flight requests finish (for 30 to 60 seconds). Otherwise users see errors during every deploy.</p>
+<h3>Retries and the thundering herd</h3>
+<p>When a server dies, its share of requests moves to the others. If each is already near capacity they can fall over too, a <strong>cascading failure</strong>. Keep headroom (run at 50 to 70 percent), use timeouts, retries with backoff and jitter, and load shedding (<a href="sd10-reliability.html">SD10</a>).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd3-q05" data-topic="Load balancing" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Your health check endpoint queries the database, and the database has a 10 second blip. What can go wrong?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Nothing, this is best practice <span class="q-why">It is a known anti-pattern.</span></li>
+          <li data-key="B">Every server is marked unhealthy and removed at once <span class="q-why">Correct.</span></li>
+          <li data-key="C">The database restarts <span class="q-why">Not caused by the check.</span></li>
+          <li data-key="D">Latency drops <span class="q-why">Unlikely.</span></li>
+        </ul>
+        <div class="q-explain"><p>Deep health checks can eject the whole fleet. Prefer shallow checks, or a floor on how many servers must stay in rotation.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is connection draining?</summary><div class="answer"><p>Stop sending new requests to a server about to be removed and let in-flight requests finish.</p></div></details>
+      </div>
+    </section>
+
+    <section id="autoscaling" data-track>
+      <h2>Autoscaling</h2>
+<h3>The idea</h3>
+<p>Automatically add instances when load rises and remove them when it falls, which saves cost and absorbs spikes.</p>
+<h3>What to scale on</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Signal</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>CPU or memory utilisation</td><td>Simple, lags behind sudden spikes</td></tr><tr><td>Requests per instance or queue length</td><td>Better indicator of actual demand</td></tr><tr><td>Custom metrics (latency, backlog)</td><td>Best for workers: scale on messages waiting</td></tr><tr><td>Schedule</td><td>For predictable peaks such as morning or sale events</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Practical rules</h3>
+<ul><li>New instances take time (boot, warmup, cache fill), so scale <strong>before</strong> you need to, with headroom, or keep a warm pool.</li><li>Add quickly, remove slowly (cooldown periods) to avoid thrashing.</li><li>Set a maximum so a bug or an attack does not create a huge bill.</li><li>Stateful nodes (databases) do not autoscale as easily. Scale the stateless layer first.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd3-q06" data-topic="Load balancing" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A new instance takes 3 minutes to boot and warm up. What does this imply for autoscaling?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Scale only after CPU hits 100 percent <span class="q-why">Users will suffer for 3 minutes.</span></li>
+          <li data-key="B">Scale earlier, keep headroom or a warm pool <span class="q-why">Correct.</span></li>
+          <li data-key="C">Disable autoscaling <span class="q-why">Throws away the benefit.</span></li>
+          <li data-key="D">Use only one big server <span class="q-why">Single point of failure.</span></li>
+        </ul>
+        <div class="q-explain"><p>Warmup time means reactive scaling lags. Use lower thresholds, predictive or scheduled scaling, or spare capacity.</p></div>
+      </div>
+    </section>
+
+    <section id="summary" data-track>
+      <h2>Putting it together</h2>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="A common request path at moderate scale." style="min-width:760px"><defs><marker id="ah7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah7a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah7b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah7d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="168.3" y1="78.0" x2="255.7" y2="118.0" class="d-line" marker-end="url(#ah7)"/><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah7)"/><line x1="319.0" y1="78.0" x2="319.0" y2="118.0" class="d-line" marker-end="url(#ah7)"/><text x="319.0" y="93.0" text-anchor="middle" class="d-sm d-muted">miss</text><line x1="404.0" y1="147.0" x2="448.0" y2="147.0" class="d-line" marker-end="url(#ah7)"/><line x1="596.3" y1="118.0" x2="683.7" y2="78.0" class="d-line" marker-end="url(#ah7)"/><line x1="618.0" y1="147.0" x2="662.0" y2="147.0" class="d-line" marker-end="url(#ah7)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-e"/><text x="105.0" y="53.5" text-anchor="middle">DNS / GeoDNS</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-e"/><text x="319.0" y="53.5" text-anchor="middle">CDN</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-c"/><text x="319.0" y="144.0" text-anchor="middle">Load balancer</text><text x="319.0" y="159.0" text-anchor="middle">(L7, multi-AZ)</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="144.0" text-anchor="middle">Web / API servers</text><text x="533.0" y="159.0" text-anchor="middle">(autoscaled)</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-d"/><text x="747.0" y="53.5" text-anchor="middle">Cache</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-a"/><text x="747.0" y="144.0" text-anchor="middle">Database</text><text x="747.0" y="159.0" text-anchor="middle">(primary + replicas)</text></svg>
+</div>
+<figcaption>A common request path at moderate scale.</figcaption></figure>
+<p>This pattern, <strong>CDN, load balancer, stateless web tier, cache, database</strong>, is the skeleton under most of the case studies in this guide.</p>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Load balancing</h2>
+      <p class="muted">9 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Load balancing">
+<details class="recall iq" data-level="basic" data-topic="Load balancing"><summary><span class="tag ok">Basic</span> What does a load balancer do?</summary><div class="answer"><p>Distributes requests across servers, performs health checks, removes failed servers, can terminate TLS and presents one stable address.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Load balancing"><summary><span class="tag ok">Basic</span> Vertical versus horizontal scaling?</summary><div class="answer"><p>Vertical adds power to one machine (simple, limited, single point of failure). Horizontal adds machines (scales further, needs load balancing and stateless design).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Load balancing"><summary><span class="tag ok">Basic</span> Why make web servers stateless?</summary><div class="answer"><p>Any instance can serve any request, so instances can be added, removed or replaced freely and failures lose no user state. State lives in shared stores or tokens.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Load balancing"><summary><span class="tag warn">Medium</span> Layer 4 versus layer 7 load balancing?</summary><div class="answer"><p>L4 balances TCP or UDP connections by address and port, fast and simple. L7 understands HTTP and routes by path, header or cookie, terminates TLS and can apply auth and rate limits.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Load balancing"><summary><span class="tag warn">Medium</span> Round robin versus least connections?</summary><div class="answer"><p>Round robin is simple and fine for uniform requests. Least connections adapts to uneven or long-lived requests by sending to the least busy server.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Load balancing"><summary><span class="tag warn">Medium</span> What are sticky sessions and why avoid them?</summary><div class="answer"><p>The balancer pins a user to one server. It causes uneven load and loses session state on failure. Prefer a shared session store or client-side token.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Load balancing"><summary><span class="tag warn">Medium</span> How do health checks go wrong?</summary><div class="answer"><p>Deep checks that depend on the database can eject the whole fleet during a blip. Use shallow checks, require several failures, and keep a minimum number of servers in rotation.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Load balancing"><summary><span class="tag bad">Advanced</span> How do you make the load balancer itself highly available?</summary><div class="answer"><p>Run several in active-active across availability zones behind DNS or anycast, or an active-passive pair with a floating IP. Managed cloud load balancers do this for you.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Load balancing"><summary><span class="tag bad">Advanced</span> What is the power of two choices?</summary><div class="answer"><p>Pick two random servers and send the request to the less loaded one. It nearly matches full least-load balancing with no global state and avoids herding.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd2-networking.html"><span class="dir">Previous</span><span>SD2 Networking, DNS, HTTP and CDN fundamentals</span></a>
+      <a class="next" href="sd4-databases.html"><span class="dir">Next</span><span>SD4 Databases: SQL, NoSQL and how to choose</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

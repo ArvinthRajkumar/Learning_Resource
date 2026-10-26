@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD5">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Replication, partitioning and consistent hashing | System Design</title>
+<meta name="description" content="Leader-follower and multi-leader replication, replication lag, quorums, sharding strategies, consistent hashing with a working implementation, rebalancing and resharding.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD5</p>
+      <h1>Replication, partitioning and consistent hashing</h1>
+      <p class="lede">One machine cannot hold unlimited data or serve unlimited requests, and it will eventually fail. Replication copies data for safety and read capacity. Partitioning splits data for capacity. Almost every large data system uses both.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~3 hours</span></div>
+    </div>
+
+    <section id="why" data-track>
+      <h2>Why copy and why split</h2>
+<h3>Two different problems</h3>
+<ul><li><strong>Replication</strong> keeps the <strong>same data</strong> on several machines. It gives <strong>availability</strong> (survive a node loss), <strong>durability</strong>, and <strong>read scaling</strong> (spread reads) and can place data closer to users.</li><li><strong>Partitioning (sharding)</strong> puts <strong>different data</strong> on different machines. It gives <strong>capacity</strong> and <strong>write scaling</strong>, because each machine holds and serves only a slice.</li></ul>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 638 294" role="img" aria-label="Sharded and replicated: each shard has a leader and followers." style="min-width:638px"><defs><marker id="ah9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah9a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah9b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah9d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="168.3" y1="118.0" x2="255.7" y2="78.0" class="d-line" marker-end="url(#ah9)"/><line x1="190.0" y1="147.0" x2="234.0" y2="147.0" class="d-line" marker-end="url(#ah9)"/><line x1="168.3" y1="176.0" x2="255.7" y2="216.0" class="d-line" marker-end="url(#ah9)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah9)"/><text x="426.0" y="44.0" text-anchor="middle" class="d-sm d-muted">replicate</text><line x1="404.0" y1="147.0" x2="448.0" y2="147.0" class="d-line" marker-end="url(#ah9)"/><text x="426.0" y="142.0" text-anchor="middle" class="d-sm d-muted">replicate</text><line x1="404.0" y1="245.0" x2="448.0" y2="245.0" class="d-line" marker-end="url(#ah9)"/><text x="426.0" y="240.0" text-anchor="middle" class="d-sm d-muted">replicate</text><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-c"/><text x="105.0" y="151.5" text-anchor="middle">Router / app</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="319.0" y="53.5" text-anchor="middle">Shard 1 leader</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="53.5" text-anchor="middle">Shard 1 follower</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-a"/><text x="319.0" y="151.5" text-anchor="middle">Shard 2 leader</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="151.5" text-anchor="middle">Shard 2 follower</text><rect x="234.0" y="216.0" width="170" height="58" rx="8" class="d-a"/><text x="319.0" y="249.5" text-anchor="middle">Shard 3 leader</text><rect x="448.0" y="216.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="249.5" text-anchor="middle">Shard 3 follower</text></svg>
+</div>
+<figcaption>Sharded and replicated: each shard has a leader and followers.</figcaption></figure>
+    </section>
+
+    <section id="replication" data-track>
+      <h2>Replication</h2>
+<h3>Leader-follower (primary-replica)</h3>
+<p>One node, the <strong>leader</strong>, accepts all writes and records them in a replication log. <strong>Followers</strong> apply the log and serve reads. If the leader fails, a follower is promoted (failover).</p>
+<h3>Synchronous versus asynchronous</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>Synchronous</th><th>Asynchronous</th></tr></thead>
+<tbody>
+<tr><td>Leader waits for follower to confirm</td><td>Yes</td><td>No</td></tr><tr><td>Write latency</td><td>Higher</td><td>Lower</td></tr><tr><td>Data loss on leader crash</td><td>None for acknowledged writes</td><td>Recent writes may be lost</td></tr><tr><td>Availability</td><td>A slow or dead follower can block writes</td><td>Writes continue</td></tr>
+</tbody>
+</table>
+</div>
+<p>A common compromise is <strong>semi-synchronous</strong>: wait for one follower and replicate asynchronously to the rest, so at least two copies exist before acknowledging.</p>
+<h3>Replication lag and its anomalies</h3>
+<p>With asynchronous followers, a read from a follower can be <strong>stale</strong>. This causes visible bugs:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Anomaly</th><th>What the user sees</th><th>Typical fix</th></tr></thead>
+<tbody>
+<tr><td>Read your own writes</td><td>You post a comment, reload, it is missing</td><td>Read your own recent writes from the leader, or from a follower that has caught up to your write's position</td></tr><tr><td>Monotonic reads</td><td>Page shows new data, then older data on refresh</td><td>Pin a user to one replica</td></tr><tr><td>Consistent prefix</td><td>Reply appears before the question</td><td>Keep causally related writes in order (same partition)</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Failover and its dangers</h3>
+<p>Failover needs to detect failure (heartbeat timeout), choose a new leader (usually the most up-to-date follower) and reconfigure clients. Dangers:</p>
+<ul><li><strong>Lost writes</strong>: the chosen follower lacked recent writes from the old leader.</li><li><strong>Split brain</strong>: the old leader comes back and thinks it is still leader, so two nodes accept writes. Prevent with <strong>fencing tokens</strong>, leases and consensus (<a href="sd6-consistency.html">SD6</a>).</li><li><strong>Timeouts too short</strong>: a brief pause triggers an unnecessary failover that adds load and may cascade.</li></ul>
+<h3>Multi-leader and leaderless</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Model</th><th>How it works</th><th>Used for</th><th>Challenge</th></tr></thead>
+<tbody>
+<tr><td>Multi-leader</td><td>Several nodes (often one per region) accept writes and sync with each other</td><td>Multi-region writes, offline-capable apps</td><td>Write conflicts that must be resolved (last write wins, merge, CRDTs)</td></tr><tr><td>Leaderless (Dynamo style)</td><td>Client writes to several replicas, reads from several</td><td>High availability, Cassandra, Riak, DynamoDB</td><td>Needs quorums, read repair, anti-entropy</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Quorums</h3>
+<p>With <strong>N</strong> replicas, a write must succeed on <strong>W</strong> nodes and a read must query <strong>R</strong> nodes. If <strong>R + W &gt; N</strong>, every read set overlaps every write set, so a read sees the latest acknowledged write (absent concurrent writes and sloppy quorums).</p>
+<div class="formula"><div class="f-title">Quorum rule</div><div class="f-body">R + W &gt; N guarantees overlap</div><dl class="f-defs"><dt>N</dt><dd>replicas</dd><dt>W</dt><dd>write acknowledgements required</dd><dt>R</dt><dd>replicas queried on read</dd></dl></div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>N</th><th>W</th><th>R</th><th>Behaviour</th></tr></thead>
+<tbody>
+<tr><td>3</td><td>2</td><td>2</td><td>Balanced, tolerates 1 node down for both reads and writes</td></tr><tr><td>3</td><td>3</td><td>1</td><td>Fast reads, writes fail if any node is down</td></tr><tr><td>3</td><td>1</td><td>3</td><td>Fast writes, reads need all nodes</td></tr><tr><td>3</td><td>1</td><td>1</td><td>Fastest, no overlap, may read stale data</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd5-01.py">def overlap(n, w, r):
+    return r + w &gt; n
+for n, w, r in [(3, 2, 2), (3, 3, 1), (3, 1, 3), (3, 1, 1), (5, 3, 3)]:
+    print("N=%d W=%d R=%d  strongly overlapping: %s" % (n, w, r, overlap(n, w, r)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>N=3 W=2 R=2  strongly overlapping: True
+N=3 W=3 R=1  strongly overlapping: True
+N=3 W=1 R=3  strongly overlapping: True
+N=3 W=1 R=1  strongly overlapping: False
+N=5 W=3 R=3  strongly overlapping: True</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd5-q01" data-topic="Replication and sharding" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A user writes a comment then reloads and does not see it. This is a violation of:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Durability <span class="q-why">The write was acknowledged and stored.</span></li>
+          <li data-key="B">Read-your-own-writes consistency <span class="q-why">Correct: the read hit a lagging follower.</span></li>
+          <li data-key="C">Atomicity <span class="q-why">Not related.</span></li>
+          <li data-key="D">Isolation <span class="q-why">Not related.</span></li>
+        </ul>
+        <div class="q-explain"><p>Route the user's reads to the leader (or an up-to-date replica) for a short time after a write.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd5-q02" data-topic="Replication and sharding" data-type="numeric" data-answer="3" data-tol="0">
+        <div class="q-stem"><p>With N = 5 replicas and W = 3, what is the smallest R that guarantees read and write sets overlap?</p></div>
+        <div class="q-explain"><p>R + W &gt; N means R &gt; 5 - 3 = 2, so R = 3.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd5-q03" data-topic="Replication and sharding" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What prevents a returning old leader from corrupting data after failover (split brain)?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Bigger disks <span class="q-why">Irrelevant.</span></li>
+          <li data-key="B">Fencing tokens or leases checked by the storage layer <span class="q-why">Correct.</span></li>
+          <li data-key="C">More followers <span class="q-why">Does not prevent two leaders.</span></li>
+          <li data-key="D">A faster network <span class="q-why">Does not solve it.</span></li>
+        </ul>
+        <div class="q-explain"><p>Monotonic fencing tokens let storage reject writes from a stale leader.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is the quorum rule?</summary><div class="answer"><p>R + W &gt; N guarantees read and write sets overlap.</p></div></details>
+        <details class="recall"><summary>Synchronous versus asynchronous replication trade-off?</summary><div class="answer"><p>Synchronous: no acknowledged data loss but higher latency and availability risk. Asynchronous: faster, may lose recent writes on failure.</p></div></details>
+      </div>
+    </section>
+
+    <section id="strategies" data-track>
+      <h2>Partitioning strategies</h2>
+<h3>What a shard key does</h3>
+<p>The <strong>shard key</strong> (or partition key) decides which shard stores a row. Choose it so that data and traffic spread evenly and so that your most common queries touch <strong>one</strong> shard.</p>
+<h3>Range partitioning</h3>
+<p>Each shard owns a contiguous range of keys (A to F, G to M, and so on, or date ranges).</p>
+<ul><li>Pro: efficient range scans and sorted output.</li><li>Con: <strong>hot spots</strong>. Time-based keys send all current writes to the newest shard.</li></ul>
+<h3>Hash partitioning</h3>
+<p>Hash the key and map the hash to a shard.</p>
+<ul><li>Pro: even distribution.</li><li>Con: range queries must scatter to all shards. Key order is lost.</li><li>The naive mapping <code>shard = hash(key) % number_of_shards</code> reshuffles almost everything when the shard count changes.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd5-02.py">import hashlib
+def h(k): return int(hashlib.md5(k.encode()).hexdigest(), 16)
+keys = ["user%d" % i for i in range(10000)]
+before = {k: h(k) % 4 for k in keys}
+after = {k: h(k) % 5 for k in keys}
+moved = sum(1 for k in keys if before[k] != after[k])
+print("moved when going from 4 to 5 shards:", moved, "of", len(keys), "(%.0f%%)" % (100 * moved / len(keys)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>moved when going from 4 to 5 shards: 7973 of 10000 (80%)</code></pre>
+<h3>Directory-based (lookup) partitioning</h3>
+<p>A separate service stores a mapping from key (or key range) to shard. Flexible, since you can move individual tenants, but the directory becomes a critical component that needs replication and caching.</p>
+<h3>Geo or tenant partitioning</h3>
+<p>Keep a user's or customer's data in their region for latency and legal residency. Large tenants may get their own shard.</p>
+<h3>Choosing the key</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Candidate</th><th>Problem</th></tr></thead>
+<tbody>
+<tr><td>Timestamp</td><td>All writes go to one shard (hot spot)</td></tr><tr><td>Country</td><td>A few countries hold most users (skew)</td></tr><tr><td>User id (hashed)</td><td>Good for per-user queries, bad for cross-user analytics</td></tr><tr><td>Auto-increment id</td><td>Monotonic: with range partitioning it is a hot spot</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Costs of sharding</h3>
+<ul><li><strong>Cross-shard queries</strong> and joins are slow or impossible. Denormalise or use a search or analytics store.</li><li><strong>Cross-shard transactions</strong> need two-phase commit or sagas (<a href="sd6-consistency.html">SD6</a>).</li><li><strong>Resharding</strong> is operationally hard.</li><li><strong>Unique ids</strong> and constraints must work across shards (<a href="sd12-data-systems.html">SD12</a>).</li></ul>
+<div class="callout tip"><span class="callout-title">Rule of thumb</span><p>Postpone sharding. First optimise queries, add indexes, add read replicas and cache. Shard when a single primary cannot handle the write volume or the dataset no longer fits.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd5-q04" data-topic="Replication and sharding" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is timestamp a poor shard key under range partitioning?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Timestamps are large <span class="q-why">Not the reason.</span></li>
+          <li data-key="B">All current writes hit the newest shard (hot spot) <span class="q-why">Correct.</span></li>
+          <li data-key="C">Timestamps cannot be hashed <span class="q-why">They can.</span></li>
+          <li data-key="D">It breaks replication <span class="q-why">Unrelated.</span></li>
+        </ul>
+        <div class="q-explain"><p>Monotonic keys concentrate writes. Hash the key or add a prefix to spread them.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd5-q05" data-topic="Replication and sharding" data-type="multi" data-answer="A,B,D">
+        <div class="q-stem"><p>Which are downsides of sharding? Select all.</p></div>
+        <ul class="q-options">
+          <li data-key="A">Cross-shard joins are hard</li>
+          <li data-key="B">Cross-shard transactions are complex</li>
+          <li data-key="C">Capacity is limited to one machine</li>
+          <li data-key="D">Resharding is operationally difficult</li>
+        </ul>
+        <div class="q-explain"><p>Sharding exists to break the single-machine capacity limit, but it introduces cross-shard complexity.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Range versus hash partitioning?</summary><div class="answer"><p>Range keeps order and supports range scans but risks hot spots; hash spreads evenly but loses order.</p></div></details>
+      </div>
+    </section>
+
+    <section id="consistent" data-track>
+      <h2>Consistent hashing</h2>
+<h3>The problem it solves</h3>
+<p>With <code>hash(key) % N</code>, changing N moves almost every key, which would flush a whole cache cluster or trigger a huge data migration. <strong>Consistent hashing</strong> moves only about <code>1/N</code> of keys when a node is added or removed.</p>
+<h3>The ring</h3>
+<p>Hash both servers and keys onto the same circular space (for example 0 to 2^32 - 1). A key is stored on the first server found moving clockwise from the key's position.</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="Consistent hashing ring (conceptual). Keys go to the next server clockwise." style="min-width:760px"><defs><marker id="ah10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah10a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah10b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah10d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah10)"/><text x="212.0" y="44.0" text-anchor="middle" class="d-sm d-muted">goes to</text><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah10)"/><text x="640.0" y="44.0" text-anchor="middle" class="d-sm d-muted">goes to</text><line x1="448.0" y1="147.0" x2="190.0" y2="147.0" class="d-line" marker-end="url(#ah10)"/><text x="319.0" y="142.0" text-anchor="middle" class="d-sm d-muted">wraps to</text><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-e"/><text x="105.0" y="53.5" text-anchor="middle">key a (hash 20)</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="319.0" y="53.5" text-anchor="middle">server A (hash 30)</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-e"/><text x="533.0" y="53.5" text-anchor="middle">key b (hash 50)</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="747.0" y="53.5" text-anchor="middle">server B (hash 70)</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-e"/><text x="533.0" y="151.5" text-anchor="middle">key c (hash 90)</text><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="151.5" text-anchor="middle" class="d-sm">server C (hash 10, wraps)</text></svg>
+</div>
+<figcaption>Consistent hashing ring (conceptual). Keys go to the next server clockwise.</figcaption></figure>
+<p>When server B is removed, only the keys that mapped to B move, to the next server (C here). Everything else stays.</p>
+<h3>Virtual nodes</h3>
+<p>With few servers, positions on the ring are uneven, so one server may own a big arc. Give each physical server many <strong>virtual nodes</strong> (100 to 500 points on the ring). Load evens out, and a failed server's load spreads across all others instead of landing on a single neighbour. Powerful servers can get more virtual nodes.</p>
+<h3>A working implementation</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd5-03.py">import bisect, hashlib
+
+class Ring:
+    def __init__(self, nodes=(), vnodes=100):
+        self.vnodes = vnodes
+        self.keys = []      # sorted hash positions
+        self.owner = {}     # position -&gt; node
+        for n in nodes:
+            self.add(n)
+
+    @staticmethod
+    def _h(s):
+        return int(hashlib.md5(s.encode()).hexdigest(), 16)
+
+    def add(self, node):
+        for i in range(self.vnodes):
+            p = self._h("%s#%d" % (node, i))
+            bisect.insort(self.keys, p)
+            self.owner[p] = node
+
+    def remove(self, node):
+        for i in range(self.vnodes):
+            p = self._h("%s#%d" % (node, i))
+            self.keys.remove(p)
+            del self.owner[p]
+
+    def get(self, key):
+        i = bisect.bisect(self.keys, self._h(key)) % len(self.keys)
+        return self.owner[self.keys[i]]
+
+keys = ["user%d" % i for i in range(10000)]
+ring = Ring(["A", "B", "C", "D"])
+before = {k: ring.get(k) for k in keys}
+ring.add("E")
+after = {k: ring.get(k) for k in keys}
+moved = sum(1 for k in keys if before[k] != after[k])
+print("keys moved after adding a 5th node: %.1f%% (ideal 20%%)" % (100 * moved / len(keys)))
+counts = {}
+for k in keys:
+    counts[after[k]] = counts.get(after[k], 0) + 1
+print(sorted(counts.items()))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>keys moved after adding a 5th node: 18.8% (ideal 20%)
+[('A', 2034), ('B', 2286), ('C', 2020), ('D', 1778), ('E', 1882)]</code></pre>
+<p>Compare with the 80 percent shuffle of the modulo scheme above. Consistent hashing is used by Dynamo, Cassandra, memcached clients, CDNs and many load balancers.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd5-q06" data-topic="Replication and sharding" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In consistent hashing, what do virtual nodes fix?</p></div>
+        <ul class="q-options">
+          <li data-key="A">They encrypt keys <span class="q-why">No.</span></li>
+          <li data-key="B">Uneven load from few ring positions, and uneven load transfer after a failure <span class="q-why">Correct.</span></li>
+          <li data-key="C">They remove the need for hashing <span class="q-why">No.</span></li>
+          <li data-key="D">They make writes synchronous <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Many virtual nodes per server smooth out the distribution.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd5-q07" data-topic="Replication and sharding" data-type="numeric" data-answer="20" data-tol="5">
+        <div class="q-stem"><p>Approximately what fraction of keys move when you add a 5th node to a consistent hash ring of 4 equal nodes? (answer as a percent)</p></div>
+        <div class="q-explain"><p>About 1/5 of the keys, or 20 percent, move to the new node. Modulo hashing would move about 80 percent.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why consistent hashing?</summary><div class="answer"><p>Adding or removing a node moves only about 1/N of the keys instead of nearly all of them.</p></div></details>
+      </div>
+    </section>
+
+    <section id="rebalancing" data-track>
+      <h2>Rebalancing and resharding</h2>
+<h3>Fixed number of partitions</h3>
+<p>Create many more partitions than nodes (say 1,000 partitions on 10 nodes). Adding a node steals some whole partitions from existing nodes. Only the partitions move, and the key to partition mapping never changes. Used by Elasticsearch, Riak, Couchbase and Kafka.</p>
+<h3>Dynamic splitting</h3>
+<p>Start with few partitions. When one grows beyond a size limit it <strong>splits</strong> in two, and small ones merge. Used by HBase, MongoDB and range-sharded systems.</p>
+<h3>Doing it online</h3>
+<ol><li>Add the new shard and start <strong>dual writes</strong> or log shipping to it.</li><li>Backfill existing data.</li><li>Verify with checksums and shadow reads.</li><li>Switch reads, then writes.</li><li>Clean up the old data.</li></ol>
+<p>Throttle the copy so rebalancing does not hurt production traffic.</p>
+<h3>Rebalancing and failure detection</h3>
+<p>Do not rebalance automatically on a brief failure: a slow node looks dead, and moving its data creates even more load. Many systems require a human or a long timeout before moving data.</p>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you reshard online?</summary><div class="answer"><p>Dual write or ship the log, backfill, verify, switch reads then writes, clean up, all throttled.</p></div></details>
+      </div>
+    </section>
+
+    <section id="summary" data-track>
+      <h2>Putting it together</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Question</th><th>Typical answer</th></tr></thead>
+<tbody>
+<tr><td>Need more read capacity?</td><td>Add read replicas and cache (watch replication lag)</td></tr><tr><td>Need more write capacity or data size?</td><td>Shard by a well-chosen key</td></tr><tr><td>Need to survive node failure?</td><td>Replicate (usually 3 copies), automate failover with fencing</td></tr><tr><td>Need multi-region low latency?</td><td>Region replicas, possibly multi-leader with conflict resolution</td></tr><tr><td>Adding or removing nodes often?</td><td>Consistent hashing or fixed many partitions</td></tr>
+</tbody>
+</table>
+</div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Replication and sharding</h2>
+      <p class="muted">11 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Replication and sharding">
+<details class="recall iq" data-level="basic" data-topic="Replication and sharding"><summary><span class="tag ok">Basic</span> Replication versus sharding?</summary><div class="answer"><p>Replication copies the same data to several nodes for availability, durability and read scaling. Sharding splits data across nodes for capacity and write scaling.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Replication and sharding"><summary><span class="tag ok">Basic</span> What is leader-follower replication?</summary><div class="answer"><p>One leader accepts writes and ships a log to followers, which serve reads and take over if the leader fails.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Replication and sharding"><summary><span class="tag warn">Medium</span> Synchronous versus asynchronous replication?</summary><div class="answer"><p>Synchronous waits for followers (no acknowledged data loss, higher latency, availability risk). Asynchronous is faster but can lose recent writes on leader failure. Semi-synchronous waits for one follower.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Replication and sharding"><summary><span class="tag warn">Medium</span> What is replication lag and how do you cope?</summary><div class="answer"><p>Followers apply changes after the leader, so reads can be stale. Read your own writes from the leader, pin users to a replica for monotonic reads, and keep related writes in one partition.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Replication and sharding"><summary><span class="tag warn">Medium</span> Range versus hash partitioning?</summary><div class="answer"><p>Range keeps ordered data and supports range scans but can create hot spots. Hash spreads load evenly but loses ordering and makes range queries scatter.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Replication and sharding"><summary><span class="tag warn">Medium</span> What is consistent hashing and why use it?</summary><div class="answer"><p>Servers and keys are hashed onto a ring and a key belongs to the next server clockwise. Adding or removing a server moves only about 1/N of keys instead of nearly all.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Replication and sharding"><summary><span class="tag warn">Medium</span> What are virtual nodes?</summary><div class="answer"><p>Many ring positions per physical server, which evens out load and spreads a failed server&#x27;s load across many others.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Replication and sharding"><summary><span class="tag bad">Advanced</span> Explain quorum reads and writes.</summary><div class="answer"><p>With N replicas, writes wait for W acknowledgements and reads query R replicas. If R + W &gt; N the sets overlap, so a read sees the latest acknowledged write.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Replication and sharding"><summary><span class="tag bad">Advanced</span> What is split brain and how do you prevent it?</summary><div class="answer"><p>Two nodes both act as leader after a partition or a false failure detection, accepting conflicting writes. Prevent with consensus-based leader election, leases and fencing tokens.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Replication and sharding"><summary><span class="tag bad">Advanced</span> How do you reshard without downtime?</summary><div class="answer"><p>Add the new shard, dual write or ship the log, backfill, verify, switch reads then writes, then clean up, throttling the copy. Fixed many partitions or consistent hashing makes it cheaper.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Replication and sharding"><summary><span class="tag bad">Advanced</span> What problems does sharding introduce?</summary><div class="answer"><p>Cross-shard joins and transactions, rebalancing, hot keys, global unique ids and constraints, and more operational complexity. Delay it until optimisation, replicas and caching are not enough.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd4-databases.html"><span class="dir">Previous</span><span>SD4 Databases: SQL, NoSQL and how to choose</span></a>
+      <a class="next" href="sd6-consistency.html"><span class="dir">Next</span><span>SD6 Consistency, CAP, transactions and consensus</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

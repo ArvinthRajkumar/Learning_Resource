@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="SQL8">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Transactions in depth: isolation anomalies, locking, MVCC and two-connection experiments | Python + SQL</title>
+<meta name="description" content="Isolation levels and the anomalies they allow, MVCC snapshots, pessimistic and optimistic locking, deadlocks, savepoints, retries and idempotent writes, with experiments using two real database connections.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SQL8</p>
+      <h1>Transactions in depth: isolation anomalies, locking, MVCC and two-connection experiments</h1>
+      <p class="lede">Concurrency bugs only show up under load, which makes them expensive. This part makes them visible: two connections, one database, and a clear picture of what each isolation level guarantees. Experiments run on SQLite; where PostgreSQL or MySQL behave differently, the text says so.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="acid" data-track>
+      <h2>ACID, precisely</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Letter</th><th>Guarantee</th><th>Mechanism</th></tr></thead>
+<tbody>
+<tr><td><strong>Atomicity</strong></td><td>All of a transaction's changes happen or none</td><td>Undo log, rollback</td></tr><tr><td><strong>Consistency</strong></td><td>Constraints hold before and after</td><td>Constraints, triggers, your code</td></tr><tr><td><strong>Isolation</strong></td><td>Concurrent transactions do not see each other's partial work</td><td>Locks or MVCC snapshots</td></tr><tr><td><strong>Durability</strong></td><td>Committed data survives a crash</td><td>Write-ahead log, fsync</td></tr>
+</tbody>
+</table>
+</div>
+<p>Atomicity is easy to see: a failed transfer must not leave money half moved.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sql8-01.py">import sqlite3
+db = sqlite3.connect(":memory:", isolation_level=None)
+db.executescript("CREATE TABLE acct(id INTEGER PRIMARY KEY, bal INT CHECK (bal &gt;= 0)); INSERT INTO acct VALUES (1, 100), (2, 50);")
+def transfer(src, dst, amount):
+    db.execute("BEGIN")
+    try:
+        db.execute("UPDATE acct SET bal = bal - ? WHERE id = ?", (amount, src))   # may violate CHECK
+        db.execute("UPDATE acct SET bal = bal + ? WHERE id = ?", (amount, dst))
+        db.execute("COMMIT"); return "committed"
+    except sqlite3.Error as e:
+        db.execute("ROLLBACK"); return f"rolled back ({e})"
+print(transfer(1, 2, 30))
+print(transfer(1, 2, 500))
+print("balances:", db.execute("SELECT id, bal FROM acct ORDER BY id").fetchall(), "| total is still", db.execute("SELECT SUM(bal) FROM acct").fetchone()[0])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>committed
+rolled back (CHECK constraint failed: bal &gt;= 0)
+balances: [(1, 70), (2, 80)] | total is still 150</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql8-q01" data-topic="Transactions in depth" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which ACID property does the write-ahead log mainly provide?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Atomicity only <span class="q-why">Rollback uses undo.</span></li>
+          <li data-key="B">Durability (and enables recovery) <span class="q-why">Correct.</span></li>
+          <li data-key="C">Isolation <span class="q-why">No.</span></li>
+          <li data-key="D">Consistency <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Committed work can be replayed after a crash.</p></div>
+      </div>
+    </section>
+
+    <section id="anomalies" data-track>
+      <h2>Anomalies</h2>
+<p>An <strong>anomaly</strong> is a surprising result of concurrency. The standard list:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Anomaly</th><th>What happens</th></tr></thead>
+<tbody>
+<tr><td><strong>Dirty read</strong></td><td>Read another transaction's uncommitted change</td></tr><tr><td><strong>Non-repeatable read</strong></td><td>Read a row twice in one transaction and get different values (someone committed between)</td></tr><tr><td><strong>Phantom read</strong></td><td>Run a range query twice and get different sets of rows</td></tr><tr><td><strong>Lost update</strong></td><td>Two read-modify-write cycles overwrite each other</td></tr><tr><td><strong>Write skew</strong></td><td>Two transactions each check a condition on overlapping data, then write different rows, together violating a rule</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Isolation levels (SQL standard)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Level</th><th>Dirty read</th><th>Non-repeatable</th><th>Phantom</th></tr></thead>
+<tbody>
+<tr><td>Read uncommitted</td><td>Possible</td><td>Possible</td><td>Possible</td></tr><tr><td>Read committed</td><td>No</td><td>Possible</td><td>Possible</td></tr><tr><td>Repeatable read</td><td>No</td><td>No</td><td>Possible (not in PostgreSQL or MySQL InnoDB, which use snapshots)</td></tr><tr><td>Serializable</td><td>No</td><td>No</td><td>No</td></tr>
+</tbody>
+</table>
+</div>
+<p>Defaults differ: <strong>PostgreSQL</strong> read committed; <strong>MySQL InnoDB</strong> repeatable read; <strong>SQL Server</strong> read committed (optionally snapshot); <strong>Oracle</strong> read committed; <strong>SQLite</strong> is effectively serializable (one writer at a time). Lost update and write skew are not in the classic table, which is why they surprise people: <strong>snapshot isolation</strong> (PostgreSQL's repeatable read) still allows write skew; only true <strong>serializable</strong> (SSI in PostgreSQL) prevents it.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql8-q02" data-topic="Transactions in depth" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which anomaly occurs when a range query returns different row sets inside one transaction?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Dirty read <span class="q-why">No.</span></li>
+          <li data-key="B">Phantom read <span class="q-why">Correct.</span></li>
+          <li data-key="C">Lost update <span class="q-why">No.</span></li>
+          <li data-key="D">Deadlock <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>New rows matching the range appear.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name the five anomalies.</summary><div class="answer"><p>Dirty read, non-repeatable read, phantom read, lost update and write skew.</p></div></details>
+      </div>
+    </section>
+
+    <section id="lost" data-track>
+      <h2>Lost update, made visible</h2>
+<p>Both sessions read a balance, compute in the application, then write. The interleaving below is exactly what concurrent requests can produce.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sql8-02.py">import sqlite3
+db = sqlite3.connect(":memory:", isolation_level=None)
+db.executescript("CREATE TABLE counter(id INTEGER PRIMARY KEY, n INT); INSERT INTO counter VALUES (1, 10);")
+a = db.execute("SELECT n FROM counter WHERE id = 1").fetchone()[0]          # session A reads 10
+b = db.execute("SELECT n FROM counter WHERE id = 1").fetchone()[0]          # session B reads 10
+db.execute("UPDATE counter SET n = ? WHERE id = 1", (a + 1,))               # A writes 11
+db.execute("UPDATE counter SET n = ? WHERE id = 1", (b + 1,))               # B writes 11 (A's update is lost)
+print("read-modify-write result:", db.execute("SELECT n FROM counter").fetchone()[0], "(two increments, but the value went up by one)")
+db.execute("UPDATE counter SET n = 10")
+db.execute("UPDATE counter SET n = n + 1 WHERE id = 1")                      # atomic, evaluated inside the database
+db.execute("UPDATE counter SET n = n + 1 WHERE id = 1")
+print("atomic increment result :", db.execute("SELECT n FROM counter").fetchone()[0])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>read-modify-write result: 11 (two increments, but the value went up by one)
+atomic increment result : 12</code></pre>
+<p>Fixes, from simplest to most flexible:</p>
+<ol><li><strong>Atomic update in SQL</strong> (<code>SET n = n + 1</code>).</li><li><strong>Pessimistic lock</strong>: <code>SELECT ... FOR UPDATE</code> so the second reader waits.</li><li><strong>Optimistic lock</strong>: add a <code>version</code> column and update <code>WHERE id = ? AND version = ?</code>; if zero rows change, someone else won, so re-read and retry.</li><li><strong>Serializable isolation</strong> with retries.</li></ol>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql8-q03" data-topic="Transactions in depth" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you fix a lost update caused by read-modify-write?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Retry the read <span class="q-why">No.</span></li>
+          <li data-key="B">Use an atomic UPDATE, a lock, optimistic versioning or serializable isolation <span class="q-why">Correct.</span></li>
+          <li data-key="C">Add an index <span class="q-why">No.</span></li>
+          <li data-key="D">Use a bigger server <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Make the check and write one atomic step.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why is SET n = n + 1 safe?</summary><div class="answer"><p>The read and write happen atomically inside the database under a row lock.</p></div></details>
+      </div>
+    </section>
+
+    <section id="optimistic" data-track>
+      <h2>Optimistic locking</h2>
+<pre><code class="lang-py" data-embed="solutions/snippets/sql8-03.py">import sqlite3
+db = sqlite3.connect(":memory:", isolation_level=None)
+db.executescript("CREATE TABLE doc(id INTEGER PRIMARY KEY, body TEXT, version INT); INSERT INTO doc VALUES (1, 'v1 text', 1);")
+def load(): return db.execute("SELECT body, version FROM doc WHERE id = 1").fetchone()
+def save(body, expected_version):
+    cur = db.execute("UPDATE doc SET body = ?, version = version + 1 WHERE id = 1 AND version = ?", (body, expected_version))
+    return cur.rowcount == 1
+body_a, ver_a = load()          # editor A opens the document
+body_b, ver_b = load()          # editor B opens the same version
+print("A saves:", save("edited by A", ver_a))
+print("B saves with a stale version:", save("edited by B", ver_b), "-&gt; B must reload and merge")
+print("stored:", load())</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>A saves: True
+B saves with a stale version: False -&gt; B must reload and merge
+stored: ('edited by A', 2)</code></pre>
+<p>Optimistic locking suits low contention (long think time, web forms) because nothing is held while the user thinks. Under high contention it wastes work in retries.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql8-q04" data-topic="Transactions in depth" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In optimistic locking, how is a conflict detected?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A lock is held <span class="q-why">That is pessimistic.</span></li>
+          <li data-key="B">The UPDATE ... WHERE version = ? affects zero rows <span class="q-why">Correct.</span></li>
+          <li data-key="C">A deadlock <span class="q-why">No.</span></li>
+          <li data-key="D">The disk is full <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Reload and retry when someone else changed the row.</p></div>
+      </div>
+    </section>
+
+    <section id="twoconn" data-track>
+      <h2>Two real connections</h2>
+<p>SQLite allows many readers but <strong>one writer at a time</strong>. Two connections to one file make that visible.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sql8-04.py">import sqlite3, os, tempfile
+path = os.path.join(tempfile.mkdtemp(), "demo.db")
+a = sqlite3.connect(path, isolation_level=None, timeout=0.2)
+b = sqlite3.connect(path, isolation_level=None, timeout=0.2)
+a.execute("CREATE TABLE t(id INTEGER PRIMARY KEY, v INT)"); a.execute("INSERT INTO t VALUES (1, 10)")
+a.execute("BEGIN IMMEDIATE")                                  # A takes the write lock
+a.execute("UPDATE t SET v = 20 WHERE id = 1")
+try:
+    b.execute("BEGIN IMMEDIATE")                              # B also wants to write
+    b.execute("UPDATE t SET v = 99 WHERE id = 1")
+except sqlite3.OperationalError as e:
+    print("B is blocked:", e)
+a.execute("COMMIT")
+b.execute("BEGIN IMMEDIATE"); b.execute("UPDATE t SET v = v + 1 WHERE id = 1"); b.execute("COMMIT")
+print("after both finish:", a.execute("SELECT v FROM t").fetchone()[0])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>B is blocked: database is locked
+after both finish: 21</code></pre>
+<p>In PostgreSQL and MySQL row-level locks let writers to different rows proceed in parallel; a second writer to the <strong>same row</strong> waits until the first commits or rolls back.</p>
+<h3>Readers and snapshots (WAL mode)</h3>
+<p>In SQLite's WAL mode, readers see a consistent snapshot and do not block the writer: a read transaction keeps seeing the data as of its start.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sql8-05.py">import sqlite3, os, tempfile
+path = os.path.join(tempfile.mkdtemp(), "wal.db")
+w = sqlite3.connect(path, isolation_level=None)
+r = sqlite3.connect(path, isolation_level=None)
+print("journal mode:", w.execute("PRAGMA journal_mode=WAL").fetchone()[0])
+w.execute("CREATE TABLE t(id INTEGER PRIMARY KEY, v INT)"); w.execute("INSERT INTO t VALUES (1, 10)")
+r.execute("BEGIN"); first = r.execute("SELECT v FROM t WHERE id = 1").fetchone()[0]     # snapshot starts here
+w.execute("UPDATE t SET v = 20 WHERE id = 1")                                          # committed by the writer
+second = r.execute("SELECT v FROM t WHERE id = 1").fetchone()[0]                       # still the old snapshot
+r.execute("COMMIT")
+third = r.execute("SELECT v FROM t WHERE id = 1").fetchone()[0]                        # new transaction sees new data
+print("reader saw", first, "then", second, "inside its transaction, and", third, "afterwards")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>journal mode: wal
+reader saw 10 then 10 inside its transaction, and 20 afterwards</code></pre>
+    </section>
+
+    <section id="mvcc" data-track>
+      <h2>MVCC in one paragraph</h2>
+<p><strong>Multi-version concurrency control</strong> keeps several versions of each row. Writers create new versions instead of overwriting; each transaction reads the versions visible to its snapshot, so <strong>readers never block writers and writers never block readers</strong>. PostgreSQL stores old row versions in the table (cleaned by <code>VACUUM</code>); MySQL InnoDB keeps old versions in undo logs. The cost: dead versions to clean, long transactions that hold back cleanup (bloat), and snapshot anomalies such as write skew.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql8-q05" data-topic="Transactions in depth" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does MVCC buy you?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Faster disks <span class="q-why">No.</span></li>
+          <li data-key="B">Readers do not block writers and writers do not block readers <span class="q-why">Correct.</span></li>
+          <li data-key="C">No transactions <span class="q-why">No.</span></li>
+          <li data-key="D">No indexes <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Each transaction reads a consistent snapshot of row versions.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Where do PostgreSQL and InnoDB keep old versions?</summary><div class="answer"><p>PostgreSQL in the table itself (cleaned by VACUUM); InnoDB in undo logs.</p></div></details>
+      </div>
+    </section>
+
+    <section id="skew" data-track>
+      <h2>Write skew</h2>
+<p>Rule: at least one doctor must stay on call. Two doctors each check "is someone else on call?" and both go off call. Each transaction wrote a different row, so there is no write-write conflict, yet the rule breaks.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sql8-06.py">import sqlite3
+db = sqlite3.connect(":memory:", isolation_level=None)
+db.executescript("CREATE TABLE oncall(doc TEXT PRIMARY KEY, on_duty INT); INSERT INTO oncall VALUES ('ana', 1), ('bo', 1);")
+# Both transactions evaluate their check against the same snapshot (state at start), then write different rows
+others_for_ana = db.execute("SELECT COUNT(*) FROM oncall WHERE on_duty = 1 AND doc &lt;&gt; 'ana'").fetchone()[0]
+others_for_bo = db.execute("SELECT COUNT(*) FROM oncall WHERE on_duty = 1 AND doc &lt;&gt; 'bo'").fetchone()[0]
+if others_for_ana &gt;= 1: db.execute("UPDATE oncall SET on_duty = 0 WHERE doc = 'ana'")
+if others_for_bo &gt;= 1: db.execute("UPDATE oncall SET on_duty = 0 WHERE doc = 'bo'")
+print("doctors on duty afterwards:", db.execute("SELECT COUNT(*) FROM oncall WHERE on_duty = 1").fetchone()[0], "(the invariant 'at least one' is broken)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>doctors on duty afterwards: 0 (the invariant 'at least one' is broken)</code></pre>
+<p>Fixes: run at <strong>serializable</strong> isolation and retry on failure; lock the rows that the check reads (<code>SELECT ... FOR UPDATE</code> on the oncall set); materialise the conflict (a single row that every transaction must update); or enforce the rule with a constraint or a trigger.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql8-q06" data-topic="Transactions in depth" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Which isolation level reliably prevents write skew?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Read committed <span class="q-why">No.</span></li>
+          <li data-key="B">Snapshot or repeatable read (as in PostgreSQL) <span class="q-why">Still allows it.</span></li>
+          <li data-key="C">Serializable <span class="q-why">Correct.</span></li>
+          <li data-key="D">Read uncommitted <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Or lock the rows the check reads.</p></div>
+      </div>
+    </section>
+
+    <section id="locks" data-track>
+      <h2>Pessimistic locking and deadlocks</h2>
+<pre><code>-- PostgreSQL / MySQL
+BEGIN;
+SELECT * FROM accounts WHERE id = 1 FOR UPDATE;      -- row locked until commit
+UPDATE accounts SET balance = balance - 50 WHERE id = 1;
+COMMIT;
+
+SELECT ... FOR UPDATE SKIP LOCKED;   -- take the next unlocked job (work queues)
+SELECT ... FOR UPDATE NOWAIT;        -- fail immediately instead of waiting
+SELECT ... FOR SHARE;                -- lock against modification, allow other readers</code></pre>
+<p>A <strong>deadlock</strong> is a cycle of waits: T1 holds row A and wants B while T2 holds B and wants A. The database detects it and aborts one transaction (an error you must retry). Prevent by <strong>locking rows in a consistent order</strong>, keeping transactions short, and avoiding user interaction inside a transaction.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sql8-07.py">def find_deadlock(waits_for):
+    """waits_for: {transaction: transaction it waits for}. Returns a cycle if any."""
+    for start in waits_for:
+        seen, cur = [], start
+        while cur in waits_for and cur not in seen:
+            seen.append(cur); cur = waits_for[cur]
+        if cur in seen:
+            return seen[seen.index(cur):] + [cur]
+    return None
+print("T1 waits for T2, T2 waits for T1:", find_deadlock({"T1": "T2", "T2": "T1"}))
+print("T1 waits for T2, T2 waits for T3:", find_deadlock({"T1": "T2", "T2": "T3"}))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>T1 waits for T2, T2 waits for T1: ['T1', 'T2', 'T1']
+T1 waits for T2, T2 waits for T3: None</code></pre>
+<p>Advisory locks (<code>pg_advisory_lock</code>, <code>GET_LOCK</code>) lock an arbitrary application-chosen key, handy for "only one worker runs this job".</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql8-q07" data-topic="Transactions in depth" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you avoid most deadlocks?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Longer transactions <span class="q-why">Worse.</span></li>
+          <li data-key="B">Lock rows in a consistent order and keep transactions short <span class="q-why">Correct.</span></li>
+          <li data-key="C">Disable locks <span class="q-why">Unsafe.</span></li>
+          <li data-key="D">More threads <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Cycles need opposite lock orders.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does SKIP LOCKED do?</summary><div class="answer"><p>Skips rows that other transactions have locked, so workers can pick different jobs from a queue table.</p></div></details>
+      </div>
+    </section>
+
+    <section id="savepoints" data-track>
+      <h2>Savepoints and error handling</h2>
+<p>A <strong>savepoint</strong> lets you roll back part of a transaction. In PostgreSQL an error aborts the whole transaction unless you used a savepoint.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sql8-08.py">import sqlite3
+db = sqlite3.connect(":memory:", isolation_level=None)
+db.executescript("CREATE TABLE item(id INTEGER PRIMARY KEY, name TEXT UNIQUE);")
+db.execute("BEGIN")
+db.execute("INSERT INTO item(name) VALUES ('a')")
+db.execute("SAVEPOINT sp1")
+try:
+    db.execute("INSERT INTO item(name) VALUES ('a')")          # duplicate: violates UNIQUE
+except sqlite3.IntegrityError as e:
+    db.execute("ROLLBACK TO sp1")                              # undo only the failed part
+    print("duplicate rejected, transaction continues:", e)
+db.execute("INSERT INTO item(name) VALUES ('b')")
+db.execute("COMMIT")
+print(db.execute("SELECT name FROM item ORDER BY name").fetchall())</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>duplicate rejected, transaction continues: UNIQUE constraint failed: item.name
+[('a',), ('b',)]</code></pre>
+    </section>
+
+    <section id="retries" data-track>
+      <h2>Retries and idempotent writes</h2>
+<p>Serialization failures, deadlocks and lock timeouts are <strong>normal</strong> in concurrent systems. Wrap the whole transaction in a retry loop with a small jittered back-off, and make the transaction <strong>idempotent</strong> so a retry after an ambiguous failure (a commit whose acknowledgement was lost) is safe. Use a unique key per request (<code>INSERT ... ON CONFLICT DO NOTHING</code>).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sql8-09.py">import sqlite3
+db = sqlite3.connect(":memory:", isolation_level=None)
+db.executescript("CREATE TABLE payment(request_id TEXT PRIMARY KEY, amount INT); CREATE TABLE ledger(total INT); INSERT INTO ledger VALUES (0);")
+def pay(request_id, amount):
+    db.execute("BEGIN")
+    cur = db.execute("INSERT INTO payment VALUES (?, ?) ON CONFLICT(request_id) DO NOTHING", (request_id, amount))
+    if cur.rowcount == 1:
+        db.execute("UPDATE ledger SET total = total + ?", (amount,))
+    db.execute("COMMIT")
+    return "applied" if cur.rowcount == 1 else "duplicate ignored"
+print([pay("req-1", 50), pay("req-1", 50), pay("req-2", 20), pay("req-1", 50)])
+print("ledger total:", db.execute("SELECT total FROM ledger").fetchone()[0], "(70, not 170)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>['applied', 'duplicate ignored', 'applied', 'duplicate ignored']
+ledger total: 70 (70, not 170)</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql8-q08" data-topic="Transactions in depth" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What makes a retried transaction safe after an ambiguous commit failure?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Nothing <span class="q-why">No.</span></li>
+          <li data-key="B">An idempotency key stored with a unique constraint so the work happens once <span class="q-why">Correct.</span></li>
+          <li data-key="C">Sleep <span class="q-why">No.</span></li>
+          <li data-key="D">A smaller batch <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The retry becomes a no-op if the first attempt actually succeeded.</p></div>
+      </div>
+    </section>
+
+    <section id="rules" data-track>
+      <h2>Practical rules</h2>
+<ol><li>Keep transactions <strong>short</strong>; never wait for a user or a network call inside one.</li><li>Touch rows in a <strong>consistent order</strong>.</li><li>Prefer <strong>atomic SQL</strong> (<code>n = n + 1</code>, conditional updates) over read-modify-write in the app.</li><li>Choose the <strong>lowest isolation that is correct</strong>, and test the interleavings that matter.</li><li><strong>Retry</strong> on serialization failure, deadlock and timeout.</li><li>Use <strong>constraints</strong> (unique, check, foreign key) as the final line of defence.</li><li>Watch for <strong>long-running transactions</strong>: they hold locks and block cleanup.</li><li>Monitor lock waits, deadlocks and replication lag.</li></ol>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Concurrency bugs are about interleavings. Know which anomalies your isolation level allows, prefer atomic statements and constraints, use optimistic or pessimistic locks where you must read-then-write, and always be ready to retry.</p></div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why keep transactions short?</summary><div class="answer"><p>They hold locks and block cleanup and other work; short ones reduce contention and deadlocks.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Transactions in depth</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Transactions in depth">
+<details class="recall iq" data-level="basic" data-topic="Transactions in depth"><summary><span class="tag ok">Basic</span> State the ACID properties.</summary><div class="answer"><p>Atomicity, Consistency, Isolation, Durability: all-or-nothing changes, valid states, concurrent transactions behave as if separate, committed data survives crashes.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Transactions in depth"><summary><span class="tag ok">Basic</span> What is a dirty read?</summary><div class="answer"><p>Reading another transaction&#x27;s uncommitted change, which may later roll back.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Transactions in depth"><summary><span class="tag warn">Medium</span> List the isolation levels and what each prevents.</summary><div class="answer"><p>Read uncommitted allows dirty reads; read committed prevents them; repeatable read also prevents non-repeatable reads; serializable also prevents phantoms and write skew.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Transactions in depth"><summary><span class="tag warn">Medium</span> What is a lost update and how do you prevent it?</summary><div class="answer"><p>Two read-modify-write cycles overwrite each other. Use an atomic UPDATE expression, SELECT FOR UPDATE, optimistic versioning, or serializable isolation.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Transactions in depth"><summary><span class="tag warn">Medium</span> Optimistic versus pessimistic locking?</summary><div class="answer"><p>Pessimistic locks rows up front and blocks others; optimistic checks at write time (version column) and retries on conflict. Optimistic suits low contention.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Transactions in depth"><summary><span class="tag warn">Medium</span> What is a deadlock and how do you avoid it?</summary><div class="answer"><p>A cycle of transactions each waiting for a lock the other holds. Lock in a consistent order, keep transactions short, and retry when the database aborts one.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Transactions in depth"><summary><span class="tag warn">Medium</span> What is MVCC?</summary><div class="answer"><p>Multi-version concurrency control keeps several versions of rows so readers see a snapshot and do not block writers, at the cost of cleanup of old versions.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Transactions in depth"><summary><span class="tag warn">Medium</span> What does SELECT ... FOR UPDATE SKIP LOCKED do?</summary><div class="answer"><p>Locks selected rows and skips rows already locked by others, letting workers claim distinct jobs from a queue table.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Transactions in depth"><summary><span class="tag bad">Advanced</span> What is write skew?</summary><div class="answer"><p>Two transactions read overlapping data, make decisions on it and write different rows, jointly violating an invariant. Snapshot isolation allows it; serializable, explicit locks or constraints prevent it.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Transactions in depth"><summary><span class="tag bad">Advanced</span> How do savepoints help?</summary><div class="answer"><p>They allow rolling back part of a transaction, such as handling a duplicate key error and continuing, without aborting everything (essential in PostgreSQL).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Transactions in depth"><summary><span class="tag bad">Advanced</span> How do you make a transaction safe to retry?</summary><div class="answer"><p>Use idempotency keys with a unique constraint so repeated attempts have no extra effect, and retry on serialization failure, deadlock and timeout with backoff.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Transactions in depth"><summary><span class="tag bad">Advanced</span> Why do long-running transactions hurt?</summary><div class="answer"><p>They hold locks, block cleanup of old versions causing bloat, and widen conflict windows. Keep them short and never wait on users inside.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Transactions in depth"><summary><span class="tag bad">Advanced</span> What is the default isolation level in PostgreSQL and MySQL InnoDB?</summary><div class="answer"><p>Read committed in PostgreSQL; repeatable read in InnoDB. SQL Server and Oracle default to read committed.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Transactions in depth"><summary><span class="tag bad">Advanced</span> What is two-phase commit and why is it avoided across services?</summary><div class="answer"><p>A protocol to commit atomically across multiple resources via prepare and commit phases. It blocks on coordinator failure and couples availability, so sagas are often preferred.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sql7-analytics.html"><span class="dir">Previous</span><span>SQL7 Analytics SQL: funnels, cohorts, retention, percentiles and time series</span></a>
+      <a class="next" href="sql9-more-problems.html"><span class="dir">Next</span><span>SQL9 More SQL interview problems: set two</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

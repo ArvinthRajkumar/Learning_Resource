@@ -1,0 +1,1871 @@
+{
+ "_note": "Interview question bank. Edit here, then run: python3 tools/build_interview.py",
+ "questions": [
+  {
+   "topic": "Approach",
+   "level": "basic",
+   "q": "How do you start a system design interview?",
+   "a": "Clarify the problem: functional requirements, non-functional requirements (scale, latency, availability, consistency) and what is out of scope. Then estimate, define the API and data model, draw a high-level design, deep dive, and wrap up."
+  },
+  {
+   "topic": "Approach",
+   "level": "basic",
+   "q": "What is the difference between functional and non-functional requirements?",
+   "a": "Functional requirements describe what the system does (a user can post a photo). Non-functional requirements describe how well (p99 latency under 300 ms, 99.95 percent availability, durability, security)."
+  },
+  {
+   "topic": "Approach",
+   "level": "basic",
+   "q": "Why do we talk about p99 latency instead of the average?",
+   "a": "Averages hide slow outliers. Users and fan-out calls experience the tail, so p95 and p99 reflect real experience far better."
+  },
+  {
+   "topic": "Approach",
+   "level": "medium",
+   "q": "How do you decide between consistency and availability for a feature?",
+   "a": "Ask what a wrong or missing answer costs. Money and unique identifiers need strong consistency. Feeds, likes and catalogue views tolerate staleness. Choose per operation, not for the whole system."
+  },
+  {
+   "topic": "Approach",
+   "level": "medium",
+   "q": "What if you do not know a technology the interviewer mentions?",
+   "a": "Say so, then reason from first principles: what problem it solves, what guarantees it needs, and compare with something you know. Honesty plus structured reasoning scores better than bluffing."
+  },
+  {
+   "topic": "Approach",
+   "level": "medium",
+   "q": "How do you decide what to deep dive into?",
+   "a": "Pick the components where the numbers are hardest or the requirements most demanding (the write path at scale, the hot partition, the consistency boundary), and ask the interviewer which they prefer."
+  },
+  {
+   "topic": "Approach",
+   "level": "advanced",
+   "q": "How do you evolve a design when the interviewer changes a requirement mid-way?",
+   "a": "State what changes (for example read to write ratio or consistency), identify the components affected, adjust only those with justified alternatives and say what you gave up. Show the design is modular."
+  },
+  {
+   "topic": "Approach",
+   "level": "advanced",
+   "q": "What are signs of over-engineering in a design?",
+   "a": "Technologies without a requirement or number behind them, sharding for a few hundred requests per second, many microservices for a small team, custom components where a managed one fits. Start from the simplest design that meets the numbers."
+  },
+  {
+   "topic": "Estimation",
+   "level": "basic",
+   "q": "Estimate the QPS of a service with 10 million daily active users each making 20 requests a day.",
+   "a": "10 M x 20 = 200 M requests per day, divided by 86,400 seconds gives about 2,300 average QPS. With a peak factor of 3 that is about 7,000 QPS."
+  },
+  {
+   "topic": "Estimation",
+   "level": "basic",
+   "q": "How many seconds are in a day, and what do you use in estimates?",
+   "a": "86,400. Round to 100,000 (10^5) to simplify, accepting about 14 percent error."
+  },
+  {
+   "topic": "Estimation",
+   "level": "basic",
+   "q": "What is 2^10, 2^20, 2^30, 2^40?",
+   "a": "About a thousand (KB), a million (MB), a billion (GB), a trillion (TB)."
+  },
+  {
+   "topic": "Estimation",
+   "level": "medium",
+   "q": "Compare memory, SSD and disk latencies.",
+   "a": "Main memory about 100 ns, SSD random read about 100 microseconds (1,000 times slower), spinning disk seek about 10 ms (100,000 times slower than memory). Sequential access is far faster than random on all of them."
+  },
+  {
+   "topic": "Estimation",
+   "level": "medium",
+   "q": "How do you estimate storage for five years of data?",
+   "a": "Items per day x size per item x 365 x 5 x replication factor, plus headroom for indexes and growth. Estimate media separately from text."
+  },
+  {
+   "topic": "Estimation",
+   "level": "medium",
+   "q": "What does 99.99 percent availability allow?",
+   "a": "About 52 minutes of downtime per year, 4.4 minutes per month."
+  },
+  {
+   "topic": "Estimation",
+   "level": "medium",
+   "q": "How do you estimate cache size?",
+   "a": "Take the hot set, often 20 percent of daily unique items, multiplied by item size, then add overhead. Check the expected hit rate against the load the database can take."
+  },
+  {
+   "topic": "Estimation",
+   "level": "advanced",
+   "q": "Two services in series each have 99.9 percent availability. What is the total, and how do you improve it?",
+   "a": "About 99.8 percent. Improve with redundancy (parallel replicas across failure domains), fewer synchronous dependencies, caching and graceful degradation, remembering failures must be independent."
+  },
+  {
+   "topic": "Estimation",
+   "level": "advanced",
+   "q": "How do you sanity-check an estimate?",
+   "a": "Compare with a known system, with single-machine capacity (does one box handle it?), and with unit costs. If the result implies absurd hardware, revisit assumptions."
+  },
+  {
+   "topic": "Networking",
+   "level": "basic",
+   "q": "What happens when you type a URL into a browser?",
+   "a": "Cache check, DNS resolution, TCP handshake, TLS handshake, HTTP request, server processing (load balancer, application, cache, database), response, rendering and further requests."
+  },
+  {
+   "topic": "Networking",
+   "level": "basic",
+   "q": "TCP versus UDP?",
+   "a": "TCP is connection-oriented, reliable and ordered with congestion control. UDP is connectionless and best effort with lower overhead, used for DNS, real-time media and QUIC."
+  },
+  {
+   "topic": "Networking",
+   "level": "basic",
+   "q": "What does DNS do and what is TTL?",
+   "a": "It maps names to addresses through a hierarchy of resolvers and authoritative servers. TTL is how long an answer may be cached."
+  },
+  {
+   "topic": "Networking",
+   "level": "medium",
+   "q": "Why is DNS-based failover slow?",
+   "a": "Resolvers, operating systems and browsers cache answers beyond TTL and existing connections persist, so clients keep using a dead address for minutes."
+  },
+  {
+   "topic": "Networking",
+   "level": "medium",
+   "q": "HTTP/1.1 versus HTTP/2 versus HTTP/3?",
+   "a": "HTTP/1.1 uses one request at a time per connection. HTTP/2 multiplexes streams on one TCP connection. HTTP/3 runs over QUIC on UDP, removing TCP head-of-line blocking and speeding handshakes."
+  },
+  {
+   "topic": "Networking",
+   "level": "medium",
+   "q": "Explain what a CDN does and how you invalidate content.",
+   "a": "It caches content at edge locations near users, cutting latency and origin load. Invalidate by versioned file names (content hashes) or purge APIs, preferring versioning."
+  },
+  {
+   "topic": "Networking",
+   "level": "medium",
+   "q": "WebSocket, SSE or long polling for real-time updates?",
+   "a": "WebSocket for two-way low-latency (chat, collaboration), SSE for one-way server push over HTTP (feeds, notifications), long polling as a simple fallback."
+  },
+  {
+   "topic": "Networking",
+   "level": "advanced",
+   "q": "Why does TLS add latency and how do you reduce it?",
+   "a": "The handshake needs one to two round trips. Reduce with TLS 1.3, session resumption, connection reuse (keep-alive, HTTP/2), terminating TLS near users at a CDN or edge, and OCSP stapling."
+  },
+  {
+   "topic": "Networking",
+   "level": "advanced",
+   "q": "What is anycast and where is it used?",
+   "a": "Many locations announce the same IP and routing delivers a client to the nearest. DNS providers and CDNs use it for low latency and DDoS absorption."
+  },
+  {
+   "topic": "Load balancing",
+   "level": "basic",
+   "q": "What does a load balancer do?",
+   "a": "Distributes requests across servers, performs health checks, removes failed servers, can terminate TLS and presents one stable address."
+  },
+  {
+   "topic": "Load balancing",
+   "level": "basic",
+   "q": "Vertical versus horizontal scaling?",
+   "a": "Vertical adds power to one machine (simple, limited, single point of failure). Horizontal adds machines (scales further, needs load balancing and stateless design)."
+  },
+  {
+   "topic": "Load balancing",
+   "level": "basic",
+   "q": "Why make web servers stateless?",
+   "a": "Any instance can serve any request, so instances can be added, removed or replaced freely and failures lose no user state. State lives in shared stores or tokens."
+  },
+  {
+   "topic": "Load balancing",
+   "level": "medium",
+   "q": "Layer 4 versus layer 7 load balancing?",
+   "a": "L4 balances TCP or UDP connections by address and port, fast and simple. L7 understands HTTP and routes by path, header or cookie, terminates TLS and can apply auth and rate limits."
+  },
+  {
+   "topic": "Load balancing",
+   "level": "medium",
+   "q": "Round robin versus least connections?",
+   "a": "Round robin is simple and fine for uniform requests. Least connections adapts to uneven or long-lived requests by sending to the least busy server."
+  },
+  {
+   "topic": "Load balancing",
+   "level": "medium",
+   "q": "What are sticky sessions and why avoid them?",
+   "a": "The balancer pins a user to one server. It causes uneven load and loses session state on failure. Prefer a shared session store or client-side token."
+  },
+  {
+   "topic": "Load balancing",
+   "level": "medium",
+   "q": "How do health checks go wrong?",
+   "a": "Deep checks that depend on the database can eject the whole fleet during a blip. Use shallow checks, require several failures, and keep a minimum number of servers in rotation."
+  },
+  {
+   "topic": "Load balancing",
+   "level": "advanced",
+   "q": "How do you make the load balancer itself highly available?",
+   "a": "Run several in active-active across availability zones behind DNS or anycast, or an active-passive pair with a floating IP. Managed cloud load balancers do this for you."
+  },
+  {
+   "topic": "Load balancing",
+   "level": "advanced",
+   "q": "What is the power of two choices?",
+   "a": "Pick two random servers and send the request to the less loaded one. It nearly matches full least-load balancing with no global state and avoids herding."
+  },
+  {
+   "topic": "Databases",
+   "level": "basic",
+   "q": "SQL versus NoSQL: how do you choose?",
+   "a": "From access patterns and consistency needs. Relational for joins, transactions and flexible queries. Key-value for fast lookups, document for nested entities, wide-column for massive writes, graph for relationships, search engines for text."
+  },
+  {
+   "topic": "Databases",
+   "level": "basic",
+   "q": "What does ACID mean?",
+   "a": "Atomicity (all or nothing), consistency (valid state to valid state), isolation (concurrent transactions do not interfere), durability (committed data survives crashes)."
+  },
+  {
+   "topic": "Databases",
+   "level": "basic",
+   "q": "What is an index and what does it cost?",
+   "a": "A sorted structure (usually B-tree) that lets the database find rows without scanning the table. It speeds reads but uses space and slows writes."
+  },
+  {
+   "topic": "Databases",
+   "level": "medium",
+   "q": "B-tree versus LSM tree?",
+   "a": "B-trees update in place, with predictable reads and more random write I/O. LSM trees buffer writes in memory, flush sorted files and compact later, giving very fast writes and heavier read paths."
+  },
+  {
+   "topic": "Databases",
+   "level": "medium",
+   "q": "What is the leftmost prefix rule for composite indexes?",
+   "a": "An index on (a, b, c) supports queries filtering on a, on a and b, or on a, b and c, but not on b or c alone."
+  },
+  {
+   "topic": "Databases",
+   "level": "medium",
+   "q": "When would you denormalise?",
+   "a": "When read performance and simplicity for known queries outweigh the cost of duplicate data and more complex updates, typically at large scale or in NoSQL designs."
+  },
+  {
+   "topic": "Databases",
+   "level": "medium",
+   "q": "OLTP versus OLAP?",
+   "a": "OLTP handles many small transactions on row stores with millisecond latency. OLAP runs large scans and aggregations on column stores in warehouses. Keep analytics off the transactional database."
+  },
+  {
+   "topic": "Databases",
+   "level": "advanced",
+   "q": "How does a write-ahead log provide durability?",
+   "a": "The change is appended and flushed to a sequential log before data pages are modified. After a crash the database replays the log to redo committed work and undo uncommitted work. The log also feeds replication."
+  },
+  {
+   "topic": "Databases",
+   "level": "advanced",
+   "q": "Why would you pick Cassandra and how do you model data in it?",
+   "a": "For huge write throughput, linear scale and high availability. Model by query: one table per query with a partition key for the lookup and clustering columns for ordering, accepting duplication and no joins."
+  },
+  {
+   "topic": "Databases",
+   "level": "advanced",
+   "q": "What is polyglot persistence and its risk?",
+   "a": "Using different stores for different workloads. The risk is keeping them consistent, so declare one source of truth and propagate changes through events or change data capture."
+  },
+  {
+   "topic": "Replication and sharding",
+   "level": "basic",
+   "q": "Replication versus sharding?",
+   "a": "Replication copies the same data to several nodes for availability, durability and read scaling. Sharding splits data across nodes for capacity and write scaling."
+  },
+  {
+   "topic": "Replication and sharding",
+   "level": "basic",
+   "q": "What is leader-follower replication?",
+   "a": "One leader accepts writes and ships a log to followers, which serve reads and take over if the leader fails."
+  },
+  {
+   "topic": "Replication and sharding",
+   "level": "medium",
+   "q": "Synchronous versus asynchronous replication?",
+   "a": "Synchronous waits for followers (no acknowledged data loss, higher latency, availability risk). Asynchronous is faster but can lose recent writes on leader failure. Semi-synchronous waits for one follower."
+  },
+  {
+   "topic": "Replication and sharding",
+   "level": "medium",
+   "q": "What is replication lag and how do you cope?",
+   "a": "Followers apply changes after the leader, so reads can be stale. Read your own writes from the leader, pin users to a replica for monotonic reads, and keep related writes in one partition."
+  },
+  {
+   "topic": "Replication and sharding",
+   "level": "medium",
+   "q": "Range versus hash partitioning?",
+   "a": "Range keeps ordered data and supports range scans but can create hot spots. Hash spreads load evenly but loses ordering and makes range queries scatter."
+  },
+  {
+   "topic": "Replication and sharding",
+   "level": "medium",
+   "q": "What is consistent hashing and why use it?",
+   "a": "Servers and keys are hashed onto a ring and a key belongs to the next server clockwise. Adding or removing a server moves only about 1/N of keys instead of nearly all."
+  },
+  {
+   "topic": "Replication and sharding",
+   "level": "medium",
+   "q": "What are virtual nodes?",
+   "a": "Many ring positions per physical server, which evens out load and spreads a failed server's load across many others."
+  },
+  {
+   "topic": "Replication and sharding",
+   "level": "advanced",
+   "q": "Explain quorum reads and writes.",
+   "a": "With N replicas, writes wait for W acknowledgements and reads query R replicas. If R + W > N the sets overlap, so a read sees the latest acknowledged write."
+  },
+  {
+   "topic": "Replication and sharding",
+   "level": "advanced",
+   "q": "What is split brain and how do you prevent it?",
+   "a": "Two nodes both act as leader after a partition or a false failure detection, accepting conflicting writes. Prevent with consensus-based leader election, leases and fencing tokens."
+  },
+  {
+   "topic": "Replication and sharding",
+   "level": "advanced",
+   "q": "How do you reshard without downtime?",
+   "a": "Add the new shard, dual write or ship the log, backfill, verify, switch reads then writes, then clean up, throttling the copy. Fixed many partitions or consistent hashing makes it cheaper."
+  },
+  {
+   "topic": "Replication and sharding",
+   "level": "advanced",
+   "q": "What problems does sharding introduce?",
+   "a": "Cross-shard joins and transactions, rebalancing, hot keys, global unique ids and constraints, and more operational complexity. Delay it until optimisation, replicas and caching are not enough."
+  },
+  {
+   "topic": "Consistency",
+   "level": "basic",
+   "q": "What is eventual consistency?",
+   "a": "If no new writes happen, all replicas eventually converge to the same value. Reads in the meantime may be stale."
+  },
+  {
+   "topic": "Consistency",
+   "level": "basic",
+   "q": "State the CAP theorem.",
+   "a": "During a network partition a distributed system must choose between consistency (linearizability) and availability. Normal operation has no such forced choice."
+  },
+  {
+   "topic": "Consistency",
+   "level": "medium",
+   "q": "What is PACELC?",
+   "a": "If there is a Partition choose Availability or Consistency; Else choose Latency or Consistency. It captures the everyday trade-off CAP ignores."
+  },
+  {
+   "topic": "Consistency",
+   "level": "medium",
+   "q": "Name the isolation levels and anomalies.",
+   "a": "Read uncommitted (dirty reads), read committed (no dirty reads), repeatable read (no non-repeatable reads, phantoms possible), serializable (no anomalies). Write skew and lost updates need care at lower levels."
+  },
+  {
+   "topic": "Consistency",
+   "level": "medium",
+   "q": "What is MVCC?",
+   "a": "Multi-version concurrency control keeps several versions of rows so readers see a consistent snapshot without blocking writers."
+  },
+  {
+   "topic": "Consistency",
+   "level": "medium",
+   "q": "Two-phase commit versus saga?",
+   "a": "2PC gives atomic commit across participants through prepare and commit with a coordinator, but blocks and holds locks. A saga runs local transactions with compensating actions, giving eventual consistency without distributed locks."
+  },
+  {
+   "topic": "Consistency",
+   "level": "advanced",
+   "q": "Linearizability versus serializability?",
+   "a": "Linearizability is a recency guarantee for single objects (operations appear instant in real-time order). Serializability is an isolation guarantee for transactions (equivalent to some serial order). Strict serializability combines both."
+  },
+  {
+   "topic": "Consistency",
+   "level": "advanced",
+   "q": "Why are wall clocks unsafe for ordering events?",
+   "a": "Clocks drift and are corrected, so timestamps from different machines may not reflect causality. Use logical or vector clocks, or bounded uncertainty such as Spanner's TrueTime."
+  },
+  {
+   "topic": "Consistency",
+   "level": "advanced",
+   "q": "Explain Raft briefly.",
+   "a": "Nodes elect a leader per term by majority vote with randomised timeouts. The leader appends client commands to its log and replicates them; an entry commits when stored on a majority. A new leader always has all committed entries."
+  },
+  {
+   "topic": "Consistency",
+   "level": "advanced",
+   "q": "What is a fencing token?",
+   "a": "A monotonically increasing number issued with each lock or lease. Storage rejects writes with a lower token, preventing a paused former lock holder from corrupting data."
+  },
+  {
+   "topic": "Consistency",
+   "level": "advanced",
+   "q": "What is a CRDT?",
+   "a": "A data type whose replicas can be updated independently and merge deterministically without coordination, such as counters, sets and sequences. They give strong eventual consistency."
+  },
+  {
+   "topic": "Caching",
+   "level": "basic",
+   "q": "Why use a cache?",
+   "a": "It serves repeated reads from fast memory, cutting latency and protecting the backend. It works because access patterns are skewed toward a hot set."
+  },
+  {
+   "topic": "Caching",
+   "level": "basic",
+   "q": "Explain cache-aside.",
+   "a": "The application checks the cache, on a miss reads the database and populates the cache with a TTL, and on writes updates the database then invalidates the key."
+  },
+  {
+   "topic": "Caching",
+   "level": "medium",
+   "q": "Write-through versus write-back?",
+   "a": "Write-through updates cache and database together (fresh, slower writes). Write-back writes to cache and persists later (fast, risks data loss if the cache fails before flushing)."
+  },
+  {
+   "topic": "Caching",
+   "level": "medium",
+   "q": "LRU versus LFU?",
+   "a": "LRU evicts the least recently used item; LFU evicts the least frequently used. LRU adapts quickly; LFU preserves stable favourites but adapts slowly. TinyLFU combines both."
+  },
+  {
+   "topic": "Caching",
+   "level": "medium",
+   "q": "What is a cache stampede and how do you prevent it?",
+   "a": "A popular key expires and many requests rebuild it simultaneously. Prevent with request coalescing or locks, stale-while-revalidate, jittered TTLs and early refresh."
+  },
+  {
+   "topic": "Caching",
+   "level": "medium",
+   "q": "Cache penetration and avalanche?",
+   "a": "Penetration: repeated requests for non-existent keys bypass the cache; fix with negative caching or a Bloom filter. Avalanche: many keys expire together or the cache fails; fix with jitter, replication and rate limiting."
+  },
+  {
+   "topic": "Caching",
+   "level": "medium",
+   "q": "Why delete rather than update the cache on write?",
+   "a": "Updating can race with other writers and leave the cache holding an older value. Deleting lets the next read load the latest data."
+  },
+  {
+   "topic": "Caching",
+   "level": "advanced",
+   "q": "How do you handle a hot key?",
+   "a": "Replicate it across nodes with key suffixes, add a short in-process cache in front, and cache aggressively. Sharding alone does not help because one key lives on one node."
+  },
+  {
+   "topic": "Caching",
+   "level": "advanced",
+   "q": "Redis versus Memcached?",
+   "a": "Memcached is a simple multi-threaded string cache. Redis offers rich data types, persistence, replication, clustering, scripts and atomic operations, so it doubles as a lightweight data store."
+  },
+  {
+   "topic": "Caching",
+   "level": "advanced",
+   "q": "How do you keep cache and database consistent?",
+   "a": "Accept bounded staleness with TTLs, invalidate on writes, use change data capture to invalidate or update, and avoid dual writes. For strict needs read from the database or use versioned keys."
+  },
+  {
+   "topic": "Messaging",
+   "level": "basic",
+   "q": "Why use a message queue?",
+   "a": "It decouples producers and consumers, absorbs spikes, enables retries, and lets slow work happen after returning to the user."
+  },
+  {
+   "topic": "Messaging",
+   "level": "basic",
+   "q": "Queue versus pub/sub?",
+   "a": "A queue delivers each message to one consumer in a pool. Pub/sub delivers each message to every subscriber."
+  },
+  {
+   "topic": "Messaging",
+   "level": "medium",
+   "q": "At-most-once, at-least-once and exactly-once?",
+   "a": "At most once may lose messages. At least once may duplicate. Exactly once in effect needs at-least-once plus idempotent consumers or transactional processing within one system."
+  },
+  {
+   "topic": "Messaging",
+   "level": "medium",
+   "q": "What is idempotency and how do you implement it?",
+   "a": "Repeating an operation has the same effect as doing it once. Use idempotency keys with stored results, deduplication tables with unique constraints, natural idempotent updates, or conditional writes."
+  },
+  {
+   "topic": "Messaging",
+   "level": "medium",
+   "q": "What is a dead-letter queue?",
+   "a": "A queue for messages that repeatedly fail, so poison messages do not block processing. Alert on its depth and provide a way to inspect and replay."
+  },
+  {
+   "topic": "Messaging",
+   "level": "medium",
+   "q": "How does Kafka differ from a traditional queue?",
+   "a": "Kafka is a partitioned, replicated, retained log. Consumers track offsets, can replay, and many consumer groups read independently. Ordering holds within a partition."
+  },
+  {
+   "topic": "Messaging",
+   "level": "medium",
+   "q": "How do you preserve ordering?",
+   "a": "Partition by the entity key so related events share a partition and process each partition sequentially. Global ordering is expensive and rarely needed."
+  },
+  {
+   "topic": "Messaging",
+   "level": "advanced",
+   "q": "Explain the transactional outbox.",
+   "a": "Write the event to an outbox table in the same transaction as the business data. A relay or CDC publishes it afterwards, which avoids the dual-write inconsistency. Delivery is at least once so consumers deduplicate."
+  },
+  {
+   "topic": "Messaging",
+   "level": "advanced",
+   "q": "How do you handle backpressure?",
+   "a": "Bound queues, autoscale consumers on lag or message age, rate limit or slow producers, and shed or sample low-value work. Monitor oldest message age."
+  },
+  {
+   "topic": "Messaging",
+   "level": "advanced",
+   "q": "Batch versus stream processing and watermarks?",
+   "a": "Batch processes bounded data periodically; stream processes unbounded data continuously. Watermarks track event-time progress so windows can close despite late events."
+  },
+  {
+   "topic": "Messaging",
+   "level": "advanced",
+   "q": "Lambda versus Kappa architecture?",
+   "a": "Lambda runs batch and speed layers and merges them (two code paths). Kappa uses only a stream layer and reprocesses by replaying the log."
+  },
+  {
+   "topic": "APIs",
+   "level": "basic",
+   "q": "What makes a good REST API?",
+   "a": "Resource-oriented URLs, correct methods and status codes, consistent JSON and error shapes, pagination, versioning, idempotency for unsafe operations and clear documentation."
+  },
+  {
+   "topic": "APIs",
+   "level": "basic",
+   "q": "Authentication versus authorization?",
+   "a": "Authentication verifies who you are; authorization decides what you may do. Both must be checked on every request."
+  },
+  {
+   "topic": "APIs",
+   "level": "medium",
+   "q": "REST versus gRPC versus GraphQL?",
+   "a": "REST is simple and cacheable. gRPC is fast, typed and streaming for internal calls. GraphQL lets clients select fields to avoid over and under-fetching but complicates caching and query cost control."
+  },
+  {
+   "topic": "APIs",
+   "level": "medium",
+   "q": "Offset versus cursor pagination?",
+   "a": "Offset is simple but slow for large offsets and unstable when data changes. Cursor (keyset) pagination uses an index, is fast and stable but cannot jump to arbitrary pages."
+  },
+  {
+   "topic": "APIs",
+   "level": "medium",
+   "q": "How do you design rate limiting?",
+   "a": "Token bucket per client key at the gateway, with counters in Redis updated atomically, returning 429 with Retry-After, with different limits per endpoint and tier and a fail-open or fail-closed choice."
+  },
+  {
+   "topic": "APIs",
+   "level": "medium",
+   "q": "What is an API gateway?",
+   "a": "A single entry point handling TLS, authentication, rate limiting, routing and aggregation for many services, keeping business logic out."
+  },
+  {
+   "topic": "APIs",
+   "level": "medium",
+   "q": "How does OAuth 2.0 authorization code flow work?",
+   "a": "The user authenticates at the identity provider and consents; the app receives a short-lived code and exchanges it for access and refresh tokens, then calls the API with the bearer token."
+  },
+  {
+   "topic": "APIs",
+   "level": "advanced",
+   "q": "Monolith versus microservices?",
+   "a": "Start with a modular monolith. Move to microservices along business boundaries when team size or scaling demands it, accepting network failure modes, distributed data and operational cost."
+  },
+  {
+   "topic": "APIs",
+   "level": "advanced",
+   "q": "How do services find each other?",
+   "a": "Through service discovery: a registry (Consul, etcd) used by clients, or platform DNS and load balancers such as Kubernetes Services, with health checks and automatic deregistration."
+  },
+  {
+   "topic": "APIs",
+   "level": "advanced",
+   "q": "What is a service mesh?",
+   "a": "Sidecar proxies next to each service handling mutual TLS, retries, timeouts, circuit breaking, traffic splitting and telemetry without code changes, at the cost of complexity and latency."
+  },
+  {
+   "topic": "APIs",
+   "level": "advanced",
+   "q": "How do you evolve an API without breaking clients?",
+   "a": "Make additive changes, tolerate unknown fields, version breaking changes and support old versions for a deprecation window, and use contract tests."
+  },
+  {
+   "topic": "Reliability",
+   "level": "basic",
+   "q": "What are SLI, SLO and SLA?",
+   "a": "SLI is a measured indicator, SLO is the internal target for it, SLA is the contractual commitment with penalties."
+  },
+  {
+   "topic": "Reliability",
+   "level": "basic",
+   "q": "What is a single point of failure?",
+   "a": "A component whose failure takes down the system. Remove by redundancy across independent failure domains, with automatic failover."
+  },
+  {
+   "topic": "Reliability",
+   "level": "medium",
+   "q": "What is an error budget?",
+   "a": "The allowed unreliability implied by the SLO (0.1 percent for 99.9). Spend it on velocity; when exhausted, prioritise reliability work."
+  },
+  {
+   "topic": "Reliability",
+   "level": "medium",
+   "q": "Explain timeouts, retries and backoff.",
+   "a": "Every call needs a timeout. Retry only transient errors on idempotent operations with exponential backoff, jitter and a retry budget, at one layer only to avoid retry storms."
+  },
+  {
+   "topic": "Reliability",
+   "level": "medium",
+   "q": "How does a circuit breaker work?",
+   "a": "After enough failures it opens and fails fast, then after a cool-down goes half-open to probe, closing again if the probe succeeds."
+  },
+  {
+   "topic": "Reliability",
+   "level": "medium",
+   "q": "What is a bulkhead?",
+   "a": "Isolating resources (thread pools, queues, clusters) per dependency or tenant so one failure cannot exhaust everything."
+  },
+  {
+   "topic": "Reliability",
+   "level": "medium",
+   "q": "What is graceful degradation?",
+   "a": "Keeping core functionality when parts fail by serving cached or default data, disabling optional features or switching to read-only mode."
+  },
+  {
+   "topic": "Reliability",
+   "level": "advanced",
+   "q": "How do cascading failures happen and how do you stop them?",
+   "a": "A slow dependency fills caller pools and retries add load, spreading the failure. Stop with timeouts, circuit breakers, bulkheads, load shedding, retry budgets and capacity headroom."
+  },
+  {
+   "topic": "Reliability",
+   "level": "advanced",
+   "q": "RPO and RTO and DR strategies?",
+   "a": "RPO is tolerable data loss; RTO is tolerable downtime. Strategies range from backup and restore (hours) through pilot light and warm standby to active-active multi-region (near zero) at rising cost."
+  },
+  {
+   "topic": "Reliability",
+   "level": "advanced",
+   "q": "How would you design for multi-region?",
+   "a": "Route with GeoDNS or anycast, replicate data (asynchronous for latency, consensus for strictness), decide data ownership per region to avoid write conflicts, and test failover regularly."
+  },
+  {
+   "topic": "Reliability",
+   "level": "advanced",
+   "q": "How do you deploy safely?",
+   "a": "Canary and blue/green releases, feature flags, automatic rollback on SLO breach, backward-compatible migrations, and small frequent changes."
+  },
+  {
+   "topic": "Operations",
+   "level": "basic",
+   "q": "What are logs, metrics and traces?",
+   "a": "Logs are event records, metrics are aggregated numbers over time, traces follow one request across services. Together they provide observability."
+  },
+  {
+   "topic": "Operations",
+   "level": "basic",
+   "q": "What are the golden signals?",
+   "a": "Latency, traffic, errors and saturation."
+  },
+  {
+   "topic": "Operations",
+   "level": "medium",
+   "q": "RED versus USE methods?",
+   "a": "RED (rate, errors, duration) for request-driven services. USE (utilisation, saturation, errors) for resources like CPUs and disks."
+  },
+  {
+   "topic": "Operations",
+   "level": "medium",
+   "q": "What makes a good alert?",
+   "a": "It reflects user-visible symptoms, is actionable, urgent and linked to a runbook. Burn-rate alerts on SLOs are better than raw resource thresholds."
+  },
+  {
+   "topic": "Operations",
+   "level": "medium",
+   "q": "How do you store passwords?",
+   "a": "Salted slow hashes such as bcrypt, scrypt or Argon2, never plain text or fast hashes alone."
+  },
+  {
+   "topic": "Operations",
+   "level": "medium",
+   "q": "How do you prevent SQL injection and XSS?",
+   "a": "Parameterised queries and least privilege for SQL injection. Output encoding, content security policy and HttpOnly cookies for XSS."
+  },
+  {
+   "topic": "Operations",
+   "level": "medium",
+   "q": "What is defence in depth and least privilege?",
+   "a": "Layered controls so one failure is not fatal, and giving each identity only the access it needs."
+  },
+  {
+   "topic": "Operations",
+   "level": "advanced",
+   "q": "Describe expand and contract migrations.",
+   "a": "Add the new schema element, write both old and new, backfill, switch reads, then remove the old in a later release, so code and schema never need to change at the same instant."
+  },
+  {
+   "topic": "Operations",
+   "level": "advanced",
+   "q": "Containers versus VMs and what Kubernetes provides?",
+   "a": "Containers share the host kernel and are light and fast; VMs have stronger isolation. Kubernetes schedules containers, restarts failures, scales replicas, rolls out updates and provides service discovery."
+  },
+  {
+   "topic": "Operations",
+   "level": "advanced",
+   "q": "How do you control cloud cost in a design?",
+   "a": "Right-size, autoscale, use commitments or spot capacity, reduce egress with CDNs and locality, tier cold storage, and cache and compress."
+  },
+  {
+   "topic": "Data systems",
+   "level": "basic",
+   "q": "What is an inverted index?",
+   "a": "A map from each term to the list of documents containing it, enabling fast full-text search."
+  },
+  {
+   "topic": "Data systems",
+   "level": "basic",
+   "q": "What is a Bloom filter and where is it used?",
+   "a": "A compact probabilistic set with no false negatives and tunable false positives. Used to skip disk lookups for missing keys, check URLs and prevent cache penetration."
+  },
+  {
+   "topic": "Data systems",
+   "level": "medium",
+   "q": "How would you generate unique ids across shards?",
+   "a": "UUIDs, time-ordered ids like Snowflake (timestamp, machine id, sequence), or a ticket server. Snowflake is compact, sortable and coordination free but depends on clocks and unique machine ids."
+  },
+  {
+   "topic": "Data systems",
+   "level": "medium",
+   "q": "How do you count unique visitors at scale?",
+   "a": "HyperLogLog gives about 1 percent error in kilobytes and sketches merge across shards; exact counts need large sets or sampling."
+  },
+  {
+   "topic": "Data systems",
+   "level": "medium",
+   "q": "How does geospatial search work?",
+   "a": "Cells such as geohash, quadtree, S2 or H3 index locations. Query the target cell and its neighbours, then filter by exact distance."
+  },
+  {
+   "topic": "Data systems",
+   "level": "medium",
+   "q": "Data warehouse versus data lake?",
+   "a": "A warehouse holds modelled, structured data with schema on write. A lake stores raw files cheaply with schema on read. Lakehouses add table formats and transactions to lakes."
+  },
+  {
+   "topic": "Data systems",
+   "level": "advanced",
+   "q": "How do you scale search?",
+   "a": "Shard the index by document, replicate shards, query all shards and merge top results, and keep the index as a derived view updated via queue or CDC."
+  },
+  {
+   "topic": "Data systems",
+   "level": "advanced",
+   "q": "What is change data capture?",
+   "a": "Reading a database's transaction log and publishing each change as an event, feeding caches, search indexes and warehouses without dual writes."
+  },
+  {
+   "topic": "Data systems",
+   "level": "advanced",
+   "q": "How do you build a distributed lock safely?",
+   "a": "Use a lease with expiry and fencing tokens on a consensus-backed store, or avoid locks with idempotency, ownership by partition or optimistic versioning."
+  },
+  {
+   "topic": "Data systems",
+   "level": "advanced",
+   "q": "Why use erasure coding for object storage?",
+   "a": "It stores data plus parity pieces and survives multiple losses at lower overhead than keeping three full copies."
+  },
+  {
+   "topic": "Case studies 1",
+   "level": "basic",
+   "q": "Design a URL shortener: how do you generate the key?",
+   "a": "Use base62 on a counter or pre-generated unique ids, or hash and handle collisions. Seven base62 characters give 3.5 trillion keys."
+  },
+  {
+   "topic": "Case studies 1",
+   "level": "medium",
+   "q": "301 or 302 for the redirect?",
+   "a": "302 keeps traffic flowing through you for analytics and changeable targets. 301 is cached by browsers and cuts load but loses control."
+  },
+  {
+   "topic": "Case studies 1",
+   "level": "medium",
+   "q": "Design Pastebin: where does the content go?",
+   "a": "In object storage behind a CDN, with metadata in a database and expiry handled by stored timestamps and lifecycle rules."
+  },
+  {
+   "topic": "Case studies 1",
+   "level": "medium",
+   "q": "Design a rate limiter: which algorithm and where is state?",
+   "a": "Token bucket at the gateway with atomic counters in Redis per client key, with rules in a cached config service."
+  },
+  {
+   "topic": "Case studies 1",
+   "level": "advanced",
+   "q": "How do you avoid races in a distributed rate limiter?",
+   "a": "Make the check and update atomic using Redis INCR or a Lua script, or accept approximate limits with local buckets that sync periodically."
+  },
+  {
+   "topic": "Case studies 1",
+   "level": "advanced",
+   "q": "Design a key-value store with high availability.",
+   "a": "Consistent hashing with virtual nodes, replication to N nodes, tunable quorums, vector clocks, hinted handoff, Merkle-tree anti-entropy, gossip membership and LSM storage."
+  },
+  {
+   "topic": "Case studies 1",
+   "level": "advanced",
+   "q": "How does hinted handoff work?",
+   "a": "When a replica is down, another node accepts the write with a hint and delivers it when the replica returns, keeping writes available."
+  },
+  {
+   "topic": "Case studies 1",
+   "level": "medium",
+   "q": "Design a distributed cache.",
+   "a": "Sharded nodes with consistent hashing, LRU and TTL eviction per node, replicas for failover, client library with timeouts and circuit breaker, hot-key handling and request coalescing."
+  },
+  {
+   "topic": "Case studies 2",
+   "level": "basic",
+   "q": "News feed: fan-out on read or write?",
+   "a": "Write fan-out gives fast reads for most users; read fan-out avoids huge write amplification for celebrities. Use a hybrid."
+  },
+  {
+   "topic": "Case studies 2",
+   "level": "medium",
+   "q": "How do you store and paginate a feed?",
+   "a": "Store post ids in per-user sorted sets (capped), hydrate content from caches in batch, and paginate with a cursor on id or time."
+  },
+  {
+   "topic": "Case studies 2",
+   "level": "medium",
+   "q": "Design chat: how are messages delivered and ordered?",
+   "a": "Persistent WebSocket gateways with a session registry, messages persisted and sequenced per conversation, push for offline users, clients sync by last sequence."
+  },
+  {
+   "topic": "Case studies 2",
+   "level": "advanced",
+   "q": "How do you implement presence at scale?",
+   "a": "Client heartbeats set a TTL key in Redis; absence means offline. Fetch or subscribe only for visible contacts to avoid broadcast storms."
+  },
+  {
+   "topic": "Case studies 2",
+   "level": "medium",
+   "q": "Design a notification system.",
+   "a": "Intake API with idempotency, preference and template services, per-channel queues and worker pools with provider rate limits, retries, DLQs, priorities and delivery tracking."
+  },
+  {
+   "topic": "Case studies 2",
+   "level": "medium",
+   "q": "Design typeahead.",
+   "a": "A trie with precomputed top-k per node served from memory and caches, rebuilt periodically from aggregated query logs, with client debouncing and a trending overlay."
+  },
+  {
+   "topic": "Case studies 2",
+   "level": "advanced",
+   "q": "Design a web crawler.",
+   "a": "A prioritised URL frontier with per-host queues for politeness, distributed fetchers, DNS and robots caches, URL dedupe with a Bloom filter, content hashing, trap limits and recrawl scheduling."
+  },
+  {
+   "topic": "Case studies 2",
+   "level": "advanced",
+   "q": "How do you prevent a crawler from overloading a site?",
+   "a": "One queue per host, a minimum delay between requests, obey robots.txt and Crawl-delay, and assign hosts to workers by hash so politeness is local."
+  },
+  {
+   "topic": "Case studies 3",
+   "level": "medium",
+   "q": "Design video streaming: how does playback adapt to bandwidth?",
+   "a": "Videos are transcoded into segments at several bitrates with a manifest; the player downloads segments over HTTP via a CDN and switches rendition per segment based on throughput and buffer."
+  },
+  {
+   "topic": "Case studies 3",
+   "level": "medium",
+   "q": "How do you speed up video processing?",
+   "a": "Split into segments, transcode in parallel with a workflow engine, retry failed segments independently and write outputs to object storage."
+  },
+  {
+   "topic": "Case studies 3",
+   "level": "medium",
+   "q": "Design Dropbox: how do you sync large files efficiently?",
+   "a": "Block-level chunking with hashes gives delta sync and deduplication; metadata in a relational store; clients notified of changes and conflicts resolved with versions."
+  },
+  {
+   "topic": "Case studies 3",
+   "level": "advanced",
+   "q": "Design Uber: how do you match riders and drivers?",
+   "a": "Maintain driver locations in a geospatial index in memory, query nearby cells, rank by ETA, reserve the driver atomically, and track the trip with a state machine."
+  },
+  {
+   "topic": "Case studies 3",
+   "level": "advanced",
+   "q": "Design ticket booking: how do you avoid double booking?",
+   "a": "Atomic conditional updates or row locks on seats, a hold with expiry, a payment step and a waiting room to absorb spikes."
+  },
+  {
+   "topic": "Case studies 3",
+   "level": "advanced",
+   "q": "Design a payment system.",
+   "a": "Idempotency keys, a payment state machine, tokenised cards via a PSP, a double-entry append-only ledger, webhook handling and reconciliation, with strong consistency."
+  },
+  {
+   "topic": "Case studies 3",
+   "level": "advanced",
+   "q": "A payment provider call times out. What now?",
+   "a": "Treat the outcome as unknown: query the provider using the idempotency key or reference, then proceed. Never blindly retry with a new request."
+  },
+  {
+   "topic": "Case studies 3",
+   "level": "medium",
+   "q": "What is a double-entry ledger?",
+   "a": "Each movement of money is two entries, a debit and a credit, summing to zero. Entries are append-only and balances are derived, giving auditability."
+  },
+  {
+   "topic": "Case studies 4",
+   "level": "medium",
+   "q": "Design a metrics system: pull or push?",
+   "a": "Pull gives liveness knowledge and central config; push suits short-lived jobs. Buffer through a queue, store in a compressed time-series database with downsampling and cardinality limits."
+  },
+  {
+   "topic": "Case studies 4",
+   "level": "advanced",
+   "q": "Design ad click aggregation with accurate counts.",
+   "a": "Kafka partitioned by ad id, stream windows with event time and watermarks, checkpoints and idempotent writes, raw events archived and a batch job reconciling numbers for billing."
+  },
+  {
+   "topic": "Case studies 4",
+   "level": "advanced",
+   "q": "How do you handle a hot key in aggregation?",
+   "a": "Add a salt to the key, aggregate partial counts, then merge in a second stage."
+  },
+  {
+   "topic": "Case studies 4",
+   "level": "medium",
+   "q": "Design a leaderboard.",
+   "a": "A Redis sorted set with ZADD, ZREVRANK and ZREVRANGE for updates, rank and top-k; separate sets per time window; database as the source of truth."
+  },
+  {
+   "topic": "Case studies 4",
+   "level": "advanced",
+   "q": "How would you design Kafka?",
+   "a": "Partitioned append-only logs with leaders and followers, in-sync replicas and acks, consumer groups with committed offsets, retention and compaction, and a Raft-based controller."
+  },
+  {
+   "topic": "Case studies 4",
+   "level": "advanced",
+   "q": "Design Google Docs collaboration.",
+   "a": "WebSocket sessions with one server per document, operational transformation or CRDTs for convergence, optimistic local application, operation log with snapshots and ephemeral presence."
+  },
+  {
+   "topic": "Case studies 4",
+   "level": "advanced",
+   "q": "OT versus CRDT?",
+   "a": "OT transforms concurrent operations with a central ordering; CRDTs give every element a unique id so operations commute and no server is needed, at the cost of metadata."
+  },
+  {
+   "topic": "Low-level design",
+   "level": "basic",
+   "q": "What are the SOLID principles?",
+   "a": "Single responsibility, open/closed, Liskov substitution, interface segregation and dependency inversion."
+  },
+  {
+   "topic": "Low-level design",
+   "level": "basic",
+   "q": "Composition versus inheritance?",
+   "a": "Prefer composition: it is more flexible and avoids tight coupling and deep hierarchies. Use inheritance for real is-a relationships."
+  },
+  {
+   "topic": "Low-level design",
+   "level": "medium",
+   "q": "When do you use the Strategy pattern?",
+   "a": "When an algorithm should be swappable at runtime, such as pricing, routing or eviction policy, replacing conditionals with polymorphism."
+  },
+  {
+   "topic": "Low-level design",
+   "level": "medium",
+   "q": "State pattern example?",
+   "a": "A vending machine or order lifecycle where behaviour depends on state; each state encapsulates its behaviour and transitions."
+  },
+  {
+   "topic": "Low-level design",
+   "level": "medium",
+   "q": "Design a parking lot.",
+   "a": "Entities: ParkingLot, Floor, Spot, Vehicle, Ticket, Pricing strategy. Allocate best-fit spots, issue a ticket, compute fee on exit; extend with new vehicle types and pricing rules without modifying core code."
+  },
+  {
+   "topic": "Low-level design",
+   "level": "medium",
+   "q": "Why is Singleton often discouraged?",
+   "a": "It is global mutable state that hides dependencies and complicates testing. Inject a single shared instance instead."
+  },
+  {
+   "topic": "Low-level design",
+   "level": "advanced",
+   "q": "How do you make a class thread safe?",
+   "a": "Protect shared mutable state with locks or atomics, prefer immutability and message passing, keep critical sections small, avoid deadlocks with consistent lock ordering."
+  },
+  {
+   "topic": "Low-level design",
+   "level": "advanced",
+   "q": "How do you make an LRU cache scale across threads?",
+   "a": "Shard keys into independent LRU segments each with its own lock (striped locking) to reduce contention."
+  },
+  {
+   "topic": "Storage engines",
+   "level": "basic",
+   "q": "Why do databases store data in pages?",
+   "a": "Disks and SSDs read and write in blocks. Fixed-size pages (4 to 16 KB) match that unit, so each I/O fetches many records and the buffer pool can cache them."
+  },
+  {
+   "topic": "Storage engines",
+   "level": "basic",
+   "q": "What is a write-ahead log and why does every durable database have one?",
+   "a": "An append-only record of changes written and flushed before the data pages are modified. After a crash the database replays it, so committed changes are not lost and half-written changes can be undone."
+  },
+  {
+   "topic": "Storage engines",
+   "level": "basic",
+   "q": "How deep is a B-tree for a billion keys?",
+   "a": "With a fan-out of several hundred, three to four levels; the upper levels stay cached, so a lookup costs about one or two disk reads."
+  },
+  {
+   "topic": "Storage engines",
+   "level": "medium",
+   "q": "B-tree versus LSM tree: when do you choose each?",
+   "a": "B-trees for read-heavy and transactional workloads with range queries and predictable latency; LSM trees for write-heavy or ingestion workloads, accepting read and space amplification and background compaction."
+  },
+  {
+   "topic": "Storage engines",
+   "level": "medium",
+   "q": "How does an LSM tree handle a write and a read?",
+   "a": "A write goes to the WAL and the in-memory memtable; full memtables flush to immutable sorted SSTables. A read checks the memtable then SSTables from newest to oldest, using bloom filters to skip files."
+  },
+  {
+   "topic": "Storage engines",
+   "level": "medium",
+   "q": "What is a tombstone and why are deletes slow to reclaim space in LSM engines?",
+   "a": "A delete writes a marker because SSTables are immutable. The old value and the marker are physically removed only when compaction merges the files that contain them."
+  },
+  {
+   "topic": "Storage engines",
+   "level": "medium",
+   "q": "What is write amplification?",
+   "a": "The ratio of bytes physically written to storage to bytes the application wrote. LSM compaction and B-tree page rewrites both cause it; it affects SSD lifetime and throughput."
+  },
+  {
+   "topic": "Storage engines",
+   "level": "medium",
+   "q": "How does a bloom filter reduce reads in an LSM tree?",
+   "a": "Each SSTable has a filter that can say a key is definitely absent, so most lookups for missing keys skip that file with no disk access."
+  },
+  {
+   "topic": "Storage engines",
+   "level": "medium",
+   "q": "Why can random UUID primary keys hurt a B-tree?",
+   "a": "Inserts land on random leaf pages, causing cache misses and page splits and fragmentation. Time-ordered ids append at the right edge and keep locality."
+  },
+  {
+   "topic": "Storage engines",
+   "level": "advanced",
+   "q": "Explain compaction strategies.",
+   "a": "Size-tiered merges similar-sized files (cheap writes, more space and read amplification); leveled keeps non-overlapping files per level (better reads and space, higher write amplification); time-window compaction suits TTL time series."
+  },
+  {
+   "topic": "Storage engines",
+   "level": "advanced",
+   "q": "What is the RUM conjecture?",
+   "a": "A storage design cannot minimise read cost, update cost and memory/space at the same time; optimising two worsens the third."
+  },
+  {
+   "topic": "Storage engines",
+   "level": "advanced",
+   "q": "Why are column stores faster for analytics?",
+   "a": "They read only the needed columns, compress similar values well (run-length, dictionary, delta) and use vectorised execution. They are slower for single-row transactional access."
+  },
+  {
+   "topic": "Storage engines",
+   "level": "advanced",
+   "q": "What does group commit do?",
+   "a": "Batches the log flushes of many concurrent transactions into one fsync, greatly improving throughput at a small latency cost."
+  },
+  {
+   "topic": "Storage engines",
+   "level": "advanced",
+   "q": "How does MVCC let readers avoid blocking writers?",
+   "a": "Each write creates a new row version tagged with transaction ids; a reader sees a snapshot of versions committed before it began. Old versions are cleaned later (vacuum or purge)."
+  },
+  {
+   "topic": "Storage engines",
+   "level": "advanced",
+   "q": "What is a checkpoint?",
+   "a": "A point where dirty pages are flushed so recovery needs to replay the log only from that point forward, bounding recovery time and allowing old log segments to be removed."
+  },
+  {
+   "topic": "Event-driven design",
+   "level": "basic",
+   "q": "Event versus command?",
+   "a": "A command asks one handler to do something and can be rejected. An event records something that already happened and is broadcast to any interested consumer."
+  },
+  {
+   "topic": "Event-driven design",
+   "level": "basic",
+   "q": "Why do message consumers need to be idempotent?",
+   "a": "Brokers deliver at least once, so retries, rebalances and relay crashes cause duplicates. Idempotent handlers make duplicates harmless."
+  },
+  {
+   "topic": "Event-driven design",
+   "level": "medium",
+   "q": "What is the dual-write problem and how does the outbox pattern solve it?",
+   "a": "Updating a database and publishing to a broker are two systems, so a crash can lose one. The outbox writes the event into a table in the same local transaction, and a relay publishes it afterwards."
+  },
+  {
+   "topic": "Event-driven design",
+   "level": "medium",
+   "q": "How do you achieve effectively exactly-once processing?",
+   "a": "At-least-once delivery plus deduplication: store processed message ids in the same transaction as the effect, or make the operation naturally idempotent."
+  },
+  {
+   "topic": "Event-driven design",
+   "level": "medium",
+   "q": "Explain CQRS and when it is worth it.",
+   "a": "Separate write and read models, with projections updated from events. Worth it when read and write shapes or scale differ greatly; not for simple CRUD because of eventual consistency and extra moving parts."
+  },
+  {
+   "topic": "Event-driven design",
+   "level": "medium",
+   "q": "What is event sourcing and what are its costs?",
+   "a": "Storing every state change as an immutable event and deriving state by replay. Benefits: audit and time travel. Costs: projections for queries, schema evolution of old events, and handling deletion requests."
+  },
+  {
+   "topic": "Event-driven design",
+   "level": "medium",
+   "q": "Saga: orchestration versus choreography?",
+   "a": "Orchestration uses a central coordinator that calls steps and triggers compensations; choreography has services react to each other's events. Orchestration is easier to see and debug; choreography is more decoupled."
+  },
+  {
+   "topic": "Event-driven design",
+   "level": "medium",
+   "q": "How do you preserve ordering in a partitioned log?",
+   "a": "Use the entity id as the partition key, so that all events for one entity go to one partition. Ordering is not guaranteed across partitions."
+  },
+  {
+   "topic": "Event-driven design",
+   "level": "medium",
+   "q": "What is a dead letter queue?",
+   "a": "A place to put messages that exceed their retry limit, so a poison message does not block the stream and can be inspected and replayed."
+  },
+  {
+   "topic": "Event-driven design",
+   "level": "advanced",
+   "q": "How do you evolve event schemas safely?",
+   "a": "Use a schema registry with compatibility rules: add optional fields, never reuse or retype fields, version event types, and upcast old events on read."
+  },
+  {
+   "topic": "Event-driven design",
+   "level": "advanced",
+   "q": "What are snapshots in event sourcing?",
+   "a": "Periodic captures of aggregate state so rebuilding replays only the events after the latest snapshot."
+  },
+  {
+   "topic": "Event-driven design",
+   "level": "advanced",
+   "q": "How do you prevent two writers corrupting an event-sourced aggregate?",
+   "a": "Optimistic concurrency: appends carry the expected version and are rejected if the stream has moved on."
+  },
+  {
+   "topic": "Event-driven design",
+   "level": "advanced",
+   "q": "What is consumer lag and why monitor it?",
+   "a": "The gap between the latest offset and what a consumer group has processed. Growing lag means consumers cannot keep up, so scale them, batch, or investigate slow handlers."
+  },
+  {
+   "topic": "Event-driven design",
+   "level": "advanced",
+   "q": "Why is exactly-once delivery impossible over a network, and what does Kafka claim?",
+   "a": "A sender cannot distinguish a lost message from a lost acknowledgement. Kafka offers idempotent producers and transactions within Kafka; end-to-end effects still need idempotent consumers."
+  },
+  {
+   "topic": "Event-driven design",
+   "level": "advanced",
+   "q": "When should you avoid an event-driven design?",
+   "a": "When you need an immediate response and strong consistency, in small systems, or when the team cannot yet operate brokers, tracing and replays."
+  },
+  {
+   "topic": "Data processing",
+   "level": "basic",
+   "q": "Batch versus stream processing?",
+   "a": "Batch processes bounded datasets with high latency and simple reasoning; stream processes unbounded events continuously with low latency and needs state and time handling."
+  },
+  {
+   "topic": "Data processing",
+   "level": "basic",
+   "q": "Explain MapReduce.",
+   "a": "Map transforms records into key-value pairs, the shuffle groups pairs by key across the network, and reduce aggregates each key's values. Failed tasks are simply rerun."
+  },
+  {
+   "topic": "Data processing",
+   "level": "medium",
+   "q": "What is data skew and how do you fix it?",
+   "a": "A few keys carry most of the data so one task straggles. Fix by salting hot keys, broadcasting the small side of a join, filtering nulls or splitting heavy keys."
+  },
+  {
+   "topic": "Data processing",
+   "level": "medium",
+   "q": "Why is Spark often faster than MapReduce?",
+   "a": "It keeps intermediate data in memory, pipelines narrow transformations, and optimises whole DAGs, instead of writing to disk between every stage."
+  },
+  {
+   "topic": "Data processing",
+   "level": "medium",
+   "q": "Narrow versus wide transformations?",
+   "a": "Narrow ones (map, filter) work within a partition and are pipelined. Wide ones (join, groupBy) need a shuffle and start a new stage."
+  },
+  {
+   "topic": "Data processing",
+   "level": "medium",
+   "q": "What are event time, processing time and watermarks?",
+   "a": "Event time is when it happened, processing time when it is seen. A watermark estimates how far event time has progressed so windows can close, trading completeness against latency."
+  },
+  {
+   "topic": "Data processing",
+   "level": "medium",
+   "q": "Lambda versus Kappa architecture?",
+   "a": "Lambda runs batch and speed layers and merges them, duplicating logic. Kappa uses only a stream processor over a replayable log and reprocesses by replay."
+  },
+  {
+   "topic": "Data processing",
+   "level": "medium",
+   "q": "Why use Parquet instead of CSV for analytics?",
+   "a": "Columnar layout, compression, schema and statistics enable column pruning and predicate pushdown, reading far less data."
+  },
+  {
+   "topic": "Data processing",
+   "level": "advanced",
+   "q": "How does Flink provide exactly-once state?",
+   "a": "Periodic distributed checkpoints (barrier snapshots) of operator state and source offsets; on failure it restores the last checkpoint and replays. Sinks need transactions or idempotence for exactly-once effects."
+  },
+  {
+   "topic": "Data processing",
+   "level": "advanced",
+   "q": "Name sketches for approximate analytics.",
+   "a": "Bloom filters (membership), HyperLogLog (distinct counts), Count-Min sketch (frequencies), t-digest (quantiles); small, mergeable and with bounded error."
+  },
+  {
+   "topic": "Data processing",
+   "level": "advanced",
+   "q": "How would you count unique visitors across billions of events per day?",
+   "a": "HyperLogLog per dimension, merged across partitions; about 12 KB per counter gives around 2% error. Use exact counts only where required."
+  },
+  {
+   "topic": "Data processing",
+   "level": "advanced",
+   "q": "What problem do Delta Lake, Iceberg and Hudi solve?",
+   "a": "ACID transactions, concurrent writes, schema evolution, time travel and efficient upserts on files in object storage."
+  },
+  {
+   "topic": "Data processing",
+   "level": "advanced",
+   "q": "Why must pipeline tasks be idempotent and partitioned by date?",
+   "a": "Retries and backfills rerun tasks; overwriting a deterministic partition gives the same result without duplicates."
+  },
+  {
+   "topic": "Data processing",
+   "level": "advanced",
+   "q": "How do you join a huge fact table with a small dimension?",
+   "a": "Broadcast join: send the small table to all workers and join locally, avoiding a shuffle of the large table."
+  },
+  {
+   "topic": "Cloud and deployment",
+   "level": "basic",
+   "q": "Region versus availability zone?",
+   "a": "A region is a geographic area; an availability zone is an isolated data centre inside it. Multi-AZ survives a data centre failure; multi-region survives a regional outage."
+  },
+  {
+   "topic": "Cloud and deployment",
+   "level": "basic",
+   "q": "Container versus virtual machine?",
+   "a": "A container shares the host kernel and packages the app with its dependencies, so it is lighter and faster to start; a VM includes a full guest operating system."
+  },
+  {
+   "topic": "Cloud and deployment",
+   "level": "basic",
+   "q": "What is infrastructure as code?",
+   "a": "Declaring infrastructure in version-controlled files (Terraform, CloudFormation) so it is reviewable, reproducible and drift is detectable."
+  },
+  {
+   "topic": "Cloud and deployment",
+   "level": "medium",
+   "q": "What does Kubernetes do?",
+   "a": "Schedules containers across machines, keeps the declared number of replicas running, load-balances Services, rolls out updates and restarts failed pods by reconciling actual state to desired state."
+  },
+  {
+   "topic": "Cloud and deployment",
+   "level": "medium",
+   "q": "Liveness versus readiness probes?",
+   "a": "Liveness failing causes a restart; readiness failing removes the pod from load balancing until it is ready."
+  },
+  {
+   "topic": "Cloud and deployment",
+   "level": "medium",
+   "q": "Blue-green versus canary deployments?",
+   "a": "Blue-green switches all traffic between two full environments for instant rollback at double capacity; canary exposes a small share first and expands as metrics stay healthy."
+  },
+  {
+   "topic": "Cloud and deployment",
+   "level": "medium",
+   "q": "How do you deploy a breaking database change safely?",
+   "a": "Expand and contract: add the new structure, write both, backfill, move reads, then remove the old. Every step stays compatible with the running code."
+  },
+  {
+   "topic": "Cloud and deployment",
+   "level": "medium",
+   "q": "How does target-tracking autoscaling decide replicas?",
+   "a": "desired = ceil(current replicas x current metric / target metric), within min and max, with cooldowns to avoid flapping."
+  },
+  {
+   "topic": "Cloud and deployment",
+   "level": "medium",
+   "q": "Define RPO and RTO and relate them to DR patterns.",
+   "a": "RPO is tolerable data loss, RTO tolerable downtime. Backup-restore is cheapest and slowest; pilot light, warm standby and active-active reduce both at rising cost."
+  },
+  {
+   "topic": "Cloud and deployment",
+   "level": "advanced",
+   "q": "What are the hidden costs in a cloud bill?",
+   "a": "Cross-AZ and cross-region traffic, NAT gateway processing, egress, log and metric ingestion, idle resources and over-provisioned storage."
+  },
+  {
+   "topic": "Cloud and deployment",
+   "level": "advanced",
+   "q": "Serverless: strengths and limits?",
+   "a": "No server management and pay-per-use scaling to zero; but cold starts, execution time limits, vendor lock-in, and unpredictable cost at sustained high load."
+  },
+  {
+   "topic": "Cloud and deployment",
+   "level": "advanced",
+   "q": "How would you design for a regional failure?",
+   "a": "Replicate data across regions (async or sync depending on RPO), keep stateless services deployable in both, use health-checked global routing, and rehearse failover regularly."
+  },
+  {
+   "topic": "Cloud and deployment",
+   "level": "advanced",
+   "q": "Why immutable infrastructure and one artifact for all environments?",
+   "a": "It removes configuration drift and makes what you tested what you ship; environment differences live in configuration and secrets."
+  },
+  {
+   "topic": "Cloud and deployment",
+   "level": "advanced",
+   "q": "What are spot instances good for?",
+   "a": "Interruptible, fault-tolerant work such as batch jobs, CI and stateless workers, at large discounts, with checkpointing and graceful handling of reclaim notices."
+  },
+  {
+   "topic": "Security architecture",
+   "level": "basic",
+   "q": "Authentication versus authorization?",
+   "a": "Authentication verifies who you are; authorization determines what you may do."
+  },
+  {
+   "topic": "Security architecture",
+   "level": "basic",
+   "q": "How should passwords be stored?",
+   "a": "As salted hashes from a slow, memory-hard function such as argon2id, scrypt or bcrypt. Never plaintext, never fast hashes like MD5 or plain SHA-256."
+  },
+  {
+   "topic": "Security architecture",
+   "level": "basic",
+   "q": "How do you prevent SQL injection?",
+   "a": "Parameterised queries or prepared statements so user input is bound as data, plus least-privileged database accounts."
+  },
+  {
+   "topic": "Security architecture",
+   "level": "medium",
+   "q": "Sessions versus JWTs?",
+   "a": "Sessions keep state on the server and are easy to revoke; JWTs are self-contained and verifiable by any service but hard to revoke, so use short lifetimes and refresh tokens."
+  },
+  {
+   "topic": "Security architecture",
+   "level": "medium",
+   "q": "Explain the OAuth 2.0 authorization code flow with PKCE.",
+   "a": "The app redirects to the authorization server with a code challenge; after login it receives a one-time code and exchanges it with the code verifier for tokens, so an intercepted code is useless."
+  },
+  {
+   "topic": "Security architecture",
+   "level": "medium",
+   "q": "OAuth versus OpenID Connect?",
+   "a": "OAuth delegates authorization with access tokens; OIDC adds an ID token and standard claims to authenticate the user."
+  },
+  {
+   "topic": "Security architecture",
+   "level": "medium",
+   "q": "What is IDOR/BOLA and how do you prevent it?",
+   "a": "Accessing another user's object by changing an id. Enforce object-level authorization on the server for every request."
+  },
+  {
+   "topic": "Security architecture",
+   "level": "medium",
+   "q": "Symmetric versus asymmetric encryption?",
+   "a": "Symmetric (AES) uses one shared key and is fast for bulk data; asymmetric (RSA, ECC) uses key pairs for key exchange and signatures. TLS combines both."
+  },
+  {
+   "topic": "Security architecture",
+   "level": "medium",
+   "q": "What is envelope encryption?",
+   "a": "Data is encrypted with a data key, which is encrypted by a master key in a KMS or HSM. Rotating the master key re-wraps small data keys instead of re-encrypting all data."
+  },
+  {
+   "topic": "Security architecture",
+   "level": "advanced",
+   "q": "What is zero trust?",
+   "a": "No implicit trust from network location: every request is authenticated, authorized and encrypted, with device and identity checks, microsegmentation and least privilege."
+  },
+  {
+   "topic": "Security architecture",
+   "level": "advanced",
+   "q": "How do you secure service-to-service calls?",
+   "a": "mTLS (often via a service mesh) for mutual authentication, short-lived workload identities, per-service authorization policies and network policies."
+  },
+  {
+   "topic": "Security architecture",
+   "level": "advanced",
+   "q": "Explain CSRF and its defences.",
+   "a": "A malicious site makes the user's browser send an authenticated request. Defend with SameSite cookies, anti-CSRF tokens and checking Origin headers."
+  },
+  {
+   "topic": "Security architecture",
+   "level": "advanced",
+   "q": "How do you manage secrets?",
+   "a": "Store in a secret manager, inject at runtime, scope narrowly, rotate, audit and prefer short-lived credentials such as workload identity over static keys; never commit them."
+  },
+  {
+   "topic": "Security architecture",
+   "level": "advanced",
+   "q": "Walk through STRIDE on a login endpoint.",
+   "a": "Spoofing (credential stuffing, MFA), Tampering (TLS, signed tokens), Repudiation (audit logs), Information disclosure (generic errors, no secrets in logs), Denial of service (rate limits), Elevation (authorization checks)."
+  },
+  {
+   "topic": "Security architecture",
+   "level": "advanced",
+   "q": "How do you defend an API against abuse?",
+   "a": "Authentication, per-key rate limits and quotas, WAF and bot detection, input validation and size limits, idempotency keys, monitoring and anomaly alerts."
+  },
+  {
+   "topic": "ML systems design",
+   "level": "basic",
+   "q": "What are the stages of an ML system?",
+   "a": "Define objective and metrics, collect and label data, build features, train and evaluate, deploy and serve, monitor and retrain."
+  },
+  {
+   "topic": "ML systems design",
+   "level": "basic",
+   "q": "Batch versus online inference?",
+   "a": "Batch precomputes predictions on a schedule and stores them; online computes per request with latency limits. Choose by freshness needs and cost."
+  },
+  {
+   "topic": "ML systems design",
+   "level": "medium",
+   "q": "What is training-serving skew and how do you avoid it?",
+   "a": "Features computed differently in training and production silently hurt accuracy. Use shared feature definitions, a feature store and logging served features for training."
+  },
+  {
+   "topic": "ML systems design",
+   "level": "medium",
+   "q": "What does a feature store provide?",
+   "a": "Consistent feature definitions, an offline store for training with point-in-time joins, an online store for low-latency serving, and a registry with ownership and freshness."
+  },
+  {
+   "topic": "ML systems design",
+   "level": "medium",
+   "q": "Explain the recommendation funnel.",
+   "a": "Candidate generation narrows millions of items to hundreds cheaply, ranking scores them with a richer model, and re-ranking applies diversity, business rules and freshness."
+  },
+  {
+   "topic": "ML systems design",
+   "level": "medium",
+   "q": "How do you handle cold start?",
+   "a": "Use content features, popularity and context, explore with bandits, and ask for explicit preferences; update quickly as interactions arrive."
+  },
+  {
+   "topic": "ML systems design",
+   "level": "medium",
+   "q": "How do you decide a new model is better?",
+   "a": "Offline metrics on a held-out, time-split set, then an online A/B test on business metrics with guardrail metrics and enough statistical power."
+  },
+  {
+   "topic": "ML systems design",
+   "level": "medium",
+   "q": "What is data drift and how do you detect it?",
+   "a": "The input distribution changes over time. Monitor feature statistics with PSI or KS tests, and track prediction distributions and delayed label performance."
+  },
+  {
+   "topic": "ML systems design",
+   "level": "advanced",
+   "q": "How do you serve a model at 20,000 requests per second?",
+   "a": "Estimate per-instance throughput, use dynamic batching, quantisation or distillation, autoscaling on queue depth, caching, a fallback model and canary deployments."
+  },
+  {
+   "topic": "ML systems design",
+   "level": "advanced",
+   "q": "Explain approximate nearest neighbour search.",
+   "a": "Exact search is O(N d). ANN indexes such as HNSW, IVF and PQ trade a little recall for large speedups and memory savings."
+  },
+  {
+   "topic": "ML systems design",
+   "level": "advanced",
+   "q": "Design a RAG system.",
+   "a": "Ingest, chunk and embed documents with permissions; at query time rewrite, retrieve (vector plus keyword), re-rank, build a prompt, generate with citations, and apply guardrails, caching and evaluation."
+  },
+  {
+   "topic": "ML systems design",
+   "level": "advanced",
+   "q": "How do you control LLM application cost and latency?",
+   "a": "Trim context, cache prompts and results, route simple requests to smaller models, stream output, set token limits and batch offline work."
+  },
+  {
+   "topic": "ML systems design",
+   "level": "advanced",
+   "q": "What is a feedback loop problem in recommenders?",
+   "a": "The model is trained on what it previously showed, reinforcing its own biases. Counter with exploration, randomised traffic and counterfactual evaluation."
+  },
+  {
+   "topic": "ML systems design",
+   "level": "advanced",
+   "q": "How do you avoid label leakage?",
+   "a": "Ensure features use only information available at prediction time, split data by time, and make joins point-in-time correct."
+  },
+  {
+   "topic": "Case studies 5",
+   "level": "basic",
+   "q": "Why is a geohash useful for nearby search?",
+   "a": "It turns two-dimensional location into a string whose shared prefix means nearness, so proximity becomes a prefix lookup in a standard index."
+  },
+  {
+   "topic": "Case studies 5",
+   "level": "medium",
+   "q": "Why search neighbouring cells as well as the target cell?",
+   "a": "Two close points can fall on opposite sides of a cell boundary, so query the cell and its eight neighbours, then filter by exact distance."
+  },
+  {
+   "topic": "Case studies 5",
+   "level": "medium",
+   "q": "Quadtree versus geohash?",
+   "a": "A quadtree splits cells by density so crowded areas get finer cells; geohash cells are uniform per precision. Quadtrees live in memory; geohash works in any key-value store."
+  },
+  {
+   "topic": "Case studies 5",
+   "level": "medium",
+   "q": "How are map tiles served?",
+   "a": "Pre-rendered or vector tiles per zoom level and x/y coordinates, stored as static files and served from a CDN."
+  },
+  {
+   "topic": "Case studies 5",
+   "level": "advanced",
+   "q": "How do routing services avoid running Dijkstra on the whole road graph?",
+   "a": "Preprocessing such as contraction hierarchies or hub labels, A* and bidirectional search, and regional partitioning, with live traffic as updated edge weights."
+  },
+  {
+   "topic": "Case studies 5",
+   "level": "medium",
+   "q": "How do you prevent overselling in checkout?",
+   "a": "Atomic conditional updates (UPDATE ... WHERE available > 0 and check rows affected), row locks or compare-and-set, with reservations that expire."
+  },
+  {
+   "topic": "Case studies 5",
+   "level": "medium",
+   "q": "How do you make payment calls safe to retry?",
+   "a": "Send an idempotency key per payment attempt; on timeout reconcile with the provider before retrying, since the true outcome is unknown."
+  },
+  {
+   "topic": "Case studies 5",
+   "level": "advanced",
+   "q": "Design the checkout flow as a saga.",
+   "a": "Reserve inventory, create order, charge payment, confirm; on failure, compensate by releasing stock and cancelling or refunding, each step idempotent and driven by events."
+  },
+  {
+   "topic": "Case studies 5",
+   "level": "advanced",
+   "q": "How do you handle a flash sale with 5 million users and 10,000 items?",
+   "a": "CDN and waiting room, bot and rate limits, atomic Redis stock decrement so only winners continue, queued order processing, expiry of unpaid reservations, and reconciliation with the database."
+  },
+  {
+   "topic": "Case studies 5",
+   "level": "medium",
+   "q": "Why is hotel inventory modelled per night?",
+   "a": "A stay spans nights; the booking must decrement availability for every night atomically, which a per-night inventory row allows with a transaction."
+  },
+  {
+   "topic": "Case studies 5",
+   "level": "advanced",
+   "q": "How do you separate search from booking consistency in a hotel system?",
+   "a": "Search uses a denormalised, slightly stale index; booking re-checks availability in the strongly consistent database under a transaction."
+  },
+  {
+   "topic": "Case studies 5",
+   "level": "medium",
+   "q": "What is overbooking and why do hotels use it?",
+   "a": "Selling more than capacity, expecting cancellations and no-shows, with a policy for handling the rare overflow."
+  },
+  {
+   "topic": "Case studies 5",
+   "level": "advanced",
+   "q": "How would you shard a proximity service?",
+   "a": "By region or geohash prefix so queries hit one or a few shards, balancing dense areas by splitting cells; replicate for availability."
+  },
+  {
+   "topic": "Case studies 5",
+   "level": "advanced",
+   "q": "How do you compute ETA?",
+   "a": "Sum predicted traversal times of road segments using historical profiles and live speeds from map-matched location pings, refined by ML and updated while driving."
+  },
+  {
+   "topic": "Case studies 6",
+   "level": "basic",
+   "q": "Why are UUIDs sometimes a poor primary key?",
+   "a": "Random 128-bit values are large and scatter inserts across a B-tree. Time-ordered ids such as ULID, UUIDv7 or Snowflake give locality."
+  },
+  {
+   "topic": "Case studies 6",
+   "level": "medium",
+   "q": "Describe the Snowflake id layout.",
+   "a": "1 sign bit, 41 bits of milliseconds since a custom epoch, 10 bits of worker id and 12 bits of sequence, giving 4096 ids per millisecond per worker."
+  },
+  {
+   "topic": "Case studies 6",
+   "level": "medium",
+   "q": "What goes wrong if the clock moves backwards in a Snowflake generator?",
+   "a": "It could repeat timestamps and produce duplicate ids. Detect it, wait or refuse, and keep the last timestamp."
+  },
+  {
+   "topic": "Case studies 6",
+   "level": "medium",
+   "q": "Why does a lease-based distributed lock need fencing tokens?",
+   "a": "A paused holder can wake after its lease expired and write while another holds the lock. The resource rejects tokens older than the newest seen."
+  },
+  {
+   "topic": "Case studies 6",
+   "level": "advanced",
+   "q": "Redis lock versus ZooKeeper or etcd lock?",
+   "a": "Redis is fast but not consensus-based, so failover can lose a lock. ZooKeeper and etcd use consensus and provide stronger guarantees and revision numbers usable as fencing tokens."
+  },
+  {
+   "topic": "Case studies 6",
+   "level": "medium",
+   "q": "How do multiple scheduler instances avoid running the same job twice?",
+   "a": "Partition jobs by hash and claim jobs with a conditional update that sets a lease, so only one instance wins; jobs are still idempotent for lease expiry."
+  },
+  {
+   "topic": "Case studies 6",
+   "level": "medium",
+   "q": "How are retries handled in a job scheduler?",
+   "a": "Exponential backoff with jitter, an attempt counter and a dead letter state after the limit."
+  },
+  {
+   "topic": "Case studies 6",
+   "level": "advanced",
+   "q": "Why is an exchange matching engine single-threaded per symbol?",
+   "a": "Price-time priority needs strict deterministic ordering, and avoiding locks gives microsecond latency. Throughput scales by sharding symbols."
+  },
+  {
+   "topic": "Case studies 6",
+   "level": "advanced",
+   "q": "How does a matching engine recover from a crash?",
+   "a": "Replay the sequenced input journal into a fresh book (event sourcing), or fail over to a hot standby that processed the same sequence."
+  },
+  {
+   "topic": "Case studies 6",
+   "level": "medium",
+   "q": "How does a code judge keep untrusted code safe?",
+   "a": "Containers or microVMs with cgroup CPU and memory limits, seccomp filters, no network, read-only filesystems and wall-clock timeouts, with fresh sandboxes per run."
+  },
+  {
+   "topic": "Case studies 6",
+   "level": "medium",
+   "q": "How does a client read a file in HDFS?",
+   "a": "It asks the NameNode for block locations, then reads blocks directly from the nearest DataNodes; data does not flow through the NameNode."
+  },
+  {
+   "topic": "Case studies 6",
+   "level": "advanced",
+   "q": "How does HDFS stay available when nodes die?",
+   "a": "Blocks are replicated (3 by default) across racks; missed heartbeats trigger re-replication; the NameNode has a standby with a shared edit log."
+  },
+  {
+   "topic": "Case studies 6",
+   "level": "advanced",
+   "q": "Why does HDFS struggle with many small files?",
+   "a": "The NameNode keeps all metadata in memory, so millions of small files exhaust it; pack them into larger containers."
+  },
+  {
+   "topic": "Case studies 6",
+   "level": "advanced",
+   "q": "Replication versus erasure coding?",
+   "a": "Replication (3x) is simple and fast to read; erasure coding (for example 6+3) cuts overhead to 1.5x for cold data but makes reconstruction costlier."
+  },
+  {
+   "topic": "Trade-offs and mocks",
+   "level": "basic",
+   "q": "How would you structure a 45-minute system design interview?",
+   "a": "Requirements and scope (5 min), estimates (5), API and data model (7), high-level design (10), deep dives (12), failures, scaling and wrap-up (6)."
+  },
+  {
+   "topic": "Trade-offs and mocks",
+   "level": "basic",
+   "q": "Roughly how much downtime does 99.9% availability allow per year?",
+   "a": "About 8.8 hours; 99.99% allows about 52 minutes."
+  },
+  {
+   "topic": "Trade-offs and mocks",
+   "level": "medium",
+   "q": "What if you do not know a number the interviewer asks for?",
+   "a": "State a reasonable assumption out loud, label it, and show how the design would change if it were different."
+  },
+  {
+   "topic": "Trade-offs and mocks",
+   "level": "medium",
+   "q": "How do you decide between SQL and NoSQL?",
+   "a": "Start from access patterns, consistency needs and scale: relational for transactions and ad hoc queries; wide-column or key-value for massive partitioned writes with known queries."
+  },
+  {
+   "topic": "Trade-offs and mocks",
+   "level": "medium",
+   "q": "When would you choose a queue over a synchronous call?",
+   "a": "When the work can be delayed, bursts need smoothing, there is fan-out, or you want to decouple failures from the caller."
+  },
+  {
+   "topic": "Trade-offs and mocks",
+   "level": "medium",
+   "q": "How do you show that you considered failure?",
+   "a": "For each component say what happens if it is down, slow or wrong, and name the mitigation: replication, retries with idempotency, timeouts, circuit breakers, backups."
+  },
+  {
+   "topic": "Trade-offs and mocks",
+   "level": "medium",
+   "q": "How do you scale a design from 1x to 10x?",
+   "a": "Find the first bottleneck from the numbers (CPU, database writes, network, memory), then apply the cheapest remedy: cache, replicas, partitioning, queues, or bigger machines."
+  },
+  {
+   "topic": "Trade-offs and mocks",
+   "level": "advanced",
+   "q": "How would you design chat delivery to be reliable?",
+   "a": "Per-conversation sequence numbers, client acknowledgements, resend from the last seen sequence on reconnect, and idempotent message ids to deduplicate retries."
+  },
+  {
+   "topic": "Trade-offs and mocks",
+   "level": "advanced",
+   "q": "How do you handle billing for an API platform?",
+   "a": "Emit idempotent usage events asynchronously, aggregate in a stream processor, store immutable records, and reconcile against gateway logs."
+  },
+  {
+   "topic": "Trade-offs and mocks",
+   "level": "advanced",
+   "q": "Give an example of trading consistency for availability.",
+   "a": "A shopping cart or feed can accept writes on any replica and converge later, while payments and inventory choose strong consistency."
+  },
+  {
+   "topic": "Trade-offs and mocks",
+   "level": "advanced",
+   "q": "What are the signs of an over-engineered design?",
+   "a": "Microservices, sharding and multi-region for modest numbers, many technologies without reasons, and no discussion of operational cost."
+  },
+  {
+   "topic": "Trade-offs and mocks",
+   "level": "advanced",
+   "q": "How do you incorporate cost into a design?",
+   "a": "Estimate compute, storage and egress, identify the dominant cost, and pick levers such as caching, tiering, reserved capacity and compression."
+  },
+  {
+   "topic": "Trade-offs and mocks",
+   "level": "advanced",
+   "q": "How do you respond if the interviewer challenges a choice?",
+   "a": "Restate their concern, compare the alternative on the requirement that matters, and either defend with numbers or adapt with a clear explanation of the change."
+  },
+  {
+   "topic": "Glossary and terminology",
+   "level": "basic",
+   "q": "Define latency and throughput.",
+   "a": "Latency is the time for one request; throughput is the amount of work completed per unit time."
+  },
+  {
+   "topic": "Glossary and terminology",
+   "level": "basic",
+   "q": "SLI, SLO and SLA?",
+   "a": "The measured indicator, the target set for it, and the contractual commitment with penalties."
+  },
+  {
+   "topic": "Glossary and terminology",
+   "level": "basic",
+   "q": "What is idempotency?",
+   "a": "Repeating an operation has the same effect as doing it once, enabling safe retries."
+  },
+  {
+   "topic": "Glossary and terminology",
+   "level": "basic",
+   "q": "What is a CDN?",
+   "a": "A network of edge caches near users that serves static and cacheable content with low latency."
+  },
+  {
+   "topic": "Glossary and terminology",
+   "level": "medium",
+   "q": "What is eventual consistency?",
+   "a": "If no new updates are made, all replicas eventually converge to the same value."
+  },
+  {
+   "topic": "Glossary and terminology",
+   "level": "medium",
+   "q": "What is a quorum?",
+   "a": "A majority or configured number of replicas that must respond; R + W > N makes reads and writes overlap."
+  },
+  {
+   "topic": "Glossary and terminology",
+   "level": "medium",
+   "q": "What is consistent hashing?",
+   "a": "A hashing scheme on a ring where adding or removing a node moves only a small share of keys."
+  },
+  {
+   "topic": "Glossary and terminology",
+   "level": "medium",
+   "q": "What is a circuit breaker?",
+   "a": "A guard that stops calling a failing dependency for a while, failing fast and letting it recover."
+  },
+  {
+   "topic": "Glossary and terminology",
+   "level": "medium",
+   "q": "What is backpressure?",
+   "a": "A mechanism for slow consumers to tell producers to slow down instead of being overwhelmed."
+  },
+  {
+   "topic": "Glossary and terminology",
+   "level": "medium",
+   "q": "What is a cache stampede and how do you prevent it?",
+   "a": "Many requests rebuild an expired hot entry at once. Use request coalescing or locks, jittered TTLs, and refresh-ahead."
+  },
+  {
+   "topic": "Glossary and terminology",
+   "level": "medium",
+   "q": "What is split brain?",
+   "a": "Two nodes both act as leader after a partition, risking conflicting writes. Prevent with quorum-based election and fencing."
+  },
+  {
+   "topic": "Glossary and terminology",
+   "level": "advanced",
+   "q": "Differentiate CAP and PACELC.",
+   "a": "CAP covers behaviour during partitions (consistency or availability); PACELC adds that without partitions there is still a trade-off between latency and consistency."
+  },
+  {
+   "topic": "Glossary and terminology",
+   "level": "advanced",
+   "q": "What is a CRDT?",
+   "a": "A data type whose concurrent updates merge deterministically without coordination, such as counters, sets and registers."
+  },
+  {
+   "topic": "Glossary and terminology",
+   "level": "advanced",
+   "q": "What is a service mesh?",
+   "a": "A layer of sidecar proxies that provide mTLS, retries, routing and telemetry for service-to-service calls without changing application code."
+  }
+ ]
+}

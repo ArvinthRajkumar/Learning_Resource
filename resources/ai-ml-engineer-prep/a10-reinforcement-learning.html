@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="A10">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Reinforcement learning from scratch | AI/ML Prep</title>
+<meta name="description" content="Markov decision processes, returns and discounting, value functions and the Bellman equation, value iteration, Q-learning, SARSA, exploration, policy gradients, actor-critic methods and how RL connects to language models.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part A10</p>
+      <h1>Reinforcement learning from scratch</h1>
+      <p class="lede">In reinforcement learning an agent learns by trying actions and observing rewards. This part builds the theory from scratch and implements value iteration, Q-learning and a policy-gradient learner on tiny problems you can run and verify.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="framework" data-track>
+      <h2>The framework</h2>
+<h3>Agent, environment, reward</h3>
+<p>At each step the <strong>agent</strong> observes a <strong>state</strong> <code>s</code>, takes an <strong>action</strong> <code>a</code>, receives a <strong>reward</strong> <code>r</code> and moves to a new state <code>s'</code>. The goal is to maximise the <strong>cumulative reward</strong>, not just the immediate one. Unlike supervised learning there are no correct-answer labels, only a delayed, noisy scalar signal, and the agent's actions change the data it sees.</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 98" role="img" aria-label="The agent-environment loop." style="min-width:760px"><defs><marker id="ah5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah5a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah5b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah5d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah5)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah5)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah5)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">State s_t</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle" class="d-sm">Agent chooses action a_t</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle" class="d-sm">Environment gives reward r_t and next state s_(t+1)</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle">Repeat</text></svg>
+</div>
+<figcaption>The agent-environment loop.</figcaption></figure>
+<h3>Markov decision process (MDP)</h3>
+<p>A formal model: states <code>S</code>, actions <code>A</code>, <strong>transition probabilities</strong> <code>P(s' | s, a)</code>, rewards <code>R(s, a)</code>, and a <strong>discount factor</strong> <code>gamma</code> between 0 and 1. The <strong>Markov property</strong>: the next state depends only on the current state and action, not the earlier history.</p>
+<h3>Return, policy, value</h3>
+<ul><li>The <strong>return</strong> <code>G_t = r_t + gamma r_(t+1) + gamma^2 r_(t+2) + ...</code> is the discounted sum of future rewards. Discounting makes sums finite and prefers sooner rewards.</li><li>A <strong>policy</strong> <code>pi(a | s)</code> says which action to take in each state (deterministic or probabilistic).</li><li>The <strong>state-value</strong> <code>V^pi(s)</code> is the expected return starting in <code>s</code> and following <code>pi</code>; the <strong>action-value</strong> <code>Q^pi(s, a)</code> is the expected return after taking <code>a</code> in <code>s</code>, then following <code>pi</code>.</li></ul>
+<div class="formula"><div class="f-title">Bellman optimality equation</div><div class="f-body">Q*(s, a) = R(s, a) + gamma sum over s' of P(s' | s, a) max over a' of Q*(s', a')</div><dl class="f-defs"><dt>Q*</dt><dd>the best achievable value</dd><dt>gamma</dt><dd>discount factor</dd></dl></div>
+<pre><code class="lang-py" data-embed="solutions/snippets/a10-01.py">gamma = 0.9
+rewards = [1, 1, 1, 10]
+G = sum(gamma ** t * r for t, r in enumerate(rewards))
+print("discounted return: %.3f" % G)
+print("same rewards with gamma=0.5: %.3f" % sum(0.5 ** t * r for t, r in enumerate(rewards)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>discounted return: 10.000
+same rewards with gamma=0.5: 3.000</code></pre>
+<p>A low <code>gamma</code> makes the agent short-sighted (the final 10 counts for little); a high <code>gamma</code> makes it plan far ahead.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a10-q01" data-topic="Reinforcement learning" data-type="numeric" data-answer="1.75" data-tol="0.001">
+        <div class="q-stem"><p>Rewards 1, 1, 1 and gamma = 0.5. What is the discounted return?</p></div>
+        <div class="q-explain"><p>1 + 0.5 + 0.25 = 1.75.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a10-q02" data-topic="Reinforcement learning" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does a low discount factor gamma imply?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The agent plans far ahead <span class="q-why">That is a high gamma.</span></li>
+          <li data-key="B">The agent values immediate rewards much more than distant ones <span class="q-why">Correct.</span></li>
+          <li data-key="C">Rewards are ignored <span class="q-why">No.</span></li>
+          <li data-key="D">Learning is faster always <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Future rewards are shrunk by gamma per step.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Define MDP, policy and value function.</summary><div class="answer"><p>An MDP has states, actions, transitions, rewards and discount; a policy chooses actions; a value function is the expected discounted return.</p></div></details>
+      </div>
+    </section>
+
+    <section id="dp" data-track>
+      <h2>Dynamic programming: when the model is known</h2>
+<p>If we know <code>P</code> and <code>R</code>, we can <strong>plan</strong>. <strong>Value iteration</strong> applies the Bellman optimality update repeatedly until values stop changing, then reads off the best action.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a10-02.py"># A 1D corridor of 5 states. Actions: left or right. Reaching the right end (state 4) gives reward 1 and ends.
+N, gamma = 5, 0.9
+V = [0.0] * N
+def step(s, a):                          # deterministic transitions; a = -1 or +1
+    s2 = min(max(s + a, 0), N - 1)
+    return s2, (1.0 if s2 == N - 1 and s != N - 1 else 0.0)
+for it in range(50):
+    new = V[:]
+    for s in range(N - 1):               # state N-1 is terminal with value 0
+        best = -1e9
+        for a in (-1, 1):
+            s2, r = step(s, a)
+            best = max(best, r + gamma * (0.0 if s2 == N - 1 else V[s2]))
+        new[s] = best
+    V = new
+print("values:", [round(v, 3) for v in V])
+policy = []
+for s in range(N - 1):
+    qs = {a: step(s, a)[1] + gamma * (0.0 if step(s, a)[0] == N - 1 else V[step(s, a)[0]]) for a in (-1, 1)}
+    policy.append("right" if qs[1] &gt;= qs[-1] else "left")
+print("policy:", policy)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>values: [0.729, 0.81, 0.9, 1.0, 0.0]
+policy: ['right', 'right', 'right', 'right']</code></pre>
+<p>Values decay by <code>gamma</code> per step away from the goal (1, 0.9, 0.81, 0.729) and the policy is to head right. Variants: <strong>policy iteration</strong> (alternate evaluating a policy and improving it). Dynamic programming needs the model and a state space small enough to enumerate.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a10-q03" data-topic="Reinforcement learning" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does value iteration need that Q-learning does not?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A reward function <span class="q-why">Both need rewards.</span></li>
+          <li data-key="B">The transition model P and R <span class="q-why">Correct.</span></li>
+          <li data-key="C">A neural network <span class="q-why">No.</span></li>
+          <li data-key="D">Exploration <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Dynamic programming plans with the model; Q-learning learns from experience.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>State the Bellman optimality equation.</summary><div class="answer"><p>Q*(s, a) = R + gamma x expected max over a' of Q*(s', a').</p></div></details>
+      </div>
+    </section>
+
+    <section id="qlearn" data-track>
+      <h2>Learning without a model: Q-learning</h2>
+<h3>Temporal-difference learning</h3>
+<p>Without the model, learn from <strong>sampled experience</strong>. After each step update the estimate towards a <strong>target</strong> built from the observed reward and the current estimate of the next state (<strong>bootstrapping</strong>):</p>
+<div class="formula"><div class="f-title">Q-learning update</div><div class="f-body">Q(s, a) &lt;- Q(s, a) + alpha ( r + gamma max over a' of Q(s', a') - Q(s, a) )</div><dl class="f-defs"><dt>alpha</dt><dd>learning rate</dd><dt>the bracket is the TD error</dt><dd>how wrong the old estimate was</dd></dl></div>
+<p><strong>Q-learning</strong> is <strong>off-policy</strong>: it learns the value of the greedy policy while behaving with an exploratory one. <strong>SARSA</strong> is <strong>on-policy</strong>: its target uses the action actually taken next, so it learns the value of the exploring policy (it is more cautious near hazards).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a10-03.py">import random
+random.seed(0)
+# Gridworld 4 wide, 3 tall. Start (0,0). Goal (3,2) gives +1. Pit (3,1) gives -1. Both end the episode. Step cost -0.04.
+W, H = 4, 3
+GOAL, PIT = (3, 2), (3, 1)
+actions = [(0, 1), (0, -1), (1, 0), (-1, 0)]              # up, down, right, left (y up)
+def move(s, a):
+    x, y = s[0] + a[0], s[1] + a[1]
+    if not (0 &lt;= x &lt; W and 0 &lt;= y &lt; H): x, y = s
+    return (x, y)
+Q = {((x, y), a): 0.0 for x in range(W) for y in range(H) for a in range(4)}
+alpha, gamma, eps = 0.2, 0.95, 0.2
+for episode in range(5000):
+    s = (0, 0)
+    for _ in range(100):
+        a = random.randrange(4) if random.random() &lt; eps else max(range(4), key=lambda i: Q[(s, i)])
+        s2 = move(s, actions[a])
+        r = 1.0 if s2 == GOAL else -1.0 if s2 == PIT else -0.04
+        done = s2 in (GOAL, PIT)
+        target = r + (0 if done else gamma * max(Q[(s2, i)] for i in range(4)))
+        Q[(s, a)] += alpha * (target - Q[(s, a)])
+        s = s2
+        if done: break
+arrows = "^v&gt;&lt;"
+for y in reversed(range(H)):
+    print(" ".join("G" if (x, y) == GOAL else "X" if (x, y) == PIT else arrows[max(range(4), key=lambda i: Q[((x, y), i)])] for x in range(W)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>&gt; &gt; &gt; G
+^ ^ ^ X
+^ ^ ^ &lt;</code></pre>
+<p>The printed grid is the learned policy: arrows point towards the goal in the top-right row and away from the pit. The agent never knew the transition rules; it learned them through trial and error.</p>
+<h3>Exploration</h3>
+<p>If the agent only exploits its current beliefs it may never discover better actions. Strategies: <strong>epsilon-greedy</strong>, decaying epsilon, <strong>optimistic initial values</strong>, <strong>UCB</strong> and Thompson sampling (<a href="a9-recsys.html">A9</a>), <strong>entropy bonuses</strong> in policy gradients, and <strong>intrinsic motivation</strong> (curiosity, novelty) for sparse rewards.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a10-q04" data-topic="Reinforcement learning" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Q-learning is called off-policy because:</p></div>
+        <ul class="q-options">
+          <li data-key="A">It never uses a policy <span class="q-why">No.</span></li>
+          <li data-key="B">It learns the value of the greedy policy while behaving with a different, exploratory policy <span class="q-why">Correct.</span></li>
+          <li data-key="C">It needs no rewards <span class="q-why">No.</span></li>
+          <li data-key="D">It uses a model <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The max in the target ignores the action actually taken next.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Q-learning update and TD error?</summary><div class="answer"><p>Q &lt;- Q + alpha (r + gamma max Q(s', a') - Q); the bracket is the temporal-difference error.</p></div></details>
+      </div>
+    </section>
+
+    <section id="deep" data-track>
+      <h2>Deep reinforcement learning</h2>
+<p>When states are images or huge, a table is impossible; use a neural network to approximate <code>Q</code> or the policy.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Method</th><th>Idea</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><strong>DQN</strong></td><td>A network approximates Q; <strong>experience replay</strong> (sample past transitions at random) and a <strong>target network</strong> (a slowly updated copy for the bootstrap target) stabilise training</td><td>Atari from pixels</td></tr><tr><td>Double DQN, dueling, prioritised replay, Rainbow</td><td>Fix overestimation, separate value and advantage, sample important transitions</td><td>Improvements</td></tr><tr><td><strong>Policy gradient (REINFORCE)</strong></td><td>Adjust policy parameters in the direction <code>G_t grad log pi(a_t given s_t)</code></td><td>Handles continuous actions; high variance</td></tr><tr><td><strong>Actor-critic</strong></td><td>An actor (policy) trained with a critic's value estimate as baseline, giving lower variance</td><td>A2C, A3C</td></tr><tr><td><strong>PPO</strong></td><td>Clipped policy updates keep each step small</td><td>The default practical algorithm; used in RLHF</td></tr><tr><td><strong>SAC, TD3, DDPG</strong></td><td>Off-policy actor-critic for continuous control</td><td>Robotics</td></tr><tr><td><strong>AlphaZero, MuZero</strong></td><td>Monte Carlo tree search guided by a learned network, trained by self-play</td><td>Go, chess</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>The deadly triad</strong>: function approximation, bootstrapping and off-policy learning together can diverge; replay buffers, target networks and careful tuning counter it.</p>
+<h3>Policy gradients in a runnable example</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/a10-04.py">import math, random
+random.seed(2)
+# A 2-armed bandit with a softmax policy; REINFORCE with a running baseline.
+arm_reward = [0.3, 0.7]
+theta = [0.0, 0.0]
+def pi(th):
+    m = max(th); e = [math.exp(t - m) for t in th]; s = sum(e); return [x / s for x in e]
+baseline = 0.0
+for _ in range(3000):
+    p = pi(theta)
+    a = random.choices([0, 1], p)[0]
+    r = 1.0 if random.random() &lt; arm_reward[a] else 0.0
+    adv = r - baseline
+    baseline += 0.01 * (r - baseline)
+    for i in range(2):
+        theta[i] += 0.1 * adv * ((1 if i == a else 0) - p[i])
+print("policy probabilities:", [round(x, 3) for x in pi(theta)])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>policy probabilities: [0.003, 0.997]</code></pre>
+<p>The policy shifts towards the arm with higher success probability. The <strong>baseline</strong> does not change the expected gradient but cuts its variance.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a10-q05" data-topic="Reinforcement learning" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why does DQN use a target network and experience replay?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To save memory <span class="q-why">No.</span></li>
+          <li data-key="B">To stabilise learning by breaking correlation between samples and keeping the bootstrap target from shifting every step <span class="q-why">Correct.</span></li>
+          <li data-key="C">To speed up the GPU <span class="q-why">No.</span></li>
+          <li data-key="D">To add noise <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>They tackle the instability of bootstrapping with function approximation.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a10-q06" data-topic="Reinforcement learning" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does a baseline do in policy gradient methods?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Biases the gradient <span class="q-why">It does not.</span></li>
+          <li data-key="B">Reduces the variance of the gradient estimate without changing its expectation <span class="q-why">Correct.</span></li>
+          <li data-key="C">Increases the reward <span class="q-why">No.</span></li>
+          <li data-key="D">Replaces the policy <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Advantage = return minus baseline.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Value-based versus policy-based methods?</summary><div class="answer"><p>Value-based learn Q and act greedily; policy-based optimise the policy directly and handle continuous actions; actor-critic combines both.</p></div></details>
+      </div>
+    </section>
+
+    <section id="practical" data-track>
+      <h2>Practical issues</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Issue</th><th>Why it matters</th></tr></thead>
+<tbody>
+<tr><td><strong>Sample efficiency</strong></td><td>RL often needs millions of interactions; simulators, model-based RL, offline RL and demonstrations help</td></tr><tr><td><strong>Reward design</strong></td><td>The agent optimises what you reward, not what you meant (<strong>reward hacking</strong>: a boat-racing agent circling for points instead of finishing)</td></tr><tr><td><strong>Sparse rewards</strong></td><td>Hard to learn; use shaping, curricula, hindsight experience replay</td></tr><tr><td><strong>Credit assignment</strong></td><td>Which earlier action caused a later reward?</td></tr><tr><td><strong>Partial observability</strong></td><td>Add memory (recurrent policies) or treat as a POMDP</td></tr><tr><td><strong>Sim-to-real gap</strong></td><td>Policies trained in simulation fail on real robots; use domain randomisation</td></tr><tr><td><strong>Safety</strong></td><td>Exploration can be dangerous; constrain with safe RL</td></tr><tr><td><strong>Evaluation</strong></td><td>High variance across seeds; report several runs and confidence intervals</td></tr><tr><td><strong>Offline RL</strong></td><td>Learn from a fixed dataset without interaction; must avoid actions outside the data</td></tr><tr><td><strong>Imitation learning</strong></td><td>Learn from demonstrations (behavioural cloning, DAgger, inverse RL), often the best starting point</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a10-q07" data-topic="Reinforcement learning" data-type="single" data-answer="B">
+        <div class="q-stem"><p>An agent exploits a flaw in the reward function to score points without doing the task. This is:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Overfitting <span class="q-why">Different.</span></li>
+          <li data-key="B">Reward hacking (specification gaming) <span class="q-why">Correct.</span></li>
+          <li data-key="C">Cold start <span class="q-why">No.</span></li>
+          <li data-key="D">Exploration <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The agent optimises the stated reward, not your intent.</p></div>
+      </div>
+    </section>
+
+    <section id="llm" data-track>
+      <h2>RL and language models</h2>
+<p>Language generation is a sequential decision problem: the <strong>state</strong> is the prompt plus tokens so far, an <strong>action</strong> is the next token, and the <strong>reward</strong> arrives at the end (a preference model's score or a correctness check). RLHF with PPO (<a href="a6-alignment-safety.html">A6</a>) fine-tunes the policy with a KL leash to a reference model; GRPO and other methods use sampled groups; verifiable-reward RL trains reasoning models. Differences from classic RL: a gigantic action space (the vocabulary), a deterministic transition (append the token), a single sparse terminal reward, and the policy starts from a strong pretrained model, which makes exploration far easier.</p>
+<div class="callout key"><span class="callout-title">Key idea</span><p>RL turns a delayed reward into a value estimate through the <strong>Bellman equation</strong>, then improves the policy using it. Q-learning does this with a table, DQN with a network, policy gradients by directly following the gradient of expected return.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a10-q08" data-topic="Reinforcement learning" data-type="fill" data-answer="reference|sft|base">
+        <div class="q-stem"><p>In RLHF the KL penalty keeps the policy close to a <input class="q-input" aria-label="blank 1"> model.</p></div>
+        <div class="q-explain"><p>It limits drift and reward hacking.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How does RLHF map onto RL?</summary><div class="answer"><p>State is the prompt plus generated tokens, action is the next token, reward is a preference model or verifier score at the end.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Reinforcement learning</h2>
+      <p class="muted">13 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Reinforcement learning">
+<details class="recall iq" data-level="basic" data-topic="Reinforcement learning"><summary><span class="tag ok">Basic</span> What is a Markov decision process?</summary><div class="answer"><p>States, actions, transition probabilities, rewards and a discount factor, with the next state depending only on the current state and action.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Reinforcement learning"><summary><span class="tag ok">Basic</span> What is the discount factor?</summary><div class="answer"><p>A number between 0 and 1 that weights future rewards; low values make the agent short-sighted, high values far-sighted.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Reinforcement learning"><summary><span class="tag ok">Basic</span> Exploration versus exploitation?</summary><div class="answer"><p>Exploitation uses the best known action; exploration tries others to learn. Methods include epsilon-greedy, UCB, Thompson sampling and entropy bonuses.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Reinforcement learning"><summary><span class="tag warn">Medium</span> State the Bellman equation.</summary><div class="answer"><p>The value of a state-action equals the immediate reward plus the discounted expected value of the best next state-action.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Reinforcement learning"><summary><span class="tag warn">Medium</span> Q-learning versus SARSA?</summary><div class="answer"><p>Both are TD methods; Q-learning is off-policy (target uses the max over next actions), SARSA is on-policy (target uses the action actually taken), making it more conservative near hazards.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Reinforcement learning"><summary><span class="tag warn">Medium</span> Why does DQN use experience replay and a target network?</summary><div class="answer"><p>Replay breaks correlations between consecutive samples and reuses data; the target network keeps the bootstrap target stable.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Reinforcement learning"><summary><span class="tag warn">Medium</span> What is a policy gradient and why use a baseline?</summary><div class="answer"><p>It increases the probability of actions in proportion to the return. A baseline reduces variance without biasing the gradient.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Reinforcement learning"><summary><span class="tag warn">Medium</span> Actor-critic methods?</summary><div class="answer"><p>An actor updates the policy using a critic&#x27;s value estimates as the baseline or advantage, combining low variance with direct policy optimisation.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Reinforcement learning"><summary><span class="tag bad">Advanced</span> What is the deadly triad?</summary><div class="answer"><p>Function approximation, bootstrapping and off-policy training together can make value learning diverge; mitigated by replay, target networks and careful design.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Reinforcement learning"><summary><span class="tag bad">Advanced</span> Why is PPO popular?</summary><div class="answer"><p>Its clipped objective limits how far each update moves the policy, giving stable and simple on-policy training; it is used in robotics, games and RLHF.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Reinforcement learning"><summary><span class="tag bad">Advanced</span> How does RLHF map onto RL?</summary><div class="answer"><p>The prompt plus generated tokens is the state, the next token is the action, a reward model or verifier gives a terminal reward, and a KL penalty keeps the policy near the reference.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Reinforcement learning"><summary><span class="tag bad">Advanced</span> What is reward hacking and how do you reduce it?</summary><div class="answer"><p>Optimising a flawed reward without achieving the intent. Improve reward design, add constraints and penalties, use human feedback, adversarial testing and monitor behaviour.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Reinforcement learning"><summary><span class="tag bad">Advanced</span> What is offline RL?</summary><div class="answer"><p>Learning a policy from a fixed dataset without interacting; the challenge is avoiding actions poorly covered by the data, handled with conservative value estimates or policy constraints.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="a9-recsys.html"><span class="dir">Previous</span><span>A9 Recommender systems, ranking and bandits</span></a>
+      <a class="next" href="a11-stats-experiments.html"><span class="dir">Next</span><span>A11 Statistics and experimentation for ML</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

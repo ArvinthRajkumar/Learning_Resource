@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="04">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>04 Evaluation and statistics | AI/ML Engineer Prep</title>
+<meta name="description" content="Paired tests (McNemar, exact sign test) by hand, Wilson intervals, bootstrap, power, multiple comparisons, LLM-as-judge biases and eval practice.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part 04</p>
+      <h1>Evaluation and statistics</h1>
+      <p class="lede">"Prompt B scored 81%, prompt A 78%, ship B?" is a statistics question in disguise. This page teaches the paired test that answers it, by hand, and the tools around it: intervals, bootstrap, power and judge bias.</p>
+      <div class="meta"><span class="tag accent">One question, many disguises</span><span class="tag">~2 hours</span></div>
+    </div>
+
+    <!-- ============================================================ basics -->
+    <section id="classic-metrics" data-track>
+      <h2>Basics first: classic metrics for text and LLMs</h2>
+
+      <h3>Intuition</h3>
+      <p>Before LLM judges, text outputs were scored by overlap with reference answers. These metrics are cheap and reproducible, but they measure surface similarity. A correct answer phrased differently can score low, and a fluent wrong answer can score high. Know what each one measures and where it breaks.</p>
+
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Metric</th><th>Measures</th><th>Good for</th><th>Weakness</th></tr></thead>
+        <tbody>
+          <tr><td>Exact match (EM)</td><td>normalized string equality</td><td>short answers, classification, math final answers</td><td>harsh on paraphrases</td></tr>
+          <tr><td>Token F1 (SQuAD style)</td><td>word overlap precision and recall</td><td>extractive QA</td><td>ignores meaning and word order</td></tr>
+          <tr><td>BLEU</td><td>n-gram precision with a brevity penalty</td><td>machine translation</td><td>weak correlation for open-ended text</td></tr>
+          <tr><td>ROUGE-1/2/L</td><td>unigram, bigram and longest-common-subsequence overlap (recall-oriented)</td><td>summarization</td><td>rewards copying, misses paraphrase</td></tr>
+          <tr><td>BERTScore</td><td>embedding similarity of tokens</td><td>paraphrase-tolerant overlap</td><td>still reference-bound, can miss factual errors</td></tr>
+          <tr><td>Perplexity</td><td>how well a model predicts held-out text</td><td>comparing language models on the same tokenizer</td><td>not a measure of answer quality. Not comparable across tokenizers.</td></tr>
+          <tr><td>LLM judge / human rating</td><td>rubric-based quality</td><td>open-ended outputs</td><td>cost, bias, needs validation (see below)</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <div class="worked">
+        <span class="w-title">Two quick computations</span>
+        <ol class="steps">
+          <li>ROUGE-1: reference "the cat sat on the mat", candidate "the cat is on the mat". Clipped unigram overlap: the x 2, cat, on, mat = 5. Recall 5/6 = 0.8333, precision 5/6 = 0.8333.</li>
+          <li>Token F1: prediction "Paris France", gold "Paris". Overlap 1. Precision 1/2, recall 1/1, F1 = 2(0.5)(1)/(1.5) = 0.6667. EM = 0.</li>
+        </ol>
+      </div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p04-basic-1" data-topic="Evaluation" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why are BLEU and ROUGE weak for evaluating a chatbot's free-form answers?</p></div>
+        <ul class="q-options">
+          <li data-key="A">They are too slow <span class="q-why">They are fast.</span></li>
+          <li data-key="B">They measure n-gram overlap with references, so valid paraphrases score low and fluent wrong answers can score well <span class="q-why">Correct.</span></li>
+          <li data-key="C">They require GPUs <span class="q-why">No.</span></li>
+          <li data-key="D">They only work in English <span class="q-why">Not the main issue.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use task-specific checks, validated LLM judges or human ratings for open-ended outputs.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>BLEU vs ROUGE orientation?</summary><div class="answer"><p>BLEU is precision-oriented (with a brevity penalty). ROUGE is recall-oriented.</p></div></details>
+        <details class="recall"><summary>Token F1 of "Paris France" vs gold "Paris"?</summary><div class="answer"><p>0.6667 (precision 0.5, recall 1).</p></div></details>
+        <details class="recall"><summary>Why is perplexity not comparable across models with different tokenizers?</summary><div class="answer"><p>It is per token, and tokens differ in size, so the same text has different token counts.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 1 -->
+    <section id="paired-tests" data-track>
+      <h2>Paired comparison: McNemar and the exact sign test</h2>
+
+      <h3>Intuition</h3>
+      <p>Both prompts answered the <strong>same 200 questions</strong>. On most questions they agree: both right or both wrong. Those questions say nothing about which prompt is better, just as a tied game says nothing about which team is stronger. Only the questions where they <em>disagree</em> carry information. If the prompts were equally good, each disagreement would be a coin flip: B-wins or A-wins with probability 1/2 each.</p>
+      <p>So the question becomes: is 18 heads out of 30 coin flips surprising? Not very. That happens more than a third of the time with a fair coin, counting both directions.</p>
+
+      <h3>The mechanism: the 2x2 table</h3>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th></th><th class="num">B right</th><th class="num">B wrong</th><th class="num">Total</th></tr></thead>
+        <tbody>
+          <tr><td>A right</td><td class="num">144 (both)</td><td class="num"><strong>12</strong> (c: A wins)</td><td class="num">156</td></tr>
+          <tr><td>A wrong</td><td class="num"><strong>18</strong> (b: B wins)</td><td class="num">26 (both)</td><td class="num">44</td></tr>
+          <tr><td>Total</td><td class="num">162</td><td class="num">38</td><td class="num">200</td></tr>
+        </tbody>
+        <caption>Reconstructed from the question: 156 and 162 correct, 30 disagreements, B right on 18 of them. Both right = 156 - 12 = 144, both wrong = 200 - 144 - 18 - 12 = 26.</caption>
+      </table>
+      </div>
+      <p>Accuracy difference = (162 - 156)/200 = (b - c)/200 = 6/200 = 3 points. The concordant cells (144 and 26) cancel out of the difference entirely. That is the algebraic reason only discordant pairs matter.</p>
+
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 260" role="img" aria-label="Binomial distribution of B wins among 30 discordant pairs under the null hypothesis; outcomes as extreme as 18 or more, or 12 or fewer, are shaded and sum to probability 0.36">
+          <line x1="36" y1="210" x2="700" y2="210" class="d-line"/>
+          <rect x="145" y="209.8" width="17" height="0.2" class="d-d"/><rect x="166" y="209.4" width="17" height="0.6" class="d-d"/><rect x="187" y="207.9" width="17" height="2.1" class="d-d"/><rect x="208" y="203.8" width="17" height="6.2" class="d-d"/><rect x="229" y="194.9" width="17" height="15.1" class="d-d"/><rect x="250" y="178.3" width="17" height="31.7" class="d-d"/><rect x="271" y="152.3" width="17" height="57.7" class="d-d"/><rect x="292" y="118.7" width="17" height="91.3" class="d-d"/><rect x="313" y="83.6" width="17" height="126.4" class="d-box"/><rect x="334" y="56.5" width="17" height="153.5" class="d-box"/><rect x="355" y="46.3" width="17" height="163.7" class="d-box"/><rect x="376" y="56.5" width="17" height="153.5" class="d-box"/><rect x="397" y="83.6" width="17" height="126.4" class="d-box"/><rect x="418" y="118.7" width="17" height="91.3" class="d-d"/><rect x="439" y="152.3" width="17" height="57.7" class="d-d"/><rect x="460" y="178.3" width="17" height="31.7" class="d-d"/><rect x="481" y="194.9" width="17" height="15.1" class="d-d"/><rect x="502" y="203.8" width="17" height="6.2" class="d-d"/><rect x="523" y="207.9" width="17" height="2.1" class="d-d"/><rect x="544" y="209.4" width="17" height="0.6" class="d-d"/><rect x="565" y="209.8" width="17" height="0.2" class="d-d"/>
+          <text x="300" y="228" text-anchor="middle" class="d-sm">12</text>
+          <text x="363" y="228" text-anchor="middle" class="d-sm">15</text>
+          <text x="426" y="228" text-anchor="middle" class="d-sm d-bold">18</text>
+          <text x="48" y="228" text-anchor="middle" class="d-sm d-muted">0</text>
+          <text x="678" y="228" text-anchor="middle" class="d-sm d-muted">30</text>
+          <text x="370" y="250" text-anchor="middle" class="d-sm">number of B wins among 30 disagreements, if A and B are equally good (Binomial(30, 1/2))</text>
+          <text x="470" y="80" class="d-sm d-td">P(X &gt;= 18) = 0.1808</text>
+          <text x="80" y="80" class="d-sm d-td">P(X &lt;= 12) = 0.1808</text>
+          <text x="470" y="100" class="d-sm d-bold">two-sided p = 0.3616</text>
+        </svg>
+        </div>
+        <figcaption>Under "no difference", 18 or more B wins (or 12 or fewer, for a two-sided test) happens 36% of the time. Not surprising, so not significant.</figcaption>
+      </figure>
+
+      <h3>The formulas</h3>
+      <div class="formula">
+        <div class="f-title">Exact sign test (binomial test on discordant pairs)</div>
+        <div class="f-body">n = b + c,   X ~ Binomial(n, 1/2) under H0
+p_two_sided = 2 * P(X >= max(b, c)) = 2 * sum_{k=max(b,c)}^{n} C(n, k) / 2^n     (capped at 1)</div>
+        <dl class="f-defs"><dt>b</dt><dd>questions only B got right</dd><dt>c</dt><dd>questions only A got right</dd><dt>H0</dt><dd>both prompts have the same accuracy, so each disagreement is a fair coin</dd></dl>
+      </div>
+      <div class="formula">
+        <div class="f-title">McNemar's test (chi-square approximation of the same idea)</div>
+        <div class="f-body">chi2 = (b - c)^2 / (b + c)                 1 degree of freedom
+chi2_cc = (|b - c| - 1)^2 / (b + c)       with continuity correction</div>
+      </div>
+
+      <h3>Worked example: the assessment question, by hand</h3>
+      <div class="worked">
+        <span class="w-title">b = 18 (B only), c = 12 (A only), n = 30</span>
+        <ol class="steps">
+          <li>Under H0, X = number of B wins ~ Binomial(30, 0.5). Observed X = 18.</li>
+          <li>Upper tail: P(X &gt;= 18) = sum over k = 18..30 of C(30,k) / 2^30 = 194,129,627 / 1,073,741,824 = 0.180797.</li>
+          <li>Two-sided (the difference could have gone either way): p = 2 x 0.180797 = <strong>0.3616</strong>.</li>
+          <li>McNemar without correction: (18 - 12)^2 / 30 = 36/30 = 1.2, chi-square(1) gives p = 0.2733. With continuity correction: (6 - 1)^2 / 30 = 0.833, p = 0.3613 (close to the exact test, which is the point of the correction).</li>
+          <li>Every version gives p much larger than 0.05.</li>
+        </ol>
+        <span class="result">Not statistically significant (exact two-sided p = 0.36)</span>
+      </div>
+      <pre><code class="lang-py">from math import comb, erfc, sqrt
+n, b = 30, 18
+p = 2 * sum(comb(n, k) for k in range(b, n + 1)) / 2**n
+print(round(p, 4))                     # 0.3616  exact sign test
+chi2 = (18 - 12)**2 / 30               # 1.2
+print(round(erfc(sqrt(chi2 / 2)), 4))  # 0.2733  McNemar (no correction)
+# scipy, if installed: scipy.stats.binomtest(18, 30, 0.5).pvalue -> 0.3616</code></pre>
+
+      <h3>How lopsided would it need to be?</h3>
+      <p>With 30 disagreements, the smallest B-win count with two-sided p &lt; 0.05 is <strong>21</strong> (p = 0.0428). 20 of 30 gives p = 0.0987. If B truly won 60% of disagreements, a 30-disagreement test would detect it only 17.7% of the time (its power). See the power section for how many questions you would need.</p>
+
+      <h3>The wrong test: unpaired two-proportion z-test</h3>
+      <p>Treating the results as two independent samples of 200 ignores that the same questions were used:</p>
+      <ul>
+        <li>Pooled p = 318/400 = 0.795. SE = sqrt(0.795 x 0.205 x (1/200 + 1/200)) = 0.0404. z = 0.03/0.0404 = 0.743, p = 0.457.</li>
+        <li>Here it happens to reach the same verdict, but the reasoning is wrong. It treats question difficulty as noise. Paired tests remove that noise (both prompts saw the same hard questions), so they are usually <em>more</em> powerful. Many real comparisons are significant under McNemar but not under the unpaired test.</li>
+        <li>The paired normal approximation is z = (b - c)/sqrt(b + c) = 6/sqrt(30) = 1.095. Its square is McNemar's 1.2.</li>
+      </ul>
+
+      <h3>The original question's options</h3>
+      <div class="callout warn"><span class="callout-title">Options partly seen</span><p class="mb-0">These are the options as remembered. The reasoning below holds regardless of the exact wording.</p></div>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Option (as remembered)</th><th>Verdict</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>A is better</td><td class="bad-text">Wrong</td><td>A scored lower (78% vs 81%), and nothing supports A.</td></tr>
+          <tr><td>Cannot compare them</td><td class="bad-text">Wrong</td><td>Same questions means a paired comparison is exactly the right tool. You can compare. The comparison just is not conclusive.</td></tr>
+          <tr><td>B is significantly better</td><td class="bad-text">Wrong</td><td>18 vs 12 out of 30 discordant pairs gives p = 0.36. A 3-point gap on 200 items with 30 disagreements is well within chance.</td></tr>
+          <tr><td>The difference is not statistically significant (p about 0.36)</td><td class="ok-text">Right</td><td>Exact sign test (binomial on discordant pairs) gives two-sided p = 0.3616. McNemar with continuity correction gives 0.361.</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <div class="callout key"><p class="mb-0">"Not significant" does not mean "no difference". It means this data cannot distinguish them. The right next step is more eval questions, or a decision on other grounds (cost, latency).</p></div>
+
+      <h3>Common traps</h3>
+      <div class="callout trap"><ul class="mb-0">
+        <li>Using all 200 questions as the sample size in a paired test. Only n = b + c = 30 matters.</li>
+        <li>Using a one-sided p (0.18) when the question is "is there a difference".</li>
+        <li>Unpaired z-test or chi-square on the two accuracies when the items are shared.</li>
+        <li>Concluding "B is better, it is 3 points higher" from point estimates alone.</li>
+      </ul></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p04-pair-1" data-topic="Evaluation" data-type="single" data-answer="D" data-flag="options partly seen">
+        <div class="q-stem"><p>On the same 200 questions, prompt A gets 156 right (78%) and prompt B gets 162 (81%). They disagree on 30 questions: B is right on 18, A on 12. What is the right conclusion?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A is better <span class="q-why">A is lower, and there is no evidence for A.</span></li>
+          <li data-key="B">They cannot be compared <span class="q-why">Paired data is ideal for comparison.</span></li>
+          <li data-key="C">B is significantly better <span class="q-why">p = 0.36, which is not significant.</span></li>
+          <li data-key="D">The difference is not statistically significant (p about 0.36) <span class="q-why">Exact sign test on 18 vs 12.</span></li>
+        </ul>
+        <div class="q-explain"><p>2 x P(Binomial(30, 0.5) &gt;= 18) = 0.3616.</p></div>
+      </div>
+      <div class="quiz" data-qid="p04-pair-2" data-topic="Evaluation" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Two models on the same 500 questions: model X right only on 40, model Y right only on 20, agreement elsewhere. Using the exact sign test, the two-sided p-value is closest to:</p></div>
+        <ul class="q-options">
+          <li data-key="A">0.36 <span class="q-why">That was 18 vs 12.</span></li>
+          <li data-key="B">0.013 <span class="q-why">2 x P(Binomial(60, 0.5) &gt;= 40) is about 0.0135.</span></li>
+          <li data-key="C">0.5 <span class="q-why">Too large for a 40/20 split.</span></li>
+          <li data-key="D">Cannot be computed without the concordant counts <span class="q-why">Concordant counts are not needed.</span></li>
+        </ul>
+        <div class="q-explain"><p>n = 60, b = 40. A 2:1 split over 60 disagreements is significant at 0.05 (p = 0.0135). Concordant pairs are irrelevant.</p></div>
+      </div>
+      <div class="quiz" data-qid="p04-pair-3" data-topic="Evaluation" data-type="numeric" data-answer="21" data-tol="0">
+        <div class="q-stem"><p>With 30 disagreements, what is the smallest number of B-wins that makes the two-sided exact sign test significant at 0.05?</p></div>
+        <div class="q-explain"><p>21 (p = 0.0428). 20 gives p = 0.0987.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why do concordant pairs carry no information about which prompt is better?</summary><div class="answer"><p>They contribute equally to both accuracies and cancel in the difference: diff = (b - c)/N.</p></div></details>
+        <details class="recall"><summary>Exact sign test formula?</summary><div class="answer"><p>p = 2 x sum over k from max(b,c) to n of C(n,k)/2^n, with n = b + c.</p></div></details>
+        <details class="recall"><summary>McNemar statistic with and without continuity correction?</summary><div class="answer"><p>(b - c)^2/(b + c), and (|b - c| - 1)^2/(b + c).</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 2 -->
+    <section id="intervals-bootstrap" data-track>
+      <h2>Confidence intervals: Wilson and bootstrap</h2>
+
+      <h3>Intuition</h3>
+      <p>An accuracy of 81% on 200 questions is an estimate. The true accuracy on all possible questions could plausibly be anywhere from about 75% to 86%. Reporting that range stops people from celebrating noise.</p>
+
+      <h3>Formulas</h3>
+      <div class="formula">
+        <div class="f-title">Standard error, Wald and Wilson intervals for a proportion</div>
+        <div class="f-body">SE = sqrt( p(1 - p) / n )
+Wald:    p +/- z * SE                         (bad near 0 or 1, and for small n)
+Wilson:  ( p + z^2/(2n)  +/-  z * sqrt( p(1-p)/n + z^2/(4n^2) ) ) / (1 + z^2/n)</div>
+        <dl class="f-defs"><dt>p</dt><dd>observed proportion (k/n)</dd><dt>n</dt><dd>number of items</dd><dt>z</dt><dd>1.96 for 95%</dd></dl>
+      </div>
+      <div class="worked">
+        <span class="w-title">Prompt B: 162/200</span>
+        <ol class="steps">
+          <li>SE at p = 0.8, n = 200: sqrt(0.16/200) = 0.0283, so a 95% half-width of about 5.5 points.</li>
+          <li>Wald for 0.81: 0.7556 to 0.8644.</li>
+          <li>Wilson for 162/200: 0.7500 to 0.8583. For 156/200: 0.7176 to 0.8318. The intervals overlap heavily.</li>
+          <li>At 10/10, Wald gives the useless interval [1, 1]. Wilson gives 0.7225 to 1.</li>
+        </ol>
+        <span class="result">B: 81% (95% Wilson CI 75.0% to 85.8%)</span>
+      </div>
+      <div class="callout warn"><p class="mb-0">Overlapping individual intervals do not by themselves prove "no difference", and non-overlapping is a conservative test. For paired data, compute an interval for the <em>difference</em> directly.</p></div>
+
+      <h3>Bootstrap</h3>
+      <p>Resample the 200 questions with replacement many times, recompute the metric each time, and take the 2.5th and 97.5th percentiles. For a paired comparison, resample <strong>question indices</strong> and keep each question's (A, B) outcome together. That preserves the pairing.</p>
+      <div class="worked">
+        <span class="w-title">Paired bootstrap of B - A (10,000 resamples, seed 0)</span>
+        <ol class="steps">
+          <li>Build 200 pairs: 144 (1,1), 18 (0,1), 12 (1,0), 26 (0,0).</li>
+          <li>Each resample: draw 200 pairs with replacement and compute mean(B - A).</li>
+          <li>Percentile interval: -0.025 to 0.085. It contains 0, which agrees with the sign test.</li>
+        </ol>
+        <span class="result">95% CI for the difference: about -2.5 to +8.5 points</span>
+      </div>
+      <pre><code class="lang-py">import random
+pairs = [(1,1)]*144 + [(0,1)]*18 + [(1,0)]*12 + [(0,0)]*26
+rng, diffs = random.Random(0), []
+for _ in range(10_000):
+    s = [pairs[rng.randrange(200)] for _ in range(200)]
+    diffs.append(sum(b - a for a, b in s) / 200)
+diffs.sort()
+print(diffs[249], diffs[9749])   # about -0.025 0.085 (exact values depend on the seed)</code></pre>
+      <p>Bootstrap works for any metric (nDCG, F1, judge scores) without a formula. It is weak with very small n and for extreme statistics such as the max.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p04-ci-1" data-topic="Evaluation" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Why prefer the Wilson interval over p +/- 1.96 SE for an accuracy of 98% on 50 items?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Wilson is always narrower <span class="q-why">Not always. It is better calibrated, not necessarily narrower.</span></li>
+          <li data-key="B">Wald needs paired data <span class="q-why">Unrelated.</span></li>
+          <li data-key="C">Wald coverage is poor near 0 or 1 and can exceed [0, 1]; Wilson stays inside and has better coverage <span class="q-why">Correct.</span></li>
+          <li data-key="D">Wilson does not depend on n <span class="q-why">It does.</span></li>
+        </ul>
+        <div class="q-explain"><p>Near the boundaries, the normal approximation behind Wald breaks down.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>SE of an accuracy p on n items?</summary><div class="answer"><p>sqrt(p(1 - p)/n).</p></div></details>
+        <details class="recall"><summary>How do you bootstrap a paired comparison?</summary><div class="answer"><p>Resample item indices with replacement, keeping both systems' outcomes for each item together.</p></div></details>
+        <details class="recall"><summary>95% half-width for 80% accuracy on 200 items?</summary><div class="answer"><p>About 5.5 points.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 3 -->
+    <section id="power-sample-size" data-track>
+      <h2>Power, sample size and multiple comparisons</h2>
+
+      <h3>Intuition</h3>
+      <p><strong>Power</strong> is the chance your test detects a real difference of a given size. Small eval sets have low power, so real improvements look like "not significant". Before running an eval, decide what difference matters and size the set to detect it.</p>
+
+      <h3>Formulas</h3>
+      <div class="formula">
+        <div class="f-title">Sample size (normal approximations, alpha = 0.05 two-sided, power 0.8)</div>
+        <div class="f-body">Paired (sign test on discordant pairs), true win share p_w:
+  n_disc = ( z_{a/2} * 0.5 + z_b * sqrt(p_w (1 - p_w)) )^2 / (p_w - 0.5)^2
+  questions = n_disc / (discordance rate)
+
+Unpaired, accuracies p1, p2:
+  n_per_arm = ( z_{a/2} sqrt(2 pbar (1-pbar)) + z_b sqrt(p1 q1 + p2 q2) )^2 / (p1 - p2)^2</div>
+        <dl class="f-defs"><dt>z_{a/2}</dt><dd>1.96</dd><dt>z_b</dt><dd>0.8416 for 80% power</dd><dt>pbar</dt><dd>(p1 + p2)/2</dd><dt>q</dt><dd>1 - p</dd></dl>
+      </div>
+      <div class="worked">
+        <span class="w-title">How many questions to detect B's apparent edge?</span>
+        <ol class="steps">
+          <li>Suppose B truly wins 60% of disagreements and 15% of questions are discordant (30/200).</li>
+          <li>n_disc = ((1.96 x 0.5 + 0.8416 x sqrt(0.24)) / 0.1)^2 = 193.9, so 194 discordant pairs.</li>
+          <li>Questions: 194 / 0.15 = 1,294 (we have 200).</li>
+          <li>Unpaired design for 78% vs 81%: 2,842 per arm. Pairing roughly halves the cost here.</li>
+          <li>Power of the current 30-discordant test at 60/40: 17.7%.</li>
+        </ol>
+        <span class="result">~1,300 shared questions needed, not 200</span>
+      </div>
+
+      <h3>Multiple comparisons</h3>
+      <p>Test 20 prompt variants against a baseline at alpha = 0.05, with none truly better: P(at least one "significant") = 1 - 0.95^20 = 0.64. Fixes: Bonferroni (use alpha/m, here 0.0025), Holm (step-down, less conservative), Benjamini-Hochberg (controls the false discovery rate). Or hold out a fresh test set and confirm the winner there.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p04-pow-1" data-topic="Evaluation" data-type="numeric" data-answer="0.64" data-tol="0.01">
+        <div class="q-stem"><p>You test 20 independent prompt variants at alpha = 0.05 and none is truly better. Probability of at least one false positive? (2 decimals)</p></div>
+        <div class="q-explain"><p>1 - 0.95^20 = 0.6415.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Define statistical power.</summary><div class="answer"><p>The probability of rejecting H0 when a specified real effect exists (1 - beta).</p></div></details>
+        <details class="recall"><summary>Bonferroni threshold for 10 tests at 0.05?</summary><div class="answer"><p>0.005.</p></div></details>
+        <details class="recall"><summary>Why does pairing reduce the required sample size?</summary><div class="answer"><p>It removes variance from item difficulty. Only discordant items add noise.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 4 -->
+    <section id="llm-judge" data-track>
+      <h2>LLM-as-judge and its biases</h2>
+
+      <h3>Intuition</h3>
+      <p>An LLM judge is a fast, cheap, slightly biased annotator. Treat it like a new human rater: measure how often it agrees with humans, look for systematic biases, and design the protocol to cancel them.</p>
+
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Bias</th><th>What happens</th><th>Mitigation</th></tr></thead>
+        <tbody>
+          <tr><td>Position bias</td><td>Prefers the first (or second) answer in pairwise comparisons</td><td>Run both orders. Count a win only if consistent, otherwise a tie.</td></tr>
+          <tr><td>Verbosity bias</td><td>Prefers longer answers</td><td>Rubric that penalizes padding, length-controlled comparisons, a "concise" criterion</td></tr>
+          <tr><td>Self-preference</td><td>Rates its own model family's outputs higher</td><td>Judge from a different family, or several judges</td></tr>
+          <tr><td>Style over substance</td><td>Confident tone and formatting win</td><td>Reference answers, criteria-specific scores, checks for factual claims</td></tr>
+          <tr><td>Score compression</td><td>Everything gets 7 to 8 out of 10</td><td>Pairwise or binary pass/fail per criterion instead of 1 to 10 scales</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p>Validate the judge: label 100 to 200 items by hand, then compute agreement (accuracy, Cohen's kappa) between the judge and humans before trusting it at scale. Re-validate when you change the judge model or prompt.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p04-judge-1" data-topic="Evaluation" data-type="single" data-answer="A">
+        <div class="q-stem"><p>A pairwise LLM judge picks the first-listed answer 70% of the time. Best fix?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Evaluate each pair in both orders and count only consistent wins <span class="q-why">This cancels position bias.</span></li>
+          <li data-key="B">Raise the judge's temperature <span class="q-why">Adds noise without removing bias.</span></li>
+          <li data-key="C">Always put the baseline second <span class="q-why">That systematically favors the baseline.</span></li>
+          <li data-key="D">Ask for longer justifications <span class="q-why">Does not address order.</span></li>
+        </ul>
+        <div class="q-explain"><p>Swap augmentation is the standard fix for position bias.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Three LLM-judge biases?</summary><div class="answer"><p>Position, verbosity, self-preference.</p></div></details>
+        <details class="recall"><summary>How do you validate a judge?</summary><div class="answer"><p>Compare with human labels on a sample and measure agreement (for example kappa).</p></div></details>
+        <details class="recall"><summary>Why prefer pass/fail per criterion over 1 to 10 scores?</summary><div class="answer"><p>Better consistency and less score compression. Easier to calibrate.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 5 -->
+    <section id="eval-practice" data-track>
+      <h2>Golden sets, regression suites, contamination, online eval</h2>
+      <ul>
+        <li><strong>Golden set</strong>: a curated, versioned set of inputs with expected outputs or rubrics, covering common cases, edge cases and known past failures. Keep it out of any training data.</li>
+        <li><strong>Regression suite</strong>: run the golden set on every prompt, model or retrieval change in CI. Track metrics over time and block merges on significant regressions (using the paired tests above).</li>
+        <li><strong>Contamination</strong>: test items leaked into training data (public benchmarks scraped into pretraining, or your eval set copied into a fine-tuning set). Symptoms: suspiciously high scores, verbatim completions. Defenses: private held-out sets, near-duplicate checks between train and test, fresh items.</li>
+        <li><strong>Offline vs online</strong>: offline evals (fixed datasets) are fast and repeatable. Online evals (production traffic) measure real outcomes: user ratings, task completion, escalations. Offline gates releases, online confirms them.</li>
+        <li><strong>A/B testing</strong>: randomize users (not requests, if experiences should stay consistent) into control and treatment. Pick one primary metric and its sample size in advance. Do not stop early when the p-value dips below 0.05 ("peeking" inflates false positives) unless you use a sequential testing method. Watch guardrail metrics (latency, cost, safety).</li>
+        <li><strong>Component evals for RAG and agents</strong>: retrieval recall, faithfulness, tool-call accuracy, end-to-end task success. Each failure should map to a component.</li>
+      </ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="p04-prac-1" data-topic="Evaluation" data-type="multi" data-answer="A,C">
+        <div class="q-stem"><p>Which practices reduce the risk of fooling yourself with evals? Select all.</p></div>
+        <ul class="q-options">
+          <li data-key="A">Deduplicate fine-tuning data against the eval set <span class="q-why">Prevents contamination.</span></li>
+          <li data-key="B">Stop an A/B test as soon as p &lt; 0.05 <span class="q-why">Peeking inflates false positives.</span></li>
+          <li data-key="C">Use paired tests when both systems answer the same items <span class="q-why">Correct analysis and more power.</span></li>
+          <li data-key="D">Tune prompts on the test set until it improves <span class="q-why">That overfits the test set. Use a dev set.</span></li>
+        </ul>
+        <div class="q-explain"><p>Separate dev and test sets, deduplicate, analyze correctly, and fix the stopping rules in advance.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is eval contamination?</summary><div class="answer"><p>Eval items (or near copies) present in training data, which inflates scores.</p></div></details>
+        <details class="recall"><summary>Why is peeking at an A/B test a problem?</summary><div class="answer"><p>Repeated significance checks raise the false-positive rate well above alpha.</p></div></details>
+        <details class="recall"><summary>Offline vs online evaluation in one line?</summary><div class="answer"><p>Offline: fixed datasets, repeatable, gates releases. Online: real traffic outcomes, confirms impact.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ interview -->
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: evaluation</h2>
+      <p class="muted">Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="13-interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Evaluation">
+<details class="recall iq" data-level="basic" data-topic="Evaluation"><summary><span class="tag ok">Basic</span> What is a golden set?</summary><div class="answer"><p>A curated, versioned set of representative inputs with expected outputs or rubrics, used to evaluate and regression-test a system.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Evaluation"><summary><span class="tag ok">Basic</span> What is an LLM-as-judge?</summary><div class="answer"><p>Using an LLM to grade outputs against a rubric or compare two outputs. It is fast and cheap, but must be validated against human labels and checked for biases.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Evaluation"><summary><span class="tag ok">Basic</span> Name classic text-generation metrics and their limitations.</summary><div class="answer"><p>Exact match, token F1, BLEU, ROUGE and BERTScore. They measure surface or embedding overlap with references and correlate poorly with quality on open-ended answers that can be phrased many ways.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Evaluation"><summary><span class="tag warn">Medium</span> Prompt B scores 81% and A 78% on the same 200 questions, with 30 disagreements (18 for B). Is B better?</summary><div class="answer"><p>Not significantly. Use a paired test: the exact sign test on the 30 discordant pairs gives p = 0.36. A 3-point gap with 30 disagreements is within chance.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Evaluation"><summary><span class="tag warn">Medium</span> Why use a paired test instead of comparing two proportions?</summary><div class="answer"><p>Both systems answered the same items, so item difficulty is shared. Paired tests (McNemar, sign test) use only discordant items, which is correct and usually more powerful than the unpaired z-test.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Evaluation"><summary><span class="tag warn">Medium</span> What biases do LLM judges have and how do you mitigate them?</summary><div class="answer"><p>Position bias (swap the order and keep only consistent wins), verbosity bias (rubrics penalizing padding), self-preference (a judge from a different model family), and score compression (use binary or pairwise criteria).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Evaluation"><summary><span class="tag warn">Medium</span> How do you put a confidence interval on accuracy?</summary><div class="answer"><p>Wilson interval for a proportion, or bootstrap (resample items with replacement). For two systems on the same items, use a paired bootstrap of the difference.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Evaluation"><summary><span class="tag warn">Medium</span> What is eval contamination?</summary><div class="answer"><p>Test items appearing in training data, which inflates scores. Defend with private held-out sets, near-duplicate checks between train and eval, and fresh items.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Evaluation"><summary><span class="tag bad">Advanced</span> How many eval questions do you need to detect a 3-point improvement?</summary><div class="answer"><p>It depends on the discordance rate. With 15% discordant and a true 60/40 split of disagreements, about 194 discordant pairs are needed for 80% power, so about 1,300 questions. Unpaired designs need about 2,800 per arm.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Evaluation"><summary><span class="tag bad">Advanced</span> What is the multiple comparisons problem in prompt experiments?</summary><div class="answer"><p>Testing many variants inflates false positives: 20 tests at alpha 0.05 gives a 64% chance of at least one false winner. Use Bonferroni, Holm or Benjamini-Hochberg corrections, or confirm on a fresh test set.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Evaluation"><summary><span class="tag bad">Advanced</span> Offline vs online evaluation: how do they fit together?</summary><div class="answer"><p>Offline (golden sets, component metrics) gates releases quickly and repeatably. Online (A/B tests, user feedback, task success) measures real impact. Production failures feed back into the offline set.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Evaluation"><summary><span class="tag bad">Advanced</span> How would you evaluate an agent?</summary><div class="answer"><p>Task success rate in simulated or sandboxed environments, tool-call accuracy, policy compliance, step and cost efficiency, and trajectory review. Plus regression suites and online containment and escalation metrics.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="03-rag-and-retrieval.html"><span class="dir">Previous</span><span>03 RAG and retrieval</span></a>
+      <a class="next" href="05-agents-and-tool-use.html"><span class="dir">Next</span><span>05 Agents and tool use</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,688 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="M16">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>M16 Dynamic Programming | DSA Master Guide</title>
+<meta name="description" content="Solve each subproblem once and reuse the answer. Learn a framework, not 50 memorised solutions.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<link rel="stylesheet" href="viz.css">
+<script src="viz.js" defer></script>
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Module 16</p>
+      <h1>Dynamic Programming</h1>
+      <p class="lede">Solve each subproblem once and reuse the answer. Learn a framework, not 50 memorised solutions. Topics in this module: DP framework: overlapping subproblems, memoisation and tabulation; 1d dp: house robber and coin change; 2d dp: grid paths, lcs and 0/1 knapsack.</p>
+      <div class="meta"><span class="tag warn">Important</span><span class="tag">3 topics</span><span class="tag">27 problems</span><span class="tag">55 interview questions</span></div>
+    </div>
+
+    <section id="why-this-module" data-track>
+      <h2>Start from scratch: why this module exists</h2>
+      <p>Many problems repeat the same sub-questions exponentially often. Dynamic programming stores each answer once and reuses it, turning exponential time into polynomial. The key skill is not memorising solutions but defining the STATE clearly and writing the transition.</p>
+      <p>A repeatable framework (state, transition, base cases, order, answer) makes unfamiliar DP problems approachable.</p>
+      <p><strong>Who needs it:</strong> Bioinformatics, text diff tools, finance and operations research, and interviewers who use DP to separate strong candidates.</p>
+      <p><strong>Before you start:</strong> Modules 7, 11 and 15 (recursion, hashing, greedy contrast).</p>
+      <h3>After this module you can</h3>
+      <ul><li>Convert recursion to memoisation and tabulation.</li><li>Solve 1D problems (stairs, robber, coin change).</li><li>Solve 2D problems (grid paths, LCS, knapsack, edit distance).</li><li>Optimise space.</li></ul>
+      <p><strong>Common pitfalls:</strong> Vague state definitions, wrong iteration order, forgetting base cases, using greedy where DP is needed.</p>
+      <p><strong>Typical interview questions here:</strong> Climbing stairs, house robber, coin change, LIS, LCS, edit distance, knapsack, word break, partition equal subset.</p>
+    </section>
+
+    <section id="c16_1" data-track>
+      <h2>DP framework: overlapping subproblems, memoisation and tabulation</h2>
+      <p><span class="tag warn">Important</span> <span class="tag">Topic 16.1</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>Dynamic programming solves a problem by breaking it into overlapping subproblems, solving each only once and storing the result. It applies when the problem has optimal substructure (the best answer is built from best answers to subproblems).</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>It turns exponential recursion into polynomial time. Many "count the ways", "minimum cost", "maximum value" questions are DP.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Writing down the answer to 12 x 12 on a sticky note so you never recompute it.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Take Fibonacci. The definition fib(n) = fib(n-1) + fib(n-2) translates straight into recursion, but the program takes forever for n = 50. Why? Draw the calls: fib(50) asks for fib(49) and fib(48); fib(49) asks for fib(48) and fib(47)... fib(48) is computed twice, fib(47) three times, and the repeats multiply. The work is exponential even though there are only 51 distinct questions.</p>
+      <p>The fix is obvious once seen: write each answer down the first time and reuse it. That notebook is memoisation. The runtime drops from exponential to linear because each of the n distinct questions is answered once and each answer takes constant time to combine.</p>
+      <p>Dynamic programming is this idea applied systematically. You need to see (1) overlapping subproblems and (2) optimal substructure (the answer to the big question can be assembled from answers to smaller ones). The creative step is defining the STATE: what the notebook's index means (the number of ways to reach step i; the minimum coins for amount a).</p>
+      <p>Top-down keeps the recursive form and lets the cache do the work. Bottom-up fills the notebook in an order where every dependency is already known, avoiding recursion altogether and often allowing you to keep only the last few entries.</p>
+      <p>The name 'dynamic programming' comes from the 1950s (Richard Bellman) and is a bit misleading: 'programming' means planning (as in 'linear programming'), not coding.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="dp:fib"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Framework: (1) Define the STATE: what does dp[i] mean in words? (2) Write the TRANSITION: how does dp[i] come from smaller states? (3) Set the BASE cases. (4) Choose the ORDER of iteration so dependencies are ready. (5) Identify the ANSWER cell.</li><li>Top-down (memoisation): write the recursion, add a cache (dict or functools.lru_cache).</li><li>Bottom-up (tabulation): fill a table from the smallest subproblem upward with loops.</li><li>Fibonacci: state dp[i] = fib(i); transition dp[i] = dp[i-1] + dp[i-2]; base dp[0]=0, dp[1]=1; answer dp[n]. Only the last two values are needed, so space can drop from O(n) to O(1).</li><li>Climbing stairs is the same recurrence. Recognise the pattern: "number of ways to reach step n" -&gt; sum of the ways to reach the previous steps.</li><li>Use the DP visualiser to watch each cell being filled and which cells it depends on.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Dynamic programming (DP) is 'recursion with a notebook'. If a recursive solution solves the same small problems again and again, write each answer in a notebook (a dictionary or list) the first time, and look it up afterwards. That alone turns exponential time into polynomial time.</p>
+      <p>Two conditions: overlapping subproblems (the same smaller problems repeat) and optimal substructure (the best answer to the big problem uses best answers to smaller ones). If both hold, DP is possible.</p>
+      <p>Two styles. Top-down (memoisation): write the recursion, add a cache. Easy to write, uses recursion depth. Bottom-up (tabulation): fill a table from the smallest cases to the answer with loops. No recursion limit problems and often allows space savings.</p>
+      <p>The five-step recipe: (1) State: say in words what dp[i] (or dp[i][j]) means. (2) Transition: how does it depend on smaller states? (3) Base cases. (4) Order: iterate so the needed states are ready. (5) Answer: which cell holds it? Write the state sentence before any code; most wrong DP solutions have a fuzzy state.</p>
+      <p>Space saving: if dp[i] only needs dp[i-1] and dp[i-2], keep two variables instead of a whole list (Fibonacci, climbing stairs, house robber).</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>lru_cache stores results in a dict keyed by the call's arguments. Arguments must be hashable. For very deep recursion, bottom-up avoids the stack.</li><li>Space optimisation: if dp[i] depends only on a few previous values, keep variables instead of the whole table (O(n) to O(1)).</li><li>Complexity of DP = number of states x work per state. State count is the table size.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Search and spell-check engines</td><td>Edit distance (how different are two words?) is a DP.</td></tr><tr><td>Bioinformatics</td><td>Sequence alignment (comparing DNA/protein strings) uses DP tables.</td></tr><tr><td>Finance and operations research</td><td>Optimal resource allocation, knapsack-style planning.</td></tr><tr><td>Interviewers</td><td>DP separates strong candidates; a clear state definition is the main thing they listen for.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>DP vs plain recursion</td><td>Recursion repeats work (exponential); DP stores results (polynomial).</td></tr><tr><td>DP vs greedy</td><td>Greedy picks one path; DP considers all via subproblems. Use DP when greedy lacks a proof.</td></tr><tr><td>Top-down vs bottom-up</td><td>Top-down computes only reachable states and is easy to write; bottom-up avoids recursion limits and can shrink memory.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>from functools import lru_cache; @lru_cache(maxsize=None) above the recursive function.</li><li>dp = [0] * (n + 1); dp = [[0] * (m + 1) for _ in range(n + 1)].</li><li>INF = float('inf') for minimisation problems.</li><li>Use enumerate and range(1, n + 1) carefully with 1-based DP tables.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c16_1.py">from functools import lru_cache
+
+def fib_tab(n):
+    if n &lt; 2:
+        return n
+    dp = [0] * (n + 1)
+    dp[1] = 1
+    for i in range(2, n + 1):
+        dp[i] = dp[i - 1] + dp[i - 2]     # transition
+    return dp[n]
+
+@lru_cache(maxsize=None)
+def fib_memo(n):
+    if n &lt; 2:
+        return n
+    return fib_memo(n - 1) + fib_memo(n - 2)</code></pre>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - recursion</h4>
+      <p>ways(n) = ways(n-1) + ways(n-2). Exponential time.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c16_1_stage1.py">def climb(n):
+    return 1 if n &lt;= 1 else climb(n - 1) + climb(n - 2)</code></pre>
+      <p class="muted small">Check: <code>climb(10)</code> returns <code>89</code></p>
+      <h4>Stage 2 - memoisation</h4>
+      <p>Remember each answer: O(n) time, O(n) space.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c16_1_stage2.py">from functools import lru_cache
+
+@lru_cache(maxsize=None)
+def climb(n):
+    return 1 if n &lt;= 1 else climb(n - 1) + climb(n - 2)</code></pre>
+      <p class="muted small">Check: <code>climb(10)</code> returns <code>89</code></p>
+      <h4>Stage 3 - table</h4>
+      <p>Fill from the bottom up with a list. No recursion.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c16_1_stage3.py">def climb(n):
+    dp = [1] * (n + 1)
+    for i in range(2, n + 1):
+        dp[i] = dp[i - 1] + dp[i - 2]
+    return dp[n]</code></pre>
+      <p class="muted small">Check: <code>climb(10)</code> returns <code>89</code></p>
+      <h4>Stage 4 - two variables</h4>
+      <p>Only the last two values are needed: O(1) space.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c16_1_stage4.py">def climb(n):
+    a, b = 1, 1
+    for _ in range(n - 1):
+        a, b = b, a + b
+    return b</code></pre>
+      <p class="muted small">Check: <code>climb(10)</code> returns <code>89</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>fib_tab(6)</code>, returns <code>8</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>i (after)</th><th>dp (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">4</td><td><code>if n &lt; 2:</code></td><td>-</td><td>-</td></tr>
+<tr><td class="num">2</td><td class="num">6</td><td><code>dp = [0] * (n + 1)</code></td><td>-</td><td><strong><code>[0, 0, 0, 0, 0, 0, 0]</code></strong></td></tr>
+<tr><td class="num">3</td><td class="num">7</td><td><code>dp[1] = 1</code></td><td>-</td><td><strong><code>[0, 1, 0, 0, 0, 0, 0]</code></strong></td></tr>
+<tr><td class="num">4</td><td class="num">8</td><td><code>for i in range(2, n + 1):</code></td><td><strong><code>2</code></strong></td><td><code>[0, 1, 0, 0, 0, 0, 0]</code></td></tr>
+<tr><td class="num">5</td><td class="num">9</td><td><code>dp[i] = dp[i - 1] + dp[i - 2]     # transition</code></td><td><code>2</code></td><td><strong><code>[0, 1, 1, 0, 0, 0, 0]</code></strong></td></tr>
+<tr><td class="num">6</td><td class="num">8</td><td><code>for i in range(2, n + 1):</code></td><td><strong><code>3</code></strong></td><td><code>[0, 1, 1, 0, 0, 0, 0]</code></td></tr>
+<tr><td class="num">7</td><td class="num">9</td><td><code>dp[i] = dp[i - 1] + dp[i - 2]     # transition</code></td><td><code>3</code></td><td><strong><code>[0, 1, 1, 2, 0, 0, 0]</code></strong></td></tr>
+<tr><td class="num">8</td><td class="num">8</td><td><code>for i in range(2, n + 1):</code></td><td><strong><code>4</code></strong></td><td><code>[0, 1, 1, 2, 0, 0, 0]</code></td></tr>
+<tr><td class="num">9</td><td class="num">9</td><td><code>dp[i] = dp[i - 1] + dp[i - 2]     # transition</code></td><td><code>4</code></td><td><strong><code>[0, 1, 1, 2, 3, 0, 0]</code></strong></td></tr>
+<tr><td class="num">10</td><td class="num">8</td><td><code>for i in range(2, n + 1):</code></td><td><strong><code>5</code></strong></td><td><code>[0, 1, 1, 2, 3, 0, 0]</code></td></tr>
+<tr><td class="num">11</td><td class="num">9</td><td><code>dp[i] = dp[i - 1] + dp[i - 2]     # transition</code></td><td><code>5</code></td><td><strong><code>[0, 1, 1, 2, 3, 5, 0]</code></strong></td></tr>
+<tr><td class="num">12</td><td class="num">8</td><td><code>for i in range(2, n + 1):</code></td><td><strong><code>6</code></strong></td><td><code>[0, 1, 1, 2, 3, 5, 0]</code></td></tr>
+<tr><td class="num">13</td><td class="num">9</td><td><code>dp[i] = dp[i - 1] + dp[i - 2]     # transition</code></td><td><code>6</code></td><td><strong><code>[0, 1, 1, 2, 3, 5, 8]</code></strong></td></tr>
+<tr><td class="num">14</td><td class="num">8</td><td><code>for i in range(2, n + 1):</code></td><td><code>6</code></td><td><code>[0, 1, 1, 2, 3, 5, 8]</code></td></tr>
+<tr><td class="num">15</td><td class="num">10</td><td><code>return dp[n]</code></td><td><code>6</code></td><td><code>[0, 1, 1, 2, 3, 5, 8]</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>Both O(n) time. Tabulation O(n) space (reducible to O(1)); memoisation O(n) stack + cache.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Vague state definition.</li><li>Wrong iteration order (using a cell before it is computed).</li><li>Forgetting base cases.</li><li>Trying DP when greedy is enough (or vice versa).</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"Number of ways", "minimum/maximum cost", "can we reach/make..." with choices at each step; brute force recursion repeats subproblems -&gt; DP.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m16-problems.html#prob-climb_stairs">Climbing Stairs</a> <span class="tag">LC 70</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>DP (Fibonacci pattern)</td></tr><tr><td><a href="m16-problems.html#prob-fib_memo">Fibonacci with Memoization</a></td><td><span class="tag ok">Easy</span></td><td>Memoization (top-down DP)</td></tr><tr><td><a href="m16-problems.html#prob-min_cost_climbing">Min Cost Climbing Stairs</a> <span class="tag">LC 746</span></td><td><span class="tag ok">Easy</span></td><td>1D DP</td></tr><tr><td><a href="m16-problems.html#prob-unique_bst">Unique Binary Search Trees</a> <span class="tag">LC 96</span></td><td><span class="tag warn">Medium</span></td><td>DP (Catalan numbers)</td></tr><tr><td><a href="m16-problems.html#prob-longest_inc_path_matrix">Longest Increasing Path in a Matrix</a> <span class="tag">LC 329</span></td><td><span class="tag bad">Hard</span></td><td>DFS + memoisation</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why does DP help?</summary><div class="answer"><p>It stores answers to repeated subproblems, turning exponential recursion into polynomial time.</p></div></details>
+        <details class="recall"><summary>Why define the state in words first?</summary><div class="answer"><p>A vague state leads to a wrong transition. If you cannot say what dp[i] means, you cannot compute it.</p></div></details>
+        <details class="recall"><summary>Why prefer bottom-up sometimes?</summary><div class="answer"><p>It avoids recursion limits and allows space reduction.</p></div></details>
+        <details class="recall"><summary>Why prefer top-down sometimes?</summary><div class="answer"><p>It is easier to write and computes only the states actually needed.</p></div></details>
+        <details class="recall"><summary>Why not use DP for everything?</summary><div class="answer"><p>It costs memory and is overkill when a greedy or a formula works.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c16_1-q1" data-topic="Dynamic Programming" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What turns plain recursive Fibonacci from O(2^n) to O(n)?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Using a loop only</li>
+          <li data-key="B">Storing computed values (memoisation)</li>
+          <li data-key="C">Sorting</li>
+          <li data-key="D">Using a stack</li>
+        </ul>
+        <div class="q-explain"><p>Each fib(i) is computed once.</p></div>
+      </div>
+      <div class="quiz" data-qid="c16_1-q2" data-topic="Dynamic Programming" data-type="single" data-answer="D">
+        <div class="q-stem"><p>Which is NOT part of the DP recipe?</p></div>
+        <ul class="q-options">
+          <li data-key="A">State definition</li>
+          <li data-key="B">Transition</li>
+          <li data-key="C">Base case</li>
+          <li data-key="D">Random guessing</li>
+        </ul>
+        <div class="q-explain"><p>DP is systematic: state, transition, base, order.</p></div>
+      </div>
+    </section>
+
+    <section id="c16_2" data-track>
+      <h2>1D DP: house robber and coin change</h2>
+      <p><span class="tag warn">Important</span> <span class="tag">Topic 16.2</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>In 1D DP the state is a single number (index, amount, step) and the table is one row.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Many linear decision problems (rob or skip, take a coin or not) reduce to one dimension.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Deciding each day whether to work (earn but cannot work the next day) or rest, maximising total earnings.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>House robber: houses in a row, no two adjacent. Ask the DP question: what do I need to know to decide about house i? The best total from the previous houses with two possibilities: I skipped house i-1 (so I may rob i), or I robbed house i-1 (so I cannot). Two numbers carry all the information: best up to i-1 and best up to i-2.</p>
+      <p>Notice that you stopped asking 'which houses?' and started asking 'what is the best value up to here?'. That shift from remembering choices to remembering VALUES is the heart of DP.</p>
+      <p>Coin change: to make amount a with fewest coins, the last coin used is some coin c; before it you had made a - c optimally. So dp[a] = 1 + min over coins of dp[a - c]. The state is the amount; the transition tries every last coin; the base is dp[0] = 0.</p>
+      <p>Why does this succeed where greedy fails? Greedy commits to the biggest coin; DP evaluates every possible last coin using the already-known optimal answers for smaller amounts, so it cannot be tricked.</p>
+      <p>Variations come from changing the question: count ways (use +), include/exclude (knapsack), or forbid adjacency (robber).</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="dp:coin"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>House robber: dp[i] = max(dp[i-1], dp[i-2] + nums[i]) - skip house i, or rob it and take the best up to i-2.</li><li>Coin change (minimum coins): dp[a] = min over coins c of dp[a - c] + 1; dp[0] = 0; use infinity for unreachable.</li><li>Why not greedy? coins [1,3,4], amount 6: greedy = 3 coins, DP = 2.</li><li>Dry run for coins [1,3,4], amount 6: dp = [0,1,2,1,1,2,2].</li><li>Pick a problem in the visualiser and step through the table.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>1D DP means the state is a single number: an index in a list or an amount of money. The table is a single row. Most 'linear' decision problems look like this.</p>
+      <p>House robber: for each house you either skip it (best so far stays dp[i-1]) or rob it (you get dp[i-2] + value). dp[i] = max of the two. Only the last two values matter, so two variables are enough.</p>
+      <p>Coin change (minimum coins): dp[a] = fewest coins that make amount a. For each amount try every coin: dp[a] = min(dp[a - coin] + 1). Start with dp[0] = 0 and infinity for the rest. If dp[amount] is still infinity, the answer is -1. This is the example where greedy fails but DP works.</p>
+      <p>Counting ways (instead of minimum): add instead of min. Number of ways to make an amount using coins in ANY order vs a fixed order differ by the loop order: coins outside and amounts inside counts combinations; amounts outside and coins inside counts permutations.</p>
+      <p>More 1D DP: decode ways, word break, min cost climbing stairs, longest increasing subsequence (O(n^2) with dp[i] = best ending at i, or O(n log n) with bisect).</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Coin change dp has O(amount) states and O(coins) transitions per state: O(amount x coins).</li><li>Counting combinations vs permutations depends on loop order: coins outer, amount inner counts combinations; amount outer, coins inner counts ordered sequences.</li><li>Initialising unreachable states to infinity ensures they never win a min comparison; then convert infinity to -1 at the end.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Logistics and finance</td><td>Choosing items or actions under restrictions to maximise value.</td></tr><tr><td>Vending machines and cash handlers</td><td>Computing minimum coins for arbitrary denominations.</td></tr><tr><td>Interviewers</td><td>House robber and coin change are standard DP introductions.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>1D DP vs recursion with memo</td><td>Same complexity; 1D table is iterative and fast; memo is closer to the problem statement.</td></tr><tr><td>Coin change DP vs BFS</td><td>BFS over amounts also finds the minimum coins (each coin is one step) in O(amount x coins).</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>dp = [0] + [float('inf')] * amount.</li><li>for a in range(1, amount + 1): for c in coins: if c &lt;= a: dp[a] = min(dp[a], dp[a - c] + 1).</li><li>skip, take = take, max(take, skip + x) is a neat two-variable update.</li><li>bisect_left makes LIS O(n log n).</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c16_2.py">def house_robber(nums):
+    skip, take = 0, 0
+    for x in nums:
+        skip, take = take, max(take, skip + x)
+    return take
+
+def coin_change(coins, amount):
+    INF = float("inf")
+    dp = [0] + [INF] * amount
+    for a in range(1, amount + 1):
+        for c in coins:
+            if c &lt;= a and dp[a - c] + 1 &lt; dp[a]:
+                dp[a] = dp[a - c] + 1
+    return -1 if dp[amount] == INF else dp[amount]</code></pre>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - recursion on the choice</h4>
+      <p>At each house rob it (skip the next) or skip it. Exponential.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c16_2_stage1.py">def rob(nums, i=0):
+    if i &gt;= len(nums):
+        return 0
+    return max(nums[i] + rob(nums, i + 2), rob(nums, i + 1))</code></pre>
+      <p class="muted small">Check: <code>rob([2, 7, 9, 3, 1])</code> returns <code>12</code></p>
+      <h4>Stage 2 - a table of best values</h4>
+      <p>dp[i] is the best total using houses up to i. O(n) time and space.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c16_2_stage2.py">def rob(nums):
+    if not nums:
+        return 0
+    dp = [0] * (len(nums) + 1)
+    dp[1] = nums[0]
+    for i in range(2, len(nums) + 1):
+        dp[i] = max(dp[i - 1], dp[i - 2] + nums[i - 1])
+    return dp[-1]</code></pre>
+      <p class="muted small">Check: <code>rob([2, 7, 9, 3, 1])</code> returns <code>12</code></p>
+      <h4>Stage 3 - two variables</h4>
+      <p>dp[i] needs only dp[i-1] and dp[i-2]: O(1) space.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c16_2_stage3.py">def rob(nums):
+    skip, take = 0, 0
+    for x in nums:
+        skip, take = take, max(take, skip + x)
+    return take</code></pre>
+      <p class="muted small">Check: <code>rob([2, 7, 9, 3, 1])</code> returns <code>12</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>coin_change([1, 3, 4], 6)</code>, returns <code>2</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>a (after)</th><th>c (after)</th><th>dp (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">8</td><td><code>INF = float("inf")</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">2</td><td class="num">9</td><td><code>dp = [0] + [INF] * amount</code></td><td>-</td><td>-</td><td><strong><code>[0, inf, inf, inf, inf, inf, inf]</code></strong></td></tr>
+<tr><td class="num">3</td><td class="num">10</td><td><code>for a in range(1, amount + 1):</code></td><td><strong><code>1</code></strong></td><td>-</td><td><code>[0, inf, inf, inf, inf, inf, inf]</code></td></tr>
+<tr><td class="num">4</td><td class="num">11</td><td><code>for c in coins:</code></td><td><code>1</code></td><td><strong><code>1</code></strong></td><td><code>[0, inf, inf, inf, inf, inf, inf]</code></td></tr>
+<tr><td class="num">5</td><td class="num">12</td><td><code>if c &lt;= a and dp[a - c] + 1 &lt; dp[a]:</code></td><td><code>1</code></td><td><code>1</code></td><td><code>[0, inf, inf, inf, inf, inf, inf]</code></td></tr>
+<tr><td class="num">6</td><td class="num">13</td><td><code>dp[a] = dp[a - c] + 1</code></td><td><code>1</code></td><td><code>1</code></td><td><strong><code>[0, 1, inf, inf, inf, inf, inf]</code></strong></td></tr>
+<tr><td class="num">7</td><td class="num">11</td><td><code>for c in coins:</code></td><td><code>1</code></td><td><strong><code>3</code></strong></td><td><code>[0, 1, inf, inf, inf, inf, inf]</code></td></tr>
+<tr><td class="num">8</td><td class="num">12</td><td><code>if c &lt;= a and dp[a - c] + 1 &lt; dp[a]:</code></td><td><code>1</code></td><td><code>3</code></td><td><code>[0, 1, inf, inf, inf, inf, inf]</code></td></tr>
+<tr><td class="num">9</td><td class="num">11</td><td><code>for c in coins:</code></td><td><code>1</code></td><td><strong><code>4</code></strong></td><td><code>[0, 1, inf, inf, inf, inf, inf]</code></td></tr>
+<tr><td class="num">10</td><td class="num">12</td><td><code>if c &lt;= a and dp[a - c] + 1 &lt; dp[a]:</code></td><td><code>1</code></td><td><code>4</code></td><td><code>[0, 1, inf, inf, inf, inf, inf]</code></td></tr>
+<tr><td class="num">11</td><td class="num">11</td><td><code>for c in coins:</code></td><td><code>1</code></td><td><code>4</code></td><td><code>[0, 1, inf, inf, inf, inf, inf]</code></td></tr>
+<tr><td class="num">12</td><td class="num">10</td><td><code>for a in range(1, amount + 1):</code></td><td><strong><code>2</code></strong></td><td><code>4</code></td><td><code>[0, 1, inf, inf, inf, inf, inf]</code></td></tr>
+<tr><td class="num">13</td><td class="num">11</td><td><code>for c in coins:</code></td><td><code>2</code></td><td><strong><code>1</code></strong></td><td><code>[0, 1, inf, inf, inf, inf, inf]</code></td></tr>
+<tr><td class="num">14</td><td class="num">12</td><td><code>if c &lt;= a and dp[a - c] + 1 &lt; dp[a]:</code></td><td><code>2</code></td><td><code>1</code></td><td><code>[0, 1, inf, inf, inf, inf, inf]</code></td></tr>
+<tr><td class="num">15</td><td class="num">13</td><td><code>dp[a] = dp[a - c] + 1</code></td><td><code>2</code></td><td><code>1</code></td><td><strong><code>[0, 1, 2, inf, inf, inf, inf]</code></strong></td></tr>
+<tr><td class="num">16</td><td class="num">11</td><td><code>for c in coins:</code></td><td><code>2</code></td><td><strong><code>3</code></strong></td><td><code>[0, 1, 2, inf, inf, inf, inf]</code></td></tr>
+<tr><td class="num">17</td><td class="num">12</td><td><code>if c &lt;= a and dp[a - c] + 1 &lt; dp[a]:</code></td><td><code>2</code></td><td><code>3</code></td><td><code>[0, 1, 2, inf, inf, inf, inf]</code></td></tr>
+<tr><td class="num">18</td><td class="num">11</td><td><code>for c in coins:</code></td><td><code>2</code></td><td><strong><code>4</code></strong></td><td><code>[0, 1, 2, inf, inf, inf, inf]</code></td></tr>
+<tr><td class="num">19</td><td class="num">12</td><td><code>if c &lt;= a and dp[a - c] + 1 &lt; dp[a]:</code></td><td><code>2</code></td><td><code>4</code></td><td><code>[0, 1, 2, inf, inf, inf, inf]</code></td></tr>
+<tr><td class="num">20</td><td class="num">11</td><td><code>for c in coins:</code></td><td><code>2</code></td><td><code>4</code></td><td><code>[0, 1, 2, inf, inf, inf, inf]</code></td></tr>
+<tr><td class="num">21</td><td class="num">10</td><td><code>for a in range(1, amount + 1):</code></td><td><strong><code>3</code></strong></td><td><code>4</code></td><td><code>[0, 1, 2, inf, inf, inf, inf]</code></td></tr>
+<tr><td class="num">22</td><td class="num">11</td><td><code>for c in coins:</code></td><td><code>3</code></td><td><strong><code>1</code></strong></td><td><code>[0, 1, 2, inf, inf, inf, inf]</code></td></tr>
+<tr><td class="num">23</td><td class="num">12</td><td><code>if c &lt;= a and dp[a - c] + 1 &lt; dp[a]:</code></td><td><code>3</code></td><td><code>1</code></td><td><code>[0, 1, 2, inf, inf, inf, inf]</code></td></tr>
+<tr><td class="num">24</td><td class="num">13</td><td><code>dp[a] = dp[a - c] + 1</code></td><td><code>3</code></td><td><code>1</code></td><td><strong><code>[0, 1, 2, 3, inf, inf, inf]</code></strong></td></tr>
+<tr><td class="num">25</td><td class="num">11</td><td><code>for c in coins:</code></td><td><code>3</code></td><td><strong><code>3</code></strong></td><td><code>[0, 1, 2, 3, inf, inf, inf]</code></td></tr>
+<tr><td class="num">26</td><td class="num">12</td><td><code>if c &lt;= a and dp[a - c] + 1 &lt; dp[a]:</code></td><td><code>3</code></td><td><code>3</code></td><td><code>[0, 1, 2, 3, inf, inf, inf]</code></td></tr>
+<tr><td class="num">27</td><td class="num">13</td><td><code>dp[a] = dp[a - c] + 1</code></td><td><code>3</code></td><td><code>3</code></td><td><strong><code>[0, 1, 2, 1, inf, inf, inf]</code></strong></td></tr>
+<tr><td class="num">28</td><td class="num">11</td><td><code>for c in coins:</code></td><td><code>3</code></td><td><strong><code>4</code></strong></td><td><code>[0, 1, 2, 1, inf, inf, inf]</code></td></tr>
+<tr><td class="num">29</td><td class="num">12</td><td><code>if c &lt;= a and dp[a - c] + 1 &lt; dp[a]:</code></td><td><code>3</code></td><td><code>4</code></td><td><code>[0, 1, 2, 1, inf, inf, inf]</code></td></tr>
+<tr><td class="num">30</td><td class="num">11</td><td><code>for c in coins:</code></td><td><code>3</code></td><td><code>4</code></td><td><code>[0, 1, 2, 1, inf, inf, inf]</code></td></tr>
+<tr><td class="num">31</td><td class="num">10</td><td><code>for a in range(1, amount + 1):</code></td><td><strong><code>4</code></strong></td><td><code>4</code></td><td><code>[0, 1, 2, 1, inf, inf, inf]</code></td></tr>
+<tr><td class="num">32</td><td class="num">11</td><td><code>for c in coins:</code></td><td><code>4</code></td><td><strong><code>1</code></strong></td><td><code>[0, 1, 2, 1, inf, inf, inf]</code></td></tr>
+<tr><td class="num">33</td><td class="num">12</td><td><code>if c &lt;= a and dp[a - c] + 1 &lt; dp[a]:</code></td><td><code>4</code></td><td><code>1</code></td><td><code>[0, 1, 2, 1, inf, inf, inf]</code></td></tr>
+<tr><td class="num">34</td><td class="num">13</td><td><code>dp[a] = dp[a - c] + 1</code></td><td><code>4</code></td><td><code>1</code></td><td><strong><code>[0, 1, 2, 1, 2, inf, inf]</code></strong></td></tr>
+<tr><td class="num">35</td><td class="num">11</td><td><code>for c in coins:</code></td><td><code>4</code></td><td><strong><code>3</code></strong></td><td><code>[0, 1, 2, 1, 2, inf, inf]</code></td></tr>
+<tr><td class="num">36</td><td class="num">12</td><td><code>if c &lt;= a and dp[a - c] + 1 &lt; dp[a]:</code></td><td><code>4</code></td><td><code>3</code></td><td><code>[0, 1, 2, 1, 2, inf, inf]</code></td></tr>
+<tr><td class="num">37</td><td class="num">11</td><td><code>for c in coins:</code></td><td><code>4</code></td><td><strong><code>4</code></strong></td><td><code>[0, 1, 2, 1, 2, inf, inf]</code></td></tr>
+<tr><td class="num">38</td><td class="num">12</td><td><code>if c &lt;= a and dp[a - c] + 1 &lt; dp[a]:</code></td><td><code>4</code></td><td><code>4</code></td><td><code>[0, 1, 2, 1, 2, inf, inf]</code></td></tr>
+<tr><td class="num">39</td><td class="num">13</td><td><code>dp[a] = dp[a - c] + 1</code></td><td><code>4</code></td><td><code>4</code></td><td><strong><code>[0, 1, 2, 1, 1, inf, inf]</code></strong></td></tr>
+<tr><td class="num">40</td><td class="num">11</td><td><code>for c in coins:</code></td><td><code>4</code></td><td><code>4</code></td><td><code>[0, 1, 2, 1, 1, inf, inf]</code></td></tr>
+<tr><td class="num">41</td><td class="num">10</td><td><code>for a in range(1, amount + 1):</code></td><td><strong><code>5</code></strong></td><td><code>4</code></td><td><code>[0, 1, 2, 1, 1, inf, inf]</code></td></tr>
+<tr><td class="num">42</td><td class="num">11</td><td><code>for c in coins:</code></td><td><code>5</code></td><td><strong><code>1</code></strong></td><td><code>[0, 1, 2, 1, 1, inf, inf]</code></td></tr>
+<tr><td class="num">43</td><td class="num">12</td><td><code>if c &lt;= a and dp[a - c] + 1 &lt; dp[a]:</code></td><td><code>5</code></td><td><code>1</code></td><td><code>[0, 1, 2, 1, 1, inf, inf]</code></td></tr>
+<tr><td class="num">44</td><td class="num">13</td><td><code>dp[a] = dp[a - c] + 1</code></td><td><code>5</code></td><td><code>1</code></td><td><strong><code>[0, 1, 2, 1, 1, 2, inf]</code></strong></td></tr>
+<tr><td class="num">45</td><td class="num">11</td><td><code>for c in coins:</code></td><td><code>5</code></td><td><strong><code>3</code></strong></td><td><code>[0, 1, 2, 1, 1, 2, inf]</code></td></tr>
+<tr><td class="num">46</td><td class="num">12</td><td><code>if c &lt;= a and dp[a - c] + 1 &lt; dp[a]:</code></td><td><code>5</code></td><td><code>3</code></td><td><code>[0, 1, 2, 1, 1, 2, inf]</code></td></tr>
+<tr><td class="num">47</td><td class="num">11</td><td><code>for c in coins:</code></td><td><code>5</code></td><td><strong><code>4</code></strong></td><td><code>[0, 1, 2, 1, 1, 2, inf]</code></td></tr>
+<tr><td class="num">48</td><td class="num">12</td><td><code>if c &lt;= a and dp[a - c] + 1 &lt; dp[a]:</code></td><td><code>5</code></td><td><code>4</code></td><td><code>[0, 1, 2, 1, 1, 2, inf]</code></td></tr>
+<tr><td class="num">49</td><td class="num">11</td><td><code>for c in coins:</code></td><td><code>5</code></td><td><code>4</code></td><td><code>[0, 1, 2, 1, 1, 2, inf]</code></td></tr>
+<tr><td class="num">50</td><td class="num">10</td><td><code>for a in range(1, amount + 1):</code></td><td><strong><code>6</code></strong></td><td><code>4</code></td><td><code>[0, 1, 2, 1, 1, 2, inf]</code></td></tr>
+<tr><td class="num">51</td><td class="num">11</td><td><code>for c in coins:</code></td><td><code>6</code></td><td><strong><code>1</code></strong></td><td><code>[0, 1, 2, 1, 1, 2, inf]</code></td></tr>
+<tr><td class="num">52</td><td class="num">12</td><td><code>if c &lt;= a and dp[a - c] + 1 &lt; dp[a]:</code></td><td><code>6</code></td><td><code>1</code></td><td><code>[0, 1, 2, 1, 1, 2, inf]</code></td></tr>
+<tr><td class="num">53</td><td class="num">13</td><td><code>dp[a] = dp[a - c] + 1</code></td><td><code>6</code></td><td><code>1</code></td><td><strong><code>[0, 1, 2, 1, 1, 2, 3]</code></strong></td></tr>
+<tr><td class="num">54</td><td class="num">11</td><td><code>for c in coins:</code></td><td><code>6</code></td><td><strong><code>3</code></strong></td><td><code>[0, 1, 2, 1, 1, 2, 3]</code></td></tr>
+<tr><td class="num">55</td><td class="num">12</td><td><code>if c &lt;= a and dp[a - c] + 1 &lt; dp[a]:</code></td><td><code>6</code></td><td><code>3</code></td><td><code>[0, 1, 2, 1, 1, 2, 3]</code></td></tr>
+<tr><td class="num">56</td><td class="num">13</td><td><code>dp[a] = dp[a - c] + 1</code></td><td><code>6</code></td><td><code>3</code></td><td><strong><code>[0, 1, 2, 1, 1, 2, 2]</code></strong></td></tr>
+<tr><td class="num">57</td><td class="num">11</td><td><code>for c in coins:</code></td><td><code>6</code></td><td><strong><code>4</code></strong></td><td><code>[0, 1, 2, 1, 1, 2, 2]</code></td></tr>
+<tr><td class="num">58</td><td class="num">12</td><td><code>if c &lt;= a and dp[a - c] + 1 &lt; dp[a]:</code></td><td><code>6</code></td><td><code>4</code></td><td><code>[0, 1, 2, 1, 1, 2, 2]</code></td></tr>
+<tr><td class="num">59</td><td class="num">11</td><td><code>for c in coins:</code></td><td><code>6</code></td><td><code>4</code></td><td><code>[0, 1, 2, 1, 1, 2, 2]</code></td></tr>
+<tr><td class="num">60</td><td class="num">10</td><td><code>for a in range(1, amount + 1):</code></td><td><code>6</code></td><td><code>4</code></td><td><code>[0, 1, 2, 1, 1, 2, 2]</code></td></tr>
+<tr><td class="num">61</td><td class="num">14</td><td><code>return -1 if dp[amount] == INF else dp[amount]</code></td><td><code>6</code></td><td><code>4</code></td><td><code>[0, 1, 2, 1, 1, 2, 2]</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>House robber O(n) time, O(1) space. Coin change O(amount * coins) time, O(amount) space.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Initialising dp with 0 instead of infinity for minimisation.</li><li>Not handling unreachable amounts.</li><li>Wrong order of loops in "count combinations" vs "count permutations" variants.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"Adjacent restrictions", "minimum number of items to reach a sum" -&gt; 1D DP.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m16-problems.html#prob-min_cost_climbing">Min Cost Climbing Stairs</a> <span class="tag">LC 746</span></td><td><span class="tag ok">Easy</span></td><td>1D DP</td></tr><tr><td><a href="m16-problems.html#prob-house_robber">House Robber</a> <span class="tag">LC 198</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>1D DP</td></tr><tr><td><a href="m16-problems.html#prob-coin_change">Coin Change (Minimum Coins)</a> <span class="tag">LC 322</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Unbounded knapsack DP</td></tr><tr><td><a href="m16-problems.html#prob-coin_change_ii">Coin Change II</a> <span class="tag">LC 518</span></td><td><span class="tag warn">Medium</span></td><td>Unbounded knapsack (count)</td></tr><tr><td><a href="m16-problems.html#prob-perfect_squares">Perfect Squares</a> <span class="tag">LC 279</span></td><td><span class="tag warn">Medium</span></td><td>DP (min count)</td></tr><tr><td><a href="m16-problems.html#prob-house_robber_ii">House Robber II</a> <span class="tag">LC 213</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>DP (circular)</td></tr><tr><td><a href="m16-problems.html#prob-decode_ways">Decode Ways</a> <span class="tag">LC 91</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>1D DP</td></tr><tr><td><a href="m16-problems.html#prob-word_break">Word Break</a> <span class="tag">LC 139</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>1D DP on strings</td></tr><tr><td><a href="m16-problems.html#prob-lis">Longest Increasing Subsequence</a> <span class="tag">LC 300</span> <span class="tag accent">must-do</span></td><td><span class="tag bad">Hard</span></td><td>DP / binary search</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why does house robber use only two variables?</summary><div class="answer"><p>dp[i] depends only on dp[i-1] and dp[i-2].</p></div></details>
+        <details class="recall"><summary>Why does greedy fail for coin change?</summary><div class="answer"><p>The biggest coin first can lead to a worse total; DP tries every last coin.</p></div></details>
+        <details class="recall"><summary>Why initialise unreachable states to infinity?</summary><div class="answer"><p>So they never win a minimum comparison and can be detected at the end.</p></div></details>
+        <details class="recall"><summary>Why does loop order change counting combinations vs permutations?</summary><div class="answer"><p>Coins outside means each combination is built in a fixed coin order; amounts outside counts ordered sequences.</p></div></details>
+        <details class="recall"><summary>Why does dp[0] = 0 for coin change?</summary><div class="answer"><p>Zero coins make amount zero, and every other amount builds on it.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c16_2-q1" data-topic="Dynamic Programming" data-type="single" data-answer="B">
+        <div class="q-stem"><p>House robber recurrence?</p></div>
+        <ul class="q-options">
+          <li data-key="A">dp[i] = dp[i-1] + nums[i]</li>
+          <li data-key="B">dp[i] = max(dp[i-1], dp[i-2] + nums[i])</li>
+          <li data-key="C">dp[i] = min(dp[i-1], dp[i-2])</li>
+          <li data-key="D">dp[i] = dp[i-2]</li>
+        </ul>
+        <div class="q-explain"><p>Either skip the house or rob it and combine with i-2.</p></div>
+      </div>
+      <div class="quiz" data-qid="c16_2-q2" data-topic="Dynamic Programming" data-type="single" data-answer="C">
+        <div class="q-stem"><p>dp initial values for "minimum coins" (other than dp[0])?</p></div>
+        <ul class="q-options">
+          <li data-key="A">0</li>
+          <li data-key="B">-1</li>
+          <li data-key="C">Infinity</li>
+          <li data-key="D">1</li>
+        </ul>
+        <div class="q-explain"><p>Unreachable amounts must lose every min comparison.</p></div>
+      </div>
+    </section>
+
+    <section id="c16_3" data-track>
+      <h2>2D DP: grid paths, LCS and 0/1 knapsack</h2>
+      <p><span class="tag warn">Important</span> <span class="tag">Topic 16.3</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>In 2D DP the state has two parameters (row and column, or position in two strings, or item and capacity), so the table is a grid.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>These patterns cover grid paths, string comparison (LCS, edit distance) and selection under a capacity (knapsack).</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Filling out a spreadsheet where each cell is computed from the cells above and to the left.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Some questions have TWO moving parts. Comparing two strings: how far have I read in A and how far in B? A knapsack: which items have I considered and how much capacity remains? Grid paths: which row and which column? When the state needs two numbers, the notebook becomes a table.</p>
+      <p>LCS: to compare 'abcde' and 'ace', look at the last characters. If they match, that letter is part of the answer and you solve the problem for both strings without it (diagonal cell + 1). If they differ, at least one of them is not used: drop either A's last letter or B's last letter and take the better result (cell above or left).</p>
+      <p>Edit distance follows the same logic with three operations. 0/1 knapsack's two choices are 'take this item' (use the row above with reduced capacity) or 'skip it' (row above, same capacity).</p>
+      <p>The table's order of filling is dictated by dependencies: each cell depends on cells above, to the left or diagonal, so filling row by row left to right always works.</p>
+      <p>A habit that prevents most bugs: add a zero row and column representing 'empty' so that base cases are part of the table, and write down what dp[i][j] MEANS in words before coding.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="dp:lcs"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Grid paths: paths[r][c] = paths[r-1][c] + paths[r][c-1], first row and column = 1.</li><li>LCS of a and b: dp[i][j] = dp[i-1][j-1] + 1 if a[i-1] == b[j-1], else max(dp[i-1][j], dp[i][j-1]). Row 0 and column 0 are 0.</li><li>0/1 knapsack: dp[w] = max(dp[w], dp[w - weight] + value), iterating w downward so each item is used once.</li><li>Every cell takes O(1) work so the cost is rows x cols. Often only the previous row is needed, saving space.</li><li>Pick LCS or knapsack in the visualiser; arrows show which earlier cells produced the current value.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>2D DP has two things changing: for example row and column, or position in string A and position in string B, or item number and remaining capacity. The table is a grid, and each cell is built from neighbouring cells (usually above, left and diagonal).</p>
+      <p>Grid paths: the number of ways to reach a cell is the ways to reach the cell above plus the ways to reach the cell on the left. The first row and column are 1. Minimum path sum is the same shape using min instead of +.</p>
+      <p>LCS (longest common subsequence): dp[i][j] is the LCS of the first i letters of A and the first j letters of B. If the last letters match, take dp[i-1][j-1] + 1. If not, take the best of dp[i-1][j] and dp[i][j-1]. Edit distance has the same grid with three options: insert, delete or replace.</p>
+      <p>0/1 knapsack: dp[i][w] is the best value using the first i items with capacity w. Either skip item i (dp[i-1][w]) or take it (dp[i-1][w - weight] + value). With a 1D array iterate the capacity from high to low so an item is not used twice.</p>
+      <p>Table tips: add an extra row and column for the 'empty' case so you avoid special code. Check the order of loops so every cell you read is already filled. Watch indices: table index i refers to string index i - 1.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Time = number of cells x O(1) work each. Space can often be reduced to one or two rows when the next row depends only on the previous row.</li><li>0/1 knapsack in 1D must iterate capacity downward so dp[w - wt] still holds the previous item's row. Unbounded knapsack iterates upward.</li><li>To reconstruct an LCS, walk back from dp[n][m]: diagonal when letters match, otherwise move toward the larger neighbour.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Version control and diff tools</td><td>LCS finds the unchanged lines between two file versions.</td></tr><tr><td>Bioinformatics</td><td>Needleman-Wunsch alignment is edit distance with scores.</td></tr><tr><td>Resource planners</td><td>Knapsack-like selection under capacity or budget limits.</td></tr><tr><td>Interviewers</td><td>LCS, edit distance, knapsack, grid paths and partition problems.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>2D DP vs 1D rolling array</td><td>2D is easier to debug and allows reconstructing answers. 1D saves memory when only the value is needed.</td></tr><tr><td>Substring vs subsequence</td><td>Longest common substring needs consecutive characters (reset to 0 on mismatch); LCS does not.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>dp = [[0] * (m + 1) for _ in range(n + 1)] (never [[0] * m] * n).</li><li>for i in range(1, n + 1): for j in range(1, m + 1): ...</li><li>Print the table for a tiny input to debug: for row in dp: print(row).</li><li>Rolling arrays: keep only the previous row when only dp[i-1] is needed.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c16_3.py">def lcs(a, b):
+    dp = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
+    for i in range(1, len(a) + 1):
+        for j in range(1, len(b) + 1):
+            if a[i - 1] == b[j - 1]:
+                dp[i][j] = dp[i - 1][j - 1] + 1           # extend a match
+            else:
+                dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])  # skip a character
+    return dp[-1][-1]
+
+def knapsack(weights, values, capacity):
+    dp = [0] * (capacity + 1)
+    for wt, val in zip(weights, values):
+        for w in range(capacity, wt - 1, -1):    # backwards: use each item once
+            dp[w] = max(dp[w], dp[w - wt] + val)
+    return dp[capacity]</code></pre>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - recursion on the ends of both strings</h4>
+      <p>If the last letters match take 1 + the rest; otherwise try dropping a letter from either string. Exponential.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c16_3_stage1.py">def lcs(a, b):
+    if not a or not b:
+        return 0
+    if a[-1] == b[-1]:
+        return 1 + lcs(a[:-1], b[:-1])
+    return max(lcs(a[:-1], b), lcs(a, b[:-1]))</code></pre>
+      <p class="muted small">Check: <code>lcs('abcde', 'ace')</code> returns <code>3</code></p>
+      <h4>Stage 2 - memoise on the two lengths</h4>
+      <p>The state is (i, j). There are only n x m distinct states.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c16_3_stage2.py">from functools import lru_cache
+
+def lcs(a, b):
+    @lru_cache(maxsize=None)
+    def go(i, j):
+        if i == 0 or j == 0:
+            return 0
+        if a[i - 1] == b[j - 1]:
+            return 1 + go(i - 1, j - 1)
+        return max(go(i - 1, j), go(i, j - 1))
+    return go(len(a), len(b))</code></pre>
+      <p class="muted small">Check: <code>lcs('abcde', 'ace')</code> returns <code>3</code></p>
+      <h4>Stage 3 - fill a table</h4>
+      <p>Same recurrence, no recursion.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c16_3_stage3.py">def lcs(a, b):
+    dp = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
+    for i in range(1, len(a) + 1):
+        for j in range(1, len(b) + 1):
+            if a[i - 1] == b[j - 1]:
+                dp[i][j] = dp[i - 1][j - 1] + 1
+            else:
+                dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])
+    return dp[-1][-1]</code></pre>
+      <p class="muted small">Check: <code>lcs('abcde', 'ace')</code> returns <code>3</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>lcs("abc", "ac")</code>, returns <code>2</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>i (after)</th><th>j (after)</th><th>dp (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>dp = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">2</td><td class="num">2</td><td><code>dp = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">3</td><td class="num">2</td><td><code>dp = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">4</td><td class="num">2</td><td><code>dp = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">5</td><td class="num">2</td><td><code>dp = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]</code></td><td>-</td><td>-</td><td><strong><code>[[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]]</code></strong></td></tr>
+<tr><td class="num">6</td><td class="num">3</td><td><code>for i in range(1, len(a) + 1):</code></td><td><strong><code>1</code></strong></td><td>-</td><td><code>[[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]]</code></td></tr>
+<tr><td class="num">7</td><td class="num">4</td><td><code>for j in range(1, len(b) + 1):</code></td><td><code>1</code></td><td><strong><code>1</code></strong></td><td><code>[[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]]</code></td></tr>
+<tr><td class="num">8</td><td class="num">5</td><td><code>if a[i - 1] == b[j - 1]:</code></td><td><code>1</code></td><td><code>1</code></td><td><code>[[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]]</code></td></tr>
+<tr><td class="num">9</td><td class="num">6</td><td><code>dp[i][j] = dp[i - 1][j - 1] + 1           # extend a match</code></td><td><code>1</code></td><td><code>1</code></td><td><strong><code>[[0, 0, 0], [0, 1, 0], [0, 0, 0], [0, 0, 0]]</code></strong></td></tr>
+<tr><td class="num">10</td><td class="num">4</td><td><code>for j in range(1, len(b) + 1):</code></td><td><code>1</code></td><td><strong><code>2</code></strong></td><td><code>[[0, 0, 0], [0, 1, 0], [0, 0, 0], [0, 0, 0]]</code></td></tr>
+<tr><td class="num">11</td><td class="num">5</td><td><code>if a[i - 1] == b[j - 1]:</code></td><td><code>1</code></td><td><code>2</code></td><td><code>[[0, 0, 0], [0, 1, 0], [0, 0, 0], [0, 0, 0]]</code></td></tr>
+<tr><td class="num">12</td><td class="num">8</td><td><code>dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])  # skip a character</code></td><td><code>1</code></td><td><code>2</code></td><td><strong><code>[[0, 0, 0], [0, 1, 1], [0, 0, 0], [0, 0, 0]]</code></strong></td></tr>
+<tr><td class="num">13</td><td class="num">4</td><td><code>for j in range(1, len(b) + 1):</code></td><td><code>1</code></td><td><code>2</code></td><td><code>[[0, 0, 0], [0, 1, 1], [0, 0, 0], [0, 0, 0]]</code></td></tr>
+<tr><td class="num">14</td><td class="num">3</td><td><code>for i in range(1, len(a) + 1):</code></td><td><strong><code>2</code></strong></td><td><code>2</code></td><td><code>[[0, 0, 0], [0, 1, 1], [0, 0, 0], [0, 0, 0]]</code></td></tr>
+<tr><td class="num">15</td><td class="num">4</td><td><code>for j in range(1, len(b) + 1):</code></td><td><code>2</code></td><td><strong><code>1</code></strong></td><td><code>[[0, 0, 0], [0, 1, 1], [0, 0, 0], [0, 0, 0]]</code></td></tr>
+<tr><td class="num">16</td><td class="num">5</td><td><code>if a[i - 1] == b[j - 1]:</code></td><td><code>2</code></td><td><code>1</code></td><td><code>[[0, 0, 0], [0, 1, 1], [0, 0, 0], [0, 0, 0]]</code></td></tr>
+<tr><td class="num">17</td><td class="num">8</td><td><code>dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])  # skip a character</code></td><td><code>2</code></td><td><code>1</code></td><td><strong><code>[[0, 0, 0], [0, 1, 1], [0, 1, 0], [0, 0, 0]]</code></strong></td></tr>
+<tr><td class="num">18</td><td class="num">4</td><td><code>for j in range(1, len(b) + 1):</code></td><td><code>2</code></td><td><strong><code>2</code></strong></td><td><code>[[0, 0, 0], [0, 1, 1], [0, 1, 0], [0, 0, 0]]</code></td></tr>
+<tr><td class="num">19</td><td class="num">5</td><td><code>if a[i - 1] == b[j - 1]:</code></td><td><code>2</code></td><td><code>2</code></td><td><code>[[0, 0, 0], [0, 1, 1], [0, 1, 0], [0, 0, 0]]</code></td></tr>
+<tr><td class="num">20</td><td class="num">8</td><td><code>dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])  # skip a character</code></td><td><code>2</code></td><td><code>2</code></td><td><strong><code>[[0, 0, 0], [0, 1, 1], [0, 1, 1], [0, 0, 0]]</code></strong></td></tr>
+<tr><td class="num">21</td><td class="num">4</td><td><code>for j in range(1, len(b) + 1):</code></td><td><code>2</code></td><td><code>2</code></td><td><code>[[0, 0, 0], [0, 1, 1], [0, 1, 1], [0, 0, 0]]</code></td></tr>
+<tr><td class="num">22</td><td class="num">3</td><td><code>for i in range(1, len(a) + 1):</code></td><td><strong><code>3</code></strong></td><td><code>2</code></td><td><code>[[0, 0, 0], [0, 1, 1], [0, 1, 1], [0, 0, 0]]</code></td></tr>
+<tr><td class="num">23</td><td class="num">4</td><td><code>for j in range(1, len(b) + 1):</code></td><td><code>3</code></td><td><strong><code>1</code></strong></td><td><code>[[0, 0, 0], [0, 1, 1], [0, 1, 1], [0, 0, 0]]</code></td></tr>
+<tr><td class="num">24</td><td class="num">5</td><td><code>if a[i - 1] == b[j - 1]:</code></td><td><code>3</code></td><td><code>1</code></td><td><code>[[0, 0, 0], [0, 1, 1], [0, 1, 1], [0, 0, 0]]</code></td></tr>
+<tr><td class="num">25</td><td class="num">8</td><td><code>dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])  # skip a character</code></td><td><code>3</code></td><td><code>1</code></td><td><strong><code>[[0, 0, 0], [0, 1, 1], [0, 1, 1], [0, 1, 0]]</code></strong></td></tr>
+<tr><td class="num">26</td><td class="num">4</td><td><code>for j in range(1, len(b) + 1):</code></td><td><code>3</code></td><td><strong><code>2</code></strong></td><td><code>[[0, 0, 0], [0, 1, 1], [0, 1, 1], [0, 1, 0]]</code></td></tr>
+<tr><td class="num">27</td><td class="num">5</td><td><code>if a[i - 1] == b[j - 1]:</code></td><td><code>3</code></td><td><code>2</code></td><td><code>[[0, 0, 0], [0, 1, 1], [0, 1, 1], [0, 1, 0]]</code></td></tr>
+<tr><td class="num">28</td><td class="num">6</td><td><code>dp[i][j] = dp[i - 1][j - 1] + 1           # extend a match</code></td><td><code>3</code></td><td><code>2</code></td><td><strong><code>[[0, 0, 0], [0, 1, 1], [0, 1, 1], [0, 1, 2]]</code></strong></td></tr>
+<tr><td class="num">29</td><td class="num">4</td><td><code>for j in range(1, len(b) + 1):</code></td><td><code>3</code></td><td><code>2</code></td><td><code>[[0, 0, 0], [0, 1, 1], [0, 1, 1], [0, 1, 2]]</code></td></tr>
+<tr><td class="num">30</td><td class="num">3</td><td><code>for i in range(1, len(a) + 1):</code></td><td><code>3</code></td><td><code>2</code></td><td><code>[[0, 0, 0], [0, 1, 1], [0, 1, 1], [0, 1, 2]]</code></td></tr>
+<tr><td class="num">31</td><td class="num">9</td><td><code>return dp[-1][-1]</code></td><td><code>3</code></td><td><code>2</code></td><td><code>[[0, 0, 0], [0, 1, 1], [0, 1, 1], [0, 1, 2]]</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>LCS O(n*m) time and space; knapsack O(n * capacity) time, O(capacity) space.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Off-by-one between dp indices (1-based) and string indices (0-based).</li><li>Iterating capacity upward in 0/1 knapsack (reuses items).</li><li>Forgetting the zero row/column.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>Two strings/sequences compared -&gt; 2D DP. Items + capacity -&gt; knapsack. Grid with right/down moves -&gt; 2D DP.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m16-problems.html#prob-unique_paths">Unique Grid Paths</a> <span class="tag">LC 62</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>2D DP</td></tr><tr><td><a href="m16-problems.html#prob-min_path_sum">Minimum Path Sum</a> <span class="tag">LC 64</span></td><td><span class="tag warn">Medium</span></td><td>2D DP</td></tr><tr><td><a href="m16-problems.html#prob-lcs">Longest Common Subsequence</a> <span class="tag">LC 1143</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>2D DP on strings</td></tr><tr><td><a href="m16-problems.html#prob-triangle_min_path">Triangle (Minimum Path Sum)</a> <span class="tag">LC 120</span></td><td><span class="tag warn">Medium</span></td><td>DP bottom-up</td></tr><tr><td><a href="m16-problems.html#prob-target_sum">Target Sum</a> <span class="tag">LC 494</span></td><td><span class="tag warn">Medium</span></td><td>Subset-sum counting DP</td></tr><tr><td><a href="m16-problems.html#prob-stock_cooldown">Best Time to Buy and Sell Stock with Cooldown</a> <span class="tag">LC 309</span></td><td><span class="tag warn">Medium</span></td><td>DP with states</td></tr><tr><td><a href="m16-problems.html#prob-maximal_square">Maximal Square</a> <span class="tag">LC 221</span></td><td><span class="tag warn">Medium</span></td><td>2D DP</td></tr><tr><td><a href="m16-problems.html#prob-longest_palindromic_subseq">Longest Palindromic Subsequence</a> <span class="tag">LC 516</span></td><td><span class="tag warn">Medium</span></td><td>DP (LCS with the reverse)</td></tr><tr><td><a href="m16-problems.html#prob-unique_paths_obstacles">Unique Paths II</a> <span class="tag">LC 63</span></td><td><span class="tag warn">Medium</span></td><td>2D DP with blocked cells</td></tr><tr><td><a href="m16-problems.html#prob-partition_equal_subset">Partition Equal Subset Sum</a> <span class="tag">LC 416</span></td><td><span class="tag warn">Medium</span></td><td>Subset-sum DP (knapsack)</td></tr><tr><td><a href="m16-problems.html#prob-knapsack_01">0/1 Knapsack</a></td><td><span class="tag bad">Hard</span></td><td>Knapsack DP</td></tr><tr><td><a href="m16-problems.html#prob-edit_distance">Edit Distance</a> <span class="tag">LC 72</span></td><td><span class="tag bad">Hard</span></td><td>2D DP on strings</td></tr><tr><td><a href="m16-problems.html#prob-burst_balloons">Burst Balloons</a> <span class="tag">LC 312</span></td><td><span class="tag bad">Hard</span></td><td>Interval DP</td></tr><tr><td><a href="m16-problems.html#prob-regex_match">Regular Expression Matching</a> <span class="tag">LC 10</span></td><td><span class="tag bad">Hard</span></td><td>2D DP on two strings</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why a table with an extra zero row and column?</summary><div class="answer"><p>It represents the empty prefix, so base cases need no special code.</p></div></details>
+        <details class="recall"><summary>Why iterate capacity backwards in 1D knapsack?</summary><div class="answer"><p>To ensure each item is used at most once.</p></div></details>
+        <details class="recall"><summary>Why does LCS take the max of two neighbours on mismatch?</summary><div class="answer"><p>At least one of the two last letters is unused, so drop either and keep the better result.</p></div></details>
+        <details class="recall"><summary>Why can a DP table sometimes shrink to two rows?</summary><div class="answer"><p>Each row depends only on the previous row.</p></div></details>
+        <details class="recall"><summary>Why add dp[i-1][j-1] + 1 only on a match?</summary><div class="answer"><p>A matching pair extends the common subsequence found for both shorter prefixes.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c16_3-q1" data-topic="Dynamic Programming" data-type="single" data-answer="C">
+        <div class="q-stem"><p>LCS of "abc" and "abc"?</p></div>
+        <ul class="q-options">
+          <li data-key="A">0</li>
+          <li data-key="B">1</li>
+          <li data-key="C">3</li>
+          <li data-key="D">6</li>
+        </ul>
+        <div class="q-explain"><p>Identical strings share all three characters.</p></div>
+      </div>
+      <div class="quiz" data-qid="c16_3-q2" data-topic="Dynamic Programming" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why iterate capacity from high to low in 0/1 knapsack with a 1D array?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Speed</li>
+          <li data-key="B">So each item is counted at most once</li>
+          <li data-key="C">Python requires it</li>
+          <li data-key="D">To sort values</li>
+        </ul>
+        <div class="q-explain"><p>Going upward would let the same item be added repeatedly.</p></div>
+      </div>
+    </section>
+
+    <h2 id="practice-problems">Practice problems for this module</h2>
+
+    <p>27 problems with hints, approach, dry run and tested solutions on the <a href="m16-problems.html">problem set for this module</a>.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m16-problems.html#prob-climb_stairs">Climbing Stairs</a> <span class="tag">LC 70</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>DP (Fibonacci pattern)</td></tr><tr><td><a href="m16-problems.html#prob-fib_memo">Fibonacci with Memoization</a></td><td><span class="tag ok">Easy</span></td><td>Memoization (top-down DP)</td></tr><tr><td><a href="m16-problems.html#prob-min_cost_climbing">Min Cost Climbing Stairs</a> <span class="tag">LC 746</span></td><td><span class="tag ok">Easy</span></td><td>1D DP</td></tr><tr><td><a href="m16-problems.html#prob-house_robber">House Robber</a> <span class="tag">LC 198</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>1D DP</td></tr><tr><td><a href="m16-problems.html#prob-coin_change">Coin Change (Minimum Coins)</a> <span class="tag">LC 322</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Unbounded knapsack DP</td></tr><tr><td><a href="m16-problems.html#prob-unique_paths">Unique Grid Paths</a> <span class="tag">LC 62</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>2D DP</td></tr><tr><td><a href="m16-problems.html#prob-min_path_sum">Minimum Path Sum</a> <span class="tag">LC 64</span></td><td><span class="tag warn">Medium</span></td><td>2D DP</td></tr><tr><td><a href="m16-problems.html#prob-lcs">Longest Common Subsequence</a> <span class="tag">LC 1143</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>2D DP on strings</td></tr><tr><td><a href="m16-problems.html#prob-decode_ways">Decode Ways</a> <span class="tag">LC 91</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>1D DP</td></tr><tr><td><a href="m16-problems.html#prob-word_break">Word Break</a> <span class="tag">LC 139</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>1D DP on strings</td></tr><tr><td><a href="m16-problems.html#prob-partition_equal_subset">Partition Equal Subset Sum</a> <span class="tag">LC 416</span></td><td><span class="tag warn">Medium</span></td><td>Subset-sum DP (knapsack)</td></tr><tr><td><a href="m16-problems.html#prob-triangle_min_path">Triangle (Minimum Path Sum)</a> <span class="tag">LC 120</span></td><td><span class="tag warn">Medium</span></td><td>DP bottom-up</td></tr><tr><td><a href="m16-problems.html#prob-coin_change_ii">Coin Change II</a> <span class="tag">LC 518</span></td><td><span class="tag warn">Medium</span></td><td>Unbounded knapsack (count)</td></tr><tr><td><a href="m16-problems.html#prob-target_sum">Target Sum</a> <span class="tag">LC 494</span></td><td><span class="tag warn">Medium</span></td><td>Subset-sum counting DP</td></tr><tr><td><a href="m16-problems.html#prob-unique_bst">Unique Binary Search Trees</a> <span class="tag">LC 96</span></td><td><span class="tag warn">Medium</span></td><td>DP (Catalan numbers)</td></tr><tr><td><a href="m16-problems.html#prob-perfect_squares">Perfect Squares</a> <span class="tag">LC 279</span></td><td><span class="tag warn">Medium</span></td><td>DP (min count)</td></tr><tr><td><a href="m16-problems.html#prob-house_robber_ii">House Robber II</a> <span class="tag">LC 213</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>DP (circular)</td></tr><tr><td><a href="m16-problems.html#prob-stock_cooldown">Best Time to Buy and Sell Stock with Cooldown</a> <span class="tag">LC 309</span></td><td><span class="tag warn">Medium</span></td><td>DP with states</td></tr><tr><td><a href="m16-problems.html#prob-maximal_square">Maximal Square</a> <span class="tag">LC 221</span></td><td><span class="tag warn">Medium</span></td><td>2D DP</td></tr><tr><td><a href="m16-problems.html#prob-longest_palindromic_subseq">Longest Palindromic Subsequence</a> <span class="tag">LC 516</span></td><td><span class="tag warn">Medium</span></td><td>DP (LCS with the reverse)</td></tr><tr><td><a href="m16-problems.html#prob-unique_paths_obstacles">Unique Paths II</a> <span class="tag">LC 63</span></td><td><span class="tag warn">Medium</span></td><td>2D DP with blocked cells</td></tr><tr><td><a href="m16-problems.html#prob-knapsack_01">0/1 Knapsack</a></td><td><span class="tag bad">Hard</span></td><td>Knapsack DP</td></tr><tr><td><a href="m16-problems.html#prob-lis">Longest Increasing Subsequence</a> <span class="tag">LC 300</span> <span class="tag accent">must-do</span></td><td><span class="tag bad">Hard</span></td><td>DP / binary search</td></tr><tr><td><a href="m16-problems.html#prob-edit_distance">Edit Distance</a> <span class="tag">LC 72</span></td><td><span class="tag bad">Hard</span></td><td>2D DP on strings</td></tr><tr><td><a href="m16-problems.html#prob-longest_inc_path_matrix">Longest Increasing Path in a Matrix</a> <span class="tag">LC 329</span></td><td><span class="tag bad">Hard</span></td><td>DFS + memoisation</td></tr><tr><td><a href="m16-problems.html#prob-burst_balloons">Burst Balloons</a> <span class="tag">LC 312</span></td><td><span class="tag bad">Hard</span></td><td>Interval DP</td></tr><tr><td><a href="m16-problems.html#prob-regex_match">Regular Expression Matching</a> <span class="tag">LC 10</span></td><td><span class="tag bad">Hard</span></td><td>2D DP on two strings</td></tr>
+</tbody>
+</table>
+</div>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Dynamic Programming</h2>
+      <p class="muted">55 questions: try to answer aloud in under a minute, then reveal. All questions from every module are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Dynamic Programming">
+<details class="recall iq" data-level="basic" data-topic="Dynamic Programming"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is dynamic programming?</summary><div class="answer"><p>A technique that solves a problem by breaking it into overlapping subproblems, solving each once and storing the result (memoisation or tabulation).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Dynamic Programming"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Memoisation vs tabulation?</summary><div class="answer"><p>Memoisation is top-down recursion with a cache. Tabulation is bottom-up iteration filling a table. Same complexity; tabulation avoids recursion limits.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Dynamic Programming"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you recognise a DP problem?</summary><div class="answer"><p>Keywords like &#x27;count the ways&#x27;, &#x27;minimum/maximum cost&#x27;, &#x27;can we reach/make&#x27;, plus a brute-force recursion with repeated subproblems.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Dynamic Programming"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Explain the steps to solve a DP problem.</summary><div class="answer"><p>Define state, write the transition, set base cases, choose iteration order, find the answer cell, then optimise space if possible.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Dynamic Programming"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Solve climbing stairs.</summary><div class="answer"><pre><code class="lang-py">def climb(n):
+    a, b = 1, 1
+    for _ in range(n - 1):
+        a, b = b, a + b
+    return b</code></pre></div></details>
+<details class="recall iq" data-level="basic" data-topic="Dynamic Programming"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What are optimal substructure and overlapping subproblems?</summary><div class="answer"><p>Optimal substructure: an optimal solution contains optimal solutions of its subproblems. Overlapping subproblems: the same subproblems are needed repeatedly, so caching helps.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Dynamic Programming"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Solve the house robber problem.</summary><div class="answer"><p>dp[i] = max(dp[i-1], dp[i-2] + nums[i]). Keep two variables. O(n) time, O(1) space.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Dynamic Programming"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why does greedy fail for coin change but DP works?</summary><div class="answer"><p>Greedy takes the biggest coin first and may get stuck with a worse total (coins 1, 3, 4, amount 6). DP tries all coins for every smaller amount and finds the true minimum.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Dynamic Programming"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the time complexity of coin change DP?</summary><div class="answer"><p>O(amount x number of coins) time and O(amount) space.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Dynamic Programming"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you count the number of ways to make an amount with coins?</summary><div class="answer"><p>dp[0] = 1; for each coin, for a from coin to amount: dp[a] += dp[a - coin]. Coins in the outer loop counts combinations.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Dynamic Programming"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the Longest Increasing Subsequence complexity?</summary><div class="answer"><p>O(n^2) with the simple DP, O(n log n) with the &#x27;tails&#x27; array and binary search.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Dynamic Programming"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the state and transition for house robber?</summary><div class="answer"><p>State: best money using houses up to i. Transition: dp[i] = max(dp[i-1], dp[i-2] + nums[i]).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Dynamic Programming"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Explain the LCS DP.</summary><div class="answer"><p>dp[i][j] = LCS length of A[:i] and B[:j]. If A[i-1] == B[j-1]: dp[i-1][j-1] + 1 else max(dp[i-1][j], dp[i][j-1]). O(nm).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Dynamic Programming"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Explain the 0/1 knapsack DP.</summary><div class="answer"><p>dp[w] = best value with capacity w. For each item loop w from capacity down to weight: dp[w] = max(dp[w], dp[w - weight] + value). O(n x capacity).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Dynamic Programming"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why iterate the capacity backwards in 1D knapsack?</summary><div class="answer"><p>So that each item is used at most once. Going upward would let it be added many times (unbounded knapsack).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Dynamic Programming"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How many paths in an m x n grid moving right or down?</summary><div class="answer"><p>C(m + n - 2, m - 1), or fill the DP table with paths[r][c] = paths[r-1][c] + paths[r][c-1].</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Dynamic Programming"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is edit distance?</summary><div class="answer"><p>The minimum number of insertions, deletions and replacements to turn one string into another, solved with a 2D DP.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Dynamic Programming"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How can you reduce DP space?</summary><div class="answer"><p>If a row only depends on the previous row (or the last few values), keep only those instead of the entire table.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Dynamic Programming"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What does dp[i][j] mean in edit distance?</summary><div class="answer"><p>The minimum edits to turn the first i characters of A into the first j characters of B.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Count the ways to climb n stairs taking 1, 2 or 3 steps at a time.</summary><div class="answer"><pre><code class="lang-py">def ways(n):
+    a, b, c = 1, 1, 2
+    if n &lt; 3:
+        return [1, 1, 2][n]
+    for _ in range(3, n + 1):
+        a, b, c = b, c, a + b + c
+    return c</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> Why does a mutable default argument memo dict work in fib_memo(n, memo={})?</summary><div class="answer"><p>The default dict is created once and shared across calls, acting as a persistent cache. It is a bug in other situations, so use it deliberately.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> Where is DP used outside interviews?</summary><div class="answer"><p>Diff tools (longest common subsequence), spell correction, route planning, speech recognition (Viterbi) and bioinformatics alignment.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does DP help?</summary><div class="answer"><p>It stores answers to repeated subproblems, turning exponential recursion into polynomial time.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why define the state in words first?</summary><div class="answer"><p>A vague state leads to a wrong transition. If you cannot say what dp[i] means, you cannot compute it.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why prefer bottom-up sometimes?</summary><div class="answer"><p>It avoids recursion limits and allows space reduction.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why prefer top-down sometimes?</summary><div class="answer"><p>It is easier to write and computes only the states actually needed.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use DP for everything?</summary><div class="answer"><p>It costs memory and is overkill when a greedy or a formula works.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does DP not apply to problems without overlapping subproblems?</summary><div class="answer"><p>If every subproblem appears once, caching saves nothing; plain recursion or divide and conquer is enough.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Count the number of ways to reach step n when you can take 1 or 2 steps (with modulo 10^9+7).</summary><div class="answer"><p>Same two-variable loop, taking % MOD at each addition.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> How many distinct subproblems does fib(30) have?</summary><div class="answer"><p>31 (n = 0..30), versus about 2.7 million calls without memoisation.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Count the number of ways to make an amount (order does not matter).</summary><div class="answer"><pre><code class="lang-py">def ways(coins, amount):
+    dp = [1] + [0] * amount
+    for c in coins:
+        for a in range(c, amount + 1):
+            dp[a] += dp[a - c]
+    return dp[amount]</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> For coins [2] and amount 3, what does the DP return?</summary><div class="answer"><p>-1, since dp[3] stays infinity.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How might a cashier machine compute minimum coins for a custom currency?</summary><div class="answer"><p>Precompute dp for amounts up to the maximum needed, then answer each query in O(1) by table lookup.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does house robber use only two variables?</summary><div class="answer"><p>dp[i] depends only on dp[i-1] and dp[i-2].</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does greedy fail for coin change?</summary><div class="answer"><p>The biggest coin first can lead to a worse total; DP tries every last coin.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why initialise unreachable states to infinity?</summary><div class="answer"><p>So they never win a minimum comparison and can be detected at the end.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does loop order change counting combinations vs permutations?</summary><div class="answer"><p>Coins outside means each combination is built in a fixed coin order; amounts outside counts ordered sequences.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does dp[0] = 0 for coin change?</summary><div class="answer"><p>Zero coins make amount zero, and every other amount builds on it.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not solve coin change with BFS?</summary><div class="answer"><p>You can (each coin is a step) and it also gives O(amount x coins), but DP is shorter.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Longest increasing subsequence in O(n log n).</summary><div class="answer"><p>Maintain a tails list; for each x use bisect_left to replace or append. The length of tails is the answer.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Reconstruct the actual LCS string.</summary><div class="answer"><p>Build the dp table, then start from dp[n][m]: if letters match prepend the letter and move diagonally; else move to the larger of up/left. Reverse the collected letters.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What is the LCS length of &#x27;abc&#x27; and &#x27;cba&#x27;?</summary><div class="answer"><p>1. Only single letters can match in order.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How does &#x27;git diff&#x27; decide which lines changed?</summary><div class="answer"><p>It computes a longest common subsequence of lines (or a related shortest edit script) between the old and new versions.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why a table with an extra zero row and column?</summary><div class="answer"><p>It represents the empty prefix, so base cases need no special code.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why iterate capacity backwards in 1D knapsack?</summary><div class="answer"><p>To ensure each item is used at most once.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does LCS take the max of two neighbours on mismatch?</summary><div class="answer"><p>At least one of the two last letters is unused, so drop either and keep the better result.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why can a DP table sometimes shrink to two rows?</summary><div class="answer"><p>Each row depends only on the previous row.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why add dp[i-1][j-1] + 1 only on a match?</summary><div class="answer"><p>A matching pair extends the common subsequence found for both shorter prefixes.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is unbounded knapsack iterated upward?</summary><div class="answer"><p>Using an item repeatedly is allowed, so dp[w - wt] should already include the current item.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Longest palindromic subsequence.</summary><div class="answer"><p>It equals the LCS of the string and its reverse.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Dynamic Programming"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What is the edit distance between &#x27;abc&#x27; and &#x27;abc&#x27;?</summary><div class="answer"><p>0.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Dynamic Programming"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> How do you recover the actual choices, not just the optimal value?</summary><div class="answer"><p>Store a parent/choice array while filling the table, then walk back from the answer cell.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Dynamic Programming"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> House robber II: houses are in a circle.</summary><div class="answer"><p>Solve twice: once without the first house, once without the last, and take the maximum.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Dynamic Programming"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> House robber on a circle.</summary><div class="answer"><p>Run the linear solution twice: excluding the first house and excluding the last, and take the maximum.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Dynamic Programming"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Longest palindromic subsequence?</summary><div class="answer"><p>It equals the LCS of the string and its reverse.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="m15-problems.html"><span class="dir">Previous</span><span>Problems 15: Greedy Algorithms</span></a>
+      <a class="next" href="m16-problems.html"><span class="dir">Next</span><span>Problems 16: Dynamic Programming</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

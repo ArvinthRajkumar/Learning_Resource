@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="CH">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cheat sheet | Python + SQL</title>
+<meta name="description" content="One printable page of the numbers, formulas and rules of thumb to remember.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<style>
+  @media print {
+    @page { margin: 12mm; }
+    body { font-size: 9pt; }
+    .page-head .lede, .page-head .meta, .print-hide { display: none !important; }
+    h1 { font-size: 14pt; margin: 0 0 4px; }
+    table, pre { font-size: 8pt; }
+    h2, h3 { margin-top: .6rem; }
+  }
+</style>
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Practice</p>
+      <h1>Cheat sheet (printable)</h1>
+      <p class="lede">Numbers, formulas and rules of thumb on one page. Print it with Ctrl or Cmd + P.</p>
+      <div class="meta"><span class="tag ok">Basic</span><span class="tag">10 min</span></div>
+    </div>
+
+    <p class="btn-row print-hide"><button class="btn" type="button" onclick="window.print()">Print this page</button></p>
+
+    <section id="py" data-track>
+      <h2>Python</h2>
+<h3>Core syntax</h3>
+<pre><code class="lang-py">x = [i * i for i in range(10) if i % 2]            # list comprehension
+d = {k: v for k, v in pairs}; s = {x for x in xs}  # dict and set comprehensions
+a, *rest = items;  a, b = b, a                      # unpacking and swap
+f"{name!r:&gt;10} {value:.2f} {n:,}"                   # f-string formats
+with open(path, encoding="utf-8") as f: ...         # always close files
+try: ... except ValueError as e: ... else: ... finally: ...</code></pre>
+<h3>Data structure costs</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Structure</th><th>Fast</th><th>Slow</th></tr></thead>
+<tbody>
+<tr><td>list</td><td>index, append, pop() O(1)</td><td>insert, pop(0), <code>in</code> O(n)</td></tr><tr><td>dict, set</td><td>lookup, insert, delete O(1) avg</td><td>ordered range queries</td></tr><tr><td>deque</td><td>both ends O(1)</td><td>middle indexing</td></tr><tr><td>heapq</td><td>push, pop min O(log n)</td><td>search</td></tr><tr><td>sorted()</td><td>O(n log n), stable</td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h3>Gotchas</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Trap</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td>Mutable default argument</td><td><code>None</code> and create inside</td></tr><tr><td><code>[[0]*n]*m</code> shared rows</td><td><code>[[0]*n for _ in range(m)]</code></td></tr><tr><td>Late-binding lambdas</td><td><code>lambda i=i: ...</code></td></tr><tr><td>Modifying a list while iterating</td><td>iterate a copy or build a new list</td></tr><tr><td><code>is</code> for values</td><td>use <code>==</code> (<code>is</code> only for None)</td></tr><tr><td>Float equality</td><td><code>math.isclose</code>, <code>Decimal</code> for money</td></tr><tr><td>Exhausted generator</td><td>recreate or use a list</td></tr><tr><td>Bare <code>except:</code></td><td>catch specific exceptions</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Tools</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Need</th><th>Use</th></tr></thead>
+<tbody>
+<tr><td>I/O waits</td><td><code>ThreadPoolExecutor</code>, <code>asyncio</code></td></tr><tr><td>CPU work</td><td><code>ProcessPoolExecutor</code></td></tr><tr><td>Count, group</td><td><code>Counter</code>, <code>defaultdict</code></td></tr><tr><td>Lazy pipelines</td><td>generators, <code>itertools</code></td></tr><tr><td>Cache pure function</td><td><code>functools.lru_cache</code></td></tr><tr><td>Immutable record</td><td><code>@dataclass(frozen=True)</code>, <code>namedtuple</code></td></tr><tr><td>Timing and profiling</td><td><code>timeit</code>, <code>cProfile</code></td></tr><tr><td>Tests</td><td><code>unittest</code>, <code>pytest</code>, <code>unittest.mock</code></td></tr>
+</tbody>
+</table>
+</div>
+    </section>
+
+    <section id="sql" data-track>
+      <h2>SQL</h2>
+<h3>Query skeleton and evaluation order</h3>
+<pre><code class="lang-sql">SELECT   cols, aggregates, window functions   -- 5
+FROM     table JOIN table ON ...              -- 1
+WHERE    row filter                           -- 2
+GROUP BY cols                                 -- 3
+HAVING   group filter                         -- 4
+ORDER BY cols                                 -- 6
+LIMIT n OFFSET m;                             -- 7</code></pre>
+<h3>Joins and sets</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Want</th><th>Write</th></tr></thead>
+<tbody>
+<tr><td>Only matching rows</td><td><code>INNER JOIN</code></td></tr><tr><td>All left rows</td><td><code>LEFT JOIN</code> (filter right side in <code>ON</code>)</td></tr><tr><td>Rows with no match</td><td><code>LEFT JOIN ... WHERE r.id IS NULL</code> or <code>NOT EXISTS</code></td></tr><tr><td>All combinations</td><td><code>CROSS JOIN</code></td></tr><tr><td>Combine results</td><td><code>UNION ALL</code> (keep dups), <code>UNION</code>, <code>INTERSECT</code>, <code>EXCEPT</code></td></tr>
+</tbody>
+</table>
+</div>
+<h3>Patterns</h3>
+<pre><code class="lang-sql">-- top N per group
+SELECT * FROM (SELECT *, DENSE_RANK() OVER (PARTITION BY g ORDER BY v DESC) r FROM t) WHERE r &lt;= 3;
+-- running total, previous row
+SUM(x) OVER (ORDER BY d), LAG(x) OVER (ORDER BY d)
+-- conditional count
+SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END)
+-- gaps and islands
+d - ROW_NUMBER() OVER (PARTITION BY u ORDER BY d)
+-- upsert
+INSERT ... ON CONFLICT (k) DO UPDATE SET v = excluded.v
+-- keyset pagination
+WHERE id &gt; :last ORDER BY id LIMIT 20</code></pre>
+<h3>NULL rules</h3>
+<p><code>x = NULL</code> is never true: use <code>IS NULL</code>. <code>COUNT(col)</code> skips NULLs. <code>NOT IN</code> with a NULL returns nothing: use <code>NOT EXISTS</code>. <code>COALESCE(a, b)</code> first non-null.</p>
+<h3>Design and transactions</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Topic</th><th>Rule</th></tr></thead>
+<tbody>
+<tr><td>1NF, 2NF, 3NF</td><td>atomic values; whole key; nothing but the key</td></tr><tr><td>ACID</td><td>atomic, consistent, isolated, durable</td></tr><tr><td>Isolation</td><td>read committed, repeatable read, serializable (anomalies: dirty, non-repeatable, phantom, write skew)</td></tr><tr><td>Optimistic lock</td><td><code>UPDATE ... WHERE id = ? AND version = ?</code></td></tr><tr><td>Deadlock fix</td><td>consistent lock order, short transactions, retry</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Performance</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Symptom</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td>Full scan on filter</td><td>index the filter columns (equality first, range last)</td></tr><tr><td><code>WHERE f(col)</code></td><td>rewrite so the column is bare, or expression index</td></tr><tr><td>Deep OFFSET</td><td>keyset pagination</td></tr><tr><td>N+1 queries</td><td>join, batch IN, eager load</td></tr><tr><td>Slow sort or group</td><td>covering or ordered index</td></tr><tr><td>Row-by-row loops</td><td>set-based SQL, bulk load</td></tr><tr><td>Bad estimates</td><td><code>ANALYZE</code></td></tr>
+</tbody>
+</table>
+</div>
+    </section>
+
+    <section id="both" data-track>
+      <h2>Python with SQL</h2>
+<pre><code class="lang-py">con = sqlite3.connect(path)                                   # DB-API: connect
+cur = con.execute("SELECT * FROM t WHERE id = ?", (id,))      # always bind parameters
+rows = cur.fetchall()                                         # or iterate, or fetchmany
+with con:                                                     # commit on success, rollback on error
+    con.executemany("INSERT INTO t VALUES (?, ?)", batch)</code></pre>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Rule</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>Parameters only, allow-list identifiers</td><td>SQL injection</td></tr><tr><td>One logical operation, one transaction</td><td>atomicity</td></tr><tr><td>Batch with <code>executemany</code> or <code>COPY</code></td><td>speed</td></tr><tr><td>Avoid N+1</td><td>round trips</td></tr><tr><td>Pool connections, close them</td><td>resource limits</td></tr><tr><td>Version migrations</td><td>reproducible schema</td></tr><tr><td>Idempotent loads, quarantine bad rows</td><td>safe re-runs</td></tr><tr><td>Test on the real engine</td><td>dialect differences</td></tr>
+</tbody>
+</table>
+</div>
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="practice-quiz.html"><span class="dir">Previous</span><span>QZ Practice quiz (171 questions)</span></a>
+      <a class="next" href="index.html"><span class="dir">Next</span><span>Hub</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

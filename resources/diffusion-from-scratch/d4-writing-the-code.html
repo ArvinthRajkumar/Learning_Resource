@@ -1,0 +1,1273 @@
+<!doctype html>
+<html lang="en" data-resource="diffusion-from-scratch" data-page="D4">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Phase 3: Writing the code | Diffusion from scratch</title>
+<meta name="description" content="Every file of a small working diffusion model, config, schedule, dataset, U-Net, training and sampling, each explained line by line.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Diffusion from scratch</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part D4</p>
+      <h1>Phase 3: Writing the code</h1>
+      <p class="lede">Every file of a complete, working small diffusion model, built up piece by piece. Every new line of code is explained the moment it appears, nothing shown without an explanation directly underneath it.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag">~4 hours</span></div>
+    </div>
+
+    <section id="p3-structure" data-track>
+      <h2>Project file structure</h2>
+<p>
+        Organizing code into separate files (rather than one giant notebook cell)
+        makes it much easier to find and fix any one piece later. Here's the
+        layout we'll build, inside the <code>diffusion-project</code> folder you
+        already created in Phase 1:
+      </p>
+<pre><code>diffusion-project/
+├── venv/                  (already created in Phase 1)
+├── data/                  (your training images go here)
+├── checkpoints/           (saved model weights go here)
+├── samples/               (generated images go here, while training)
+├── config.py              (all settings, in one place)
+├── schedule.py            (the noise schedule: betas, alphas, alpha_bars)
+├── dataset.py             (loading and preparing images)
+├── unet.py                (the U-Net model)
+├── train.py               (the training loop)
+└── sample.py              (generating new images from a trained model)</code></pre>
+<p>
+        Create the three empty folders now (<code>data</code>,
+        <code>checkpoints</code>, <code>samples</code>) with
+        <code>mkdir data checkpoints samples</code>, run from inside
+        <code>diffusion-project</code>. The five <code>.py</code> files are what
+        the rest of this phase writes, one at a time.
+      </p>
+<div class="callout trap"><span class="callout-title">Watch out</span><p>
+          Every code block from here on assumes it's being saved into the file
+          named in its heading. When one file needs something from another (for
+          example, <code>train.py</code> needing the U-Net from <code>unet.py</code>),
+          you'll see a Python <code>import</code> line at the top doing exactly
+          that, this is why the files all live in the same folder.
+        </p></div>
+    </section>
+
+    <section id="p3-config" data-track>
+      <h2>config.py: every setting in one place</h2>
+<p>
+        Rather than scattering numbers like batch size or image resolution
+        throughout every file, we collect them all in one small file that
+        everything else imports from. This means changing one number (say,
+        dropping batch size if you hit an out-of-memory error) never requires
+        hunting through multiple files.
+      </p>
+<pre><code class="lang-py">import torch
+
+# ---- device ----
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# ---- image settings ----
+IMAGE_SIZE = 32        # start small: 32x32. Try 64 only after 32 works.
+CHANNELS = 3           # RGB
+
+# ---- diffusion settings ----
+TIMESTEPS = 1000        # T, the total number of noise steps
+BETA_START = 1e-4
+BETA_END = 0.02
+
+# ---- U-Net settings ----
+BASE_CHANNELS = 32      # channel count at the first stage
+CHANNEL_MULTS = (1, 2, 4)   # channel multiplier at each stage: 32, 64, 128
+TIME_EMB_DIM = 128      # length of the timestep embedding vector
+
+# ---- training settings ----
+BATCH_SIZE = 16
+LEARNING_RATE = 1e-4
+EPOCHS = 100
+USE_MIXED_PRECISION = True
+
+# ---- paths ----
+DATA_DIR = "./data"
+CHECKPOINT_DIR = "./checkpoints"
+SAMPLE_DIR = "./samples"</code></pre>
+<p>Walking through the new pieces:</p>
+<ul>
+        <li>
+          <code>DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")</code>, from the package reference: this picks the GPU automatically if
+          available, and falls back to CPU otherwise, so the same code doesn't
+          crash on a machine with no GPU.
+        </li>
+        <li>
+          <code>CHANNEL_MULTS = (1, 2, 4)</code>, this is a new idea we haven't
+          used numerically yet: it says the U-Net's three stages will have
+          <code>BASE_CHANNELS × 1</code>, <code>BASE_CHANNELS × 2</code>, and
+          <code>BASE_CHANNELS × 4</code> channels respectively, with
+          <code>BASE_CHANNELS = 32</code>, that's 32, 64, and 128 channels at each
+          of the three encoder stages (mirrored on the way back up through the
+          decoder). This is a standard, compact way to describe a U-Net's
+          channel counts in one line instead of hardcoding three separate numbers.
+        </li>
+      </ul>
+<div class="callout tip"><span class="callout-title">Analogy</span><p>
+          Think of <code>config.py</code> as the control panel for the whole
+          project, every dial you might want to turn while experimenting lives
+          here, in one place, instead of being buried inside the logic of five
+          different files.
+        </p></div>
+    </section>
+
+    <section id="p3-schedule-code" data-track>
+      <h2>schedule.py: the noise schedule</h2>
+<p>
+        This file calculates the β, α, and ᾱ values from Phase 2, once, as
+        tensors ready to be looked up by timestep. It also builds the one-step
+        shortcut formula as a function.
+      </p>
+<pre><code class="lang-py">import torch
+import numpy as np
+import config
+
+def get_schedule():
+    betas = np.linspace(config.BETA_START, config.BETA_END, config.TIMESTEPS)
+    alphas = 1.0 - betas
+    alpha_bars = np.cumprod(alphas)
+
+    betas = torch.from_numpy(betas).float().to(config.DEVICE)
+    alphas = torch.from_numpy(alphas).float().to(config.DEVICE)
+    alpha_bars = torch.from_numpy(alpha_bars).float().to(config.DEVICE)
+
+    return betas, alphas, alpha_bars
+
+
+def add_noise(clean_images, t, alpha_bars):
+    """
+    Implements the one-step shortcut formula:
+    noisy = sqrt(alpha_bar_t) * clean + sqrt(1 - alpha_bar_t) * noise
+    """
+    noise = torch.randn_like(clean_images)
+
+    alpha_bar_t = alpha_bars[t]                    # shape: (batch,)
+    alpha_bar_t = alpha_bar_t.view(-1, 1, 1, 1)     # shape: (batch, 1, 1, 1)
+
+    sqrt_alpha_bar_t = torch.sqrt(alpha_bar_t)
+    sqrt_one_minus_alpha_bar_t = torch.sqrt(1.0 - alpha_bar_t)
+
+    noisy_images = sqrt_alpha_bar_t * clean_images + sqrt_one_minus_alpha_bar_t * noise
+    return noisy_images, noise</code></pre>
+<p>Line by line, focusing on anything new:</p>
+<ul>
+        <li>
+          <code>import config</code>, imports your settings file as a module,
+          so <code>config.TIMESTEPS</code> anywhere in this file reads the value
+          you set in <code>config.py</code>. This is the standard way small
+          Python projects share settings across files.
+        </li>
+        <li>
+          <code>np.linspace(...)</code>, <code>1.0 - betas</code>,
+          <code>np.cumprod(alphas)</code>, exactly the beta/alpha/alpha_bar
+          construction from the package reference and Phase 2's noise schedule
+          section, unchanged.
+        </li>
+        <li>
+          <code>torch.from_numpy(betas).float().to(config.DEVICE)</code>, three
+          chained operations: convert the numpy array into a tensor, ensure it's
+          the standard 32-bit float type (numpy sometimes defaults to 64-bit,
+          which PyTorch operations expect to match against 32-bit elsewhere), and
+          move it onto the GPU. Chaining calls like this, each returning a new
+          tensor that the next call acts on, is a very common PyTorch style.
+        </li>
+        <li>
+          <code>def add_noise(clean_images, t, alpha_bars):</code>, a plain
+          Python function (not an <code>nn.Module</code>, since this involves no
+          learnable weights, just a fixed formula) taking a batch of clean
+          images, a batch of timesteps (one per image), and the already-calculated
+          alpha_bar tensor.
+        </li>
+        <li>
+          <code>torch.randn_like(clean_images)</code>, generates fresh Gaussian
+          noise with exactly the same shape (and device, and dtype) as
+          <code>clean_images</code>, without you having to specify the shape
+          manually. This is the noise tensor from Phase 2's forward process.
+        </li>
+        <li>
+          <code>alpha_bar_t = alpha_bars[t]</code>, this is the batch indexing
+          operation from the tensor operations section: <code>t</code> is a
+          tensor of timestep integers, one per image, and this single line looks
+          up all of their alpha_bar values simultaneously.
+        </li>
+        <li>
+          <code>.view(-1, 1, 1, 1)</code>, reshapes the looked-up values from
+          shape <code>(batch,)</code> to <code>(batch, 1, 1, 1)</code>, exactly
+          the broadcasting-ready shape from the worked broadcasting example
+          earlier. The <code>-1</code> tells PyTorch "figure out this dimension's
+          size automatically from the total number of elements", here, it will
+          simply become the batch size, since the other three dimensions are
+          fixed at 1.
+        </li>
+        <li>
+          The final line is the shortcut formula exactly as derived in Phase 2,
+          now as real, runnable tensor code, multiplying and adding whole
+          batches of images and noise simultaneously via broadcasting.
+        </li>
+        <li>
+          <code>return noisy_images, noise</code>, the function returns both the
+          noisy image (to feed into the U-Net) and the exact noise that was used
+          (needed later as the training target, the U-Net's prediction will be
+          compared against this exact tensor).
+        </li>
+      </ul>
+<div class="callout key"><span class="callout-title">Try it yourself</span><ul><li>Create schedule.py with the code above</li><li>In a notebook cell, import it and call get_schedule(), then print the shape and first/last few values of each returned tensor</li><li>Load one real image, call add_noise() on it at t=10, t=500, and t=999, and display all three with matplotlib to see the progression visually</li></ul></div>
+    </section>
+
+    <section id="p3-dataset-code" data-track>
+      <h2>dataset.py: loading images</h2>
+<p>
+        This file defines how images get from disk into GPU-ready batches. If
+        you're starting with a standard dataset (recommended for your very first
+        run), MNIST needs almost no code at all; a custom folder of your own
+        images needs one small addition. Both are shown.
+      </p>
+<h3>Option A: a built-in dataset (MNIST), for your first test run</h3>
+<pre><code class="lang-py">import torchvision
+import torchvision.transforms as transforms
+from torch.utils.data import DataLoader
+import config
+
+def get_dataloader():
+    transform = transforms.Compose([
+        transforms.Resize((config.IMAGE_SIZE, config.IMAGE_SIZE)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.5], std=[0.5]),
+    ])
+
+    dataset = torchvision.datasets.MNIST(
+        root=config.DATA_DIR,
+        train=True,
+        download=True,
+        transform=transform,
+    )
+
+    dataloader = DataLoader(
+        dataset,
+        batch_size=config.BATCH_SIZE,
+        shuffle=True,
+        num_workers=2,
+    )
+    return dataloader</code></pre>
+<p>What's new here versus the package reference entries for each piece:</p>
+<ul>
+        <li>
+          <code>transforms.Normalize(mean=[0.5], std=[0.5])</code>, one value
+          each, not three, because MNIST images are grayscale (1 channel), not
+          RGB. This maps the 0-1 pixel range from <code>ToTensor()</code> to
+          roughly -1 to 1, matching the range Gaussian noise naturally occupies.
+        </li>
+        <li>
+          <code>train=True</code>, MNIST ships with a training set and a
+          separate test set; for a generative model you generally want to train
+          on as much data as possible, so the training split is the right choice
+          here (there's no "does it generalize to a held-out test set" concern
+          the way there is for classification tasks).
+        </li>
+        <li>
+          <code>num_workers=2</code>, tells the DataLoader to load and
+          preprocess images using 2 background CPU processes running in
+          parallel with GPU training, so the GPU isn't left waiting idle for the
+          next batch to be ready. A reasonable value is roughly the number of
+          CPU cores you're comfortable dedicating to this; on a typical laptop
+          i5, 2 is a safe starting point. If you hit strange multiprocessing
+          errors on Windows, set this to 0 first to confirm the rest of your
+          code works, then re-enable it.
+        </li>
+      </ul>
+<div class="callout trap"><span class="callout-title">Watch out</span><p>
+          MNIST images are naturally 28×28 and grayscale (1 channel), not 3.
+          If you use MNIST for your first test, set <code>CHANNELS = 1</code> in
+          <code>config.py</code>, since the U-Net you build needs to match the
+          number of channels in your actual data. Once you move to a real RGB
+          dataset, switch it back to <code>3</code>.
+        </p></div>
+<h3>Option B: your own folder of images</h3>
+<pre><code class="lang-py">import torchvision
+import torchvision.transforms as transforms
+from torch.utils.data import DataLoader
+import config
+
+def get_dataloader():
+    transform = transforms.Compose([
+        transforms.Resize((config.IMAGE_SIZE, config.IMAGE_SIZE)),
+        transforms.CenterCrop(config.IMAGE_SIZE),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+    ])
+
+    dataset = torchvision.datasets.ImageFolder(
+        root=config.DATA_DIR,
+        transform=transform,
+    )
+
+    dataloader = DataLoader(
+        dataset,
+        batch_size=config.BATCH_SIZE,
+        shuffle=True,
+        num_workers=2,
+    )
+    return dataloader</code></pre>
+<ul>
+        <li>
+          <code>transforms.CenterCrop(config.IMAGE_SIZE)</code>, a new
+          transform: after resizing, this crops out the exact center square of
+          the requested size. It's added as a safety net, since
+          <code>Resize</code> alone can produce slightly non-square results
+          depending on the original image's proportions, <code>CenterCrop</code>
+          guarantees the final tensor is exactly square, which your U-Net
+          requires.
+        </li>
+        <li>
+          <code>ImageFolder</code> expects your images to sit inside at least
+          one subfolder under <code>DATA_DIR</code> (e.g.
+          <code>data/my_images/img001.jpg</code>, not directly
+          <code>data/img001.jpg</code>), this is because ImageFolder is
+          originally designed for classification datasets where each subfolder
+          name is a class label. For unconditional generation (no class labels,
+          which is everything covered in this guide), one single subfolder
+          containing all your images is enough; the "label" it assigns internally
+          is simply unused.
+        </li>
+      </ul>
+<div class="callout key"><span class="callout-title">Try it yourself</span><ul><li>Create dataset.py with whichever option matches your data</li><li>Call get_dataloader(), pull one batch with next(iter(dataloader)), and print its shape, confirm it matches (BATCH_SIZE, CHANNELS, IMAGE_SIZE, IMAGE_SIZE)</li><li>Display one image from that batch with matplotlib to confirm it looks correct (remember: permute to (H, W, C) first, and un-normalize back toward 0-1 range for correct display colors)</li></ul></div>
+    </section>
+
+    <section id="p3-timeembed-code" data-track>
+      <h2>The timestep embedding module</h2>
+<p>
+        Before the U-Net itself, we need the sinusoidal embedding function from
+        Phase 2, plus the small "time MLP" that processes it. This is the first
+        piece of code in this phase that's an actual <code>nn.Module</code>.
+      </p>
+<pre><code class="lang-py">import torch
+import torch.nn as nn
+import math
+
+class SinusoidalTimeEmbedding(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, t):
+        half_dim = self.dim // 2
+        freqs = torch.exp(
+            -math.log(10000) * torch.arange(half_dim, device=t.device) / half_dim
+        )
+        args = t.float()[:, None] * freqs[None, :]
+        embedding = torch.cat([torch.sin(args), torch.cos(args)], dim=-1)
+        return embedding</code></pre>
+<p>Walking through it:</p>
+<ul>
+        <li>
+          This module has no learnable weights at all, notice
+          <code>__init__</code> only stores <code>self.dim</code>, it doesn't
+          create any <code>nn.Linear</code> or <code>nn.Conv2d</code> layers.
+          That's expected: the sinusoidal formula itself is fixed math, not
+          something trained. We still wrap it as an <code>nn.Module</code> purely
+          for convenience, so it can be called and slotted into the larger
+          network the same way any other layer is.
+        </li>
+        <li>
+          <code>t.float()[:, None]</code>, <code>t</code> arrives as a batch of
+          integer timesteps, shape <code>(batch,)</code>. <code>.float()</code>
+          converts to floating point (needed since we're about to multiply by
+          fractional frequency values). <code>[:, None]</code> is a shorthand,
+          equivalent to <code>.unsqueeze(1)</code>, inserting a new dimension so
+          the shape becomes <code>(batch, 1)</code>, ready to broadcast against
+          the frequencies.
+        </li>
+        <li>
+          <code>freqs[None, :]</code>, similarly reshapes the frequencies from
+          <code>(half_dim,)</code> to <code>(1, half_dim)</code>. When
+          <code>(batch, 1)</code> is multiplied by <code>(1, half_dim)</code>,
+          broadcasting expands both to <code>(batch, half_dim)</code>
+          automatically, every timestep multiplied against every frequency, in
+          one operation.
+        </li>
+        <li>
+          <code>torch.cat([torch.sin(args), torch.cos(args)], dim=-1)</code>, joins the sine and cosine halves along the last dimension, giving the
+          full embedding of length <code>dim</code> (half sine values, half
+          cosine values), matching the shape confirmed by the worked
+          verification: for a requested dimension of 8, you get 4 sine values
+          followed by 4 cosine values per timestep.
+        </li>
+      </ul>
+<p>
+        Now the small MLP that processes this embedding further, plus a
+        convenience module that wraps both together, this is what
+        <code>unet.py</code> will actually import and use:
+      </p>
+<pre><code class="lang-py">class TimeEmbedding(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.sinusoidal = SinusoidalTimeEmbedding(dim)
+        self.mlp = nn.Sequential(
+            nn.Linear(dim, dim * 4),
+            nn.SiLU(),
+            nn.Linear(dim * 4, dim * 4),
+        )
+
+    def forward(self, t):
+        x = self.sinusoidal(t)
+        return self.mlp(x)</code></pre>
+<p>
+        <code>self.mlp</code> uses <code>nn.Sequential</code> from the package
+        reference, chaining Linear → SiLU → Linear. Notice the dimension grows
+        by 4x inside the MLP (<code>dim * 4</code>) before being used, a common
+        pattern giving the small network more room to learn a useful
+        transformation, before whatever final dimension the rest of the U-Net
+        expects.
+      </p>
+<div class="callout key"><span class="callout-title">Try it yourself</span><ul><li>Add both classes above into a new file, embeddings.py</li><li>Create a TimeEmbedding(128) instance, feed it a tensor of a few example timesteps, print the output shape, confirm it's (batch, 512), since dim*4 = 512</li></ul></div>
+    </section>
+
+    <section id="p3-resblock-code" data-track>
+      <h2>The residual block</h2>
+<p>
+        This is the actual repeated unit inside every U-Net stage, matching the
+        <code>ResBlock</code> sketch from the <code>nn.Module</code> section in
+        Phase 2, now extended to also accept the timestep embedding, since every
+        block needs to know the current noise level.
+      </p>
+<pre><code class="lang-py">class ResBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, time_emb_dim):
+        super().__init__()
+        self.norm1 = nn.GroupNorm(8, in_channels)
+        self.conv1 = nn.Conv2d(in_channels, out_channels, 3, padding=1)
+
+        self.time_proj = nn.Linear(time_emb_dim, out_channels)
+
+        self.norm2 = nn.GroupNorm(8, out_channels)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, 3, padding=1)
+
+        self.act = nn.SiLU()
+
+        if in_channels != out_channels:
+            self.skip = nn.Conv2d(in_channels, out_channels, 1)
+        else:
+            self.skip = nn.Identity()
+
+    def forward(self, x, time_emb):
+        h = self.conv1(self.act(self.norm1(x)))
+
+        time_term = self.time_proj(self.act(time_emb))
+        h = h + time_term[:, :, None, None]
+
+        h = self.conv2(self.act(self.norm2(h)))
+
+        return self.skip(x) + h</code></pre>
+<p>New pieces beyond the earlier simplified sketch:</p>
+<ul>
+        <li>
+          <code>self.time_proj = nn.Linear(time_emb_dim, out_channels)</code>, this small linear layer converts the timestep embedding vector (length
+          <code>time_emb_dim</code>, e.g. 512 from the MLP above) into exactly
+          <code>out_channels</code> numbers, one number per output channel of
+          this specific block. Every ResBlock in the U-Net has its own
+          <code>time_proj</code> layer, since each stage has a different channel
+          count and needs its own learned way of translating "what timestep is
+          this" into something meaningful for that stage's channels.
+        </li>
+        <li>
+          <code>h = h + time_term[:, :, None, None]</code>, this is where the
+          timestep embedding actually gets injected into the image feature grid,
+          exactly as described conceptually in Phase 2. <code>time_term</code>
+          has shape <code>(batch, out_channels)</code>; adding
+          <code>[:, :, None, None]</code> reshapes it to
+          <code>(batch, out_channels, 1, 1)</code>, and broadcasting then adds
+          this same per-channel value to every spatial position (every pixel) of
+          <code>h</code>, which has shape <code>(batch, out_channels, height,
+          width)</code>. Every pixel in a given channel receives the identical
+          "this is timestep t" signal.
+        </li>
+        <li>
+          <code>if in_channels != out_channels: self.skip = nn.Conv2d(...)</code>, the residual shortcut (<code>return x + h</code>, conceptually) only
+          works directly if <code>x</code> and <code>h</code> have the same
+          number of channels. Since many ResBlocks in a real U-Net do change
+          channel count (e.g. going from 32 to 64 channels at a stage
+          transition), we need a small 1×1 convolution (a convolution with
+          kernel size 1, which changes channel count without looking at any
+          neighboring pixels, effectively just a learned per-pixel reweighting
+          across channels) to make the shapes match before adding.
+          <code>nn.Identity()</code> is a layer that does nothing at all,
+          returning its input unchanged, used here as a placeholder for the
+          common case where channels already match and no adjustment is needed.
+        </li>
+      </ul>
+<div class="worked"><span class="w-title">Why write it this way instead of simpler?</span>
+        
+        <p>
+          You might wonder why the timestep isn't just joined onto the image,
+          the same way a skip connection works. The reason is the add-based
+          approach used here, it's the standard, well-tested method from the
+          original DDPM code, and everything built on top of it since. Adding
+          the timestep signal in doesn't change the channel-count math anywhere
+          else in the block. Every other line of the ResBlock stays exactly as
+          simple as it would be with no timestep involved at all.
+        </p>
+      </div>
+    </section>
+
+    <section id="p3-attention-code" data-track>
+      <h2>The attention block</h2>
+<p>
+        A compact self-attention block, used only at the bottleneck per the
+        hardware-fitting guidance from Phase 2. This directly implements the
+        Query/Key/Value mechanics explained there.
+      </p>
+<pre><code class="lang-py">class SelfAttention(nn.Module):
+    def __init__(self, channels):
+        super().__init__()
+        self.norm = nn.GroupNorm(8, channels)
+        self.qkv = nn.Conv2d(channels, channels * 3, 1)
+        self.proj = nn.Conv2d(channels, channels, 1)
+
+    def forward(self, x):
+        b, c, h, w = x.shape
+        x_norm = self.norm(x)
+
+        qkv = self.qkv(x_norm)
+        q, k, v = qkv.chunk(3, dim=1)
+
+        q = q.reshape(b, c, h * w).permute(0, 2, 1)   # (b, hw, c)
+        k = k.reshape(b, c, h * w)                     # (b, c, hw)
+        v = v.reshape(b, c, h * w).permute(0, 2, 1)    # (b, hw, c)
+
+        scores = torch.bmm(q, k) / math.sqrt(c)         # (b, hw, hw)
+        weights = torch.softmax(scores, dim=-1)
+
+        out = torch.bmm(weights, v)                     # (b, hw, c)
+        out = out.permute(0, 2, 1).reshape(b, c, h, w)
+
+        return x + self.proj(out)</code></pre>
+<p>This is the densest code block so far, so slow down here:</p>
+<ul>
+        <li>
+          <code>self.qkv = nn.Conv2d(channels, channels * 3, 1)</code>, rather
+          than three separate linear layers (as described conceptually in
+          Phase 2), it's a common efficiency trick to compute Query, Key, and
+          Value all at once with a single convolution that outputs 3x the
+          channels, then split the result into three equal pieces. This is
+          mathematically identical to three separate layers, just faster in
+          practice since it's one GPU operation instead of three. The kernel
+          size is 1 (a 1×1 convolution), since this is really just a per-pixel
+          linear transformation across channels, not a spatial pattern
+          detector.
+        </li>
+        <li>
+          <code>qkv.chunk(3, dim=1)</code>, splits a tensor into 3 equal pieces
+          along the channel dimension, undoing the "compute all three at once"
+          trick from the previous line, giving back separate <code>q</code>,
+          <code>k</code>, <code>v</code> tensors.
+        </li>
+        <li>
+          <code>q.reshape(b, c, h * w).permute(0, 2, 1)</code>, recall from the
+          attention theory section that every spatial position needs to become
+          its own "token" (a vector across channels). This line first flattens
+          height and width together into one dimension (<code>h*w</code>
+          positions), then permutes so the shape becomes
+          <code>(batch, positions, channels)</code>, positions-as-tokens,
+          exactly matching the theory description.
+        </li>
+        <li>
+          <code>torch.bmm(q, k)</code>, "batch matrix multiply": performs a
+          separate matrix multiplication for every item in the batch
+          simultaneously. Here it computes, for every pair of positions, the dot
+          product between one position's Query and another position's Key, exactly the "how relevant is position j to position i" comparison
+          from the theory section, computed for every pair at once as one large
+          matrix multiplication rather than a slow nested loop over positions.
+        </li>
+        <li>
+          <code>/ math.sqrt(c)</code>, a scaling factor dividing by the square
+          root of the channel count. Without this, dot products between longer
+          vectors tend to have larger raw magnitude just from having more terms
+          summed together, which would push the following softmax into an
+          overly extreme (nearly all-or-nothing) weighting; this scaling keeps
+          the softmax's behavior stable regardless of channel count.
+        </li>
+        <li>
+          <code>torch.softmax(scores, dim=-1)</code>, exactly the softmax from
+          the theory section, turning raw similarity scores into weights that
+          sum to 1, applied along the last dimension (across "all positions
+          being compared against," for each query position separately).
+        </li>
+        <li>
+          <code>torch.bmm(weights, v)</code>, the weighted blending step: for
+          every position, blend together every other position's Value vector,
+          weighted exactly by the softmax percentages just computed.
+        </li>
+        <li>
+          The final <code>permute</code> and <code>reshape</code> undo the
+          earlier flattening, putting the result back into the familiar
+          <code>(batch, channels, height, width)</code> image-grid shape.
+        </li>
+        <li>
+          <code>return x + self.proj(out)</code>, one more residual shortcut:
+          the attention block's output is added back onto its original input
+          (after a final learned projection, <code>self.proj</code>), following
+          the same "only learn a correction" principle as the ResBlock.
+        </li>
+      </ul>
+<div class="callout trap"><span class="callout-title">Watch out: this is the most VRAM-expensive line in the whole model</span><p>
+          The scores matrix has shape <code>(batch, positions, positions)</code>, if your bottleneck feature grid is, say, 8×8 = 64 positions, that's a
+          manageable 64×64 scores matrix per image. But if you accidentally add
+          attention at a much larger resolution (say 32×32 = 1024 positions), the
+          scores matrix balloons to 1024×1024 per image, this is exactly why
+          Phase 2's hardware guidance said to use attention only at the smallest
+          (bottleneck) resolution on a 4GB card.
+        </p></div>
+    </section>
+
+    <section id="p3-unet-code" data-track>
+      <h2>unet.py: assembling the full U-Net</h2>
+<p>
+        Now every piece comes together: the ResBlocks and attention block above,
+        downsampling and upsampling layers, and the skip connections joining
+        them, exactly matching the diagram from Phase 2's U-Net section.
+      </p>
+<pre><code class="lang-py">import torch
+import torch.nn as nn
+import math
+import config
+
+# (SinusoidalTimeEmbedding, TimeEmbedding, ResBlock, SelfAttention
+#  classes from the previous sections go here, or are imported
+#  from a separate embeddings.py / blocks.py file)
+
+class Downsample(nn.Module):
+    def __init__(self, channels):
+        super().__init__()
+        self.conv = nn.Conv2d(channels, channels, 3, stride=2, padding=1)
+
+    def forward(self, x):
+        return self.conv(x)
+
+
+class Upsample(nn.Module):
+    def __init__(self, channels):
+        super().__init__()
+        self.conv = nn.ConvTranspose2d(channels, channels, 4, stride=2, padding=1)
+
+    def forward(self, x):
+        return self.conv(x)
+
+
+class UNet(nn.Module):
+    def __init__(self):
+        super().__init__()
+        base = config.BASE_CHANNELS
+        mults = config.CHANNEL_MULTS
+        time_dim = config.TIME_EMB_DIM * 4   # matches TimeEmbedding's MLP output
+
+        self.time_embedding = TimeEmbedding(config.TIME_EMB_DIM)
+
+        self.input_conv = nn.Conv2d(config.CHANNELS, base, 3, padding=1)
+
+        # ---- encoder ----
+        channels = [base * m for m in mults]   # e.g. [32, 64, 128]
+        self.down_blocks = nn.ModuleList()
+        self.downsamples = nn.ModuleList()
+
+        in_ch = base
+        for out_ch in channels:
+            self.down_blocks.append(ResBlock(in_ch, out_ch, time_dim))
+            self.downsamples.append(Downsample(out_ch))
+            in_ch = out_ch
+
+        # ---- bottleneck ----
+        self.bottleneck_block1 = ResBlock(in_ch, in_ch, time_dim)
+        self.bottleneck_attn = SelfAttention(in_ch)
+        self.bottleneck_block2 = ResBlock(in_ch, in_ch, time_dim)
+
+        # ---- decoder ----
+        self.up_blocks = nn.ModuleList()
+        self.upsamples = nn.ModuleList()
+
+        reversed_channels = list(reversed(channels))
+        for i, out_ch in enumerate(reversed_channels):
+            skip_ch = out_ch   # matches the encoder stage at this resolution
+            self.upsamples.append(Upsample(in_ch))
+            # in_ch (from below) + skip_ch (from skip connection) -> out_ch
+            self.up_blocks.append(ResBlock(in_ch + skip_ch, out_ch, time_dim))
+            in_ch = out_ch
+
+        self.output_norm = nn.GroupNorm(8, base)
+        self.output_act = nn.SiLU()
+        self.output_conv = nn.Conv2d(base, config.CHANNELS, 3, padding=1)
+
+    def forward(self, x, t):
+        time_emb = self.time_embedding(t)
+
+        x = self.input_conv(x)
+
+        skips = []
+        for block, downsample in zip(self.down_blocks, self.downsamples):
+            x = block(x, time_emb)
+            skips.append(x)
+            x = downsample(x)
+
+        x = self.bottleneck_block1(x, time_emb)
+        x = self.bottleneck_attn(x)
+        x = self.bottleneck_block2(x, time_emb)
+
+        for block, upsample in zip(self.up_blocks, self.upsamples):
+            x = upsample(x)
+            skip = skips.pop()
+            x = torch.cat([x, skip], dim=1)
+            x = block(x, time_emb)
+
+        x = self.output_conv(self.output_act(self.output_norm(x)))
+        return x</code></pre>
+<p>This is the longest single piece of code in the whole project, so let's go through it in sections:</p>
+<h4>Downsample and Upsample</h4>
+<ul>
+        <li>
+          <code>Downsample</code> uses a stride-2 <code>Conv2d</code>, exactly as
+          described in the package reference, halving height and width while
+          keeping channel count unchanged here (the ResBlock immediately before
+          it is what actually changes channel count).
+        </li>
+        <li>
+          <code>Upsample</code> uses <code>ConvTranspose2d</code> with
+          <code>kernel_size=4, stride=2, padding=1</code>, this specific
+          combination of numbers is a standard, well-tested choice that exactly
+          doubles height and width (e.g. 16×16 becomes 32×32) with no rounding
+          mismatches.
+        </li>
+      </ul>
+<h4>nn.ModuleList</h4>
+<div class="callout note"><span class="callout-title">Term: nn.ModuleList</span><p>
+          A plain Python list (like <code>[]</code>) does not properly register
+          the modules you put inside it with PyTorch's automatic weight
+          tracking, if you stored your ResBlocks in a normal list,
+          <code>model.parameters()</code> would not find their weights, and they
+          would silently never get trained. <code>nn.ModuleList</code> looks and
+          behaves like a Python list (you can index it, iterate over it, append
+          to it) but properly registers every module inside it, so all of their
+          weights are correctly tracked.
+        </p></div>
+<h4>The encoder loop</h4>
+<ul>
+        <li>
+          <code>channels = [base * m for m in mults]</code>, a Python list
+          comprehension building the actual channel numbers from
+          <code>config.CHANNEL_MULTS</code>. With <code>base=32</code> and
+          <code>mults=(1,2,4)</code>, this produces <code>[32, 64, 128]</code>.
+        </li>
+        <li>
+          The <code>for out_ch in channels:</code> loop creates one ResBlock and
+          one Downsample per stage, tracking <code>in_ch</code> as it goes so
+          each new ResBlock correctly connects to the previous stage's output
+          channel count.
+        </li>
+      </ul>
+<h4>The bottleneck</h4>
+<p>
+        Matches the Phase 2 diagram exactly: a ResBlock, then the attention
+        block (the only attention in the entire network, per the hardware
+        guidance), then a second ResBlock.
+      </p>
+<h4>The decoder loop, and where skip connections happen</h4>
+<ul>
+        <li>
+          <code>reversed_channels = list(reversed(channels))</code>, the
+          decoder mirrors the encoder in reverse order: if the encoder went
+          32 → 64 → 128, the decoder goes 128 → 64 → 32.
+        </li>
+        <li>
+          <code>self.up_blocks.append(ResBlock(in_ch + skip_ch, out_ch, time_dim))</code>, this is the key detail implementing skip connections. The decoder
+          ResBlock's input channel count is <code>in_ch + skip_ch</code>, the
+          channels coming up from the previous (lower-resolution) decoder stage,
+          <strong>plus</strong> the channels coming across from the matching
+          encoder stage via the skip connection. This matches exactly what
+          happens in <code>forward</code>: <code>torch.cat([x, skip], dim=1)</code>
+          concatenates the two along the channel dimension before the ResBlock
+          sees them, so the ResBlock's declared input size must account for
+          both.
+        </li>
+      </ul>
+<h4>The forward method, tying it all together</h4>
+<ul>
+        <li>
+          <code>skips = []</code> then <code>skips.append(x)</code> inside the
+          encoder loop, this is literally how the "save it for later" part of
+          a skip connection is implemented: a plain Python list accumulates each
+          encoder stage's output as the loop runs.
+        </li>
+        <li>
+          <code>skip = skips.pop()</code> inside the decoder loop, Python's
+          list <code>.pop()</code> removes and returns the <em>last</em> item
+          added. Since the encoder appended in order (stage 1, stage 2, stage
+          3) and the decoder needs them in reverse order (stage 3's match
+          first, then stage 2's, then stage 1's), popping from the end of the
+          list naturally gives back exactly the right matching stage each time,
+          with no extra bookkeeping needed.
+        </li>
+        <li>
+          Every call to a ResBlock passes <code>time_emb</code> alongside the
+          image tensor, since (per Phase 2) every single stage of the network
+          needs to know the current timestep.
+        </li>
+      </ul>
+<div class="callout key"><span class="callout-title">Try it yourself</span><ul><li>Assemble unet.py with all classes from this and the previous two sections</li><li>Create a UNet() instance, move it to your device, and run one forward pass with a random (batch, channels, 32, 32) tensor and a random batch of timesteps, confirm the output shape exactly matches the input shape</li><li>Print sum(p.numel() for p in model.parameters()) to see your total parameter count, a small U-Net like this is typically a few million parameters, dramatically smaller than the hundreds of millions to billions in production models</li></ul></div>
+    </section>
+
+    <section id="p3-train-code" data-track>
+      <h2>train.py: the training script</h2>
+<p>
+        Every piece built so far comes together into the actual training loop
+        from Phase 2, now as real code, including mixed precision and
+        checkpoint saving from the hardware-fitting guidance.
+      </p>
+<pre><code class="lang-py">import torch
+import torch.nn.functional as F
+from tqdm import tqdm
+import os
+
+import config
+from schedule import get_schedule, add_noise
+from dataset import get_dataloader
+from unet import UNet
+
+def train():
+    betas, alphas, alpha_bars = get_schedule()
+    dataloader = get_dataloader()
+
+    model = UNet().to(config.DEVICE)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=config.LEARNING_RATE)
+    scaler = torch.cuda.amp.GradScaler(enabled=config.USE_MIXED_PRECISION)
+
+    os.makedirs(config.CHECKPOINT_DIR, exist_ok=True)
+
+    for epoch in range(config.EPOCHS):
+        loop = tqdm(dataloader, desc=f"Epoch {epoch+1}/{config.EPOCHS}")
+        running_loss = 0.0
+
+        for images, _ in loop:
+            images = images.to(config.DEVICE)
+            batch_size = images.shape[0]
+
+            t = torch.randint(0, config.TIMESTEPS, (batch_size,), device=config.DEVICE)
+
+            noisy_images, real_noise = add_noise(images, t, alpha_bars)
+
+            optimizer.zero_grad()
+
+            with torch.autocast(device_type="cuda", enabled=config.USE_MIXED_PRECISION):
+                predicted_noise = model(noisy_images, t)
+                loss = F.mse_loss(predicted_noise, real_noise)
+
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+
+            running_loss += loss.item()
+            loop.set_postfix(loss=loss.item())
+
+        avg_loss = running_loss / len(dataloader)
+        print(f"Epoch {epoch+1} average loss: {avg_loss:.4f}")
+
+        if (epoch + 1) % 10 == 0:
+            checkpoint_path = os.path.join(config.CHECKPOINT_DIR, f"model_epoch{epoch+1}.pt")
+            torch.save(model.state_dict(), checkpoint_path)
+            print(f"Saved checkpoint: {checkpoint_path}")
+
+
+if __name__ == "__main__":
+    train()</code></pre>
+<p>Every line, matching it back to Phase 2's training loop steps:</p>
+<ul>
+        <li>
+          <code>from schedule import get_schedule, add_noise</code> and similar, these import lines pull in the functions/classes from the other
+          files you wrote, exactly the same names, so this file can use them as
+          if they were defined locally.
+        </li>
+        <li>
+          <code>scaler = torch.cuda.amp.GradScaler(enabled=config.USE_MIXED_PRECISION)</code>, from the mixed precision section of the package reference.
+          <code>enabled=...</code> is a convenient toggle: if you set
+          <code>USE_MIXED_PRECISION = False</code> in config, the scaler simply
+          does nothing, letting you turn mixed precision on and off from one
+          config line without editing the training loop itself.
+        </li>
+        <li>
+          <code>os.makedirs(config.CHECKPOINT_DIR, exist_ok=True)</code>, standard Python (not PyTorch): creates the checkpoints folder if it
+          doesn't already exist. <code>exist_ok=True</code> prevents an error if
+          it's already there.
+        </li>
+        <li>
+          <code>for images, _ in loop:</code>, recall the DataLoader yields
+          both images and labels (from ImageFolder or MNIST's class labels); the
+          underscore <code>_</code> is standard Python convention for "a value
+          I'm receiving but intentionally ignoring", we don't need class labels
+          for unconditional generation.
+        </li>
+        <li>
+          <code>t = torch.randint(0, config.TIMESTEPS, (batch_size,), device=config.DEVICE)</code>, this is step 2 from the Phase 2 training loop: sampling a random
+          timestep independently for every image in the batch.
+          <code>torch.randint(low, high, shape)</code> generates random integers
+          in <code>[low, high)</code> of the given shape.
+        </li>
+        <li>
+          <code>noisy_images, real_noise = add_noise(images, t, alpha_bars)</code>, steps 3 and 4 combined: this single call (from schedule.py) both
+          generates the random noise and applies the shortcut formula.
+        </li>
+        <li>
+          <code>with torch.autocast(...): predicted_noise = model(noisy_images, t) ... loss = F.mse_loss(...)</code>, step 5 and step 6, wrapped in the mixed-precision context manager
+          from the package reference, so the forward pass and loss computation
+          run with float16 where safe.
+        </li>
+        <li>
+          <code>scaler.scale(loss).backward()</code>,
+          <code>scaler.step(optimizer)</code>, <code>scaler.update()</code>, the mixed-precision-safe versions of the plain
+          <code>loss.backward()</code> / <code>optimizer.step()</code> pattern
+          from the autograd deep-dive section. <code>scaler.scale(loss)</code>
+          multiplies the loss up before calling backward (to avoid gradient
+          underflow, as explained in the package reference), <code>scaler.step</code>
+          un-scales before actually updating weights, and <code>scaler.update()</code>
+          adjusts the scaling factor for next time based on whether any
+          numerical issues were detected this step.
+        </li>
+        <li>
+          <code>loss.item()</code>, extracts a loss tensor's single number as a
+          plain Python float, for printing/logging purposes. You'll see this
+          pattern constantly: <code>.item()</code> to pull one number out of a
+          single-element tensor.
+        </li>
+        <li>
+          <code>if __name__ == "__main__": train()</code>, a standard Python
+          idiom meaning "only run this when the file is executed directly (e.g.
+          <code>python train.py</code>), not when it's imported by another
+          file." This lets <code>sample.py</code> later import things from
+          <code>train.py</code> if needed, without accidentally starting a full
+          training run just from the import.
+        </li>
+      </ul>
+<div class="callout trap"><span class="callout-title">Watch out</span><p>
+          <code>torch.autocast(device_type="cuda", ...)</code> will error if
+          you're running on CPU (no GPU available), set
+          <code>device_type="cpu"</code> in that case, though mixed precision
+          provides no benefit on CPU and can safely be left disabled entirely
+          via <code>config.USE_MIXED_PRECISION = False</code> if you're ever
+          testing on a CPU-only machine.
+        </p></div>
+<div class="callout key"><span class="callout-title">Try it yourself</span><ul><li>Assemble train.py with the code above</li><li>Run python train.py and confirm the progress bar appears with a live-updating loss value</li><li>Watch nvidia-smi in a second terminal (nvidia-smi -l 1) while training runs, and confirm GPU utilization and memory usage both show activity</li><li>Confirm the average loss trends downward over the first several epochs</li></ul></div>
+    </section>
+
+    <section id="p3-sample-code" data-track>
+      <h2>sample.py: generating images</h2>
+<p>
+        The reverse process from Phase 2, now as code: start from pure noise,
+        and repeatedly apply the trained model's denoising step.
+      </p>
+<pre><code class="lang-py">import torch
+import torchvision
+import os
+
+import config
+from schedule import get_schedule
+from unet import UNet
+
+@torch.no_grad()
+def sample(num_images=8, checkpoint_path=None):
+    betas, alphas, alpha_bars = get_schedule()
+
+    model = UNet().to(config.DEVICE)
+    if checkpoint_path:
+        model.load_state_dict(torch.load(checkpoint_path, map_location=config.DEVICE))
+    model.eval()
+
+    x = torch.randn(
+        num_images, config.CHANNELS, config.IMAGE_SIZE, config.IMAGE_SIZE,
+        device=config.DEVICE,
+    )
+
+    for t_step in reversed(range(config.TIMESTEPS)):
+        t = torch.full((num_images,), t_step, device=config.DEVICE, dtype=torch.long)
+
+        predicted_noise = model(x, t)
+
+        alpha_t = alphas[t_step]
+        alpha_bar_t = alpha_bars[t_step]
+        beta_t = betas[t_step]
+
+        if t_step > 0:
+            noise = torch.randn_like(x)
+        else:
+            noise = torch.zeros_like(x)
+
+        x = (1 / torch.sqrt(alpha_t)) * (
+            x - ((1 - alpha_t) / torch.sqrt(1 - alpha_bar_t)) * predicted_noise
+        ) + torch.sqrt(beta_t) * noise
+
+    os.makedirs(config.SAMPLE_DIR, exist_ok=True)
+    save_path = os.path.join(config.SAMPLE_DIR, "generated.png")
+    x = (x.clamp(-1, 1) + 1) / 2   # back to 0-1 range for saving
+    torchvision.utils.save_image(x, save_path, nrow=4)
+    print(f"Saved samples to {save_path}")
+
+
+if __name__ == "__main__":
+    sample(num_images=8, checkpoint_path=f"{config.CHECKPOINT_DIR}/model_epoch100.pt")</code></pre>
+<p>Mapping this back to the Phase 2 sampling loop:</p>
+<ul>
+        <li>
+          <code>@torch.no_grad()</code>, a decorator (a shorthand alternative
+          to wrapping the whole function body in a <code>with torch.no_grad():</code>
+          block) applying the no-gradient-tracking behavior from the package
+          reference to this entire function, since we're only doing inference
+          here, never training.
+        </li>
+        <li>
+          <code>model.eval()</code>, switches the model into evaluation mode.
+          This matters because some layer types (not used in this particular
+          U-Net, but common enough to know about, like <code>Dropout</code> or
+          certain normalization variants) behave differently during training
+          versus inference; calling <code>.eval()</code> ensures everything
+          behaves in its inference mode. It's good practice to always call this
+          before sampling, even in a project like this one where it happens to
+          make no behavioral difference with the specific layers used.
+        </li>
+        <li>
+          <code>x = torch.randn(num_images, ...)</code>, step 1 from the
+          sampling loop: starting from pure Gaussian noise, shaped as a batch of
+          <code>num_images</code> images.
+        </li>
+        <li>
+          <code>for t_step in reversed(range(config.TIMESTEPS)):</code>, step 2:
+          looping backward from T-1 down to 0. <code>range(1000)</code>
+          generates 0 through 999; <code>reversed(...)</code> flips that to 999
+          down to 0.
+        </li>
+        <li>
+          <code>t = torch.full((num_images,), t_step, ...)</code>, creates a
+          tensor of shape <code>(num_images,)</code> where every single value is
+          <code>t_step</code>, since all images in the batch are being denoised
+          together, at the same current timestep, unlike during training where
+          each image in a batch got its own random timestep.
+        </li>
+        <li>
+          <code>predicted_noise = model(x, t)</code>, the same forward pass
+          used during training, just with no loss computed and no gradient
+          tracking (guaranteed by the <code>@torch.no_grad()</code> decorator).
+        </li>
+        <li>
+          The <code>if t_step > 0: noise = torch.randn_like(x) else:
+          torch.zeros_like(x)</code> block, matches the sampling formula note
+          from Phase 2 that fresh noise is added back in at every step except
+          the very last, where adding more noise would only hurt the final
+          result.
+        </li>
+        <li>
+          The big <code>x = (1 / torch.sqrt(alpha_t)) * (...) + torch.sqrt(beta_t) * noise</code>
+          line is the sampling formula itself, the mathematically-derived
+          rearrangement of the forward shortcut formula mentioned in Phase 2,
+          now written out in full. You don't need to re-derive this formula
+          yourself; using it correctly (matching this structure) is what
+          matters. Notice it uses <code>predicted_noise</code>, the model's
+          guess, in exactly the way Phase 2 described: scaled and subtracted to
+          move the image one step toward being cleaner.
+        </li>
+        <li>
+          <code>x.clamp(-1, 1)</code>, after all the sampling steps, values can
+          drift slightly outside the expected -1 to 1 range due to accumulated
+          floating point behavior across a thousand steps; <code>clamp</code>
+          forces any stray values back into range before converting to a
+          displayable image.
+        </li>
+        <li>
+          <code>torchvision.utils.save_image(x, save_path, nrow=4)</code>, from
+          the package reference: saves the whole batch as one combined image,
+          arranged into a grid with <code>nrow=4</code> images per row.
+        </li>
+      </ul>
+<div class="callout key"><span class="callout-title">Try it yourself</span><ul><li>Assemble sample.py with the code above</li><li>After training has saved at least one checkpoint, run python sample.py</li><li>Open the saved generated.png in samples/ and look at the result</li></ul></div>
+    </section>
+
+    <section id="p3-run-it" data-track>
+      <h2>Running it end to end, and what to expect</h2>
+<p>
+        Here's the realistic path from a blank folder to your first generated
+        image, and what you should honestly expect to see at each point.
+      </p>
+<ol class="steps"><li><p><strong>First run: use MNIST, and drastically shrink settings</strong></p><p>
+              For your very first end-to-end test, set <code>EPOCHS = 5</code>
+              and confirm the whole pipeline runs without crashing before
+              committing to a full 100-epoch run. A crash on epoch 1 costs you a
+              minute; a crash on epoch 95 of a real dataset costs you hours.
+            </p></li><li><p><strong>Watch the loss, not the images, for the first few epochs</strong></p><p>
+              Generated images will look like pure colored noise for quite a
+              while, this is normal. The loss value trending downward (even
+              slowly) is your real signal that learning is happening at all,
+              well before generated images look like anything recognizable.
+            </p></li><li><p><strong>On MNIST specifically, expect recognizable digit-like shapes within 20-40 epochs</strong></p><p>
+              MNIST is a genuinely easy dataset for this task (small, simple,
+              grayscale, one clear subject per image), this is exactly why it's
+              recommended as your first real target, since it gives you
+              meaningful visual feedback relatively quickly compared to a more
+              complex custom dataset.
+            </p></li><li><p><strong>Once MNIST works, move to your real target dataset</strong></p><p>
+              Switch <code>dataset.py</code> to Option B, point
+              <code>DATA_DIR</code> at your real images, set
+              <code>CHANNELS = 3</code>, and expect to need meaningfully more
+              epochs and a larger, more varied dataset for good results,
+              since real photos have far more visual complexity than
+              handwritten digits.
+            </p></li></ol>
+    </section>
+
+    <section id="p3-debugging" data-track>
+      <h2>Debugging common errors</h2>
+<p>
+        A short, honest list of the errors you're most likely to actually hit,
+        translated into plain language and a fix.
+      </p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Error message contains</th><th>What it means</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td><code>CUDA out of memory</code></td><td>Your batch, image size, or model is too large for 4GB VRAM at once.</td><td>Lower <code>BATCH_SIZE</code> first (try 8, then 4). If still failing, lower <code>IMAGE_SIZE</code> or <code>BASE_CHANNELS</code>. Confirm <code>USE_MIXED_PRECISION = True</code>.</td></tr>
+<tr><td><code>size mismatch</code> / <code>shapes cannot be multiplied</code></td><td>Two tensors being combined (added, concatenated, matrix-multiplied) don't have compatible shapes, almost always a channel-count mismatch somewhere in the U-Net.</td><td>Add <code>print(x.shape)</code> statements inside <code>forward</code>, right before the line that errors, and work backward from there to find where the shape first goes wrong.</td></tr>
+<tr><td><code>Expected all tensors to be on the same device</code></td><td>Some tensor is on CPU while another is on GPU (or vice versa), commonly, you forgot a <code>.to(config.DEVICE)</code> somewhere, often on a batch fresh out of the DataLoader.</td><td>Check every tensor that enters the training loop from outside the model (images, timesteps, freshly generated noise) has <code>.to(config.DEVICE)</code> or was created with <code>device=config.DEVICE</code>.</td></tr>
+<tr><td><code>RuntimeError: Input type and weight type should be the same</code></td><td>A dtype mismatch, usually a float64 tensor (from numpy, before <code>.float()</code> was called) meeting a float32 tensor.</td><td>Make sure every tensor built from numpy has <code>.float()</code> called on it, exactly as shown in schedule.py.</td></tr>
+<tr><td>Loss becomes <code>nan</code></td><td>Training has become numerically unstable, often from too high a learning rate, or occasionally from mixed precision underflow if GradScaler isn't set up correctly.</td><td>Lower <code>LEARNING_RATE</code> (try 5e-5). Confirm you're using <code>scaler.scale(loss).backward()</code>, not plain <code>loss.backward()</code>, when mixed precision is enabled.</td></tr>
+<tr><td>Loss goes down but generated images stay pure noise indefinitely</td><td>Either not enough training yet, or a bug in the sampling formula specifically (since a decreasing loss confirms the model itself is learning correctly).</td><td>First, train longer, confirm loss is meaningfully lower than its starting value. If loss looks healthy but sampling still fails, double check every line of the sampling formula in sample.py character-by-character against the version in this guide.</td></tr>
+</tbody>
+</table>
+</div>
+    </section>
+
+    <section id="p3-practical" data-track>
+      <h2>Practical questions that come up while actually doing this</h2>
+<p>
+        A few questions that aren't about code or theory directly, but come up
+        constantly in practice, answered here so you don't need to look
+        elsewhere for them either.
+      </p>
+<h3>Where do I actually get training images from?</h3>
+<p>
+        For your first working end-to-end run, use MNIST or a similar built-in
+        torchvision dataset (see <code>dataset.py</code> Option A), it downloads
+        automatically, needs no manual collection, and is specifically
+        recommended so you can validate your whole pipeline works before
+        investing in a real dataset.
+      </p>
+<p>For a real custom dataset afterward, common sources include:</p>
+<ul>
+        <li><strong>Kaggle</strong> (kaggle.com/datasets), thousands of free, downloadable image datasets across every category, searchable by subject.</li>
+        <li><strong>Hugging Face Datasets</strong> (huggingface.co/datasets), many image datasets ready to use, some directly loadable in Python with the <code>datasets</code> library.</li>
+        <li><strong>Your own photos</strong>, if you have a personal collection (e.g. a specific subject you want the model to learn), this works too, though see the "how much data" question below for how much you realistically need.</li>
+      </ul>
+<div class="callout trap"><span class="callout-title">Watch out</span><p>
+          Whatever source you use, respect the license attached to the images, some datasets restrict commercial use or redistribution. For personal
+          learning and experimentation (what this guide covers), almost any
+          source is fine, but check before using a trained model's output
+          publicly or commercially.
+        </p></div>
+<h3>How many images do I actually need?</h3>
+<p>
+        There's no single correct number, but rough, honest guidance: a few
+        thousand images is a reasonable minimum for a small custom dataset to
+        produce recognizable (if imperfect) results at 32×32 or 64×64
+        resolution. A few hundred images can still show the model learning
+        something (loss will decrease, and outputs will pick up broad color and
+        shape patterns), but expect results to look noticeably blurrier and less
+        varied. MNIST, by comparison, has 60,000 training images, part of why
+        it produces cleaner results faster; a small custom dataset genuinely
+        needs either more images or more patience (many more epochs) to compensate.
+      </p>
+<h3>How do I know if my loss number is "good"?</h3>
+<p>
+        There's no single universal "good" loss value, it depends on your
+        image resolution, pixel value range, and dataset. What actually matters
+        is the <strong>trend</strong>, not the absolute number:
+      </p>
+<ul>
+        <li>
+          At the very start of training, loss is typically close to 1 (since the
+          network's initial random guesses are, on average, about as wrong as
+          random noise itself, recall both the real noise and a random initial
+          guess are drawn from a similar-scale Gaussian distribution, so an
+          untrained network's MSE loss often starts near the noise's own
+          variance).
+        </li>
+        <li>
+          A healthy training run shows loss dropping fairly quickly over the
+          first several epochs, then continuing to decrease more slowly and
+          with more visible noise (bouncing up and down slightly batch to
+          batch) as training continues, this bouncing is normal and expected,
+          since each batch is a different random sample of images and
+          timesteps.
+        </li>
+        <li>
+          If loss is flat and unchanging from the very first epoch, something
+          is likely broken (check the debugging table above) rather than "just
+          needing more time", a completely untrained-looking flat line for many
+          epochs in a row is not normal.
+        </li>
+      </ul>
+<h3>When do I stop training?</h3>
+<p>
+        Two practical signals, used together:
+      </p>
+<ul>
+        <li>
+          <strong>The loss curve flattens out</strong>, if average epoch loss
+          has stopped meaningfully decreasing for many epochs in a row, further
+          training is unlikely to help much without other changes (more data,
+          a bigger model, a different learning rate).
+        </li>
+        <li>
+          <strong>Generated samples stop visibly improving</strong>, since loss
+          is a proxy for image quality, not a perfect measurement of it, the
+          most reliable signal is periodically generating and looking at actual
+          samples (which is exactly why <code>train.py</code> saves checkpoints
+          periodically) and judging by eye whether epoch 80's samples look
+          meaningfully better than epoch 60's.
+        </li>
+      </ul>
+<p>
+        In practice, for a small dataset and small model like the ones this
+        guide targets, expect diminishing returns somewhere between 100 and
+        300 epochs. The exact number depends heavily on your dataset size and
+        how complex your images are. That's exactly why watching both signals
+        yourself, the loss curve and the actual samples, beats picking one
+        fixed epoch count ahead of time.
+      </p>
+    </section>
+
+    <section id="p3-checklist" data-track>
+      <h2>Phase 3 complete: final checklist</h2>
+<div class="callout key"><span class="callout-title">Checkpoint: Phase 3 done, you have a working diffusion model</span><ul><li>config.py written, with settings appropriate for your 4GB GPU</li><li>schedule.py written and verified with printed shapes/values</li><li>dataset.py written and verified, a batch loads with the correct shape</li><li>unet.py assembled from the embedding, ResBlock, attention, and U-Net classes</li><li>A single forward pass through the U-Net produces output matching the input shape</li><li>train.py runs, GPU usage is confirmed active, and loss trends downward</li><li>sample.py successfully generates and saves an image from a checkpoint</li><li>Ran a full first test on MNIST before moving to a custom dataset</li></ul></div>
+<p>
+        This is a complete, working, small diffusion model, trained and sampled
+        entirely by code you now understand line by line. Phase 4 next covers
+        the upgrades that take it from "it works" to "it actually produces
+        decent images," plus the practical things you will need the first time a
+        training run gets interrupted.
+      </p>
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="d3-how-diffusion-works.html"><span class="dir">Previous</span><span>D3 Phase 2: How diffusion works</span></a>
+      <a class="next" href="d5-making-it-good.html"><span class="dir">Next</span><span>D5 Phase 4: Making it good</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

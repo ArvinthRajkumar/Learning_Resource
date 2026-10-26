@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD16">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Case studies 4: metrics, ad click aggregation, leaderboard, message queue, collaborative editing | System Design</title>
+<meta name="description" content="Time-series monitoring, exactly-once style ad click aggregation, Redis leaderboards, designing a Kafka-like log, and real-time collaborative editing with operational transformation and CRDTs.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD16</p>
+      <h1>Case studies 4: metrics, ad click aggregation, leaderboard, message queue, collaborative editing</h1>
+      <p class="lede">The last group is data-system heavy: write-intensive ingestion, aggregation, ranking, building infrastructure itself, and merging concurrent edits. These show up in senior interviews.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~4.5 hours</span></div>
+    </div>
+
+    <section id="metrics" data-track>
+      <h2>Case 1: Metrics and monitoring system</h2>
+<h3>Requirements</h3>
+<p>Collect metrics (CPU, request counts, latency) from thousands of servers, store them, query them for dashboards, and fire alerts. Writes are constant and huge; reads are dashboards and alert evaluations.</p>
+<h3>Estimates</h3>
+<p>100,000 servers each emit 100 metrics every 10 seconds: 1 million data points per second. Each point about 16 bytes (timestamp plus value) plus series metadata: about 1.4 TB per day uncompressed. Time-series compression (delta of delta timestamps, XOR floats) brings 16 bytes to about 1.5 bytes per point.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd16-01.py">points_per_sec = 100_000 * 100 / 10
+raw_tb_day = points_per_sec * 16 * 86_400 / 1e12
+comp_tb_day = points_per_sec * 1.5 * 86_400 / 1e12
+print(int(points_per_sec), "points/s;", round(raw_tb_day, 2), "TB/day raw;", round(comp_tb_day, 2), "TB/day compressed")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>1000000 points/s; 1.38 TB/day raw; 0.13 TB/day compressed</code></pre>
+<h3>Pull versus push collection</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>Pull (Prometheus)</th><th>Push (StatsD, agents)</th></tr></thead>
+<tbody>
+<tr><td>How</td><td>The collector scrapes each target's <code>/metrics</code> endpoint</td><td>Services send data to a collector</td></tr><tr><td>Pros</td><td>Collector knows who is up; central config; easy debugging</td><td>Works for short-lived jobs and behind firewalls</td></tr><tr><td>Cons</td><td>Needs service discovery and reachability</td><td>Harder to know if a silent service is dead</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Architecture</h3>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 1066 294" role="img" aria-label="Metrics pipeline with a queue for buffering, a time-series database and an alert evaluator." style="min-width:760px"><defs><marker id="ah36" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah36a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah36b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah36d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="147.0" x2="234.0" y2="147.0" class="d-line" marker-end="url(#ah36)"/><line x1="404.0" y1="147.0" x2="448.0" y2="147.0" class="d-line" marker-end="url(#ah36)"/><line x1="618.0" y1="147.0" x2="662.0" y2="147.0" class="d-line" marker-end="url(#ah36)"/><line x1="747.0" y1="78.0" x2="747.0" y2="118.0" class="d-line" marker-end="url(#ah36)"/><line x1="747.0" y1="216.0" x2="747.0" y2="78.0" class="d-line" marker-end="url(#ah36)"/><line x1="876.0" y1="49.0" x2="832.0" y2="49.0" class="d-line" marker-end="url(#ah36)"/><line x1="832.0" y1="245.0" x2="876.0" y2="245.0" class="d-line" marker-end="url(#ah36)"/><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="151.5" text-anchor="middle">Agents / exporters</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-e"/><text x="319.0" y="144.0" text-anchor="middle">Kafka</text><text x="319.0" y="159.0" text-anchor="middle">(buffer, decouple)</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="151.5" text-anchor="middle" class="d-sm">Ingest and downsample workers</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-d"/><text x="747.0" y="144.0" text-anchor="middle">Time-series DB</text><text x="747.0" y="159.0" text-anchor="middle">(sharded, compressed)</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-c"/><text x="747.0" y="53.5" text-anchor="middle">Query service + cache</text><rect x="662.0" y="216.0" width="170" height="58" rx="8" class="d-c"/><text x="747.0" y="249.5" text-anchor="middle">Alert manager</text><rect x="876.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="961.0" y="53.5" text-anchor="middle">Dashboards</text><rect x="876.0" y="216.0" width="170" height="58" rx="8" class="d-e"/><text x="961.0" y="249.5" text-anchor="middle">Pager / chat / email</text></svg>
+</div>
+<figcaption>Metrics pipeline with a queue for buffering, a time-series database and an alert evaluator.</figcaption></figure>
+<h3>Storage and queries</h3>
+<ul><li><strong>Data model</strong>: a series identified by metric name plus a set of labels (<code>http_requests_total{service="cart", status="500"}</code>), with <code>(timestamp, value)</code> points. Index labels with an inverted index; write points sequentially in time order.</li><li><strong>Sharding</strong>: hash the series id; keep a recent window in memory and flush blocks to disk.</li><li><strong>Downsampling and retention</strong>: keep raw data for 7 to 15 days, 1 minute rollups for 3 months, 1 hour rollups for years. Queries over long ranges read rollups.</li><li><strong>Cardinality control</strong>: every unique label combination is a new series. High cardinality labels (user id, request id) explode storage. Enforce limits.</li></ul>
+<h3>Alerting</h3>
+<p>An evaluator runs rules every minute (<code>error_rate &gt; 2% for 5m</code>), tracks state (pending, firing, resolved), <strong>groups and de-duplicates</strong> notifications, supports silences and routing by team, and escalates. Evaluate on a <strong>replicated</strong> path so alerting survives the loss of one instance, and alert on the monitoring system itself ("the watchdog" alert that must always fire).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd16-q01" data-topic="Case studies 4" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which is the biggest risk for a time-series store?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Using timestamps <span class="q-why">Core feature.</span></li>
+          <li data-key="B">High-cardinality labels creating millions of series <span class="q-why">Correct.</span></li>
+          <li data-key="C">Compression <span class="q-why">Helps.</span></li>
+          <li data-key="D">Downsampling <span class="q-why">Helps.</span></li>
+        </ul>
+        <div class="q-explain"><p>Every unique label set is a new series; unbounded labels such as user id explode storage.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Pull versus push collection?</summary><div class="answer"><p>Pull: collector scrapes targets (knows who is alive). Push: services send data (good for short-lived jobs).</p></div></details>
+      </div>
+    </section>
+
+    <section id="ad-clicks" data-track>
+      <h2>Case 2: Ad click aggregation</h2>
+<h3>Requirements</h3>
+<p>Count ad clicks (and impressions) per ad, per minute, for billing and dashboards. Billing needs <strong>accurate</strong> counts (no loss, no double counting); dashboards want low latency. Handle late and duplicate events, fraud and huge volume.</p>
+<h3>Estimates</h3>
+<p>1 billion clicks per day: about 12,000 per second average, 50,000 at peak. Event size 100 bytes: 100 GB per day. Aggregated results are small.</p>
+<h3>Design</h3>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 98" role="img" aria-label="Aggregate in a stream processor, keep raw events for audit and reprocessing." style="min-width:760px"><defs><marker id="ah37" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah37a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah37b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah37d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah37)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah37)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah37)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">Click events</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle" class="d-sm">Kafka (partitioned by ad id)</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle" class="d-sm">Stream aggregator (windowed)</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle" class="d-sm">OLAP store + Raw archive</text></svg>
+</div>
+<figcaption>Aggregate in a stream processor, keep raw events for audit and reprocessing.</figcaption></figure>
+<ul><li><strong>Ingest</strong>: clients and servers publish click events to a log (Kafka) partitioned by <code>ad_id</code>, so all events for one ad are on one partition.</li><li><strong>Stream aggregation</strong>: a stream processor (Flink) computes <strong>tumbling windows</strong> of one minute per ad, using <strong>event time</strong> and <strong>watermarks</strong> to accept late events (for example up to 5 minutes), keeping state with periodic <strong>checkpoints</strong>.</li><li><strong>Exactly-once effect</strong>: checkpoints plus <strong>idempotent writes</strong> keyed by <code>(ad_id, window_start)</code> mean a replay overwrites rather than double counts. Deduplicate events by <code>click_id</code> inside a dedupe window.</li><li><strong>Storage</strong>: aggregates in an OLAP or time-series store for dashboards. <strong>All raw events</strong> also go to cheap object storage in Parquet.</li><li><strong>Reconciliation (lambda-style)</strong>: a nightly batch job recomputes exact counts from raw data and corrects the stream results. The bill uses the batch-verified numbers.</li></ul>
+<h3>Hot ads</h3>
+<p>A viral ad is one partition key. Mitigate by adding a salt to the key (<code>ad_id#0..7</code>), aggregating partial counts and merging in a second stage.</p>
+<h3>Fraud and quality</h3>
+<p>Filter bots and click spam with rules and ML (impossible click rates, repeated IPs, device fingerprints) before counting for billing; keep the unfiltered stream for investigation.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd16-q02" data-topic="Case studies 4" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you make stream aggregation effectively exactly-once?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Disable retries <span class="q-why">Would lose data.</span></li>
+          <li data-key="B">Checkpointed state plus idempotent writes keyed by (ad, window), and a batch reconciliation <span class="q-why">Correct.</span></li>
+          <li data-key="C">Count twice <span class="q-why">Wrong.</span></li>
+          <li data-key="D">Use a bigger cluster <span class="q-why">Does not address duplicates.</span></li>
+        </ul>
+        <div class="q-explain"><p>Replays overwrite the same key rather than adding again; the batch job verifies numbers used for billing.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why keep raw events and run a batch job?</summary><div class="answer"><p>To audit, reprocess and correct stream results so billing uses verified counts.</p></div></details>
+      </div>
+    </section>
+
+    <section id="leaderboard" data-track>
+      <h2>Case 3: Leaderboard</h2>
+<h3>Requirements</h3>
+<p>A game shows the top 100 players, a player's own rank, and nearby players. Updates arrive when scores change. Millions of players, real-time feel.</p>
+<h3>Why not just SQL?</h3>
+<p><code>SELECT ... ORDER BY score DESC LIMIT 100</code> is fine for thousands of rows, but finding <strong>a given player's rank</strong> (<code>COUNT(*) WHERE score &gt; mine</code>) over millions of rows per request is too slow.</p>
+<h3>Redis sorted set</h3>
+<p>A <strong>sorted set</strong> keeps members ordered by score in a skip list plus hash map. Operations are O(log N): <code>ZADD</code> to set or update a score, <code>ZREVRANK</code> for rank, <code>ZREVRANGE 0 99</code> for the top 100, <code>ZINCRBY</code> to add points, <code>ZREVRANGE rank-5 rank+5</code> for neighbours.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd16-02.py">import bisect
+class Leaderboard:
+    """Sorted list stand-in for a Redis sorted set (insert O(n) here, O(log n) in Redis)."""
+    def __init__(self):
+        self.items = []                 # sorted ascending by (score, player)
+        self.score = {}
+    def update(self, player, score):
+        if player in self.score:
+            self.items.remove((self.score[player], player))
+        bisect.insort(self.items, (score, player))
+        self.score[player] = score
+    def top(self, n):
+        return [(p, s) for s, p in reversed(self.items[-n:])]
+    def rank(self, player):             # 1-based, highest score is rank 1
+        i = self.items.index((self.score[player], player))
+        return len(self.items) - i
+
+lb = Leaderboard()
+for p, s in [("ann", 50), ("bob", 80), ("cy", 65), ("di", 90)]:
+    lb.update(p, s)
+lb.update("ann", 85)
+print(lb.top(3), lb.rank("bob"), lb.rank("ann"))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[('di', 90), ('ann', 85), ('bob', 80)] 3 2</code></pre>
+<h3>Scaling</h3>
+<ul><li>One Redis sorted set holds tens of millions of members in a few GB, so one node (plus replica) may be enough for a single global board. Peak writes of 10,000 to 100,000 per second fit.</li><li>To go beyond: <strong>shard by score range</strong> (each shard owns a range, top 100 from the top shard) or <strong>shard by player</strong> and merge top-k from each shard.</li><li><strong>Time windows</strong> (daily, weekly): separate sorted sets per window key with a TTL.</li><li><strong>Persistence</strong>: Redis is a derived view. Keep the source of truth in a database and rebuild on loss.</li><li><strong>Ties</strong>: break by earliest achievement time (encode into the score or use secondary ordering).</li><li><strong>Very large scale, approximate ranks</strong>: bucket scores and estimate rank from bucket counts ("you are in the top 3%").</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd16-q03" data-topic="Case studies 4" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which Redis structure and command find a player's rank in O(log N)?</p></div>
+        <ul class="q-options">
+          <li data-key="A">List and LRANGE <span class="q-why">O(N).</span></li>
+          <li data-key="B">Sorted set and ZREVRANK <span class="q-why">Correct.</span></li>
+          <li data-key="C">Hash and HGET <span class="q-why">No ordering.</span></li>
+          <li data-key="D">String and GET <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Sorted sets keep members ordered by score using a skip list.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How to scale beyond one sorted set?</summary><div class="answer"><p>Shard by score range or by player and merge top-k, with per-window keys and a database as source of truth.</p></div></details>
+      </div>
+    </section>
+
+    <section id="mq" data-track>
+      <h2>Case 4: Design a distributed message queue</h2>
+<h3>Requirements</h3>
+<p>Build the system from <a href="sd8-messaging.html">SD8</a>: producers publish, consumers subscribe, high throughput, durable, ordered per partition, scalable, supports consumer groups and replay.</p>
+<h3>Core design (a Kafka-like log)</h3>
+<ul><li>A <strong>topic</strong> is split into <strong>partitions</strong>; each partition is an <strong>append-only log</strong> of records with increasing <strong>offsets</strong>, stored as segment files on disk. Sequential disk writes and reads, plus the OS page cache and zero-copy sends, make this very fast.</li><li>A <strong>broker</strong> hosts many partitions. A partition has one <strong>leader</strong> and several <strong>follower</strong> replicas (the <strong>in-sync replica set</strong>). Producers write to the leader; followers fetch from it.</li><li><strong>Acknowledgement levels</strong>: <code>acks=0</code> (fire and forget), <code>acks=1</code> (leader wrote it), <code>acks=all</code> (all in-sync replicas). Use <code>acks=all</code> and a minimum ISR size for durability.</li><li><strong>Consumer groups</strong>: partitions are divided among consumers in a group; each partition belongs to one consumer at a time. Consumers <strong>commit offsets</strong> (stored in an internal topic) so they can resume after failure.</li><li><strong>Retention</strong>: delete segments by age or size, or compact by key (keep the latest value per key).</li><li><strong>Coordination</strong>: a metadata and controller layer (ZooKeeper historically, now Raft in KRaft) tracks brokers, partition leaders and group membership. Leader election uses consensus (<a href="sd6-consistency.html">SD6</a>).</li></ul>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 294" role="img" aria-label="Partitioned replicated log. Producers write to a leader; followers replicate; consumer groups read at their own offsets." style="min-width:760px"><defs><marker id="ah38" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah38a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah38b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah38d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="168.3" y1="118.0" x2="255.7" y2="78.0" class="d-line" marker-end="url(#ah38)"/><text x="212.0" y="93.0" text-anchor="middle" class="d-sm d-muted">P0</text><line x1="168.3" y1="176.0" x2="255.7" y2="216.0" class="d-line" marker-end="url(#ah38)"/><text x="212.0" y="191.0" text-anchor="middle" class="d-sm d-muted">P1</text><line x1="319.0" y1="78.0" x2="319.0" y2="216.0" class="d-line" marker-end="url(#ah38)"/><text x="319.0" y="142.0" text-anchor="middle" class="d-sm d-muted">replicate</text><line x1="469.7" y1="118.0" x2="382.3" y2="78.0" class="d-line" marker-end="url(#ah38)"/><text x="426.0" y="93.0" text-anchor="middle" class="d-sm d-muted">assign leaders</text><line x1="404.0" y1="68.5" x2="662.0" y2="127.5" class="d-line" marker-end="url(#ah38)"/><line x1="404.0" y1="225.5" x2="662.0" y2="166.5" class="d-line" marker-end="url(#ah38)"/><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="151.5" text-anchor="middle">Producers</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-c"/><text x="319.0" y="46.0" text-anchor="middle" class="d-sm">Broker 1</text><text x="319.0" y="61.0" text-anchor="middle" class="d-sm">(leader P0, follower P1)</text><rect x="234.0" y="216.0" width="170" height="58" rx="8" class="d-c"/><text x="319.0" y="242.0" text-anchor="middle" class="d-sm">Broker 2</text><text x="319.0" y="257.0" text-anchor="middle" class="d-sm">(leader P1, follower P0)</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-e"/><text x="533.0" y="144.0" text-anchor="middle">Controller</text><text x="533.0" y="159.0" text-anchor="middle">(Raft metadata)</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-b"/><text x="747.0" y="144.0" text-anchor="middle">Consumer group</text><text x="747.0" y="159.0" text-anchor="middle">(commits offsets)</text></svg>
+</div>
+<figcaption>Partitioned replicated log. Producers write to a leader; followers replicate; consumer groups read at their own offsets.</figcaption></figure>
+<h3>Delivery semantics</h3>
+<ul><li>Producer retries can duplicate; <strong>idempotent producers</strong> (producer id and sequence numbers) let the broker discard duplicates.</li><li>Consumer <strong>at-least-once</strong>: commit the offset after processing. <strong>At-most-once</strong>: commit before. <strong>Exactly-once</strong> within the platform via transactions across produce and offset commit.</li></ul>
+<h3>Choices and trade-offs</h3>
+<p>Ordering only within a partition. More partitions give parallelism but cost more metadata and slower rebalances. A larger replication factor raises durability and cost. Latency versus throughput is tuned by batching (<code>linger.ms</code>) and compression.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd16-q04" data-topic="Case studies 4" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Which acknowledgement setting gives the strongest durability in a Kafka-like log?</p></div>
+        <ul class="q-options">
+          <li data-key="A">acks=0 <span class="q-why">May lose data.</span></li>
+          <li data-key="B">acks=1 <span class="q-why">Leader only.</span></li>
+          <li data-key="C">acks=all with a minimum in-sync replica count <span class="q-why">Correct.</span></li>
+          <li data-key="D">No replication <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The write is acknowledged only after all in-sync replicas have it.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd16-q05" data-topic="Case studies 4" data-type="numeric" data-answer="12" data-tol="0">
+        <div class="q-stem"><p>A topic has 12 partitions and a consumer group has 20 consumers. How many consumers are actually active?</p></div>
+        <div class="q-explain"><p>Each partition is read by at most one consumer in the group, so 12 are active and 8 idle.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is a consumer group?</summary><div class="answer"><p>A set of consumers that share a topic's partitions so each message is processed by one member.</p></div></details>
+      </div>
+    </section>
+
+    <section id="collab" data-track>
+      <h2>Case 5: Collaborative document editing</h2>
+<h3>Requirements</h3>
+<p>Many users edit the same document at once (Google Docs). Edits appear in real time for others; the document must converge to the <strong>same text for everyone</strong>, preserve intent, work with brief offline gaps, keep history and cursors.</p>
+<h3>The core problem</h3>
+<p>Alice and Bob both start from <code>"cat"</code>. Alice inserts <code>"X"</code> at position 1. Bob inserts <code>"Y"</code> at position 0. If each applies the other's operation unchanged, Alice ends with <code>YcXat</code> but Bob with <code>YXcat</code>, so they diverge.</p>
+<h3>Operational Transformation (OT)</h3>
+<p>Transform each incoming operation against operations that happened concurrently, adjusting positions so intent is preserved. A central server defines the order of operations, which simplifies the transform. Used by Google Docs.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd16-03.py"># Concurrent edits on "cat": A inserts 'X' at 1, B inserts 'Y' at 0.
+def apply(text, op):
+    kind, pos, ch = op
+    return text[:pos] + ch + text[pos:] if kind == "ins" else text[:pos] + text[pos + 1:]
+
+def transform(op, other):
+    """Adjust op so it can be applied after 'other' has already been applied."""
+    kind, pos, ch = op
+    okind, opos, _ = other
+    if okind == "ins" and opos &lt;= pos:
+        pos += 1
+    elif okind == "del" and opos &lt; pos:
+        pos -= 1
+    return (kind, pos, ch)
+
+a = ("ins", 1, "X")
+b = ("ins", 0, "Y")
+# naive: apply in different orders without transform -&gt; diverge
+print("naive A then B:", apply(apply("cat", a), b), "| B then A:", apply(apply("cat", b), a))
+# with transform both converge
+print("OT   A then B':", apply(apply("cat", a), transform(b, a)), "| B then A':", apply(apply("cat", b), transform(a, b)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>naive A then B: YcXat | B then A: YXcat
+OT   A then B': YcXat | B then A': YcXat</code></pre>
+<h3>CRDTs</h3>
+<p>A <strong>conflict-free replicated data type</strong> gives every character a unique, ordered identifier so operations <strong>commute</strong>: they can be applied in any order and still converge, without a central server. Sequence CRDTs (RGA, Logoot, Yjs, Automerge) assign positions between neighbours. Pros: works peer to peer and offline. Cons: metadata overhead (ids for every character, tombstones for deletes) and harder garbage collection.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>OT</th><th>CRDT</th></tr></thead>
+<tbody>
+<tr><td>Central server</td><td>Usually required</td><td>Optional</td></tr><tr><td>Offline and peer to peer</td><td>Hard</td><td>Natural</td></tr><tr><td>Complexity</td><td>Transform functions are tricky to get right</td><td>Data structure is complex but properties are provable</td></tr><tr><td>Overhead</td><td>Low</td><td>Per-character metadata</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Architecture</h3>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 294" role="img" aria-label="Real-time collaboration: edits go over WebSockets to a session server that sequences and broadcasts them." style="min-width:760px"><defs><marker id="ah39" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah39a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah39b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah39d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="168.3" y1="78.0" x2="255.7" y2="118.0" class="d-line" marker-end="url(#ah39)"/><text x="212.0" y="93.0" text-anchor="middle" class="d-sm d-muted">op</text><line x1="168.3" y1="216.0" x2="255.7" y2="176.0" class="d-line" marker-end="url(#ah39)"/><text x="212.0" y="191.0" text-anchor="middle" class="d-sm d-muted">op</text><line x1="404.0" y1="147.0" x2="448.0" y2="147.0" class="d-line" marker-end="url(#ah39)"/><line x1="596.3" y1="118.0" x2="683.7" y2="78.0" class="d-line" marker-end="url(#ah39)"/><text x="640.0" y="93.0" text-anchor="middle" class="d-sm d-muted">persist</text><line x1="596.3" y1="176.0" x2="683.7" y2="216.0" class="d-line" marker-end="url(#ah39)"/><line x1="448.0" y1="147.0" x2="404.0" y2="147.0" class="d-line" marker-end="url(#ah39)"/><text x="426.0" y="142.0" text-anchor="middle" class="d-sm d-muted">broadcast</text><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="46.0" text-anchor="middle" class="d-sm">Client A</text><text x="105.0" y="61.0" text-anchor="middle" class="d-sm">(local copy, optimistic)</text><rect x="20.0" y="216.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="249.5" text-anchor="middle">Client B</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-c"/><text x="319.0" y="151.5" text-anchor="middle">WebSocket gateway</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="144.0" text-anchor="middle" class="d-sm">Document session server</text><text x="533.0" y="159.0" text-anchor="middle" class="d-sm">(one owner per doc)</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-e"/><text x="747.0" y="53.5" text-anchor="middle" class="d-sm">Operation log + snapshots</text><rect x="662.0" y="216.0" width="170" height="58" rx="8" class="d-e"/><text x="747.0" y="249.5" text-anchor="middle">Presence / cursors</text></svg>
+</div>
+<figcaption>Real-time collaboration: edits go over WebSockets to a session server that sequences and broadcasts them.</figcaption></figure>
+<ul><li><strong>Optimistic local apply</strong>: a client applies its own edit immediately (zero latency), sends it, and reconciles when the server's order arrives.</li><li><strong>One session server per document</strong> keeps ordering simple; route by document id (consistent hashing). Scale by having many documents, not one document on many servers.</li><li><strong>Persistence</strong>: append operations to a log, snapshot periodically so loading does not replay the entire history; this also enables <strong>version history</strong> and undo.</li><li><strong>Presence</strong>: cursors and selections are ephemeral, sent over the same channel with throttling and stored in memory only.</li><li><strong>Large documents</strong>: split into blocks or pages to bound transform cost; limit simultaneous editors for performance.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd16-q06" data-topic="Case studies 4" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why do concurrent edits need transformation or CRDTs?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To compress text <span class="q-why">No.</span></li>
+          <li data-key="B">Applying edits in different orders at different replicas would diverge <span class="q-why">Correct.</span></li>
+          <li data-key="C">To encrypt edits <span class="q-why">No.</span></li>
+          <li data-key="D">To speed up typing <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>OT adjusts positions; CRDTs make operations commutative so every replica converges.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>OT versus CRDT?</summary><div class="answer"><p>OT transforms operations against concurrent ones with a central order; CRDTs use unique ids so operations commute and need no server.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Case studies 4</h2>
+      <p class="muted">7 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Case studies 4">
+<details class="recall iq" data-level="medium" data-topic="Case studies 4"><summary><span class="tag warn">Medium</span> Design a metrics system: pull or push?</summary><div class="answer"><p>Pull gives liveness knowledge and central config; push suits short-lived jobs. Buffer through a queue, store in a compressed time-series database with downsampling and cardinality limits.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 4"><summary><span class="tag warn">Medium</span> Design a leaderboard.</summary><div class="answer"><p>A Redis sorted set with ZADD, ZREVRANK and ZREVRANGE for updates, rank and top-k; separate sets per time window; database as the source of truth.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 4"><summary><span class="tag bad">Advanced</span> Design ad click aggregation with accurate counts.</summary><div class="answer"><p>Kafka partitioned by ad id, stream windows with event time and watermarks, checkpoints and idempotent writes, raw events archived and a batch job reconciling numbers for billing.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 4"><summary><span class="tag bad">Advanced</span> How do you handle a hot key in aggregation?</summary><div class="answer"><p>Add a salt to the key, aggregate partial counts, then merge in a second stage.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 4"><summary><span class="tag bad">Advanced</span> How would you design Kafka?</summary><div class="answer"><p>Partitioned append-only logs with leaders and followers, in-sync replicas and acks, consumer groups with committed offsets, retention and compaction, and a Raft-based controller.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 4"><summary><span class="tag bad">Advanced</span> Design Google Docs collaboration.</summary><div class="answer"><p>WebSocket sessions with one server per document, operational transformation or CRDTs for convergence, optimistic local application, operation log with snapshots and ephemeral presence.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 4"><summary><span class="tag bad">Advanced</span> OT versus CRDT?</summary><div class="answer"><p>OT transforms concurrent operations with a central ordering; CRDTs give every element a unique id so operations commute and no server is needed, at the cost of metadata.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd15-case-3.html"><span class="dir">Previous</span><span>SD15 Case studies 3: video streaming, file sync, ride sharing, ticket booking, payments</span></a>
+      <a class="next" href="sd17-lld.html"><span class="dir">Next</span><span>SD17 Low-level design and design patterns</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

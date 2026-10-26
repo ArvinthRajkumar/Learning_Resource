@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="M06">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>M6 Sorting Algorithms | DSA Master Guide</title>
+<meta name="description" content="Know how the classic sorts work, their complexity, stability and when Python&#x27;s built-in sort is the right answer.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<link rel="stylesheet" href="viz.css">
+<script src="viz.js" defer></script>
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Module 6</p>
+      <h1>Sorting Algorithms</h1>
+      <p class="lede">Know how the classic sorts work, their complexity, stability and when Python's built-in sort is the right answer. Topics in this module: Bubble, selection and insertion sort; merge sort and quick sort; counting sort, heap sort and choosing the right sort.</p>
+      <div class="meta"><span class="tag ok">Essential</span><span class="tag">3 topics</span><span class="tag">8 problems</span><span class="tag">55 interview questions</span></div>
+    </div>
+
+    <section id="why-this-module" data-track>
+      <h2>Start from scratch: why this module exists</h2>
+      <p>Sorting arranges data so that later questions become cheap: finding the median, merging, spotting duplicates, ranking. A huge amount of computing time historically went into sorting, so it has been studied intensely, producing simple O(n^2) methods and the O(n log n) divide-and-conquer methods.</p>
+      <p>You rarely write your own sort in real Python (sorted() is excellent), but understanding sorting teaches divide and conquer, invariants, stability and why n log n is a lower bound for comparison sorting.</p>
+      <p><strong>Who needs it:</strong> Library authors, database engineers, data analysts, and interviewers testing algorithmic fundamentals.</p>
+      <p><strong>Before you start:</strong> Modules 1-3 and recursion basics.</p>
+      <h3>After this module you can</h3>
+      <ul><li>Explain and code bubble, selection, insertion, merge and quick sort.</li><li>State complexity, stability and in-place behaviour.</li><li>Use counting sort when values are small.</li><li>Use sorted() with keys for multi-field sorting.</li></ul>
+      <p><strong>Common pitfalls:</strong> Confusing best/average/worst cases, forgetting stability, quick sort's worst case, sorting when a heap or hash map is enough.</p>
+      <p><strong>Typical interview questions here:</strong> Implement merge/quick sort, compare sorts, count inversions, sort 0/1/2, sort by frequency, k-th largest, merge intervals.</p>
+    </section>
+
+    <section id="c6_1" data-track>
+      <h2>Bubble, selection and insertion sort</h2>
+      <p><span class="tag ok">Essential</span> <span class="tag">Topic 6.1</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>These are simple O(n^2) comparison sorts. Bubble sort swaps adjacent out-of-order pairs, selection sort repeatedly selects the minimum, insertion sort inserts each element into the sorted part on its left.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>They are the foundation for understanding sorting, appear in theory questions, and insertion sort is great for nearly sorted or small data.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Insertion sort is sorting a hand of playing cards: take each new card and slide it left until it fits.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Why do we sort at all? Ordered data makes questions cheap: finding the smallest, searching by halving, spotting duplicates (they sit together), merging two lists, ranking. Sorting is a one-time investment that makes many later operations faster. That is the reason sorting is the most studied problem in computer science.</p>
+      <p>Imagine sorting a hand of playing cards. Most people do insertion sort without knowing it: pick up a card and slide it into place among the cards already sorted. It works well because each insertion only touches nearby cards. Imagine instead laying all cards out and repeatedly choosing the smallest: that is selection sort. Or walking along the row swapping any two neighbours in the wrong order: bubble sort.</p>
+      <p>All three do about n^2 / 2 comparisons in the worst case because each element may have to be compared with many others. That is why they are slow for large inputs but perfectly fine (and simple) for tiny ones.</p>
+      <p>Two properties matter beyond speed. In place: does it need extra memory? Stable: do equal elements keep their original order? Stability matters when you sort by one field after another (sort employees by department, keeping the previous order of names inside each department).</p>
+      <p>Studying slow sorts is not wasted: they teach the invariants (the sorted part grows by one each pass) that you need to prove and debug the fast sorts.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="sort:insertion"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Bubble: repeat passes; each pass pushes the largest remaining value to the end. Stop early if a pass makes no swaps (best case O(n)).</li><li>Selection: find the minimum of the unsorted part, swap it to the front. Always O(n^2), at most n - 1 swaps, NOT stable.</li><li>Insertion: key = nums[i]; shift larger elements one step right; drop key into the gap. Stable, in-place, O(n) when nearly sorted.</li><li>Stable = equal elements keep their original relative order.</li><li>Choose the algorithm in the visualiser and enter your own array; counters show comparisons and swaps.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Sorting means putting items in order. The three simple methods all take O(n^2) time but think differently. Bubble sort compares neighbours and swaps them if they are in the wrong order; after each pass the biggest item 'bubbles' to the end. Selection sort finds the smallest item in the unsorted part and puts it at the front. Insertion sort takes the next item and slides it left into the right place in the already-sorted part.</p>
+      <p>Why learn slow sorts? Interviewers ask about them to see if you understand comparisons, swaps, stability and in-place work. Also insertion sort is genuinely the best choice for tiny lists or lists that are almost sorted, and Python's own Timsort uses it for small chunks.</p>
+      <p>Stable means equal items keep their original order. Imagine sorting students by marks: with a stable sort two students with the same marks stay in the order they were in before. Bubble and insertion sort are stable. Selection sort is not (its long-distance swaps can jump an item over an equal one).</p>
+      <p>In place means the sort needs only O(1) extra memory. All three simple sorts are in place. Bubble sort can stop early when a full pass makes no swaps, which gives O(n) on an already sorted list.</p>
+      <p>Counting swaps in bubble sort equals counting 'inversions' (pairs that are in the wrong order). This is a favourite exam question.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Bubble sort invariant: after pass i the last i elements are in their final positions. Selection sort invariant: after pass i the first i positions hold the i smallest values in order. Insertion sort invariant: after processing i items the first i items are sorted among themselves.</li><li>Number of swaps in bubble sort equals the number of inversions (pairs i &lt; j with a[i] &gt; a[j]); insertion sort's shifts also equal the inversion count, which explains why it is fast on nearly sorted data (few inversions).</li><li>Selection sort does at most n - 1 swaps; useful when writes are expensive (flash memory).</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Library authors</td><td>Insertion sort is used inside production sorts (Python's Timsort, many C++ libraries) for small chunks because it has low overhead.</td></tr><tr><td>Embedded and low-memory systems</td><td>Simple in-place sorts are used when memory and code size are tiny.</td></tr><tr><td>Interviewers and exam setters</td><td>They test whether you understand comparisons, swaps, stability and invariants, and can count operations.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Simple sorts vs sorted()</td><td>For real programs always use sorted/list.sort (Timsort). Use manual sorts only when asked to implement or when explaining.</td></tr><tr><td>Bubble vs insertion</td><td>Both stable and in place. Insertion does fewer writes in practice and is better on nearly sorted data.</td></tr><tr><td>When NOT to use O(n^2) sorts</td><td>Anything beyond a few thousand elements.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>Swap in one line: nums[i], nums[j] = nums[j], nums[i].</li><li>Python's sort() and sorted() are enough for real work; write your own only when asked.</li><li>sorted() returns a NEW list; list.sort() changes the list in place and returns None.</li><li>Descending: sorted(nums, reverse=True).</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c6_1.py">def insertion_sort(nums):
+    for i in range(1, len(nums)):
+        key = nums[i]
+        j = i - 1
+        while j &gt;= 0 and nums[j] &gt; key:
+            nums[j + 1] = nums[j]    # shift bigger element right
+            j -= 1
+        nums[j + 1] = key            # drop key into the gap
+    return nums</code></pre>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - plain bubble sort</h4>
+      <p>Compare neighbours and swap. Always O(n^2), even for sorted input.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c6_1_stage1.py">def sort(a):
+    n = len(a)
+    for i in range(n - 1):
+        for j in range(n - 1 - i):
+            if a[j] &gt; a[j + 1]:
+                a[j], a[j + 1] = a[j + 1], a[j]
+    return a</code></pre>
+      <p class="muted small">Check: <code>sort([5, 2, 4, 1])</code> returns <code>[1, 2, 4, 5]</code></p>
+      <h4>Stage 2 - stop early</h4>
+      <p>If a whole pass makes no swap the list is sorted, so sorted input costs O(n).</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c6_1_stage2.py">def sort(a):
+    n = len(a)
+    for i in range(n - 1):
+        swapped = False
+        for j in range(n - 1 - i):
+            if a[j] &gt; a[j + 1]:
+                a[j], a[j + 1] = a[j + 1], a[j]
+                swapped = True
+        if not swapped:
+            break
+    return a</code></pre>
+      <p class="muted small">Check: <code>sort([5, 2, 4, 1])</code> returns <code>[1, 2, 4, 5]</code></p>
+      <h4>Stage 3 - insertion sort</h4>
+      <p>Slide each element left into place; far fewer writes on nearly sorted data.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c6_1_stage3.py">def sort(a):
+    for i in range(1, len(a)):
+        key, j = a[i], i - 1
+        while j &gt;= 0 and a[j] &gt; key:
+            a[j + 1] = a[j]
+            j -= 1
+        a[j + 1] = key
+    return a</code></pre>
+      <p class="muted small">Check: <code>sort([5, 2, 4, 1])</code> returns <code>[1, 2, 4, 5]</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>insertion_sort([4, 3, 2, 1])</code>, returns <code>[1, 2, 3, 4]</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>i (after)</th><th>key (after)</th><th>j (after)</th><th>nums (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>for i in range(1, len(nums)):</code></td><td><strong><code>1</code></strong></td><td>-</td><td>-</td><td><strong><code>[4, 3, 2, 1]</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>key = nums[i]</code></td><td><code>1</code></td><td><strong><code>3</code></strong></td><td>-</td><td><code>[4, 3, 2, 1]</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>j = i - 1</code></td><td><code>1</code></td><td><code>3</code></td><td><strong><code>0</code></strong></td><td><code>[4, 3, 2, 1]</code></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>while j &gt;= 0 and nums[j] &gt; key:</code></td><td><code>1</code></td><td><code>3</code></td><td><code>0</code></td><td><code>[4, 3, 2, 1]</code></td></tr>
+<tr><td class="num">5</td><td class="num">6</td><td><code>nums[j + 1] = nums[j]    # shift bigger element right</code></td><td><code>1</code></td><td><code>3</code></td><td><code>0</code></td><td><strong><code>[4, 4, 2, 1]</code></strong></td></tr>
+<tr><td class="num">6</td><td class="num">7</td><td><code>j -= 1</code></td><td><code>1</code></td><td><code>3</code></td><td><strong><code>-1</code></strong></td><td><code>[4, 4, 2, 1]</code></td></tr>
+<tr><td class="num">7</td><td class="num">5</td><td><code>while j &gt;= 0 and nums[j] &gt; key:</code></td><td><code>1</code></td><td><code>3</code></td><td><code>-1</code></td><td><code>[4, 4, 2, 1]</code></td></tr>
+<tr><td class="num">8</td><td class="num">8</td><td><code>nums[j + 1] = key            # drop key into the gap</code></td><td><code>1</code></td><td><code>3</code></td><td><code>-1</code></td><td><strong><code>[3, 4, 2, 1]</code></strong></td></tr>
+<tr><td class="num">9</td><td class="num">2</td><td><code>for i in range(1, len(nums)):</code></td><td><strong><code>2</code></strong></td><td><code>3</code></td><td><code>-1</code></td><td><code>[3, 4, 2, 1]</code></td></tr>
+<tr><td class="num">10</td><td class="num">3</td><td><code>key = nums[i]</code></td><td><code>2</code></td><td><strong><code>2</code></strong></td><td><code>-1</code></td><td><code>[3, 4, 2, 1]</code></td></tr>
+<tr><td class="num">11</td><td class="num">4</td><td><code>j = i - 1</code></td><td><code>2</code></td><td><code>2</code></td><td><strong><code>1</code></strong></td><td><code>[3, 4, 2, 1]</code></td></tr>
+<tr><td class="num">12</td><td class="num">5</td><td><code>while j &gt;= 0 and nums[j] &gt; key:</code></td><td><code>2</code></td><td><code>2</code></td><td><code>1</code></td><td><code>[3, 4, 2, 1]</code></td></tr>
+<tr><td class="num">13</td><td class="num">6</td><td><code>nums[j + 1] = nums[j]    # shift bigger element right</code></td><td><code>2</code></td><td><code>2</code></td><td><code>1</code></td><td><strong><code>[3, 4, 4, 1]</code></strong></td></tr>
+<tr><td class="num">14</td><td class="num">7</td><td><code>j -= 1</code></td><td><code>2</code></td><td><code>2</code></td><td><strong><code>0</code></strong></td><td><code>[3, 4, 4, 1]</code></td></tr>
+<tr><td class="num">15</td><td class="num">5</td><td><code>while j &gt;= 0 and nums[j] &gt; key:</code></td><td><code>2</code></td><td><code>2</code></td><td><code>0</code></td><td><code>[3, 4, 4, 1]</code></td></tr>
+<tr><td class="num">16</td><td class="num">6</td><td><code>nums[j + 1] = nums[j]    # shift bigger element right</code></td><td><code>2</code></td><td><code>2</code></td><td><code>0</code></td><td><strong><code>[3, 3, 4, 1]</code></strong></td></tr>
+<tr><td class="num">17</td><td class="num">7</td><td><code>j -= 1</code></td><td><code>2</code></td><td><code>2</code></td><td><strong><code>-1</code></strong></td><td><code>[3, 3, 4, 1]</code></td></tr>
+<tr><td class="num">18</td><td class="num">5</td><td><code>while j &gt;= 0 and nums[j] &gt; key:</code></td><td><code>2</code></td><td><code>2</code></td><td><code>-1</code></td><td><code>[3, 3, 4, 1]</code></td></tr>
+<tr><td class="num">19</td><td class="num">8</td><td><code>nums[j + 1] = key            # drop key into the gap</code></td><td><code>2</code></td><td><code>2</code></td><td><code>-1</code></td><td><strong><code>[2, 3, 4, 1]</code></strong></td></tr>
+<tr><td class="num">20</td><td class="num">2</td><td><code>for i in range(1, len(nums)):</code></td><td><strong><code>3</code></strong></td><td><code>2</code></td><td><code>-1</code></td><td><code>[2, 3, 4, 1]</code></td></tr>
+<tr><td class="num">21</td><td class="num">3</td><td><code>key = nums[i]</code></td><td><code>3</code></td><td><strong><code>1</code></strong></td><td><code>-1</code></td><td><code>[2, 3, 4, 1]</code></td></tr>
+<tr><td class="num">22</td><td class="num">4</td><td><code>j = i - 1</code></td><td><code>3</code></td><td><code>1</code></td><td><strong><code>2</code></strong></td><td><code>[2, 3, 4, 1]</code></td></tr>
+<tr><td class="num">23</td><td class="num">5</td><td><code>while j &gt;= 0 and nums[j] &gt; key:</code></td><td><code>3</code></td><td><code>1</code></td><td><code>2</code></td><td><code>[2, 3, 4, 1]</code></td></tr>
+<tr><td class="num">24</td><td class="num">6</td><td><code>nums[j + 1] = nums[j]    # shift bigger element right</code></td><td><code>3</code></td><td><code>1</code></td><td><code>2</code></td><td><strong><code>[2, 3, 4, 4]</code></strong></td></tr>
+<tr><td class="num">25</td><td class="num">7</td><td><code>j -= 1</code></td><td><code>3</code></td><td><code>1</code></td><td><strong><code>1</code></strong></td><td><code>[2, 3, 4, 4]</code></td></tr>
+<tr><td class="num">26</td><td class="num">5</td><td><code>while j &gt;= 0 and nums[j] &gt; key:</code></td><td><code>3</code></td><td><code>1</code></td><td><code>1</code></td><td><code>[2, 3, 4, 4]</code></td></tr>
+<tr><td class="num">27</td><td class="num">6</td><td><code>nums[j + 1] = nums[j]    # shift bigger element right</code></td><td><code>3</code></td><td><code>1</code></td><td><code>1</code></td><td><strong><code>[2, 3, 3, 4]</code></strong></td></tr>
+<tr><td class="num">28</td><td class="num">7</td><td><code>j -= 1</code></td><td><code>3</code></td><td><code>1</code></td><td><strong><code>0</code></strong></td><td><code>[2, 3, 3, 4]</code></td></tr>
+<tr><td class="num">29</td><td class="num">5</td><td><code>while j &gt;= 0 and nums[j] &gt; key:</code></td><td><code>3</code></td><td><code>1</code></td><td><code>0</code></td><td><code>[2, 3, 3, 4]</code></td></tr>
+<tr><td class="num">30</td><td class="num">6</td><td><code>nums[j + 1] = nums[j]    # shift bigger element right</code></td><td><code>3</code></td><td><code>1</code></td><td><code>0</code></td><td><strong><code>[2, 2, 3, 4]</code></strong></td></tr>
+<tr><td class="num">31</td><td class="num">7</td><td><code>j -= 1</code></td><td><code>3</code></td><td><code>1</code></td><td><strong><code>-1</code></strong></td><td><code>[2, 2, 3, 4]</code></td></tr>
+<tr><td class="num">32</td><td class="num">5</td><td><code>while j &gt;= 0 and nums[j] &gt; key:</code></td><td><code>3</code></td><td><code>1</code></td><td><code>-1</code></td><td><code>[2, 2, 3, 4]</code></td></tr>
+<tr><td class="num">33</td><td class="num">8</td><td><code>nums[j + 1] = key            # drop key into the gap</code></td><td><code>3</code></td><td><code>1</code></td><td><code>-1</code></td><td><strong><code>[1, 2, 3, 4]</code></strong></td></tr>
+<tr><td class="num">34</td><td class="num">2</td><td><code>for i in range(1, len(nums)):</code></td><td><code>3</code></td><td><code>1</code></td><td><code>-1</code></td><td><code>[1, 2, 3, 4]</code></td></tr>
+<tr><td class="num">35</td><td class="num">9</td><td><code>return nums</code></td><td><code>3</code></td><td><code>1</code></td><td><code>-1</code></td><td><code>[1, 2, 3, 4]</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>Worst/average O(n^2); best O(n) for insertion and optimised bubble; selection is always O(n^2). Space O(1).</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Off-by-one in the inner loop bounds.</li><li>Forgetting the early exit in bubble sort.</li><li>Assuming selection sort is stable.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>Tiny n or "nearly sorted" input -&gt; insertion sort.</li><li>Counting swaps/inversions can be asked directly.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m06-problems.html#prob-bubble_swaps">Count Bubble Sort Swaps</a></td><td><span class="tag ok">Easy</span></td><td>Bubble sort</td></tr><tr><td><a href="m06-problems.html#prob-insertion_sort_impl">Implement Insertion Sort</a></td><td><span class="tag ok">Easy</span></td><td>Sorting by hand</td></tr><tr><td><a href="m06-problems.html#prob-sort_colors">Sort 0s, 1s and 2s (Dutch National Flag)</a> <span class="tag">LC 75</span></td><td><span class="tag warn">Medium</span></td><td>Sorting, three pointers</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why learn bubble sort when nobody uses it?</summary><div class="answer"><p>It teaches comparisons, swaps, invariants and counting operations. These ideas explain every other sort.</p></div></details>
+        <details class="recall"><summary>Why is insertion sort fast on nearly sorted data?</summary><div class="answer"><p>Each element moves only a short distance, so total shifts equal the small number of inversions.</p></div></details>
+        <details class="recall"><summary>Why is selection sort not stable?</summary><div class="answer"><p>Its long-distance swap can jump an element over an equal one, changing their original order.</p></div></details>
+        <details class="recall"><summary>Why not use O(n^2) sorts for big inputs?</summary><div class="answer"><p>n = 10^5 means 10^10 steps. Use sorted() or merge/quick sort.</p></div></details>
+        <details class="recall"><summary>Why add a swapped flag to bubble sort?</summary><div class="answer"><p>If a pass makes no swap, the list is sorted, so you can stop early.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c6_1-q1" data-topic="Sorting Algorithms" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which of these is stable?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Selection sort</li>
+          <li data-key="B">Insertion sort</li>
+          <li data-key="C">Heap sort</li>
+          <li data-key="D">Quick sort (typical)</li>
+        </ul>
+        <div class="q-explain"><p>Insertion sort only moves an element past strictly greater ones.</p></div>
+      </div>
+      <div class="quiz" data-qid="c6_1-q2" data-topic="Sorting Algorithms" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Best-case time of insertion sort?</p></div>
+        <ul class="q-options">
+          <li data-key="A">O(1)</li>
+          <li data-key="B">O(n)</li>
+          <li data-key="C">O(n log n)</li>
+          <li data-key="D">O(n^2)</li>
+        </ul>
+        <div class="q-explain"><p>On sorted input the inner loop never runs.</p></div>
+      </div>
+    </section>
+
+    <section id="c6_2" data-track>
+      <h2>Merge sort and quick sort</h2>
+      <p><span class="tag ok">Essential</span> <span class="tag">Topic 6.2</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>Both use divide and conquer. Merge sort splits the list in half, sorts both halves and merges them. Quick sort picks a pivot, partitions smaller values left and larger right, then sorts each side.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>They are the O(n log n) sorts you will actually be asked about. Merge sort also solves "count inversions" style problems.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Merge sort: two exam-paper piles already sorted are combined by repeatedly taking the lower top paper. Quick sort: pick a reference student and make everyone shorter stand left and taller stand right.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>O(n^2) sorting is too slow for a million items (10^12 steps). We need an idea that avoids comparing everything with everything. The idea: divide and conquer. Split the big sorting job into smaller sorting jobs, sort those, and put the results together cheaply. If combining is O(n) and you can halve the problem log n times, the total is O(n log n).</p>
+      <p>Merge sort puts the work in combining. Merging two sorted lists is cheap because you only ever look at the two front items. That is the key insight: sorted pieces combine in linear time.</p>
+      <p>Quick sort puts the work in splitting. Pick a pivot and place every smaller item to its left and every larger item to its right. The pivot is now in its final position and the two sides are independent subproblems that can be sorted separately; no combining is needed. If the pivot lands near the middle, depth is log n; if it lands near an end every time, depth is n and the cost collapses to O(n^2).</p>
+      <p>Why is quick sort usually faster than merge sort on arrays? It sorts in place without copying, and scanning memory sequentially is cache friendly. Why is merge sort used for linked lists and external (disk) sorting? Merging needs only sequential access.</p>
+      <p>Randomising the pivot makes the bad case astronomically unlikely, regardless of input order, which is why it is the standard fix.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="sort:merge"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Merge sort: split until each piece has 1 element, then merge pieces back. Merge uses two pointers on sorted lists.</li><li>Complexity: log n levels of splitting and O(n) merging work per level = O(n log n) always. Needs O(n) extra space. Stable.</li><li>Quick sort (Lomuto): pivot = last element. Move i to track the boundary of smaller values; swap smaller elements behind the boundary; finally put the pivot at position i + 1.</li><li>Average O(n log n); worst O(n^2) when the pivot is always the min or max (sorted input with a bad pivot). Randomised pivots avoid this. In place, not stable.</li><li>Use the animation to see the pivot (purple) and partition boundary or the merging of halves.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Both fast sorts use divide and conquer: split a big problem into smaller ones, solve them, and put the answers together. Merge sort does the hard work when COMBINING; quick sort does the hard work when SPLITTING.</p>
+      <p>Merge sort: cut the list in half until you have lists of 1 item (already sorted). Then merge two sorted lists into one by repeatedly taking the smaller front item. There are about log n levels and each level costs O(n) to merge, so O(n log n) always. It needs extra memory (O(n)) but it is stable and predictable.</p>
+      <p>Quick sort: pick a pivot, then rearrange so smaller items are left of the pivot and larger items right (partition). The pivot is now in its final place. Sort the left and right parts the same way. On average O(n log n) and very fast in practice because it works in place. If the pivot is always the smallest or biggest item, it degrades to O(n^2). Choosing a random pivot makes this very unlikely.</p>
+      <p>Which to choose? Need guaranteed speed or stability, or sorting linked lists: merge sort. Need in-place and fastest on average for arrays: quick sort. In Python just use sorted().</p>
+      <p>Merge sort can be modified to count inversions: when you take an item from the right half, all items still waiting in the left half are bigger than it, so add that count. This is why merge sort appears in harder questions.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Merge sort recursion tree: log2(n) levels, each doing O(n) merging work, so O(n log n) regardless of data. It needs an auxiliary array of size n (O(n) extra space).</li><li>Quick sort partition (Lomuto): i marks the end of the 'smaller than pivot' zone. Hoare's partition does fewer swaps. Worst-case input for a naive pivot is an already-sorted array.</li><li>Median-of-three (first, middle, last) or random pivot avoids that. Introsort switches to heap sort when recursion depth gets too large, guaranteeing O(n log n).</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Library authors</td><td>Python's Timsort and Java's object sort are merge-based (stable). C and C++ often use introsort (quick sort with a heap sort fallback).</td></tr><tr><td>Database and big-data systems</td><td>External merge sort sorts files bigger than memory by sorting chunks and merging them. It is the heart of MapReduce-style shuffles.</td></tr><tr><td>Interviewers</td><td>Sorting is the textbook divide-and-conquer example, and counting inversions or finding the k-th element are common follow-ups.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Merge vs quick vs heap</td><td>Merge: stable, O(n log n) always, extra memory. Quick: fastest typical, in place, not stable, O(n^2) worst. Heap: O(n log n) always, in place, slower in practice, not stable.</td></tr><tr><td>Recursion depth</td><td>Quick sort should recurse on the smaller partition first to keep stack O(log n).</td></tr><tr><td>Python practicality</td><td>Use sorted(); implement merge/quick sort only when asked. Python's recursion limit makes naive quick sort on big adversarial inputs risky.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>heapq.merge(a, b) merges sorted iterables lazily.</li><li>random.randint(lo, hi) picks a random pivot index.</li><li>Slicing nums[:mid] makes copies; fine for exams (still O(n log n) overall).</li><li>functools.cmp_to_key lets you sort with a custom compare function.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c6_2.py">def merge_sort(nums):
+    if len(nums) &lt;= 1:
+        return nums
+    mid = len(nums) // 2
+    left, right = merge_sort(nums[:mid]), merge_sort(nums[mid:])
+    merged, i, j = [], 0, 0
+    while i &lt; len(left) and j &lt; len(right):
+        if left[i] &lt;= right[j]:           # &lt;= keeps the sort stable
+            merged.append(left[i]); i += 1
+        else:
+            merged.append(right[j]); j += 1
+    return merged + left[i:] + right[j:]
+
+def quick_sort(nums, lo=0, hi=None):
+    if hi is None:
+        hi = len(nums) - 1
+    if lo &lt; hi:
+        pivot, i = nums[hi], lo - 1
+        for j in range(lo, hi):
+            if nums[j] &lt;= pivot:          # belongs on the left side
+                i += 1
+                nums[i], nums[j] = nums[j], nums[i]
+        nums[i + 1], nums[hi] = nums[hi], nums[i + 1]
+        quick_sort(nums, lo, i)           # left of pivot
+        quick_sort(nums, i + 2, hi)       # right of pivot
+    return nums</code></pre>
+      <h3>Dry run (variable values at every step)</h3>
+      <p>Trace the code by hand on a tiny input and write down every variable after each line.</p>
+      <h3>Time and space complexity</h3>
+      <p>Merge sort: O(n log n) always, O(n) space. Quick sort: O(n log n) average, O(n^2) worst, O(log n) stack space.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Merge step forgetting the leftover elements.</li><li>Quick sort pivot choice causing O(n^2) on sorted input.</li><li>Recursing with wrong boundaries (i + 1 vs i + 2).</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>Need guaranteed O(n log n) or stable -&gt; merge sort. Need in-place and fast on average -&gt; quick sort.</li><li>"Count inversions/smaller elements to the right" -&gt; modified merge sort.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m06-problems.html#prob-sort_by_frequency">Sort by Frequency</a></td><td><span class="tag warn">Medium</span></td><td>Sorting with a key, hashing</td></tr><tr><td><a href="m06-problems.html#prob-merge_sort_impl">Implement Merge Sort</a></td><td><span class="tag warn">Medium</span></td><td>Divide and conquer</td></tr><tr><td><a href="m06-problems.html#prob-count_inversions">Count Inversions</a></td><td><span class="tag bad">Hard</span></td><td>Merge sort application</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why does merge sort always take O(n log n)?</summary><div class="answer"><p>It halves the list log n times and each level merges n items, regardless of the order of the input.</p></div></details>
+        <details class="recall"><summary>Why can quick sort be O(n^2)?</summary><div class="answer"><p>If the pivot is always the smallest or largest, one side is empty and the depth becomes n.</p></div></details>
+        <details class="recall"><summary>Why use a random pivot?</summary><div class="answer"><p>No fixed input can force the worst case, so bad splits become extremely unlikely.</p></div></details>
+        <details class="recall"><summary>Why does merge sort need extra memory?</summary><div class="answer"><p>Merging two halves needs a place to write the combined result.</p></div></details>
+        <details class="recall"><summary>Why is quick sort usually faster in practice?</summary><div class="answer"><p>It sorts in place and scans memory sequentially, which uses the CPU cache well.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c6_2-q1" data-topic="Sorting Algorithms" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Worst-case complexity of quick sort?</p></div>
+        <ul class="q-options">
+          <li data-key="A">O(n log n)</li>
+          <li data-key="B">O(n^2)</li>
+          <li data-key="C">O(n)</li>
+          <li data-key="D">O(log n)</li>
+        </ul>
+        <div class="q-explain"><p>Unbalanced partitions repeatedly peel off one element.</p></div>
+      </div>
+      <div class="quiz" data-qid="c6_2-q2" data-topic="Sorting Algorithms" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Which sort needs O(n) extra space?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Quick sort</li>
+          <li data-key="B">Heap sort</li>
+          <li data-key="C">Merge sort</li>
+          <li data-key="D">Insertion sort</li>
+        </ul>
+        <div class="q-explain"><p>Merging builds a new combined list.</p></div>
+      </div>
+    </section>
+
+    <section id="c6_3" data-track>
+      <h2>Counting sort, heap sort and choosing the right sort</h2>
+      <p><span class="tag warn">Important</span> <span class="tag">Topic 6.3</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>Counting sort counts occurrences of each small integer value and rebuilds the output. Heap sort builds a max-heap and repeatedly moves the largest to the end.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Counting sort beats O(n log n) when the value range is small. Heap sort gives O(n log n) with O(1) extra space and no bad worst case.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Counting sort is sorting exam marks (0-100) by dropping each paper into one of 101 labelled trays, then reading the trays in order.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>There is a famous result: any algorithm that sorts by comparing pairs of elements needs at least about n log n comparisons in the worst case. Think of a decision tree: with n! possible orders and each comparison giving one of two answers, you need at least log2(n!) which is about n log n comparisons.</p>
+      <p>To beat n log n you must stop comparing and use extra knowledge about the data. Counting sort knows the values are small integers, so it can drop each item straight into its bucket (a tally slot) in O(1). Radix sort extends this to big numbers by sorting digit by digit. This shows a deep idea: more assumptions about the data can buy more speed.</p>
+      <p>Heap sort comes from a different place: a heap can always hand you the maximum cheaply (O(log n)). If you build a heap and repeatedly take the max, you get a sorted order. The structure does the comparing work. It uses no extra memory and has no bad case, which is why it is a safety net inside introsort.</p>
+      <p>Python's Timsort observed that real-world data often contains already-ordered runs. It detects the runs and merges them, doing less than n log n work on such data, while staying stable and never worse than O(n log n).</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="sort:counting"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Counting sort: counts = [0] * (max+1); counts[x] += 1 for each x; then output each value counts[v] times. O(n + k) where k = value range.</li><li>Heap sort: heapify the array into a max-heap (O(n)), then repeat: swap the root (max) with the last unsorted element, shrink the heap, sift the new root down.</li><li>Python's sorted() / list.sort() use Timsort: stable, O(n log n), fast on partially sorted data. In an assessment, use it unless the problem forbids it.</li><li>Sort with a key: sorted(words, key=len), sorted(pairs, key=lambda p: (-p[1], p[0])), reverse=True for descending.</li><li>Choosing: small n -&gt; any; stability needed -&gt; merge/insertion/Timsort; tiny integer range -&gt; counting; memory-tight guaranteed bound -&gt; heap sort.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Counting sort does not compare items at all. If you know all values are small whole numbers (like marks 0-100 or letters), make a tally list where index = value, count each item, and then write each value out as many times as its tally. It costs O(n + k) where k is the largest value. For small k this beats O(n log n).</p>
+      <p>Heap sort first turns the list into a max-heap (a tree where every parent is bigger than its children). The biggest item is at the root, so you swap it to the end of the list, shrink the heap by one, and fix the heap. Repeat. It is O(n log n) always and in place, but not stable and not as fast as quick sort in practice.</p>
+      <p>Python's built-in sort is Timsort. It looks for runs that are already in order, uses insertion sort on small pieces and merges runs. It is stable, O(n log n) worst case and O(n) on nearly sorted data. In a coding round, use it unless told otherwise.</p>
+      <p>The key argument is powerful: sorted(items, key=f) sorts by the value of f(item). For multiple fields return a tuple. For descending numbers return the negative: key=lambda p: (-p.score, p.name).</p>
+      <p>Stability trick: to sort by two criteria you can sort by the less important one first and the more important one second, because a stable sort keeps the earlier order for ties.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Counting sort: counts array of size k + 1; then either rebuild from counts (unstable, simple) or compute prefix sums of counts to place items into an output array (stable). Time O(n + k), space O(n + k).</li><li>Heap sort: building a max-heap bottom-up is O(n); each of n extractions is O(log n), so total O(n log n). The sorted part grows at the end of the same array.</li><li>Timsort: finds natural runs, extends short runs with insertion sort (minrun about 32-64) and merges runs with rules that keep merges balanced, giving worst case O(n log n) and best case O(n).</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Data pipelines</td><td>Counting/bucket sorts rank exam scores, ages and other small-range numbers in linear time.</td></tr><tr><td>Embedded and real-time systems</td><td>Heap sort's guaranteed bound and O(1) memory suit hard real-time needs.</td></tr><tr><td>Language runtimes</td><td>Timsort powers Python's sort and Java's object sort, optimised for real, partly ordered data.</td></tr><tr><td>Interviewers</td><td>Questions probe whether you know when O(n) sorting is possible and which sort to use under constraints.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Counting sort vs comparison sorts</td><td>Counting wins when the value range k is O(n). If k is huge (like 10^9) it wastes memory; use a comparison sort or radix sort.</td></tr><tr><td>Heap sort vs quick sort</td><td>Heap sort has a guaranteed bound and O(1) space but is slower in practice and not stable.</td></tr><tr><td>Custom key vs writing your own sort</td><td>In Python, sorted(key=...) almost always replaces hand-written sorting for multi-field cases.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>sorted(words, key=str.lower) sorts ignoring case.</li><li>sorted(d.items(), key=lambda kv: kv[1], reverse=True) sorts a dict by value.</li><li>nums.sort(key=abs) sorts by absolute value.</li><li>sorted(zip(a, b)) sorts pairs by a first, then b.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c6_3.py">def counting_sort(nums):
+    if not nums:
+        return nums
+    counts = [0] * (max(nums) + 1)
+    for x in nums:
+        counts[x] += 1                 # tally
+    out = []
+    for value, c in enumerate(counts):
+        out.extend([value] * c)        # rebuild in order
+    return out
+
+def heap_sort(nums):
+    n = len(nums)
+    def sift_down(i, size):
+        while True:
+            big, l, r = i, 2 * i + 1, 2 * i + 2
+            if l &lt; size and nums[l] &gt; nums[big]: big = l
+            if r &lt; size and nums[r] &gt; nums[big]: big = r
+            if big == i:
+                return
+            nums[i], nums[big] = nums[big], nums[i]
+            i = big
+    for i in range(n // 2 - 1, -1, -1):    # build max-heap
+        sift_down(i, n)
+    for end in range(n - 1, 0, -1):        # move max to the end
+        nums[0], nums[end] = nums[end], nums[0]
+        sift_down(0, end)
+    return nums</code></pre>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Dry run of the related problem "Sort 0s, 1s and 2s (Dutch National Flag)": Call: <code>sort_colors([2, 0, 1, 0])</code>, returns <code>[0, 0, 1, 2]</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>lo (after)</th><th>mid (after)</th><th>hi (after)</th><th>nums (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>lo, mid, hi = 0, 0, len(nums) - 1</code></td><td><strong><code>0</code></strong></td><td><strong><code>0</code></strong></td><td><strong><code>3</code></strong></td><td><strong><code>[2, 0, 1, 0]</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>while mid &lt;= hi:</code></td><td><code>0</code></td><td><code>0</code></td><td><code>3</code></td><td><code>[2, 0, 1, 0]</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>if nums[mid] == 0:</code></td><td><code>0</code></td><td><code>0</code></td><td><code>3</code></td><td><code>[2, 0, 1, 0]</code></td></tr>
+<tr><td class="num">4</td><td class="num">8</td><td><code>elif nums[mid] == 1:</code></td><td><code>0</code></td><td><code>0</code></td><td><code>3</code></td><td><code>[2, 0, 1, 0]</code></td></tr>
+<tr><td class="num">5</td><td class="num">11</td><td><code>nums[mid], nums[hi] = nums[hi], nums[mid]</code></td><td><code>0</code></td><td><code>0</code></td><td><code>3</code></td><td><strong><code>[0, 0, 1, 2]</code></strong></td></tr>
+<tr><td class="num">6</td><td class="num">12</td><td><code>hi -= 1</code></td><td><code>0</code></td><td><code>0</code></td><td><strong><code>2</code></strong></td><td><code>[0, 0, 1, 2]</code></td></tr>
+<tr><td class="num">7</td><td class="num">3</td><td><code>while mid &lt;= hi:</code></td><td><code>0</code></td><td><code>0</code></td><td><code>2</code></td><td><code>[0, 0, 1, 2]</code></td></tr>
+<tr><td class="num">8</td><td class="num">4</td><td><code>if nums[mid] == 0:</code></td><td><code>0</code></td><td><code>0</code></td><td><code>2</code></td><td><code>[0, 0, 1, 2]</code></td></tr>
+<tr><td class="num">9</td><td class="num">5</td><td><code>nums[lo], nums[mid] = nums[mid], nums[lo]</code></td><td><code>0</code></td><td><code>0</code></td><td><code>2</code></td><td><code>[0, 0, 1, 2]</code></td></tr>
+<tr><td class="num">10</td><td class="num">6</td><td><code>lo += 1</code></td><td><strong><code>1</code></strong></td><td><code>0</code></td><td><code>2</code></td><td><code>[0, 0, 1, 2]</code></td></tr>
+<tr><td class="num">11</td><td class="num">7</td><td><code>mid += 1</code></td><td><code>1</code></td><td><strong><code>1</code></strong></td><td><code>2</code></td><td><code>[0, 0, 1, 2]</code></td></tr>
+<tr><td class="num">12</td><td class="num">3</td><td><code>while mid &lt;= hi:</code></td><td><code>1</code></td><td><code>1</code></td><td><code>2</code></td><td><code>[0, 0, 1, 2]</code></td></tr>
+<tr><td class="num">13</td><td class="num">4</td><td><code>if nums[mid] == 0:</code></td><td><code>1</code></td><td><code>1</code></td><td><code>2</code></td><td><code>[0, 0, 1, 2]</code></td></tr>
+<tr><td class="num">14</td><td class="num">5</td><td><code>nums[lo], nums[mid] = nums[mid], nums[lo]</code></td><td><code>1</code></td><td><code>1</code></td><td><code>2</code></td><td><code>[0, 0, 1, 2]</code></td></tr>
+<tr><td class="num">15</td><td class="num">6</td><td><code>lo += 1</code></td><td><strong><code>2</code></strong></td><td><code>1</code></td><td><code>2</code></td><td><code>[0, 0, 1, 2]</code></td></tr>
+<tr><td class="num">16</td><td class="num">7</td><td><code>mid += 1</code></td><td><code>2</code></td><td><strong><code>2</code></strong></td><td><code>2</code></td><td><code>[0, 0, 1, 2]</code></td></tr>
+<tr><td class="num">17</td><td class="num">3</td><td><code>while mid &lt;= hi:</code></td><td><code>2</code></td><td><code>2</code></td><td><code>2</code></td><td><code>[0, 0, 1, 2]</code></td></tr>
+<tr><td class="num">18</td><td class="num">4</td><td><code>if nums[mid] == 0:</code></td><td><code>2</code></td><td><code>2</code></td><td><code>2</code></td><td><code>[0, 0, 1, 2]</code></td></tr>
+<tr><td class="num">19</td><td class="num">8</td><td><code>elif nums[mid] == 1:</code></td><td><code>2</code></td><td><code>2</code></td><td><code>2</code></td><td><code>[0, 0, 1, 2]</code></td></tr>
+<tr><td class="num">20</td><td class="num">9</td><td><code>mid += 1</code></td><td><code>2</code></td><td><strong><code>3</code></strong></td><td><code>2</code></td><td><code>[0, 0, 1, 2]</code></td></tr>
+<tr><td class="num">21</td><td class="num">3</td><td><code>while mid &lt;= hi:</code></td><td><code>2</code></td><td><code>3</code></td><td><code>2</code></td><td><code>[0, 0, 1, 2]</code></td></tr>
+<tr><td class="num">22</td><td class="num">13</td><td><code>return nums</code></td><td><code>2</code></td><td><code>3</code></td><td><code>2</code></td><td><code>[0, 0, 1, 2]</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>Counting sort O(n + k) time and space (negatives/large ranges need adjustment). Heap sort O(n log n) time, O(1) space, not stable.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Using counting sort with huge value ranges (memory blowup).</li><li>Negative numbers in counting sort without an offset.</li><li>Writing your own sort when sorted() is allowed.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>Values limited to 0..100 or letters a-z -&gt; counting.</li><li>"Sort by multiple criteria" -&gt; key with tuple.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m06-problems.html#prob-sort_by_length">Sort Words by Length then Alphabet</a></td><td><span class="tag ok">Easy</span></td><td>Sorting with key</td></tr><tr><td><a href="m06-problems.html#prob-sort_by_frequency">Sort by Frequency</a></td><td><span class="tag warn">Medium</span></td><td>Sorting with a key, hashing</td></tr><tr><td><a href="m06-problems.html#prob-sort_colors">Sort 0s, 1s and 2s (Dutch National Flag)</a> <span class="tag">LC 75</span></td><td><span class="tag warn">Medium</span></td><td>Sorting, three pointers</td></tr><tr><td><a href="m06-problems.html#prob-largest_number">Arrange Numbers to Form the Largest Number</a></td><td><span class="tag bad">Hard</span></td><td>Custom sort order</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why can counting sort beat n log n?</summary><div class="answer"><p>It does not compare items; it uses the values as indexes. The n log n bound applies only to comparison sorts.</p></div></details>
+        <details class="recall"><summary>Why not use counting sort for any list?</summary><div class="answer"><p>If the value range is huge (like 10^9), the count array needs too much memory.</p></div></details>
+        <details class="recall"><summary>Why use heap sort?</summary><div class="answer"><p>It guarantees O(n log n) and sorts in place with O(1) extra memory.</p></div></details>
+        <details class="recall"><summary>Why is Timsort fast on real data?</summary><div class="answer"><p>Real data often has ordered runs. Timsort detects and merges them, doing less work than n log n.</p></div></details>
+        <details class="recall"><summary>Why sort with key= instead of cmp?</summary><div class="answer"><p>A key is computed once per element and is faster and simpler than comparing pairs with a function.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c6_3-q1" data-topic="Sorting Algorithms" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Counting sort time complexity (range k)?</p></div>
+        <ul class="q-options">
+          <li data-key="A">O(n log n)</li>
+          <li data-key="B">O(n + k)</li>
+          <li data-key="C">O(n^2)</li>
+          <li data-key="D">O(k^2)</li>
+        </ul>
+        <div class="q-explain"><p>One pass to count (n) and one pass over the range (k).</p></div>
+      </div>
+      <div class="quiz" data-qid="c6_3-q2" data-topic="Sorting Algorithms" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Python's built-in sort is a...</p></div>
+        <ul class="q-options">
+          <li data-key="A">Quick sort</li>
+          <li data-key="B">Heap sort</li>
+          <li data-key="C">Timsort (stable)</li>
+          <li data-key="D">Bubble sort</li>
+        </ul>
+        <div class="q-explain"><p>Timsort is a hybrid of merge and insertion sort, and it is stable.</p></div>
+      </div>
+    </section>
+
+    <h2 id="practice-problems">Practice problems for this module</h2>
+
+    <p>8 problems with hints, approach, dry run and tested solutions on the <a href="m06-problems.html">problem set for this module</a>.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m06-problems.html#prob-bubble_swaps">Count Bubble Sort Swaps</a></td><td><span class="tag ok">Easy</span></td><td>Bubble sort</td></tr><tr><td><a href="m06-problems.html#prob-insertion_sort_impl">Implement Insertion Sort</a></td><td><span class="tag ok">Easy</span></td><td>Sorting by hand</td></tr><tr><td><a href="m06-problems.html#prob-sort_by_length">Sort Words by Length then Alphabet</a></td><td><span class="tag ok">Easy</span></td><td>Sorting with key</td></tr><tr><td><a href="m06-problems.html#prob-sort_colors">Sort 0s, 1s and 2s (Dutch National Flag)</a> <span class="tag">LC 75</span></td><td><span class="tag warn">Medium</span></td><td>Sorting, three pointers</td></tr><tr><td><a href="m06-problems.html#prob-sort_by_frequency">Sort by Frequency</a></td><td><span class="tag warn">Medium</span></td><td>Sorting with a key, hashing</td></tr><tr><td><a href="m06-problems.html#prob-merge_sort_impl">Implement Merge Sort</a></td><td><span class="tag warn">Medium</span></td><td>Divide and conquer</td></tr><tr><td><a href="m06-problems.html#prob-count_inversions">Count Inversions</a></td><td><span class="tag bad">Hard</span></td><td>Merge sort application</td></tr><tr><td><a href="m06-problems.html#prob-largest_number">Arrange Numbers to Form the Largest Number</a></td><td><span class="tag bad">Hard</span></td><td>Custom sort order</td></tr>
+</tbody>
+</table>
+</div>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Sorting Algorithms</h2>
+      <p class="muted">55 questions: try to answer aloud in under a minute, then reveal. All questions from every module are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Sorting Algorithms">
+<details class="recall iq" data-level="basic" data-topic="Sorting Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the time complexity of bubble sort? Can it be improved?</summary><div class="answer"><p>O(n^2) in the worst and average case. With a flag that stops when a pass has no swaps, the best case (already sorted) becomes O(n).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Sorting Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What does a stable sort mean?</summary><div class="answer"><p>Equal elements keep their original relative order. This matters when you sort records by one field and want a previous order kept for ties.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Sorting Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Which simple sort makes the fewest swaps?</summary><div class="answer"><p>Selection sort makes at most n - 1 swaps, which is useful when writing to memory is expensive.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Sorting Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Which simple sort is best for nearly sorted data?</summary><div class="answer"><p>Insertion sort, because each element only moves a short distance. It runs in about O(n).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Sorting Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Write insertion sort.</summary><div class="answer"><pre><code class="lang-py">def insertion_sort(a):
+    for i in range(1, len(a)):
+        key, j = a[i], i - 1
+        while j &gt;= 0 and a[j] &gt; key:
+            a[j + 1] = a[j]
+            j -= 1
+        a[j + 1] = key
+    return a</code></pre></div></details>
+<details class="recall iq" data-level="basic" data-topic="Sorting Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Which O(n^2) sort is best for almost sorted data and why?</summary><div class="answer"><p>Insertion sort: it shifts each element only past larger neighbours, so work is proportional to the number of inversions, close to O(n).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Sorting Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Compare merge sort and quick sort.</summary><div class="answer"><p>Merge sort: always O(n log n), stable, needs O(n) extra space. Quick sort: average O(n log n), worst O(n^2), in place (O(log n) stack), not stable. Quick sort is usually faster in practice due to cache friendliness.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Sorting Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the worst case of quick sort and how do you avoid it?</summary><div class="answer"><p>O(n^2) when partitions are very unbalanced, e.g. an already sorted array with the last element as pivot. Avoid it with a random pivot or median-of-three.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Sorting Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the recurrence of merge sort?</summary><div class="answer"><p>T(n) = 2T(n/2) + O(n), which solves to O(n log n).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Sorting Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How can merge sort count inversions?</summary><div class="answer"><p>While merging, when an element from the right half is placed before elements still left in the left half, add len(left) - i to the count. Total O(n log n).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Sorting Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why is merge sort good for linked lists?</summary><div class="answer"><p>Merging needs only pointer changes and no random access, so it is O(n log n) with O(1) extra space on lists.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Sorting Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Write the merge step.</summary><div class="answer"><pre><code class="lang-py">def merge(a, b):
+    out, i, j = [], 0, 0
+    while i &lt; len(a) and j &lt; len(b):
+        if a[i] &lt;= b[j]:
+            out.append(a[i]); i += 1
+        else:
+            out.append(b[j]); j += 1
+    return out + a[i:] + b[j:]</code></pre></div></details>
+<details class="recall iq" data-level="basic" data-topic="Sorting Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why is merge sort stable and quick sort not?</summary><div class="answer"><p>Merge sort takes from the left half when values are equal, preserving order. Quick sort&#x27;s partition swaps elements across the pivot and may reorder equal values.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Sorting Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> When is counting sort a good choice?</summary><div class="answer"><p>When the range of values k is small compared to n, such as marks 0-100 or lowercase letters. Time O(n + k), space O(k).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Sorting Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What sorting algorithm does Python use?</summary><div class="answer"><p>Timsort: a stable hybrid of merge sort and insertion sort, O(n log n) worst case and fast on partially sorted data.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Sorting Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Is heap sort stable? Is it in place?</summary><div class="answer"><p>In place: yes. Stable: no.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Sorting Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you sort a list of tuples by the second item descending and the first ascending?</summary><div class="answer"><pre><code class="lang-py">sorted(pairs, key=lambda p: (-p[1], p[0]))</code></pre></div></details>
+<details class="recall iq" data-level="basic" data-topic="Sorting Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the lower bound of comparison-based sorting?</summary><div class="answer"><p>Omega(n log n). Any algorithm that only compares items needs at least about n log n comparisons. Counting sort avoids this by not comparing.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Sorting Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Can you sort faster than O(n log n)?</summary><div class="answer"><p>Yes, when you are not limited to comparisons and know something about the data: counting sort O(n + k), radix sort O(d(n + k)), bucket sort O(n) on uniform data. For general comparison-based sorting n log n is the lower bound.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> How many swaps does bubble sort make on [4, 3, 2, 1]?</summary><div class="answer"><p>6 swaps, equal to the number of inversions n(n-1)/2 = 6 for a reversed list.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Implement selection sort.</summary><div class="answer"><pre><code class="lang-py">def selection_sort(a):
+    for i in range(len(a) - 1):
+        m = i
+        for j in range(i + 1, len(a)):
+            if a[j] &lt; a[m]:
+                m = j
+        a[i], a[m] = a[m], a[i]
+    return a</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> Why is stability important when sorting rows of a table by multiple columns?</summary><div class="answer"><p>You can sort by the secondary key first and the primary key second; a stable sort preserves the earlier order within equal primary keys.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why learn bubble sort when nobody uses it?</summary><div class="answer"><p>It teaches comparisons, swaps, invariants and counting operations. These ideas explain every other sort.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is insertion sort fast on nearly sorted data?</summary><div class="answer"><p>Each element moves only a short distance, so total shifts equal the small number of inversions.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is selection sort not stable?</summary><div class="answer"><p>Its long-distance swap can jump an element over an equal one, changing their original order.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use O(n^2) sorts for big inputs?</summary><div class="answer"><p>n = 10^5 means 10^10 steps. Use sorted() or merge/quick sort.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why add a swapped flag to bubble sort?</summary><div class="answer"><p>If a pass makes no swap, the list is sorted, so you can stop early.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does stability matter?</summary><div class="answer"><p>When you sort by a second key, a stable sort keeps the order produced by the first sort for equal items.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Count the number of swaps selection sort makes on [3, 1, 2].</summary><div class="answer"><p>2 swaps: place 1 at the front, then 2 at the middle. At most n - 1 swaps.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> How many comparisons does bubble sort (without early exit) make on 5 items?</summary><div class="answer"><p>10 = 4 + 3 + 2 + 1.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Find the k-th smallest element faster than sorting (average O(n)).</summary><div class="answer"><p>Quickselect: partition around a pivot; if the pivot index equals k - 1 you are done, else recurse into one side. Average O(n), worst O(n^2). Python alternative: heapq.nsmallest(k, a)[-1].</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What happens to quick sort on an already sorted array with the last element as pivot?</summary><div class="answer"><p>Each partition splits into sizes n-1 and 0, so depth is n and total time O(n^2); recursion may also hit Python&#x27;s limit.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> Why does Python&#x27;s sort guarantee stability?</summary><div class="answer"><p>Users often sort by multiple keys in passes; guaranteed stability makes that pattern correct and predictable.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does merge sort always take O(n log n)?</summary><div class="answer"><p>It halves the list log n times and each level merges n items, regardless of the order of the input.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why can quick sort be O(n^2)?</summary><div class="answer"><p>If the pivot is always the smallest or largest, one side is empty and the depth becomes n.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use a random pivot?</summary><div class="answer"><p>No fixed input can force the worst case, so bad splits become extremely unlikely.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does merge sort need extra memory?</summary><div class="answer"><p>Merging two halves needs a place to write the combined result.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is quick sort usually faster in practice?</summary><div class="answer"><p>It sorts in place and scans memory sequentially, which uses the CPU cache well.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is merge sort preferred for linked lists?</summary><div class="answer"><p>Merging uses only pointer changes and sequential access, giving O(n log n) with O(1) extra space; quick sort needs random access.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Merge two sorted lists into one sorted list.</summary><div class="answer"><pre><code class="lang-py">def merge(a, b):
+    i = j = 0
+    out = []
+    while i &lt; len(a) and j &lt; len(b):
+        if a[i] &lt;= b[j]:
+            out.append(a[i]); i += 1
+        else:
+            out.append(b[j]); j += 1
+    return out + a[i:] + b[j:]</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Sort an array containing only 0s, 1s and 2s in one pass.</summary><div class="answer"><p>Dutch national flag: lo, mid, hi pointers; swap 0s to the front and 2s to the back, skip 1s. O(n), O(1) space.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What does sorted([3, -1, -2], key=abs) return?</summary><div class="answer"><p>[-1, -2, 3]. The key abs gives 3, 1, 2; sorted by that: -1 (1), -2 (2), 3 (3).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How would you rank 10 million exam scores in the range 0-100?</summary><div class="answer"><p>Counting sort (a 101-slot tally) in a single pass O(n), far faster than comparison sorting.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why can counting sort beat n log n?</summary><div class="answer"><p>It does not compare items; it uses the values as indexes. The n log n bound applies only to comparison sorts.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use counting sort for any list?</summary><div class="answer"><p>If the value range is huge (like 10^9), the count array needs too much memory.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use heap sort?</summary><div class="answer"><p>It guarantees O(n log n) and sorts in place with O(1) extra memory.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is Timsort fast on real data?</summary><div class="answer"><p>Real data often has ordered runs. Timsort detects and merges them, doing less work than n log n.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why sort with key= instead of cmp?</summary><div class="answer"><p>A key is computed once per element and is faster and simpler than comparing pairs with a function.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why sort by negative frequency to get descending order?</summary><div class="answer"><p>sorted sorts ascending. Negating the number reverses the order for that field without reversing the others.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Sort a list of 0s and 1s in O(n) without sort().</summary><div class="answer"><p>Count zeros and ones then rebuild: [0] * zeros + [1] * ones. Or two pointers swapping.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Sorting Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What does sorted([&#x27;b&#x27;, &#x27;A&#x27;, &#x27;a&#x27;, &#x27;B&#x27;]) return?</summary><div class="answer"><p>[&#x27;A&#x27;, &#x27;B&#x27;, &#x27;a&#x27;, &#x27;b&#x27;]. Uppercase codes come before lowercase. Use key=str.lower for case-insensitive order.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Sorting Algorithms"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> How do you make a stable version of selection sort?</summary><div class="answer"><p>Instead of swapping, shift the elements between i and m one step right and place the minimum at i (insertion-like), keeping equal elements in order.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Sorting Algorithms"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> How would you sort a 50 GB file with 2 GB of RAM?</summary><div class="answer"><p>External merge sort: sort 2 GB chunks in memory, write them out, then k-way merge the sorted chunks with a heap while reading sequentially.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Sorting Algorithms"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> How do you sort a list too big for memory?</summary><div class="answer"><p>Sort chunks that fit in memory, write them to disk, then k-way merge them with a heap (external merge sort).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Sorting Algorithms"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Sort the characters of a string by decreasing frequency.</summary><div class="answer"><p>Counter + sorted by key (-count, char), then repeat each char count times and join.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="m08-problems.html"><span class="dir">Previous</span><span>Problems 8: Two Pointers & Sliding Window</span></a>
+      <a class="next" href="m06-problems.html"><span class="dir">Next</span><span>Problems 6: Sorting Algorithms</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="SQL3">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Database design: normalisation, keys, views, transactions and programmability | Python + SQL</title>
+<meta name="description" content="Entity-relationship design, normal forms, keys and relationships, constraints, views, transactions, isolation and locking, deadlocks, triggers, stored procedures and access control.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SQL3</p>
+      <h1>Database design: normalisation, keys, views, transactions and programmability</h1>
+      <p class="lede">A good schema prevents whole classes of bugs, because the database refuses bad data. Transactions keep concurrent changes correct. This part teaches how to design tables and how to make changes safely.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="design" data-track>
+      <h2>Designing a schema</h2>
+<h3>From requirements to tables</h3>
+<ol><li>List the <strong>entities</strong> (things): customer, product, order.</li><li>List their <strong>attributes</strong> and decide the <strong>key</strong> that identifies each.</li><li>Decide the <strong>relationships</strong> and their cardinality.</li><li>Turn each entity into a table, each relationship into a foreign key or a junction table.</li><li><strong>Normalise</strong>, add constraints and indexes, then test with real queries.</li></ol>
+<h3>Relationships</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Cardinality</th><th>Example</th><th>Implementation</th></tr></thead>
+<tbody>
+<tr><td>One to many</td><td>One customer has many orders</td><td>Foreign key on the "many" side (<code>orders.customer_id</code>)</td></tr><tr><td>Many to many</td><td>Orders contain many products, products appear in many orders</td><td><strong>Junction table</strong> (<code>order_items(order_id, product_id)</code>) with a composite primary key</td></tr><tr><td>One to one</td><td>User and profile</td><td>Foreign key with <code>UNIQUE</code>, or the same primary key</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql3-01.sql">CREATE TABLE authors (id INTEGER PRIMARY KEY, name TEXT NOT NULL);
+CREATE TABLE books   (id INTEGER PRIMARY KEY, title TEXT NOT NULL, published INTEGER);
+CREATE TABLE book_authors (
+    book_id   INTEGER NOT NULL REFERENCES books(id)   ON DELETE CASCADE,
+    author_id INTEGER NOT NULL REFERENCES authors(id) ON DELETE RESTRICT,
+    role      TEXT NOT NULL DEFAULT 'author',
+    PRIMARY KEY (book_id, author_id)
+);
+INSERT INTO authors VALUES (1, 'Ada'), (2, 'Ben');
+INSERT INTO books VALUES (1, 'Joint Work', 2020);
+INSERT INTO book_authors (book_id, author_id) VALUES (1, 1), (1, 2);
+SELECT b.title, GROUP_CONCAT(a.name, ' &amp; ') AS authors
+FROM books b JOIN book_authors ba ON ba.book_id = b.id JOIN authors a ON a.id = ba.author_id
+GROUP BY b.id;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>title</th><th>authors</th></tr></thead>
+<tbody><tr><td>Joint Work</td><td>Ada &amp; Ben</td></tr></tbody>
+</table>
+</div>
+<h3>Keys</h3>
+<ul><li><strong>Primary key</strong>: unique, not null, identifies a row. Keep it small and stable.</li><li><strong>Natural key</strong>: a real-world identifier (email, ISBN). Risk: it can change or be reused.</li><li><strong>Surrogate key</strong>: an artificial id (auto-increment integer, UUID). Stable and compact; keep a <code>UNIQUE</code> constraint on the natural key too.</li><li><strong>Foreign key</strong>: a column referencing another table's key; the database rejects orphans. Choose referential actions: <code>ON DELETE CASCADE</code> (delete children), <code>RESTRICT</code> or <code>NO ACTION</code> (refuse), <code>SET NULL</code>.</li><li><strong>Composite key</strong>: several columns together (as in a junction table).</li></ul>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql3-02.sql">PRAGMA foreign_keys = ON;
+INSERT INTO orders (id, customer_id, order_date, status) VALUES (99, 12345, '2024-05-01', 'paid');</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>error</th></tr></thead>
+<tbody><tr><td>FOREIGN KEY constraint failed</td></tr></tbody>
+</table>
+</div>
+<p>The statement above fails: customer 12345 does not exist, so the foreign key rejects it. (SQLite needs <code>PRAGMA foreign_keys = ON</code>; most databases enforce it by default.)</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql3-q01" data-topic="SQL design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you model a many-to-many relationship such as students and courses?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A comma-separated list column <span class="q-why">Violates 1NF.</span></li>
+          <li data-key="B">A junction table with foreign keys to both <span class="q-why">Correct.</span></li>
+          <li data-key="C">Duplicate rows <span class="q-why">Anomalies.</span></li>
+          <li data-key="D">A view <span class="q-why">Not storage.</span></li>
+        </ul>
+        <div class="q-explain"><p>The junction (association) table holds one row per pairing.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>One-to-many versus many-to-many implementation?</summary><div class="answer"><p>One-to-many: a foreign key on the many side. Many-to-many: a junction table with a composite key.</p></div></details>
+      </div>
+    </section>
+
+    <section id="normal" data-track>
+      <h2>Normalisation</h2>
+<h3>Why normalise</h3>
+<p>Storing one fact in many places causes <strong>anomalies</strong>: update anomaly (change one copy, forget the others), insert anomaly (cannot record a fact without an unrelated one), delete anomaly (deleting one fact loses another). Normal forms are rules that remove them.</p>
+<h3>The normal forms in plain language</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Form</th><th>Rule</th><th>Violation example</th></tr></thead>
+<tbody>
+<tr><td>1NF</td><td>Each cell holds one atomic value; no repeating groups</td><td>A <code>phones</code> column with "555-1, 555-2"</td></tr><tr><td>2NF</td><td>In 1NF and every non-key column depends on the <strong>whole</strong> key (matters for composite keys)</td><td><code>order_items(order_id, product_id, product_name)</code>: product_name depends only on product_id</td></tr><tr><td>3NF</td><td>In 2NF and no non-key column depends on another non-key column</td><td><code>employees(id, dept_id, dept_name)</code>: dept_name depends on dept_id</td></tr><tr><td>BCNF</td><td>Every determinant is a candidate key (a stricter 3NF)</td><td>Rare edge cases with overlapping keys</td></tr>
+</tbody>
+</table>
+</div>
+<p>Mnemonic: every non-key attribute depends on <strong>the key, the whole key, and nothing but the key</strong>.</p>
+<h3>Example: fixing a messy table</h3>
+<p>Before (one wide table, repeated customer and product data):</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>order_id</th><th>customer_name</th><th>customer_city</th><th>product</th><th>price</th><th>qty</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>Ada</td><td>London</td><td>Pen</td><td>2</td><td>10</td></tr><tr><td>2</td><td>Ada</td><td>London</td><td>Desk</td><td>300</td><td>1</td></tr>
+</tbody>
+</table>
+</div>
+<p>Problems: Ada's city is stored twice, a price change needs many updates, a product without orders cannot be stored. Split into <code>customers</code>, <code>products</code>, <code>orders</code>, <code>order_items</code> exactly as in the shop database.</p>
+<h3>Denormalisation</h3>
+<p>Normalised data needs joins. For read-heavy reporting you may <strong>denormalise</strong> on purpose: duplicate a column, store a precomputed total, use a summary table or materialised view. Do it after measuring, and keep the duplicate in sync (triggers, application code, or a periodic rebuild). OLTP schemas lean normalised; analytics schemas (star schema, wide tables) lean denormalised (<a href="../system-design-guide/sd4-databases.html">SD4</a>).</p>
+<h3>Design rules that save you later</h3>
+<ul><li>Use the right <strong>types</strong>: <code>DECIMAL</code> for money, real date types, <code>BOOLEAN</code>.</li><li>Use <code>NOT NULL</code> by default; allow NULL only when "unknown" is meaningful.</li><li>Add <code>CHECK</code>, <code>UNIQUE</code> and foreign keys: constraints are bugs caught at the door.</li><li>Keep <code>created_at</code> and <code>updated_at</code> timestamps, store them in UTC.</li><li>Prefer <strong>soft deletes</strong> (<code>deleted_at</code>) only if you need history; they complicate every query and uniqueness rule.</li><li>Avoid storing lists in a column, EAV ("entity attribute value") tables for everything, and magic strings with no check.</li><li>Name things consistently (<code>snake_case</code>, singular or plural, <code>table_id</code> for foreign keys).</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql3-q02" data-topic="SQL design" data-type="single" data-answer="C">
+        <div class="q-stem"><p><code>employees(id, dept_id, dept_name)</code> violates which normal form?</p></div>
+        <ul class="q-options">
+          <li data-key="A">1NF <span class="q-why">Values are atomic.</span></li>
+          <li data-key="B">2NF <span class="q-why">Single-column key.</span></li>
+          <li data-key="C">3NF <span class="q-why">Correct: dept_name depends on dept_id, a non-key column.</span></li>
+          <li data-key="D">None <span class="q-why">It violates 3NF.</span></li>
+        </ul>
+        <div class="q-explain"><p>Move department details into their own table.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-sql3-q03" data-topic="SQL design" data-type="single" data-answer="A">
+        <div class="q-stem"><p>Which phrase summarises 3NF?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The key, the whole key, and nothing but the key <span class="q-why">Correct.</span></li>
+          <li data-key="B">All columns are indexed <span class="q-why">No.</span></li>
+          <li data-key="C">No NULLs <span class="q-why">No.</span></li>
+          <li data-key="D">Only one table <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Each non-key attribute should depend on the key only.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What anomalies does normalisation prevent?</summary><div class="answer"><p>Update, insert and delete anomalies caused by duplicate facts.</p></div></details>
+      </div>
+    </section>
+
+    <section id="views" data-track>
+      <h2>Views</h2>
+<p>A <strong>view</strong> is a saved query that behaves like a table. It simplifies repeated queries, hides complexity and limits what users can see.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql3-03.sql">CREATE VIEW order_totals AS
+SELECT o.id AS order_id, o.customer_id, o.status, SUM(i.qty * p.price) AS total
+FROM orders o
+JOIN order_items i ON i.order_id = o.id
+JOIN products p ON p.id = i.product_id
+GROUP BY o.id;
+
+SELECT c.name, ROUND(SUM(t.total), 2) AS paid_total
+FROM order_totals t JOIN customers c ON c.id = t.customer_id
+WHERE t.status = 'paid'
+GROUP BY c.id
+ORDER BY paid_total DESC
+LIMIT 3;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>paid_total</th></tr></thead>
+<tbody><tr><td>Ben</td><td>2000.0</td></tr><tr><td>Ada</td><td>1590.0</td></tr><tr><td>Dev</td><td>950.0</td></tr></tbody>
+</table>
+</div>
+<ul><li>A <strong>materialised view</strong> (PostgreSQL, Oracle) stores the result and must be refreshed; fast reads, stale until refresh.</li><li>Views can be <strong>updatable</strong> if they map simply to one table; complex ones are read-only.</li><li>A view is not faster by itself; the underlying query still runs.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql3-q04" data-topic="SQL design" data-type="multi" data-answer="A,C,D">
+        <div class="q-stem"><p>Which are true of views? Select all.</p></div>
+        <ul class="q-options">
+          <li data-key="A">A view is a stored query</li>
+          <li data-key="B">A normal view stores its own copy of the data</li>
+          <li data-key="C">A materialised view stores results and needs refreshing</li>
+          <li data-key="D">Views can hide columns from users</li>
+        </ul>
+        <div class="q-explain"><p>A normal view stores only the definition; the data comes from base tables.</p></div>
+      </div>
+    </section>
+
+    <section id="transactions" data-track>
+      <h2>Transactions</h2>
+<h3>Intuition</h3>
+<p>A <strong>transaction</strong> is a group of statements that succeed or fail <strong>together</strong>. Transferring money = debit one account + credit another. Either both happen, or neither.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql3-04.sql">CREATE TABLE acct (name TEXT PRIMARY KEY, balance INTEGER NOT NULL CHECK (balance &gt;= 0));
+INSERT INTO acct VALUES ('alice', 100), ('bob', 20);
+BEGIN;
+UPDATE acct SET balance = balance - 30 WHERE name = 'alice';
+UPDATE acct SET balance = balance + 30 WHERE name = 'bob';
+SELECT * FROM acct ORDER BY name;
+ROLLBACK;
+SELECT * FROM acct ORDER BY name;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>balance</th></tr></thead>
+<tbody><tr><td>alice</td><td>70</td></tr><tr><td>bob</td><td>50</td></tr></tbody>
+</table>
+</div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>balance</th></tr></thead>
+<tbody><tr><td>alice</td><td>100</td></tr><tr><td>bob</td><td>20</td></tr></tbody>
+</table>
+</div>
+<p>Between <code>BEGIN</code> and <code>ROLLBACK</code> the changes are visible only inside the transaction; <code>ROLLBACK</code> undoes them. <code>COMMIT</code> makes them permanent and visible to others. A <code>CHECK</code> failure inside the transaction aborts the whole thing, protecting the invariant.</p>
+<h3>ACID recap</h3>
+<p>Atomicity, Consistency, Isolation, Durability (<a href="../system-design-guide/sd4-databases.html">SD4</a>). Durability comes from the write-ahead log; isolation from locks or MVCC.</p>
+<h3>Savepoints</h3>
+<p><code>SAVEPOINT name</code> marks a point inside a transaction; <code>ROLLBACK TO name</code> undoes only the work after it.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql3-q05" data-topic="SQL design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A transaction updates two rows and then hits a CHECK violation. What happens to the first update?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It stays committed <span class="q-why">Atomicity forbids that.</span></li>
+          <li data-key="B">It is rolled back with the rest <span class="q-why">Correct.</span></li>
+          <li data-key="C">It is queued <span class="q-why">No.</span></li>
+          <li data-key="D">It is duplicated <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Atomicity means all or nothing.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What do COMMIT and ROLLBACK do?</summary><div class="answer"><p>COMMIT makes the transaction's changes permanent; ROLLBACK discards them.</p></div></details>
+      </div>
+    </section>
+
+    <section id="isolation" data-track>
+      <h2>Concurrency, isolation and locking</h2>
+<h3>The anomalies</h3>
+<p>Concurrent transactions can interfere (<a href="../system-design-guide/sd6-consistency.html">SD6</a>).</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Level</th><th>Dirty read</th><th>Non-repeatable read</th><th>Phantom</th><th>Typical default</th></tr></thead>
+<tbody>
+<tr><td>Read uncommitted</td><td>possible</td><td>possible</td><td>possible</td><td>rare</td></tr><tr><td>Read committed</td><td>no</td><td>possible</td><td>possible</td><td>PostgreSQL, SQL Server, Oracle</td></tr><tr><td>Repeatable read</td><td>no</td><td>no</td><td>possible (MySQL InnoDB mostly prevents)</td><td>MySQL InnoDB</td></tr><tr><td>Serializable</td><td>no</td><td>no</td><td>no</td><td>opt-in everywhere</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code>-- PostgreSQL example
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+SELECT balance FROM accounts WHERE id = 1;     -- sees a snapshot
+UPDATE accounts SET balance = balance - 10 WHERE id = 1;
+COMMIT;</code></pre>
+<h3>Locks</h3>
+<ul><li><strong>Row locks</strong> (<code>SELECT ... FOR UPDATE</code>) block other writers of the same rows until commit.</li><li><strong>Shared locks</strong> (<code>FOR SHARE</code>) allow reads but block writes.</li><li><strong>Table locks</strong> for DDL and bulk operations.</li><li><strong>MVCC</strong> lets readers see a snapshot without taking locks, so readers do not block writers.</li></ul>
+<pre><code>-- Take a job from a queue table without two workers getting the same one (PostgreSQL, MySQL 8)
+SELECT id FROM jobs WHERE status = 'new' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED;</code></pre>
+<h3>Optimistic versus pessimistic</h3>
+<ul><li><strong>Pessimistic</strong>: lock first (<code>FOR UPDATE</code>), then change. Safe, can reduce throughput.</li><li><strong>Optimistic</strong>: read a version number, update with <code>WHERE version = :v</code>, and retry if zero rows were updated.</li></ul>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql3-05.sql">CREATE TABLE doc (id INTEGER PRIMARY KEY, body TEXT, version INTEGER NOT NULL DEFAULT 1);
+INSERT INTO doc (id, body) VALUES (1, 'draft');
+-- two editors both read version 1; the first save wins
+UPDATE doc SET body = 'edit A', version = version + 1 WHERE id = 1 AND version = 1;
+SELECT changes() AS rows_updated_first;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>rows_updated_first</th></tr></thead>
+<tbody><tr><td>1</td></tr></tbody>
+</table>
+</div>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql3-06.sql">CREATE TABLE doc (id INTEGER PRIMARY KEY, body TEXT, version INTEGER NOT NULL DEFAULT 1);
+INSERT INTO doc (id, body) VALUES (1, 'draft');
+UPDATE doc SET body = 'edit A', version = version + 1 WHERE id = 1 AND version = 1;
+UPDATE doc SET body = 'edit B', version = version + 1 WHERE id = 1 AND version = 1;   -- stale version
+SELECT changes() AS rows_updated_second, (SELECT body FROM doc) AS body;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>rows_updated_second</th><th>body</th></tr></thead>
+<tbody><tr><td>0</td><td>edit A</td></tr></tbody>
+</table>
+</div>
+<p>The second editor's update changes 0 rows, so the application knows there was a conflict and can ask the user to retry or merge.</p>
+<h3>Deadlocks</h3>
+<p>Transaction A locks row 1 then wants row 2; B locked row 2 and wants row 1. The database detects the cycle and aborts one with a deadlock error. Reduce them by touching rows in a <strong>consistent order</strong>, keeping transactions <strong>short</strong>, and retrying on deadlock errors.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql3-q06" data-topic="SQL design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Optimistic locking detects a conflict how?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A row lock held for the whole edit <span class="q-why">That is pessimistic.</span></li>
+          <li data-key="B">A version check in the UPDATE's WHERE clause affecting 0 rows <span class="q-why">Correct.</span></li>
+          <li data-key="C">A table lock <span class="q-why">No.</span></li>
+          <li data-key="D">A trigger <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>If no row matched the expected version, someone else changed it first.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-sql3-q07" data-topic="SQL design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you reduce deadlocks?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Hold locks longer <span class="q-why">Worse.</span></li>
+          <li data-key="B">Access rows in a consistent order and keep transactions short <span class="q-why">Correct.</span></li>
+          <li data-key="C">Disable transactions <span class="q-why">Unsafe.</span></li>
+          <li data-key="D">Use more indexes only <span class="q-why">Not the main fix.</span></li>
+        </ul>
+        <div class="q-explain"><p>Consistent ordering removes circular waits.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is MVCC?</summary><div class="answer"><p>Keeping row versions so readers see a snapshot and do not block writers.</p></div></details>
+      </div>
+    </section>
+
+    <section id="programmability" data-track>
+      <h2>Triggers, functions and stored procedures</h2>
+<h3>Triggers</h3>
+<p>A <strong>trigger</strong> runs automatically on <code>INSERT</code>, <code>UPDATE</code> or <code>DELETE</code>. Typical uses: audit logs, maintaining derived columns, enforcing complex rules.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql3-07.sql">CREATE TABLE prices (sku TEXT PRIMARY KEY, price INTEGER);
+CREATE TABLE price_audit (sku TEXT, old_price INTEGER, new_price INTEGER);
+CREATE TRIGGER trg_price_audit AFTER UPDATE OF price ON prices
+BEGIN
+    INSERT INTO price_audit VALUES (OLD.sku, OLD.price, NEW.price);
+END;
+INSERT INTO prices VALUES ('pen', 2);
+UPDATE prices SET price = 3 WHERE sku = 'pen';
+SELECT * FROM price_audit;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>sku</th><th>old_price</th><th>new_price</th></tr></thead>
+<tbody><tr><td>pen</td><td>2</td><td>3</td></tr></tbody>
+</table>
+</div>
+<p>Use triggers sparingly: they hide logic, complicate debugging and can cascade. Prefer constraints and application logic where possible.</p>
+<h3>Stored procedures and functions</h3>
+<p>Server-side programs written in PL/pgSQL, T-SQL, PL/SQL or MySQL's language. Pros: fewer round trips, close to the data, one place for rules. Cons: harder to test and version, tied to a vendor.</p>
+<pre><code>-- PostgreSQL function
+CREATE FUNCTION add_tax(amount numeric, rate numeric DEFAULT 0.2) RETURNS numeric
+LANGUAGE sql IMMUTABLE AS $$ SELECT round(amount * (1 + rate), 2) $$;</code></pre>
+<h3>Access control</h3>
+<p>Create <strong>roles</strong>, grant the least privilege needed (<code>GRANT SELECT ON orders TO reporting</code>), use separate accounts for the application, migrations and analysts, and never use the superuser from application code. Row-level security (PostgreSQL) restricts which rows a role can see. See <a href="../system-design-guide/sd11-observability-security.html">SD11</a> for security fundamentals.</p>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>When use a trigger?</summary><div class="answer"><p>For audit trails and rules that must hold regardless of which application writes, used sparingly.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: SQL design</h2>
+      <p class="muted">11 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="SQL design">
+<details class="recall iq" data-level="basic" data-topic="SQL design"><summary><span class="tag ok">Basic</span> What is normalisation and why do it?</summary><div class="answer"><p>Organising tables so each fact is stored once, to avoid update, insert and delete anomalies. Typically to third normal form.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="SQL design"><summary><span class="tag ok">Basic</span> Explain 1NF, 2NF and 3NF.</summary><div class="answer"><p>1NF: atomic values, no repeating groups. 2NF: every non-key column depends on the whole key. 3NF: no non-key column depends on another non-key column.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL design"><summary><span class="tag warn">Medium</span> When would you denormalise?</summary><div class="answer"><p>When measured read performance needs fewer joins, such as reporting or read-heavy paths, accepting duplicate data that must be kept in sync.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL design"><summary><span class="tag warn">Medium</span> Surrogate versus natural keys?</summary><div class="answer"><p>Surrogate keys are artificial ids, stable and compact. Natural keys are real attributes, which can change or collide. Use a surrogate primary key with a unique constraint on the natural key.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL design"><summary><span class="tag warn">Medium</span> Explain ACID.</summary><div class="answer"><p>Atomicity, consistency, isolation, durability: all-or-nothing, valid states, no interference between concurrent transactions, committed data survives crashes.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL design"><summary><span class="tag warn">Medium</span> What are the transaction isolation levels?</summary><div class="answer"><p>Read uncommitted, read committed, repeatable read and serializable, trading anomalies (dirty, non-repeatable and phantom reads) against concurrency.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL design"><summary><span class="tag warn">Medium</span> What is a view and a materialised view?</summary><div class="answer"><p>A view is a stored query used like a table. A materialised view stores the result and must be refreshed.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SQL design"><summary><span class="tag bad">Advanced</span> Optimistic versus pessimistic locking?</summary><div class="answer"><p>Pessimistic locks rows up front (SELECT FOR UPDATE). Optimistic reads a version and updates only if unchanged, retrying on conflict.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SQL design"><summary><span class="tag bad">Advanced</span> What causes deadlocks and how do you reduce them?</summary><div class="answer"><p>Transactions holding locks in different orders. Access rows in a consistent order, keep transactions short and retry on deadlock errors.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SQL design"><summary><span class="tag bad">Advanced</span> What is MVCC?</summary><div class="answer"><p>Multi-version concurrency control keeps several row versions so readers see snapshots without blocking writers.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SQL design"><summary><span class="tag bad">Advanced</span> Triggers: when and when not?</summary><div class="answer"><p>Use for audit trails and invariants that must hold for every writer. Avoid for business logic that hides side effects and complicates debugging.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sql2-advanced.html"><span class="dir">Previous</span><span>SQL2 Advanced SQL: CTEs, window functions, recursion and upserts</span></a>
+      <a class="next" href="sql4-performance.html"><span class="dir">Next</span><span>SQL4 Query performance, indexing and choosing a database engine</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

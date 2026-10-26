@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en" data-resource="diffusion-from-scratch" data-page="D0">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Start here: terms and Python primer | Diffusion from scratch</title>
+<meta name="description" content="How to use the guide, the words you will see everywhere, and the plain-Python features used later.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Diffusion from scratch</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part D0</p>
+      <h1>Build your own image diffusion model, from zero</h1>
+      <p class="lede">This page assumes you know how to write Python and nothing else. Every technical word is explained the first time it shows up. By the end of Phase 2 you will understand, in full, no hand-waving, how a diffusion model learns to turn noise into images, and you'll be ready to actually write the code yourself.</p>
+      <div class="meta"><span class="tag ok">Basic</span><span class="tag">~45 min</span></div>
+    </div>
+
+    <section id="how-to-use" data-track>
+      <h2>How to use this page</h2>
+<p>
+        Read top to bottom. Don't skip ahead, Phase 2 in particular builds one idea
+        on top of the previous one, and later ideas will feel confusing if you jump in
+        halfway. It's long on purpose: the goal is that you never have to leave this
+        page and go read something else to understand a term.
+      </p>
+<p>You'll see four kinds of boxes as you read (the colours below are the ones used on every page):</p>
+<div class="callout note"><span class="callout-title">Term: blue box</span><p>A new word, defined plainly the moment it first appears.</p></div>
+<div class="callout tip"><span class="callout-title">Analogy: green box</span><p>A comparison to something ordinary, to build intuition before the technical version.</p></div>
+<div class="callout trap"><span class="callout-title">Watch out: red box</span><p>A mistake beginners commonly make, or something that will bite you on a 4GB GPU specifically.</p></div>
+<div class="callout key"><span class="callout-title">Checkpoint</span><ul><li>A short list of things you should now be able to do or confirm. Tick each one off in your head before moving on.</li></ul></div>
+<p>Every section ends with a <strong>Mark as done</strong> checkbox. It is saved in your browser, so you can close the tab and come back later, and the bars on the hub page show how far you have got.</p>
+    </section>
+
+    <section id="glossary-preview" data-track>
+      <h2>Words you'll see constantly, up front</h2>
+<p>
+        These four words will appear in almost every paragraph from here on. Read this
+        section slowly, everything else is easier once these are solid. Don't worry
+        about memorizing them; you can scroll back any time, and there's a full glossary
+        at the bottom of the page.
+      </p>
+<h3>Model</h3>
+<div class="callout note"><span class="callout-title">Term: Model</span><p>
+          A <strong>model</strong> is just a big function with adjustable
+          numbers inside it (called <strong>parameters</strong> or <strong>weights</strong>).
+          You feed it an input, it does a bunch of arithmetic using its current
+          parameters, and it produces an output. "Training" means automatically
+          adjusting those numbers so the outputs get better over time.
+        </p></div>
+<h3>Neural network</h3>
+<div class="callout note"><span class="callout-title">Term: Neural network</span><p>
+          A <strong>neural network</strong> is a specific kind of model:
+          it's built out of stacked layers, where each layer takes in numbers,
+          multiplies them by weights, adds them up, and passes the result through a
+          simple non-linear function (this non-linearity is what lets the network
+          learn curved, complex patterns instead of only straight-line relationships).
+          "Deep learning" just means a network with many layers stacked on top of
+          each other.
+        </p></div>
+<h3>Training</h3>
+<div class="callout note"><span class="callout-title">Term: Training</span><p>
+          <strong>Training</strong> is the process of showing the model
+          examples, checking how wrong its output was (this "wrongness" is called the
+          <strong>loss</strong>), and nudging every weight in the network very slightly
+          in the direction that would have made that output less wrong. Do this
+          thousands or millions of times, over many examples, and the network gets
+          progressively better at the task.
+        </p></div>
+<div class="callout tip"><span class="callout-title">Analogy</span><p>
+          Imagine adjusting hundreds of tiny knobs on a mixing desk. You play a sound,
+          compare it to a target sound, and turn each knob a tiny bit toward "closer to
+          the target." Repeat this a few million times with different sounds, and
+          eventually the knob positions produce good sound generally. Training a
+          neural network is exactly this, except there can be millions of knobs
+          (parameters) and a computer does the tiny turning automatically, using math
+          called <strong>gradient descent</strong>, don't worry about the details of
+          that yet, just know it's the "automatic knob-turning" procedure.
+        </p></div>
+<h3>Inference</h3>
+<div class="callout note"><span class="callout-title">Term: Inference</span><p>
+          <strong>Inference</strong> just means "using an already-trained
+          model to produce an output," with no more learning happening. When you type a
+          prompt into an image generator and get a picture back, that's inference, the
+          knobs are frozen, and you're just running the function forward once.
+        </p></div>
+<p>
+        That's it for now. Everything else in this page is really just: "what shape
+        should the model take (Phase 2, the U-Net), and what should we show it during
+        training so it learns to generate images (Phase 2, the diffusion process)."
+        Phase 1 is just getting your laptop ready to run any of this at all.
+      </p>
+    </section>
+
+    <section id="python-essentials" data-track>
+      <h2>Python constructs used later: a quick primer</h2>
+<p>
+        This page assumes you can write basic Python, but the code in Phase 3
+        uses a handful of specific Python-the-language features (not PyTorch
+        features, plain Python) that are easy to half-know or forget. Rather
+        than explain each one the first time it appears buried inside a large
+        code block, they're all collected here, once, so you can skip this
+        section if you already know them, or read it now so nothing in Phase 3
+        is a surprise.
+      </p>
+<h3>Classes, self, and __init__</h3>
+<div class="callout note"><span class="callout-title">Term: Class</span><p>
+          A <strong>class</strong> is a blueprint for creating
+          objects that bundle together data and the functions that act on that
+          data. <code>class ResBlock:</code> defines a new blueprint named
+          <code>ResBlock</code>; writing <code>ResBlock(64, 128, 512)</code>
+          later actually creates one real object from that blueprint (called an
+          <strong>instance</strong>).
+        </p></div>
+<div class="callout note"><span class="callout-title">Term: self</span><p>
+          Inside a class, <strong>self</strong> refers to "this
+          particular instance of the object." Every method (function defined
+          inside a class) takes <code>self</code> as its first parameter, so it
+          can access and store data specific to that one instance. Writing
+          <code>self.conv1 = nn.Conv2d(...)</code> inside <code>__init__</code>
+          stores that layer as an attribute on this specific instance, retrievable
+          later as <code>my_block.conv1</code> from outside the class, or simply
+          <code>self.conv1</code> from inside any other method of the same class.
+        </p></div>
+<div class="callout note"><span class="callout-title">Term: __init__</span><p>
+          <strong>__init__</strong> (two underscores on each side,
+          pronounced "dunder init," short for "double underscore") is a special
+          method automatically called once, the moment you create a new instance
+          of a class. <code>ResBlock(64, 128, 512)</code> automatically calls
+          <code>__init__(self, 64, 128, 512)</code> behind the scenes. Any
+          arguments you pass when creating the instance are received here and
+          typically stored onto <code>self</code> for later use.
+        </p></div>
+<div class="callout note"><span class="callout-title">Term: super().__init__()</span><p>
+          When a class inherits from another class (as every <code>nn.Module</code>
+          subclass does, see the earlier <a href="d3-how-diffusion-works.html#p2-nn-module">nn.Module
+          section</a>), <strong>super()</strong> gives you access
+          to the parent class's own version of a method. Calling
+          <code>super().__init__()</code> as the very first line of your own
+          <code>__init__</code> runs <code>nn.Module</code>'s own setup code
+          first (which sets up the internal bookkeeping that tracks your
+          layers' weights), before your own initialization code adds anything on
+          top. Skipping this line is a common bug that causes confusing errors
+          about missing attributes.
+        </p></div>
+<h3>zip() and enumerate()</h3>
+<div class="callout note"><span class="callout-title">Term: zip()</span><p>
+          <strong>zip()</strong> takes two (or more) lists and
+          pairs up their elements by position, so you can loop over both at
+          once. <code>zip(self.down_blocks, self.downsamples)</code> (used in
+          the U-Net's <code>forward</code> method) pairs the first ResBlock with
+          the first Downsample, the second with the second, and so on, letting
+          <code>for block, downsample in zip(...)</code> process one matched
+          pair per loop iteration, instead of needing two separate index
+          variables and manual lookups into each list.
+        </p></div>
+<div class="callout note"><span class="callout-title">Term: enumerate()</span><p>
+          <strong>enumerate()</strong> loops over a list while
+          also giving you each item's position (index), without you having to
+          track a separate counter variable by hand. <code>for i, out_ch in
+          enumerate(reversed_channels):</code> (used when building the U-Net's
+          decoder) gives you both the position <code>i</code> (0, 1, 2, ...) and
+          the value <code>out_ch</code> at each step.
+        </p></div>
+<div class="worked"><span class="w-title">Both together, compared to the manual version</span>
+        
+        <pre><code class="lang-py"># Without zip/enumerate - more code, easier to get an index wrong
+i = 0
+for block in blocks:
+    downsample = downsamples[i]
+    print(i, block, downsample)
+    i += 1
+
+# With zip and enumerate - shorter, and impossible to mis-index
+for i, (block, downsample) in enumerate(zip(blocks, downsamples)):
+    print(i, block, downsample)</code></pre>
+      </div>
+<h3>List comprehensions</h3>
+<div class="callout note"><span class="callout-title">Term: List comprehension</span><p>
+          A <strong>list comprehension</strong> is a compact way
+          to build a new list by transforming every item of an existing one, in
+          a single line. <code>[base * m for m in mults]</code> (used in
+          <code>unet.py</code> to compute channel counts) means "build a new
+          list containing <code>base * m</code>, for every <code>m</code> found
+          in <code>mults</code>." It's exactly equivalent to writing a full
+          for-loop that appends to an empty list, just shorter and more common
+          in real Python code you'll read.
+        </p></div>
+<div class="worked"><span class="w-title">The long way versus the list comprehension</span>
+        
+        <pre><code class="lang-py"># Long way
+channels = []
+for m in mults:
+    channels.append(base * m)
+
+# List comprehension - identical result, one line
+channels = [base * m for m in mults]</code></pre>
+      </div>
+<h3>Decorators (@)</h3>
+<div class="callout note"><span class="callout-title">Term: Decorator</span><p>
+          A <strong>decorator</strong> is a line starting with
+          <code>@</code>, placed directly above a function definition, that
+          wraps the function with extra behavior without you having to write
+          that behavior inside the function itself. <code>@torch.no_grad()</code>
+          placed above <code>def sample(...):</code> means "run this entire
+          function with gradient tracking turned off", it has exactly the same
+          effect as indenting the whole function body inside a
+          <code>with torch.no_grad():</code> block, just written once at the top
+          instead of wrapping every line.
+        </p></div>
+<h3>Context managers (the "with" keyword)</h3>
+<div class="callout note"><span class="callout-title">Term: Context manager / with</span><p>
+          <strong>with</strong> sets up something before a block
+          of code runs and automatically tears it down afterward, even if an
+          error happens partway through, guaranteeing the cleanup always
+          happens. <code>with torch.no_grad():</code> turns gradient tracking
+          off for everything indented underneath it, and automatically turns it
+          back on afterward. <code>with torch.autocast(...):</code> similarly
+          turns mixed-precision behavior on for its block and off afterward.
+          You'll recognize this pattern anywhere you see <code>with
+          something:</code> followed by an indented block, it always means
+          "temporarily change some setting for this block only."
+        </p></div>
+<h3>f-strings</h3>
+<div class="callout note"><span class="callout-title">Term: f-string</span><p>
+          An <strong>f-string</strong> is a string literal
+          prefixed with <code>f</code>, letting you embed variable values
+          directly inside curly braces without manually joining pieces of text
+          together. <code>f"Epoch {epoch+1}/{config.EPOCHS}"</code> automatically
+          inserts the current values of <code>epoch+1</code> and
+          <code>config.EPOCHS</code> into the string. <code>{avg_loss:.4f}</code>
+          additionally means "format this number to exactly 4 decimal places", the part after the colon is a formatting instruction, useful for
+          keeping printed loss values readable instead of showing fifteen
+          digits of floating-point noise.
+        </p></div>
+<h3>Python's os module</h3>
+<div class="callout note"><span class="callout-title">Term: os.makedirs() / os.path.join()</span><p>
+          <code>os</code> is Python's built-in module for talking to the
+          operating system, creating folders, building file paths, and so on.
+          <strong>os.makedirs(path, exist_ok=True)</strong>
+          creates a folder (and any missing parent folders needed along the
+          way), without erroring if it already exists.
+          <strong>os.path.join(a, b)</strong> combines path pieces
+          into a single valid path using the correct separator for whatever
+          operating system the code is running on (<code>\</code> on Windows,
+          <code>/</code> on Linux/macOS), <code>os.path.join(config.CHECKPOINT_DIR,
+          "model.pt")</code> is safer than manually writing
+          <code>config.CHECKPOINT_DIR + "/model.pt"</code>, since the manual
+          version can silently build an invalid path on Windows.
+        </p></div>
+<h3>None, True, False, and is</h3>
+<div class="callout note"><span class="callout-title">Term: None</span><p>
+          <strong>None</strong> is Python's way of representing
+          "no value at all", different from zero, an empty string, or false;
+          it means the absence of any value. <code>def sample(checkpoint_path=None):</code>
+          uses <code>None</code> as a default, meaning "if the caller doesn't
+          provide a checkpoint path, assume there isn't one." Checking
+          <code>if checkpoint_path:</code> afterward relies on the fact that
+          <code>None</code> is treated as "falsy" (behaves like False in an
+          <code>if</code> check), so the block only runs when an actual path was
+          given.
+        </p></div>
+<div class="callout key"><span class="callout-title">Sanity check</span><ul><li>I understand self refers to the specific object instance a method is running on</li><li>I understand zip() pairs up two lists positionally for a single loop</li><li>I understand a decorator (@) wraps a function with extra behavior</li><li>I understand with sets something up and guarantees it's cleaned up afterward</li></ul></div>
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="index.html"><span class="dir">Previous</span><span>Hub</span></a>
+      <a class="next" href="d1-setup.html"><span class="dir">Next</span><span>D1 Phase 1: Setup</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

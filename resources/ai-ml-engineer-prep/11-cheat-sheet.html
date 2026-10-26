@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="11">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>11 Cheat sheet | AI/ML Engineer Prep</title>
+<meta name="description" content="One printable page of formulas and numbers: KV cache, weight memory, LoRA, BM25, RRF, nDCG, sign test, sampling, GPU memory and bandwidth.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+<style>
+  /* page-specific: dense cards that reflow to 2 columns on wide screens and in print */
+  .cheat { display: grid; gap: 12px; grid-template-columns: 1fr; }
+  .cheat .c { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 10px 12px; min-width: 0; }
+  .cheat h3 { margin: 0 0 6px; font-size: 1rem; color: var(--accent); }
+  .cheat p, .cheat li { font-size: .92rem; margin: 0 0 4px; }
+  .cheat ul { margin: 0; padding-left: 1.1rem; }
+  .cheat .f { font-family: var(--font-mono); font-size: .86rem; background: var(--code-bg); border-radius: 4px; padding: 4px 6px; margin: 4px 0; overflow-x: auto; white-space: pre; }
+  .cheat table { font-size: .86rem; }
+  .cheat th, .cheat td { padding: 4px 6px; }
+  .cheat .table-wrap { margin: 4px 0; }
+  @media (min-width: 900px) { .cheat { grid-template-columns: 1fr 1fr; } .cheat .wide { grid-column: 1 / -1; } }
+  @media print {
+    @page { margin: 10mm; }
+    body { font-size: 8.5pt; }
+    .page-head .lede, .page-head .meta, .print-hide { display: none !important; }
+    h1 { font-size: 14pt; margin: 0 0 4px; }
+    .cheat { grid-template-columns: 1fr 1fr; gap: 6px; }
+    .cheat .wide { grid-column: 1 / -1; }
+    .cheat .c { padding: 5px 7px; break-inside: avoid; }
+    .cheat p, .cheat li { font-size: 8pt; margin-bottom: 1px; }
+    .cheat .f { font-size: 7.5pt; padding: 2px 4px; white-space: pre-wrap; }
+    .cheat h3 { font-size: 9pt; margin-bottom: 2px; }
+    .cheat table { font-size: 7.5pt; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part 11</p>
+      <h1>Cheat sheet</h1>
+      <p class="lede">Formulas and numbers to memorize. Print it (Ctrl/Cmd + P): navigation is hidden, and the cards fit two columns on about three pages.</p>
+      <div class="meta"><span class="tag accent">Print friendly</span><span class="tag">Every value verified in solutions/verify_numbers.py</span></div>
+    </div>
+    <p class="btn-row print-hide"><button class="btn" type="button" onclick="window.print()">Print this page</button></p>
+
+    <section id="cheat" data-track>
+      <h2 class="print-hide">Formulas and numbers</h2>
+      <div class="cheat">
+
+        <div class="c">
+          <h3>ML basics</h3>
+          <div class="f">P = TP/(TP+FP)   R = TP/(TP+FN)   F1 = 2PR/(P+R)
+CE = -log p(correct);  perplexity = exp(CE)
+Bias^2 + Variance + noise = expected squared error</div>
+          <ul>
+            <li>TP 40, FP 10, FN 20, TN 930: P 0.8, R 0.667, F1 0.727, accuracy 0.97 (misleading).</li>
+            <li>AUC = P(random positive scores above random negative). PR-AUC for rare positives.</li>
+            <li>Overfit (train much better than val): more data, L2/dropout, early stopping. L1 gives sparse weights.</li>
+            <li>Fit scalers and imputers on train only (leakage). Split time series by time.</li>
+          </ul>
+        </div>
+
+        <div class="c">
+          <h3>Optimization</h3>
+          <div class="f">SGD: w -= lr * g
+Adam: m = b1 m + (1-b1) g;  v = b2 v + (1-b2) g^2;  w -= lr * m_hat / (sqrt(v_hat)+eps)</div>
+          <ul>
+            <li>lr too high diverges ((w-3)^2 with lr 1.1 explodes). Warmup + cosine decay + gradient clipping.</li>
+            <li>AdamW = decoupled weight decay. Backprop = chain rule. Training stores activations.</li>
+          </ul>
+        </div>
+
+        <div class="c">
+          <h3>Transformer basics</h3>
+          <div class="f">Attention = softmax(Q K^T / sqrt(d_k) + mask) V
+params/layer ~ 12 d^2 (MHA, 4d MLP);  SwiGLU MLP = 3 d ffn</div>
+          <ul>
+            <li>Llama 2 7B: 32 x (4d^2 + 3 d 11008 + 2d) + 2 x 32000 d + d = <strong>6,738,415,616</strong>.</li>
+            <li>sqrt(d_k): unit variance for the scores. Causal mask: -inf before the softmax. Cost O(n^2 d).</li>
+            <li>RoPE rotates q, k so scores depend on relative position. RMSNorm, pre-norm, residuals.</li>
+            <li>Encoder (BERT): embeddings and rerankers. Decoder (GPT): generation. MoE: compute ~ active, memory ~ total.</li>
+          </ul>
+        </div>
+
+        <div class="c">
+          <h3>Training, scaling, system design</h3>
+          <div class="f">train FLOPs ~ 6 N D;  inference ~ 2 N per token;  Chinchilla ~ 20 tokens/param
+Little's law: concurrency = rate x time;  QPS = per_day / 86,400</div>
+          <ul>
+            <li>6.74B x 2T tokens = 8.1e22 FLOPs, about 180k A100-hours at 40% MFU.</li>
+            <li>ZeRO 1/2/3 shards optimizer states / + gradients / + parameters. bf16 needs no loss scaling.</li>
+            <li>pass@k = 1 - C(n-c, k)/C(n, k). n = 10, c = 3: pass@5 = 0.917.</li>
+            <li>Cascade 80% at cost 1 + 20% at cost 10 = 2.8. Autoscale on queue depth and KV use, not CPU.</li>
+          </ul>
+        </div>
+
+        <div class="c">
+          <h3>KV cache</h3>
+          <div class="f">2 x L x H_kv x d_head x S x B x bytes</div>
+          <ul>
+            <li>H_kv = KV heads (GQA), NOT query heads. The 2 is for K and V.</li>
+            <li>32 L, 8 KV, 128, fp16: 128 KiB/token. x 4 x 8192 = <strong>4 GiB</strong>.</li>
+            <li>Llama-2-7B (MHA): 512 KiB/token. Llama-3-8B: 128 KiB. 70B (80 L, 8 KV): 320 KiB.</li>
+            <li>MHA : GQA(8) : MQA = 32 : 8 : 1 for a 32-head model. fp8 KV halves it.</li>
+          </ul>
+        </div>
+
+        <div class="c">
+          <h3>Weight memory (params x bytes)</h3>
+          <div class="table-wrap"><table>
+            <thead><tr><th></th><th class="num">fp32</th><th class="num">bf16</th><th class="num">int8</th><th class="num">int4</th></tr></thead>
+            <tbody>
+              <tr><td>7B</td><td class="num">28</td><td class="num">14</td><td class="num">7</td><td class="num">3.5</td></tr>
+              <tr><td>8B</td><td class="num">32</td><td class="num"><strong>16</strong></td><td class="num">8</td><td class="num">4</td></tr>
+              <tr><td>13B</td><td class="num">52</td><td class="num">26</td><td class="num">13</td><td class="num">6.5</td></tr>
+              <tr><td>70B</td><td class="num">280</td><td class="num">140</td><td class="num">70</td><td class="num">35</td></tr>
+            </tbody>
+          </table></div>
+          <p>GB (10^9). GiB = GB / 1.074. int4 + group scales is about 4.125 bits. Full fine-tune with Adam is about 16 B/param.</p>
+        </div>
+
+        <div class="c">
+          <h3>Roofline and decoding speed</h3>
+          <div class="f">intensity = FLOPs / bytes;  ridge = peak FLOP/s / bandwidth
+t_token ~ weight_bytes / bandwidth   (batch 1)</div>
+          <ul>
+            <li>Decode at batch 1 is about 1 FLOP/byte (bf16), so memory bound. Prefill is compute bound.</li>
+            <li>Ridge: A100 about 153, H100 about 295 FLOP/byte.</li>
+            <li>8B bf16 on H100: 4.78 ms/token (about 209 tok/s ceiling). int4: 1.23 ms.</li>
+            <li>W4A16: dequantize to 16-bit, then multiply. No int4 matmul and no fewer layers.</li>
+          </ul>
+        </div>
+
+        <div class="c">
+          <h3>Throughput: helps / hurts</h3>
+          <ul>
+            <li><strong>Helps:</strong> continuous batching, PagedAttention, prefix caching, chunked prefill, TP/PP, FlashAttention, fp8 KV cache, quantized weights.</li>
+            <li><strong>Hurts:</strong> disabling the KV cache, raising max_new_tokens for all requests.</li>
+            <li>TTFT = prefill (+ queue). ITL = decode.</li>
+          </ul>
+        </div>
+
+        <div class="c">
+          <h3>Speculative decoding</h3>
+          <div class="f">accept x w.p. min(1, p(x)/q(x)); on reject sample max(0, p - q) normalized
+E[tokens/pass] = (1 - a^(k+1)) / (1 - a)</div>
+          <ul>
+            <li>Output distribution is exactly the target's. Works at any temperature. Quality is not capped by the draft.</li>
+            <li>A rejection does not cost an extra full pass. a = 0.8, k = 4 gives 3.36 tokens per pass.</li>
+          </ul>
+        </div>
+
+        <div class="c">
+          <h3>Constrained decoding and prompt caching</h3>
+          <ul>
+            <li>Masks illegal tokens to -inf. Guarantees syntax and schema, not values, and you still need evals.</li>
+            <li>Add "unknown" to enums. Put the reasoning field BEFORE the answer field.</li>
+            <li>Cache = longest identical prefix. Order: static (system, tools), then semi-static (manual), then dynamic (question).</li>
+            <li>Tamil: 3 bytes per char in UTF-8, plus English-heavy BPE merges, gives about 3x the tokens.</li>
+          </ul>
+        </div>
+
+        <div class="c">
+          <h3>LoRA / QLoRA / DPO</h3>
+          <div class="f">h = W x + (alpha/r) B A x;  params/module = r (d_in + d_out)</div>
+          <ul>
+            <li>r = 16 on q, v (4096 x 4096) over 32 layers = <strong>8,388,608</strong>. alpha 32 / r 16 = scale 2.</li>
+            <li>Only A, B trained. B is initialized to 0. Merge for zero latency. Saves gradient and optimizer memory, NOT activations.</li>
+            <li>QLoRA: NF4 frozen base + bf16 adapters + double quantization + paged optimizers.</li>
+          </ul>
+          <div class="f">DPO: -log sig(beta[(log pi(y_w) - log ref(y_w)) - (log pi(y_l) - log ref(y_l))])</div>
+          <p>Frozen <strong>reference</strong>, no <strong>reward</strong> model, offline. Init loss = ln 2. KTO: unpaired labels. ORPO: no reference model. GRPO: group-relative advantages, no critic.</p>
+        </div>
+
+        <div class="c">
+          <h3>BM25</h3>
+          <div class="f">sum_t idf(t) f (k1+1) / (f + k1 (1 - b + b |D|/avgdl))
+idf = ln(1 + (N - n + 0.5)/(n + 0.5));  k1 = 1.2, b = 0.75</div>
+          <ul>
+            <li>Distinct query terms. avgdl over ALL docs. n = number of docs containing t. No stemming.</li>
+            <li>The tf part saturates at k1 + 1 = 2.2. Average-length doc: f = 1 gives 1.0, f = 2 gives 1.375.</li>
+          </ul>
+        </div>
+
+        <div class="c">
+          <h3>RRF, metrics</h3>
+          <div class="f">RRF = sum 1/(k + rank), rank 1-based, k = 60
+DCG@k = sum gain_i / log2(i + 1);  nDCG = DCG / IDCG(all judged)</div>
+          <ul>
+            <li>recall@k = hits / all relevant. precision@k = hits / k.</li>
+            <li>MRR = mean of 1/first-hit rank (0 if none). AP = sum of P@rank over hits / all relevant.</li>
+            <li>Jaccard &gt;= 0.8 in integers: 5|A∩B| &gt;= 4|A∪B|.</li>
+          </ul>
+        </div>
+
+        <div class="c">
+          <h3>RAG diagnosis</h3>
+          <ul>
+            <li>Low recall@k: fix retrieval (hybrid BM25 + dense, chunking, query rewrite).</li>
+            <li>High recall, low accuracy: cross-encoder rerank, then pass the top 3 to 5.</li>
+            <li>New embedding model: re-embed EVERYTHING (blue/green, dual-write).</li>
+            <li>Cosine = dot product after L2 normalization. HNSW: efSearch. IVF: nprobe.</li>
+          </ul>
+        </div>
+
+        <div class="c">
+          <h3>Paired significance</h3>
+          <div class="f">sign test: p = 2 sum_{k=max(b,c)}^{n} C(n,k)/2^n,  n = b + c
+McNemar: (b-c)^2/(b+c);  corrected (|b-c|-1)^2/(b+c)</div>
+          <ul>
+            <li>Only discordant pairs matter. 18 vs 12 gives p = <strong>0.3616</strong>, not significant.</li>
+            <li>With 30 discordant you need at least 21 to 9 for p &lt; 0.05. The unpaired z-test is the wrong tool.</li>
+            <li>SE = sqrt(p(1-p)/n). 80% on 200 gives about +/- 5.5 points. Prefer Wilson intervals.</li>
+            <li>m tests: 1 - 0.95^m false-positive risk (20 tests: 0.64). Bonferroni alpha/m.</li>
+          </ul>
+        </div>
+
+        <div class="c">
+          <h3>Decoding</h3>
+          <div class="f">p_i = exp((z_i - max z)/T) / sum exp((z_j - max z)/T)</div>
+          <ul>
+            <li>[2, 1, 0]: T = 1 gives .665/.245/.090. T = 0.5 gives .867/.117/.016.</li>
+            <li>top-p: shortest prefix with sum &gt;= p, then renormalize. min-p keeps p &gt;= min_p x p_max.</li>
+            <li>Beam prunes by prefix score, so it is not optimal. Width 1 = greedy. Normalize by length^alpha.</li>
+            <li>Perplexity = exp(-mean logprob).</li>
+          </ul>
+        </div>
+
+        <div class="c">
+          <h3>Agents</h3>
+          <ul>
+            <li>Timeout = unknown outcome. Idempotency key generated ONCE per logical operation and reused on retries.</li>
+            <li>At-least-once + idempotent = exactly-once effect.</li>
+            <li>Backoff: uniform(0, min(cap, base x 2^n)). Retry 429, 5xx and timeouts only, with bounded attempts.</li>
+            <li>Outbox: DB write + message in one transaction. Saga: compensating actions.</li>
+            <li>Injection: least privilege + human approval for risky actions.</li>
+          </ul>
+        </div>
+
+        <div class="c">
+          <h3>Coding problem gotchas</h3>
+          <ul>
+            <li>(a) sort (-score, i). Does not fit: continue. Dedup only vs picked. Return sorted.</li>
+            <li>(b) distinct terms, fixed summation order, sort (-score, i), drop score 0.</li>
+            <li>(c) depth, in_str, esc. Escape check first. Ignore everything outside except "{".</li>
+            <li>(d) (-score, seq) ascending. Loop steps - 1 times. Extend all by all.</li>
+          </ul>
+        </div>
+
+        <div class="c wide">
+          <h3>GPU memory and bandwidth (approximate vendor figures; check the exact SKU)</h3>
+          <div class="table-wrap"><table>
+            <thead><tr><th>GPU</th><th class="num">Memory</th><th>Type</th><th class="num">Bandwidth</th><th class="num">Dense BF16</th><th>8B bf16 fits?</th></tr></thead>
+            <tbody>
+              <tr><td>T4</td><td class="num">16 GB</td><td>GDDR6</td><td class="num">~320 GB/s</td><td class="num">(no bf16)</td><td>no room (16 GB weights)</td></tr>
+              <tr><td>A10</td><td class="num">24 GB</td><td>GDDR6</td><td class="num">~600 GB/s</td><td class="num"></td><td>yes, tight KV</td></tr>
+              <tr><td>L4</td><td class="num">24 GB</td><td>GDDR6</td><td class="num">~300 GB/s</td><td class="num"></td><td>yes, tight KV</td></tr>
+              <tr><td>A100 40GB</td><td class="num">40 GB</td><td>HBM2</td><td class="num">~1.6 TB/s</td><td class="num">~312 TFLOPS</td><td>yes</td></tr>
+              <tr><td>A100 80GB (SXM)</td><td class="num">80 GB</td><td>HBM2e</td><td class="num">~2.0 TB/s</td><td class="num">~312 TFLOPS</td><td>yes, 70B int4 too</td></tr>
+              <tr><td>H100 80GB (SXM)</td><td class="num">80 GB</td><td>HBM3</td><td class="num">~3.35 TB/s</td><td class="num">~989 TFLOPS</td><td>yes, 70B int4 too</td></tr>
+            </tbody>
+          </table></div>
+          <p>Bandwidth is the decode speed limit at small batch: t_token is about weight bytes / bandwidth. TFLOPS are listed only where I am confident of the dense figure. PCIe variants of A100 and H100 have lower bandwidth than SXM.</p>
+        </div>
+
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="10-practice-quiz.html"><span class="dir">Previous</span><span>10 Practice quiz</span></a>
+      <a class="next" href="index.html"><span class="dir">Next</span><span>Back to the hub</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

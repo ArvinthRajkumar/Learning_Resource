@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="X4">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>String algorithms: KMP, Z, Rabin-Karp, Manacher, tries and suffix structures | DSA Master Guide</title>
+<meta name="description" content="Efficient pattern matching with the prefix function, the Z algorithm and rolling hashes, palindromes with Manacher, tries and Aho-Corasick for many patterns, suffix arrays and longest common prefixes, each tested against naive search.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part X4</p>
+      <h1>String algorithms: KMP, Z, Rabin-Karp, Manacher, tries and suffix structures</h1>
+      <p class="lede">Module 4 covered everyday string handling. This part covers the algorithms that find patterns in linear time and structures that answer substring questions about huge texts. All are validated against the obvious quadratic version on random strings.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="problem" data-track>
+      <h2>The pattern matching problem</h2>
+<p>Find every occurrence of a pattern <code>P</code> (length <code>m</code>) in a text <code>T</code> (length <code>n</code>). The naive method compares at each of <code>n - m + 1</code> positions: <code>O(n m)</code> in the worst case (<code>aaaa...ab</code> against <code>aaa...a</code>). Linear-time methods avoid re-examining characters.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Algorithm</th><th>Idea</th><th>Time</th></tr></thead>
+<tbody>
+<tr><td>Naive</td><td>Compare at every position</td><td>O(n m)</td></tr><tr><td><strong>KMP</strong></td><td>Precompute how far to fall back using the pattern's own structure</td><td>O(n + m)</td></tr><tr><td><strong>Z algorithm</strong></td><td>Z-values: longest match of each suffix with the whole string</td><td>O(n + m)</td></tr><tr><td><strong>Rabin-Karp</strong></td><td>Compare rolling hashes, verify on match</td><td>O(n + m) expected</td></tr><tr><td><strong>Boyer-Moore</strong></td><td>Skip ahead using bad-character and good-suffix rules</td><td>Sublinear on average</td></tr><tr><td><strong>Aho-Corasick</strong></td><td>KMP generalised to many patterns via a trie</td><td>O(n + total length + matches)</td></tr><tr><td>Suffix automaton and suffix array</td><td>Index the text for many pattern queries</td><td>O(n) or O(n log n) build</td></tr>
+</tbody>
+</table>
+</div>
+    </section>
+
+    <section id="kmp" data-track>
+      <h2>KMP and the prefix function</h2>
+<h3>The prefix function</h3>
+<p>For a string <code>s</code>, <code>pi[i]</code> is the length of the **longest proper prefix of <code>s[0..i]</code> that is also a suffix** of it. It tells how much of the current match can be kept after a mismatch.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x4-01.py">def prefix_function(s):
+    pi = [0] * len(s)
+    k = 0
+    for i in range(1, len(s)):
+        while k and s[i] != s[k]:
+            k = pi[k - 1]                   # fall back to a shorter border
+        if s[i] == s[k]:
+            k += 1
+        pi[i] = k
+    return pi
+print(prefix_function("abacabab"))
+print(prefix_function("aaaa"))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[0, 0, 1, 0, 1, 2, 3, 2]
+[0, 1, 2, 3]</code></pre>
+<p>For <code>abacabab</code> the entry for the first <code>abacaba</code> is 3 because <code>aba</code> is both a prefix and a suffix.</p>
+<h3>Searching</h3>
+<p>Run the same logic on <code>P + "#" + T</code> (with a separator not in either): every position where <code>pi</code> equals <code>m</code> is a match. Or reuse <code>pi</code> while scanning <code>T</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x4-02.py">import random
+random.seed(0)
+def kmp_search(text, pat):
+    pi, k, out = prefix_function(pat), 0, []
+    for i, ch in enumerate(text):
+        while k and ch != pat[k]:
+            k = pi[k - 1]
+        if ch == pat[k]:
+            k += 1
+        if k == len(pat):
+            out.append(i - k + 1)
+            k = pi[k - 1]
+    return out
+def prefix_function(s):
+    pi, k = [0] * len(s), 0
+    for i in range(1, len(s)):
+        while k and s[i] != s[k]: k = pi[k - 1]
+        if s[i] == s[k]: k += 1
+        pi[i] = k
+    return pi
+def naive(text, pat):
+    return [i for i in range(len(text) - len(pat) + 1) if text.startswith(pat, i)]
+for _ in range(400):
+    text = "".join(random.choice("ab") for _ in range(random.randint(0, 25)))
+    pat = "".join(random.choice("ab") for _ in range(random.randint(1, 5)))
+    assert kmp_search(text, pat) == naive(text, pat)
+print("KMP matches naive search on 400 random cases (including overlaps)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>KMP matches naive search on 400 random cases (including overlaps)</code></pre>
+<h3>Uses of the prefix function</h3>
+<ul><li><strong>Smallest period</strong> of a string: <code>len(s) - pi[-1]</code> if it divides <code>len(s)</code> (repeated-substring problems).</li><li><strong>Borders</strong>: all prefixes that are also suffixes, by following <code>pi</code> links.</li><li>Count occurrences of each prefix, automata for string matching, and "shortest palindrome by adding characters in front".</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/x4-03.py">def smallest_period(s):
+    pi = [0] * len(s)
+    k = 0
+    for i in range(1, len(s)):
+        while k and s[i] != s[k]: k = pi[k - 1]
+        if s[i] == s[k]: k += 1
+        pi[i] = k
+    p = len(s) - pi[-1]
+    return p if len(s) % p == 0 else len(s)
+print(smallest_period("abcabcabc"), smallest_period("abcab"), smallest_period("aaaa"))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>3 5 1</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x4-q01" data-topic="String algorithms" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does the KMP prefix function value pi[i] store?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The count of distinct letters <span class="q-why">No.</span></li>
+          <li data-key="B">The length of the longest proper prefix of s[0..i] that is also a suffix <span class="q-why">Correct.</span></li>
+          <li data-key="C">The index of the next match <span class="q-why">No.</span></li>
+          <li data-key="D">The hash <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It tells how far to fall back after a mismatch.</p></div>
+      </div>
+      <div class="quiz" data-qid="xd-x4-q02" data-topic="String algorithms" data-type="numeric" data-answer="2" data-tol="0">
+        <div class="q-stem"><p>What is the smallest period of 'abababab'? (the period length)</p></div>
+        <div class="q-explain"><p>len = 8, pi[-1] = 6, period = 8 - 6 = 2, and 2 divides 8.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why is KMP linear?</summary><div class="answer"><p>The fallback pointer k only decreases as often as it has increased, so total work is O(n + m).</p></div></details>
+      </div>
+    </section>
+
+    <section id="zalg" data-track>
+      <h2>The Z algorithm</h2>
+<p><code>z[i]</code> is the length of the longest common prefix of <code>s</code> and <code>s[i:]</code>. It is computed in <code>O(n)</code> by maintaining a window <code>[l, r)</code> that matches a prefix and reusing earlier values inside it.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x4-04.py">import random
+random.seed(1)
+def z_function(s):
+    n, z, l, r = len(s), [0] * len(s), 0, 0
+    for i in range(1, n):
+        if i &lt; r:
+            z[i] = min(r - i, z[i - l])
+        while i + z[i] &lt; n and s[z[i]] == s[i + z[i]]:
+            z[i] += 1
+        if i + z[i] &gt; r:
+            l, r = i, i + z[i]
+    return z
+def z_naive(s):
+    return [0] + [next((k for k in range(len(s) - i + 1) if k == len(s) - i or s[k] != s[i + k]), 0) for i in range(1, len(s))]
+for _ in range(300):
+    s = "".join(random.choice("ab") for _ in range(random.randint(1, 20)))
+    assert z_function(s) == z_naive(s)
+print("Z function verified; example:", z_function("aabxaabxcaabxaabxay"))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>Z function verified; example: [0, 1, 0, 0, 4, 1, 0, 0, 0, 8, 1, 0, 0, 5, 1, 0, 0, 1, 0]</code></pre>
+<p>Search with <code>P + "$" + T</code>: positions where <code>z == len(P)</code> are matches. Z and the prefix function are interchangeable for most tasks; choose whichever you remember.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x4-q03" data-topic="String algorithms" data-type="single" data-answer="B">
+        <div class="q-stem"><p>z[i] in the Z algorithm is:</p></div>
+        <ul class="q-options">
+          <li data-key="A">The number of occurrences <span class="q-why">No.</span></li>
+          <li data-key="B">The length of the longest common prefix of the string and its suffix starting at i <span class="q-why">Correct.</span></li>
+          <li data-key="C">The hash of the suffix <span class="q-why">No.</span></li>
+          <li data-key="D">The palindrome radius <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It measures how much each suffix matches the beginning.</p></div>
+      </div>
+    </section>
+
+    <section id="rabin" data-track>
+      <h2>Rolling hashes: Rabin-Karp</h2>
+<p>Treat a string as a number in some base modulo a large prime, so the hash of a window can be <strong>updated in O(1)</strong> when it slides: <code>h = (h - s[i] base^(m-1)) base + s[i+m]</code> (mod <code>p</code>). Equal hashes are verified by direct comparison (collisions are possible). Use a large modulus and a random base to resist adversarial inputs.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x4-05.py">import random
+random.seed(2)
+MOD = (1 &lt;&lt; 61) - 1
+def rabin_karp(text, pat):
+    n, m = len(text), len(pat)
+    if m &gt; n: return []
+    base = random.randrange(256, MOD - 1)
+    hp = ht = 0
+    for i in range(m):
+        hp = (hp * base + ord(pat[i])) % MOD
+        ht = (ht * base + ord(text[i])) % MOD
+    top = pow(base, m - 1, MOD)
+    out = []
+    for i in range(n - m + 1):
+        if hp == ht and text[i:i + m] == pat: out.append(i)
+        if i + m &lt; n:
+            ht = ((ht - ord(text[i]) * top) * base + ord(text[i + m])) % MOD
+    return out
+def naive(text, pat): return [i for i in range(len(text) - len(pat) + 1) if text.startswith(pat, i)]
+for _ in range(300):
+    text = "".join(random.choice("abc") for _ in range(random.randint(0, 30)))
+    pat = "".join(random.choice("abc") for _ in range(random.randint(1, 4)))
+    assert rabin_karp(text, pat) == naive(text, pat)
+print("Rabin-Karp matches naive search")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>Rabin-Karp matches naive search</code></pre>
+<p>Strengths: easily extends to <strong>multiple patterns of the same length</strong>, 2D patterns, finding repeated substrings (binary search on length plus a hash set) and plagiarism detection (winnowing). Weakness: probabilistic.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x4-q04" data-topic="String algorithms" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why does Rabin-Karp compare strings after a hash match?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To save time <span class="q-why">No.</span></li>
+          <li data-key="B">Hashes can collide, so equal hashes must be verified <span class="q-why">Correct.</span></li>
+          <li data-key="C">To update the hash <span class="q-why">No.</span></li>
+          <li data-key="D">Because ASCII differs <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Verification makes the result exact; collisions only cost time.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How does a rolling hash slide?</summary><div class="answer"><p>Subtract the outgoing character times base^(m-1), multiply by the base and add the incoming character, modulo a prime.</p></div></details>
+      </div>
+    </section>
+
+    <section id="manacher" data-track>
+      <h2>Palindromes: Manacher's algorithm</h2>
+<p>The longest palindromic substring takes <code>O(n^2)</code> by expanding around centres; <strong>Manacher</strong> does it in <code>O(n)</code> by reusing mirror information. Insert a separator between characters so every palindrome has odd length.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x4-06.py">import random
+random.seed(3)
+def manacher(s):
+    t = "^#" + "#".join(s) + "#$"
+    n, p, centre, right = len(t), [0] * len(t), 0, 0
+    for i in range(1, n - 1):
+        if i &lt; right:
+            p[i] = min(right - i, p[2 * centre - i])
+        while t[i + 1 + p[i]] == t[i - 1 - p[i]]:
+            p[i] += 1
+        if i + p[i] &gt; right:
+            centre, right = i, i + p[i]
+    best = max(range(1, n - 1), key=lambda i: p[i])
+    start = (best - p[best]) // 2
+    return s[start:start + p[best]]
+def brute(s):
+    best = ""
+    for i in range(len(s)):
+        for j in range(i, len(s)):
+            sub = s[i:j + 1]
+            if sub == sub[::-1] and len(sub) &gt; len(best): best = sub
+    return best
+for _ in range(300):
+    s = "".join(random.choice("ab") for _ in range(random.randint(1, 14)))
+    assert len(manacher(s)) == len(brute(s))
+print("Manacher finds a longest palindrome of the right length;", manacher("forgeeksskeegfor"))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>Manacher finds a longest palindrome of the right length; geeksskeeg</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x4-q05" data-topic="String algorithms" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Manacher's algorithm finds the longest palindromic substring in:</p></div>
+        <ul class="q-options">
+          <li data-key="A">O(n^2) <span class="q-why">That is expand around centre.</span></li>
+          <li data-key="B">O(n) <span class="q-why">Correct.</span></li>
+          <li data-key="C">O(n log n) <span class="q-why">No.</span></li>
+          <li data-key="D">O(2^n) <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It reuses palindromes already found via a mirror.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why insert separators in Manacher?</summary><div class="answer"><p>So every palindrome, even or odd, has a centre character and can be handled uniformly.</p></div></details>
+      </div>
+    </section>
+
+    <section id="trie" data-track>
+      <h2>Tries and Aho-Corasick</h2>
+<h3>Trie</h3>
+<p>A tree where each edge is a character; a path from the root spells a prefix. Operations take <code>O(length)</code> regardless of how many words are stored: insert, exact lookup, <strong>prefix search</strong> and autocomplete, longest common prefix, word search on a grid with pruning, replacing words by roots.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x4-07.py">class Trie:
+    def __init__(self): self.root = {}
+    def insert(self, word):
+        node = self.root
+        for ch in word: node = node.setdefault(ch, {})
+        node["$"] = True
+    def starts_with(self, prefix):
+        node = self.root
+        for ch in prefix:
+            if ch not in node: return []
+            node = node[ch]
+        out = []
+        def walk(n, acc):
+            for k in sorted(n):
+                if k == "$": out.append(acc)
+                else: walk(n[k], acc + k)
+        walk(node, prefix)
+        return out
+t = Trie()
+for w in ["car", "card", "care", "cart", "cat", "dog"]: t.insert(w)
+print(t.starts_with("car"), t.starts_with("ca"), t.starts_with("x"))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>['car', 'card', 'care', 'cart'] ['car', 'card', 'care', 'cart', 'cat'] []</code></pre>
+<h3>Aho-Corasick</h3>
+<p>Search for <strong>many</strong> patterns at once. Build a trie of the patterns, then add <strong>failure links</strong> (the longest proper suffix of the current path that is also a path in the trie) with a BFS, exactly KMP's fallback generalised. One pass over the text reports all matches of all patterns: <code>O(n + total pattern length + matches)</code>. Used in virus scanners, profanity filters, intrusion detection and DNA search.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x4-08.py">from collections import deque
+def aho_corasick(patterns, text):
+    goto, fail, out = [{}], [0], [[]]
+    for idx, p in enumerate(patterns):
+        s = 0
+        for ch in p:
+            if ch not in goto[s]:
+                goto.append({}); fail.append(0); out.append([])
+                goto[s][ch] = len(goto) - 1
+            s = goto[s][ch]
+        out[s].append(idx)
+    q = deque(goto[0].values())
+    while q:
+        u = q.popleft()
+        for ch, v in goto[u].items():
+            f = fail[u]
+            while f and ch not in goto[f]: f = fail[f]
+            fail[v] = goto[f].get(ch, 0) if goto[f].get(ch, 0) != v else 0
+            out[v] = out[v] + out[fail[v]]
+            q.append(v)
+    s, found = 0, []
+    for i, ch in enumerate(text):
+        while s and ch not in goto[s]: s = fail[s]
+        s = goto[s].get(ch, 0)
+        for idx in out[s]: found.append((i - len(patterns[idx]) + 1, patterns[idx]))
+    return sorted(found)
+pats = ["he", "she", "his", "hers"]
+text = "ushers"
+expected = sorted((i, p) for p in pats for i in range(len(text)) if text.startswith(p, i))
+print(aho_corasick(pats, text), aho_corasick(pats, text) == expected)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[(1, 'she'), (2, 'he'), (2, 'hers')] True</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x4-q06" data-topic="String algorithms" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Aho-Corasick extends KMP to:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Sorting <span class="q-why">No.</span></li>
+          <li data-key="B">Searching many patterns simultaneously using failure links on a trie <span class="q-why">Correct.</span></li>
+          <li data-key="C">Palindromes <span class="q-why">No.</span></li>
+          <li data-key="D">Hash tables <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>One pass over the text finds all matches of all patterns.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Trie operation costs?</summary><div class="answer"><p>Insert, lookup and prefix search are O(length of the word), independent of the number of words.</p></div></details>
+      </div>
+    </section>
+
+    <section id="suffix" data-track>
+      <h2>Suffix arrays and substring queries</h2>
+<h3>Suffix array</h3>
+<p>The <strong>suffix array</strong> lists the starting positions of all suffixes of <code>s</code> in sorted order. Any substring is a prefix of some suffix, so substring search is a <strong>binary search</strong> over the array: <code>O(m log n)</code>. Build naively by sorting (<code>O(n^2 log n)</code> comparisons in the worst case, fine for small <code>n</code>) or in <code>O(n log n)</code> with prefix doubling, or <code>O(n)</code> with SA-IS.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x4-09.py">import bisect
+def suffix_array(s):
+    return sorted(range(len(s)), key=lambda i: s[i:])
+def lcp_array(s, sa):
+    n, rank, lcp, h = len(s), [0] * len(s), [0] * len(s), 0
+    for i, p in enumerate(sa): rank[p] = i
+    for i in range(n):                       # Kasai: O(n) longest common prefix of neighbours
+        if rank[i] &gt; 0:
+            j = sa[rank[i] - 1]
+            while i + h &lt; n and j + h &lt; n and s[i + h] == s[j + h]: h += 1
+            lcp[rank[i]] = h
+            if h: h -= 1
+        else:
+            h = 0
+    return lcp
+def count_occurrences(s, sa, pat):
+    suffixes = [s[i:i + len(pat)] for i in sa]
+    return bisect.bisect_right(suffixes, pat) - bisect.bisect_left(suffixes, pat)
+s = "banana"
+sa = suffix_array(s)
+print("suffix array:", sa, [s[i:] for i in sa])
+lcp = lcp_array(s, sa)
+print("LCP array   :", lcp, "| longest repeated substring length:", max(lcp))
+print("occurrences of 'ana':", count_occurrences(s, sa, "ana"), "| of 'an':", count_occurrences(s, sa, "an"))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>suffix array: [5, 3, 1, 0, 4, 2] ['a', 'ana', 'anana', 'banana', 'na', 'nana']
+LCP array   : [0, 1, 3, 0, 0, 2] | longest repeated substring length: 3
+occurrences of 'ana': 2 | of 'an': 2</code></pre>
+<p>With the LCP array you can find the <strong>longest repeated substring</strong> (the maximum LCP), count <strong>distinct substrings</strong> (<code>n(n+1)/2 - sum(lcp)</code>), and compute the <strong>longest common substring</strong> of two strings (concatenate with a separator). <strong>Suffix automata</strong> solve many of the same problems online in linear time, and <strong>suffix trees</strong> answer them with a compressed trie of all suffixes.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x4-q07" data-topic="String algorithms" data-type="numeric" data-answer="17" data-tol="0">
+        <div class="q-stem"><p>A string has length 6 and its LCP array sums to 4. How many distinct substrings does it have? (n(n+1)/2 - sum(lcp))</p></div>
+        <div class="q-explain"><p>6 x 7 / 2 = 21, minus 4 = 17.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does a suffix array enable?</summary><div class="answer"><p>Binary search for any substring in O(m log n), plus longest repeated substring and distinct-substring counts using the LCP array.</p></div></details>
+      </div>
+    </section>
+
+    <section id="patterns" data-track>
+      <h2>Problem patterns</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Clue</th><th>Technique</th></tr></thead>
+<tbody>
+<tr><td>Find one pattern in a long text</td><td>KMP, Z or Rabin-Karp</td></tr><tr><td>Many patterns at once</td><td>Aho-Corasick</td></tr><tr><td>Is <code>s</code> a rotation of <code>t</code>?</td><td>Find <code>t</code> in <code>s + s</code></td></tr><tr><td>Smallest repeating unit, periodicity</td><td><code>len - pi[-1]</code></td></tr><tr><td>Longest palindromic substring</td><td>Manacher (or expand around centres for small input)</td></tr><tr><td>Shortest palindrome by prepending</td><td>Prefix function on <code>s + "#" + reversed(s)</code></td></tr><tr><td>Longest repeated or common substring</td><td>Suffix array and LCP, or binary search plus hashing</td></tr><tr><td>Count distinct substrings</td><td>Suffix array with LCP</td></tr><tr><td>Prefix queries, autocomplete, word dictionary</td><td>Trie</td></tr><tr><td>Anagram windows</td><td>Sliding window with character counts</td></tr><tr><td>Edit distance, LCS, subsequence matching</td><td>DP (<a href="x3-advanced-dp.html">X3</a>)</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/x4-10.py">def is_rotation(s, t):
+    return len(s) == len(t) and t in s + s
+def shortest_palindrome(s):
+    r = s[::-1]
+    comb = s + "#" + r
+    pi, k = [0] * len(comb), 0
+    for i in range(1, len(comb)):
+        while k and comb[i] != comb[k]: k = pi[k - 1]
+        if comb[i] == comb[k]: k += 1
+        pi[i] = k
+    return r[:len(s) - pi[-1]] + s
+print(is_rotation("waterbottle", "erbottlewat"), is_rotation("abc", "acb"))
+print(shortest_palindrome("aacecaaa"), shortest_palindrome("abcd"))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>True False
+aaacecaaa dcbabcd</code></pre>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Fast string algorithms are all about <strong>never rescanning</strong>: KMP and Z reuse what the pattern says about itself, hashing compares summaries, tries share common prefixes, suffix arrays sort all suffixes once. Test each against the naive version on small random strings over a tiny alphabet, where collisions and overlaps appear quickly.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x4-q08" data-topic="String algorithms" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you test whether t is a rotation of s?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Sort both <span class="q-why">No.</span></li>
+          <li data-key="B">Check whether t occurs in s + s (with equal lengths) <span class="q-why">Correct.</span></li>
+          <li data-key="C">Compare lengths only <span class="q-why">No.</span></li>
+          <li data-key="D">Reverse both <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>All rotations of s are substrings of s concatenated with itself.</p></div>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: String algorithms</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="String algorithms">
+<details class="recall iq" data-level="basic" data-topic="String algorithms"><summary><span class="tag ok">Basic</span> Naive pattern matching complexity and when it is bad?</summary><div class="answer"><p>O(n m) worst case, such as aaaa...ab against aaa...a, because comparisons restart at every position.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="String algorithms"><summary><span class="tag ok">Basic</span> What is a trie and what are its operations&#x27; costs?</summary><div class="answer"><p>A prefix tree with insert, search and prefix queries in O(length) regardless of dictionary size, at the cost of memory.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="String algorithms"><summary><span class="tag ok">Basic</span> How do you check whether one string is a rotation of another?</summary><div class="answer"><p>Same length and the second occurs inside the first concatenated with itself.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="String algorithms"><summary><span class="tag warn">Medium</span> Explain the KMP prefix function.</summary><div class="answer"><p>pi[i] is the length of the longest proper prefix of s[0..i] that is also a suffix. On a mismatch the matcher falls back to pi[k - 1] instead of restarting, giving O(n + m).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="String algorithms"><summary><span class="tag warn">Medium</span> Why is KMP linear?</summary><div class="answer"><p>The fallback pointer only moves forward one step per character and each fallback decreases it, so total moves are bounded by 2n.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="String algorithms"><summary><span class="tag warn">Medium</span> What does the Z array give?</summary><div class="answer"><p>z[i] is the longest common prefix of s and s[i:]; pattern matching on P + &#x27;$&#x27; + T finds matches where z equals |P|.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="String algorithms"><summary><span class="tag warn">Medium</span> How does Rabin-Karp work and what is its failure mode?</summary><div class="answer"><p>It compares rolling hashes of windows with the pattern hash, verifying equal hashes. Collisions or adversarial inputs can degrade it to O(n m); use a large modulus and random base.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="String algorithms"><summary><span class="tag warn">Medium</span> How do you find the smallest repeating period of a string?</summary><div class="answer"><p>Take p = n - pi[n - 1]; if p divides n then p is the period, otherwise the string is primitive (period n).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="String algorithms"><summary><span class="tag bad">Advanced</span> Manacher&#x27;s algorithm in one paragraph.</summary><div class="answer"><p>Insert separators, keep the centre and right edge of the rightmost palindrome, and initialise the radius at i from its mirror, then expand. Each expansion moves the right edge, so O(n) overall.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="String algorithms"><summary><span class="tag bad">Advanced</span> What is Aho-Corasick and where is it used?</summary><div class="answer"><p>A trie with failure links that finds all occurrences of many patterns in a single pass, O(n + total pattern length + matches). Used in malware scanners and filters.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="String algorithms"><summary><span class="tag bad">Advanced</span> What is a suffix array and what can you do with it?</summary><div class="answer"><p>The sorted order of all suffixes. With an LCP array it supports substring search by binary search, longest repeated substring, distinct substring counting and longest common substring.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="String algorithms"><summary><span class="tag bad">Advanced</span> Suffix array versus suffix tree versus suffix automaton?</summary><div class="answer"><p>All index all substrings. Suffix trees are the most flexible but memory heavy; suffix arrays are compact and cache friendly; suffix automata are small and build online in linear time.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="String algorithms"><summary><span class="tag bad">Advanced</span> How do you count distinct substrings?</summary><div class="answer"><p>n(n + 1)/2 minus the sum of the LCP array of the suffix array.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="String algorithms"><summary><span class="tag bad">Advanced</span> How do you find the shortest palindrome by prepending characters?</summary><div class="answer"><p>Compute the prefix function of s + &#x27;#&#x27; + reverse(s); the last value is the longest palindromic prefix, and the rest of the reversed string is prepended.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="x3-advanced-dp.html"><span class="dir">Previous</span><span>X3 Advanced dynamic programming: knapsacks, bitmasks, intervals, trees and optimisation</span></a>
+      <a class="next" href="x5-number-theory.html"><span class="dir">Next</span><span>X5 Number theory, combinatorics and probability for interviews</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

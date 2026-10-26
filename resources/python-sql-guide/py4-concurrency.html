@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="PY4">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Concurrency: threads, processes and asyncio | Python + SQL</title>
+<meta name="description" content="Concurrency versus parallelism, threads and locks, race conditions, queues, process pools, concurrent.futures, asyncio, tasks, gather, timeouts and how to choose.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part PY4</p>
+      <h1>Concurrency: threads, processes and asyncio</h1>
+      <p class="lede">A program that waits on networks or disks wastes most of its time. Concurrency lets other work proceed while one task waits. This part explains the three models Python offers and how to pick between them.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~3 hours</span></div>
+    </div>
+
+    <section id="concepts" data-track>
+      <h2>Concepts</h2>
+<h3>Concurrency versus parallelism</h3>
+<ul><li><strong>Concurrency</strong>: structuring a program as several tasks that make progress in overlapping time periods (one cook alternating between dishes).</li><li><strong>Parallelism</strong>: tasks literally running at the same instant on several cores (several cooks).</li></ul>
+<h3>I/O-bound versus CPU-bound</h3>
+<ul><li><strong>I/O-bound</strong>: time is spent waiting (HTTP calls, database queries, file reads). Overlapping the waits gives big speedups, even on one core.</li><li><strong>CPU-bound</strong>: time is spent computing (image processing, number crunching). Only more cores help.</li></ul>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Workload</th><th>Best tool in CPython</th></tr></thead>
+<tbody>
+<tr><td>Many network or disk waits, simple code</td><td>Threads (<code>ThreadPoolExecutor</code>)</td></tr><tr><td>Very many connections (thousands), modern libraries</td><td><code>asyncio</code></td></tr><tr><td>Heavy computation</td><td>Processes (<code>ProcessPoolExecutor</code>, <code>multiprocessing</code>) or native code</td></tr><tr><td>Mixed</td><td>Async or threads for I/O, process pool for CPU</td></tr>
+</tbody>
+</table>
+</div>
+<p>Because of the GIL (<a href="py3-advanced.html">PY3</a>), threads do not speed up pure Python computation.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py4-q01" data-topic="Python concurrency" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A script downloads 200 web pages one by one and is slow. The best first fix is:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Use more CPU cores for computation <span class="q-why">The time is spent waiting.</span></li>
+          <li data-key="B">Overlap the waits with a thread pool or asyncio <span class="q-why">Correct.</span></li>
+          <li data-key="C">Buy faster RAM <span class="q-why">No.</span></li>
+          <li data-key="D">Use a bigger list <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>I/O-bound work benefits from overlapping waits.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Concurrency versus parallelism?</summary><div class="answer"><p>Concurrency is overlapping progress of tasks; parallelism is simultaneous execution on multiple cores.</p></div></details>
+      </div>
+    </section>
+
+    <section id="threads" data-track>
+      <h2>Threads</h2>
+<h3>A thread pool is the easy way</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/py4-01.py">import time
+from concurrent.futures import ThreadPoolExecutor
+
+def fetch(n):
+    time.sleep(0.2)               # pretend this is a network call
+    return n * n
+
+start = time.perf_counter()
+with ThreadPoolExecutor(max_workers=5) as pool:
+    results = list(pool.map(fetch, range(5)))
+elapsed = time.perf_counter() - start
+print(results, "fast:", elapsed &lt; 0.6)          # five 0.2s waits overlap, about 0.2s total</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[0, 1, 4, 9, 16] fast: True</code></pre>
+<h3>Race conditions and locks</h3>
+<p>Two threads doing <code>counter += 1</code> can interleave (read, add, write), losing updates. Protect shared state with a <strong>lock</strong>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py4-02.py">import threading
+
+counter = 0
+lock = threading.Lock()
+
+def work(n):
+    global counter
+    for _ in range(n):
+        with lock:                # only one thread at a time in this block
+            counter += 1
+
+threads = [threading.Thread(target=work, args=(10000,)) for _ in range(4)]
+for t in threads: t.start()
+for t in threads: t.join()
+print(counter)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>40000</code></pre>
+<p>Primitives: <code>Lock</code>, <code>RLock</code> (re-entrant), <code>Semaphore</code> (limit N concurrent), <code>Event</code> (signal), <code>Condition</code>, <code>Barrier</code>. Avoid <strong>deadlock</strong> by acquiring multiple locks in a fixed order.</p>
+<h3>Queues: the safe way to share</h3>
+<p>Instead of sharing variables, pass messages through a thread-safe <code>queue.Queue</code> (producer and consumer pattern).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py4-03.py">import queue, threading
+
+q, results = queue.Queue(), []
+
+def consumer():
+    while True:
+        item = q.get()
+        if item is None:           # sentinel: stop
+            break
+        results.append(item * 2)
+        q.task_done()
+
+t = threading.Thread(target=consumer)
+t.start()
+for i in range(5):
+    q.put(i)
+q.put(None)
+t.join()
+print(results)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[0, 2, 4, 6, 8]</code></pre>
+<p>Mark threads as <code>daemon=True</code> only for background helpers. Do not share mutable state without a lock; prefer immutable data and queues.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py4-q02" data-topic="Python concurrency" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why does <code>counter += 1</code> from several threads lose updates without a lock?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Python integers are slow <span class="q-why">No.</span></li>
+          <li data-key="B">It is read, add, write: threads can interleave between the steps <span class="q-why">Correct.</span></li>
+          <li data-key="C">The GIL is disabled <span class="q-why">No.</span></li>
+          <li data-key="D">Threads share no memory <span class="q-why">They do.</span></li>
+        </ul>
+        <div class="q-explain"><p>The operation is not atomic, so a lock (or a queue) is needed.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you avoid races between threads?</summary><div class="answer"><p>Use locks around shared mutable state, or avoid sharing by passing messages through queue.Queue.</p></div></details>
+      </div>
+    </section>
+
+    <section id="processes" data-track>
+      <h2>Processes</h2>
+<h3>Real parallelism</h3>
+<p>Each process has its own interpreter and memory, so there is no shared GIL. Cost: starting a process is heavier and data must be <strong>pickled</strong> to move between processes.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py4-04.py">from concurrent.futures import ProcessPoolExecutor
+
+def is_prime(n):
+    if n &lt; 2: return False
+    i = 2
+    while i * i &lt;= n:
+        if n % i == 0: return False
+        i += 1
+    return True
+
+if __name__ == "__main__":          # required on Windows and macOS (spawn start method)
+    nums = [1_000_003, 1_000_033, 1_000_037, 1_000_039]
+    with ProcessPoolExecutor(max_workers=2) as pool:
+        print(list(pool.map(is_prime, nums)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[True, True, True, True]</code></pre>
+<p>Tips: use the <code>if __name__ == "__main__"</code> guard, keep work chunks large enough to outweigh the overhead, pass small arguments, and use shared memory or files for big data. <code>multiprocessing.Pool</code>, <code>Queue</code> and <code>Manager</code> offer lower-level control.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py4-q03" data-topic="Python concurrency" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is the <code>if __name__ == '__main__'</code> guard required with multiprocessing on Windows?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is optional <span class="q-why">No.</span></li>
+          <li data-key="B">Child processes re-import the main module; without the guard they would spawn processes recursively <span class="q-why">Correct.</span></li>
+          <li data-key="C">It speeds things up <span class="q-why">No.</span></li>
+          <li data-key="D">It disables the GIL <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The spawn start method imports the script in each child.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why are processes heavier than threads?</summary><div class="answer"><p>Each has its own interpreter and memory, and data must be pickled to cross the boundary.</p></div></details>
+      </div>
+    </section>
+
+    <section id="asyncio" data-track>
+      <h2>asyncio</h2>
+<h3>Cooperative multitasking on one thread</h3>
+<p><code>async def</code> defines a <strong>coroutine</strong>. <code>await</code> pauses it until the awaited thing is ready, and lets the <strong>event loop</strong> run other coroutines meanwhile. Tasks yield control only at <code>await</code>, so no locks are needed for ordinary variables, but one blocking call stalls everything.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py4-05.py">import asyncio
+
+async def fetch(name, delay):
+    await asyncio.sleep(delay)            # non-blocking wait
+    return f"{name} done"
+
+async def main():
+    results = await asyncio.gather(fetch("a", 0.3), fetch("b", 0.2), fetch("c", 0.1))
+    print(results)                         # results keep the input order
+
+asyncio.run(main())</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>['a done', 'b done', 'c done']</code></pre>
+<h3>Tasks, timeouts and cancellation</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/py4-06.py">import asyncio
+
+async def slow():
+    await asyncio.sleep(5)
+    return "never"
+
+async def main():
+    task = asyncio.create_task(asyncio.sleep(0.05, result="background"))
+    print("main continues")
+    print(await task)
+    try:
+        await asyncio.wait_for(slow(), timeout=0.1)
+    except asyncio.TimeoutError:
+        print("timed out and cancelled")
+    async with asyncio.timeout(1):
+        print("inside timeout block")
+
+asyncio.run(main())</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>main continues
+background
+timed out and cancelled
+inside timeout block</code></pre>
+<h3>Producer and consumer with asyncio.Queue and a semaphore</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/py4-07.py">import asyncio
+
+async def worker(name, q, out, sem):
+    while True:
+        item = await q.get()
+        async with sem:                   # limit concurrency
+            await asyncio.sleep(0.01)
+            out.append((name, item))
+        q.task_done()
+
+async def main():
+    q, out, sem = asyncio.Queue(), [], asyncio.Semaphore(2)
+    workers = [asyncio.create_task(worker(f"w{i}", q, out, sem)) for i in range(3)]
+    for i in range(6): q.put_nowait(i)
+    await q.join()                        # wait until all items are processed
+    for w in workers: w.cancel()
+    print(sorted(item for _, item in out))
+
+asyncio.run(main())</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[0, 1, 2, 3, 4, 5]</code></pre>
+<h3>Rules for async code</h3>
+<ul><li>Use async libraries (<code>aiohttp</code>, <code>httpx.AsyncClient</code>, <code>asyncpg</code>) for I/O. A normal blocking call (<code>time.sleep</code>, <code>requests.get</code>) freezes the whole loop; if you must, use <code>await asyncio.to_thread(blocking_fn)</code>.</li><li>Always <code>await</code> coroutines (a forgotten await creates a coroutine that never runs).</li><li>Do not mix many event loops. One <code>asyncio.run</code> at the top.</li><li>Handle cancellation (<code>asyncio.CancelledError</code>) and use <code>try/finally</code> for cleanup.</li><li>Use <code>asyncio.TaskGroup</code> (3.11+) to run tasks together and propagate errors.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/py4-08.py">import asyncio
+
+async def job(n):
+    await asyncio.sleep(0.01)
+    return n * 10
+
+async def main():
+    async with asyncio.TaskGroup() as tg:
+        tasks = [tg.create_task(job(i)) for i in range(3)]
+    print([t.result() for t in tasks])
+
+asyncio.run(main())</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[0, 10, 20]</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py4-q04" data-topic="Python concurrency" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What happens if you call <code>time.sleep(5)</code> inside an async function?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Only that task sleeps <span class="q-why">No.</span></li>
+          <li data-key="B">The whole event loop blocks for 5 seconds <span class="q-why">Correct.</span></li>
+          <li data-key="C">It raises an error <span class="q-why">No.</span></li>
+          <li data-key="D">It is cancelled <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use await asyncio.sleep, or asyncio.to_thread for blocking calls.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-py4-q05" data-topic="Python concurrency" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does asyncio.gather return?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Results in completion order <span class="q-why">No.</span></li>
+          <li data-key="B">Results in the order the awaitables were passed <span class="q-why">Correct.</span></li>
+          <li data-key="C">A set <span class="q-why">No.</span></li>
+          <li data-key="D">Nothing <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>gather preserves the input order of results.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does await do?</summary><div class="answer"><p>It suspends the coroutine until the awaited operation completes and lets the event loop run other tasks.</p></div></details>
+      </div>
+    </section>
+
+    <section id="choosing" data-track>
+      <h2>Choosing and testing</h2>
+<h3>Decision guide</h3>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="Choose the model by what the program spends time on." style="min-width:760px"><defs><marker id="ah1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah1a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah1b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah1d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah1)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah1)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah1)"/><line x1="747.0" y1="78.0" x2="747.0" y2="118.0" class="d-line" marker-end="url(#ah1)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">Is it waiting (I/O)?</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle">Few tasks: threads</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle">Thousands: asyncio</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle" class="d-sm">Is it computing (CPU)?</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="151.5" text-anchor="middle" class="d-sm">Processes or native code</text></svg>
+</div>
+<figcaption>Choose the model by what the program spends time on.</figcaption></figure>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Concern</th><th>Threads</th><th>Processes</th><th>asyncio</th></tr></thead>
+<tbody>
+<tr><td>Memory per task</td><td>Moderate (MB stack)</td><td>High</td><td>Very low (KB)</td></tr><tr><td>Max practical tasks</td><td>Hundreds to thousands</td><td>Cores to tens</td><td>Tens of thousands or more</td></tr><tr><td>CPU parallelism</td><td>No (GIL)</td><td>Yes</td><td>No</td></tr><tr><td>Shared state</td><td>Needs locks</td><td>Needs IPC</td><td>Safe between awaits</td></tr><tr><td>Library support</td><td>Any blocking library</td><td>Any picklable work</td><td>Needs async-aware libraries</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Practical advice</h3>
+<ul><li>Measure first. Concurrency adds complexity, so be sure the program is actually waiting.</li><li>Bound concurrency (pools, semaphores) so you do not overload a server or run out of connections.</li><li>Put timeouts on everything that waits on the outside world.</li><li>Make operations idempotent so retries are safe.</li><li>Test with small timings and deterministic fake delays, not real network calls.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py4-q06" data-topic="Python concurrency" data-type="multi" data-answer="B,C">
+        <div class="q-stem"><p>Which can use multiple CPU cores for pure Python computation? Select all.</p></div>
+        <ul class="q-options">
+          <li data-key="A">threading.Thread</li>
+          <li data-key="B">multiprocessing.Pool</li>
+          <li data-key="C">ProcessPoolExecutor</li>
+          <li data-key="D">asyncio.gather</li>
+        </ul>
+        <div class="q-explain"><p>Processes have separate interpreters; threads and asyncio share one GIL.</p></div>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Python concurrency</h2>
+      <p class="muted">9 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Python concurrency">
+<details class="recall iq" data-level="basic" data-topic="Python concurrency"><summary><span class="tag ok">Basic</span> Concurrency versus parallelism?</summary><div class="answer"><p>Concurrency is overlapping progress of tasks, possibly on one core. Parallelism is simultaneous execution on multiple cores.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Python concurrency"><summary><span class="tag ok">Basic</span> When use threads, processes or asyncio?</summary><div class="answer"><p>Threads for modest I/O-bound work with blocking libraries, asyncio for very many I/O-bound connections with async libraries, processes for CPU-bound work.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python concurrency"><summary><span class="tag warn">Medium</span> How do you avoid race conditions with threads?</summary><div class="answer"><p>Protect shared state with locks, use thread-safe queues to pass messages, or avoid shared mutable state.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python concurrency"><summary><span class="tag warn">Medium</span> How does asyncio work?</summary><div class="answer"><p>A single-threaded event loop runs coroutines; await suspends a coroutine until its operation completes, letting others run. Blocking calls stall the loop.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python concurrency"><summary><span class="tag warn">Medium</span> What does asyncio.gather do?</summary><div class="answer"><p>Runs awaitables concurrently and returns their results in the order passed. Use TaskGroup for structured error handling.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python concurrency"><summary><span class="tag warn">Medium</span> Why must multiprocessing code use the __main__ guard?</summary><div class="answer"><p>On Windows and macOS, child processes import the main module (spawn); without the guard they would start processes recursively.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python concurrency"><summary><span class="tag bad">Advanced</span> How do you call blocking code from async code?</summary><div class="answer"><p>Use asyncio.to_thread or loop.run_in_executor so the blocking call runs in a thread pool and does not freeze the event loop.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python concurrency"><summary><span class="tag bad">Advanced</span> What is a deadlock and how do you avoid it?</summary><div class="answer"><p>Threads waiting on each other&#x27;s locks forever. Acquire locks in a consistent global order, use timeouts, or reduce shared locks.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python concurrency"><summary><span class="tag bad">Advanced</span> How do you limit concurrency?</summary><div class="answer"><p>Semaphores or bounded worker pools (ThreadPoolExecutor with max_workers, asyncio.Semaphore, bounded queues) so you do not overload dependencies.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="py3-advanced.html"><span class="dir">Previous</span><span>PY3 Advanced Python: iterators, generators, decorators and the object model</span></a>
+      <a class="next" href="py5-engineering.html"><span class="dir">Next</span><span>PY5 Professional Python: testing, logging, packaging and performance</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

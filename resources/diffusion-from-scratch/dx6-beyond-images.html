@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en" data-resource="diffusion-from-scratch" data-page="DX6">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Beyond images: video, audio, 3D, science, robotics and discrete diffusion | Diffusion from scratch</title>
+<meta name="description" content="How the diffusion recipe carries over to video, audio and speech, 3D with score distillation, molecules and proteins, robot policies and text, and how diffusion compares with autoregressive and GAN models.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Diffusion from scratch</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part DX6</p>
+      <h1>Beyond images: video, audio, 3D, science, robotics and discrete diffusion</h1>
+      <p class="lede">Diffusion is a recipe, not an image trick: corrupt data gradually, learn to reverse it. Wherever you can define noise and a network that handles the data's structure, the recipe applies. This part tours the major uses and the extra problems each one adds.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~3.5 hours</span></div>
+    </div>
+
+    <section id="recipe" data-track>
+      <h2>The recipe, restated</h2>
+<p>Any diffusion model needs four decisions:</p>
+<ol><li><strong>Data representation</strong>: pixels, latents, spectrograms, point clouds, atom coordinates, action sequences, tokens.</li><li><strong>Corruption process</strong>: Gaussian noise for continuous data; masking or token replacement for discrete data.</li><li><strong>Denoiser architecture</strong>: a network that respects the data's structure (convolution, transformer, graph network, equivariant network).</li><li><strong>Conditioning</strong>: text, class, another modality, a partial observation.</li></ol>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Modality</th><th>Representation</th><th>Denoiser</th><th>Conditioning</th></tr></thead>
+<tbody>
+<tr><td>Image</td><td>VAE latent or pixels</td><td>U-Net, DiT</td><td>Text, image, control map</td></tr><tr><td>Video</td><td>Spatio-temporal latent</td><td>3D U-Net or space-time transformer</td><td>Text, first frame, camera path</td></tr><tr><td>Audio</td><td>Mel spectrogram or codec latent</td><td>U-Net, transformer</td><td>Text, lyrics, melody</td></tr><tr><td>3D</td><td>Multi-view images, NeRF, point cloud, triplane</td><td>2D prior + optimisation, or 3D diffusion</td><td>Text, image</td></tr><tr><td>Molecule or protein</td><td>Atom coordinates and types</td><td>Equivariant graph network</td><td>Target pocket, function</td></tr><tr><td>Robot actions</td><td>Trajectory of actions</td><td>1D temporal U-Net or transformer</td><td>Observation</td></tr><tr><td>Text</td><td>Token sequence</td><td>Transformer</td><td>Prompt</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx6-q01" data-topic="Beyond images" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What four things must you decide to apply diffusion to a new modality?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Colour, size, speed, price <span class="q-why">No.</span></li>
+          <li data-key="B">Representation, corruption process, denoiser architecture, conditioning <span class="q-why">Correct.</span></li>
+          <li data-key="C">Optimizer, batch, loss, seed <span class="q-why">Generic training choices.</span></li>
+          <li data-key="D">Prompt, sampler, steps, scale <span class="q-why">Inference settings.</span></li>
+        </ul>
+        <div class="q-explain"><p>These define the data, the noise, the network and the control.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why does diffusion generalise across modalities?</summary><div class="answer"><p>It only needs a corruption process and a denoiser matched to the data structure.</p></div></details>
+      </div>
+    </section>
+
+    <section id="video" data-track>
+      <h2>Video</h2>
+<h3>The extra dimension</h3>
+<p>A video is a stack of frames, so a clip of 16 frames at 512 by 512 contains 16 times the data of an image, and frames must be <strong>temporally consistent</strong>: objects keep identity, motion is smooth, lighting does not flicker.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx6-01.py">frames, seconds, fps = 16, 5, 24
+latent_per_frame = 64 * 64 * 4
+print("latent values for a 5 s clip at 24 fps:", seconds * fps * latent_per_frame)
+print("a 16-frame clip:", frames * latent_per_frame)
+print("naive full attention between all positions in 16 frames:", (frames * 64 * 64) ** 2)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>latent values for a 5 s clip at 24 fps: 1966080
+a 16-frame clip: 262144
+naive full attention between all positions in 16 frames: 4294967296</code></pre>
+<h3>Architectures</h3>
+<ul><li><strong>Inflated image models</strong> (Video LDM, AnimateDiff): take a pretrained image U-Net and insert <strong>temporal layers</strong> (temporal attention or 1D convolution along the time axis) that mix information across frames. Cheap, reuses image knowledge.</li><li><strong>Space-time transformers</strong> (Sora-style): compress video with a 3D VAE into a latent; cut it into <strong>spacetime patches</strong> treated as tokens; a diffusion transformer attends across space and time. Handles variable duration, resolution and aspect ratio.</li><li><strong>Cascades</strong>: generate low resolution, low frame-rate video, then upsample in space and time with separate models.</li><li><strong>Conditioning</strong>: text, a first frame (image to video), a last frame, camera motion, depth, or a reference video.</li></ul>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Typical remedy</th></tr></thead>
+<tbody>
+<tr><td>Flicker</td><td>Temporal attention, noise shared across frames, consistency losses</td></tr><tr><td>Cost grows with duration</td><td>Factorised space and time attention, latent compression, autoregressive extension of long videos</td></tr><tr><td>Physics and object permanence</td><td>Scale, data quality; still a research frontier</td></tr><tr><td>Evaluation</td><td>FVD (video Fréchet distance), human study, benchmark suites</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx6-q02" data-topic="Beyond images" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do image-to-video models like AnimateDiff reuse an image model?</p></div>
+        <ul class="q-options">
+          <li data-key="A">By ignoring it <span class="q-why">No.</span></li>
+          <li data-key="B">By inserting temporal layers that mix information across frames into a pretrained image U-Net <span class="q-why">Correct.</span></li>
+          <li data-key="C">By changing the VAE only <span class="q-why">No.</span></li>
+          <li data-key="D">By training audio first <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Spatial layers keep image knowledge; temporal layers add consistency.</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx6-q03" data-topic="Beyond images" data-type="numeric" data-answer="262144" data-tol="0">
+        <div class="q-stem"><p>A 16 frame clip has latent 64 x 64 x 4 per frame. How many latent values?</p></div>
+        <div class="q-explain"><p>16 x 16,384 = 262,144.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What extra problem does video add?</summary><div class="answer"><p>Temporal consistency and a large increase in data and compute, handled with temporal layers or space-time transformers.</p></div></details>
+      </div>
+    </section>
+
+    <section id="audio" data-track>
+      <h2>Audio and speech</h2>
+<ul><li><strong>Spectrogram diffusion</strong>: represent audio as a mel spectrogram (an image of frequency versus time), diffuse it with a U-Net, then convert to waveform with a <strong>vocoder</strong> (HiFi-GAN or a diffusion vocoder such as WaveGrad and DiffWave).</li><li><strong>Latent audio diffusion</strong> (Stable Audio, AudioLDM): compress with an audio autoencoder or neural codec and diffuse latents conditioned on text, duration and timing.</li><li><strong>Text to speech</strong>: diffusion for acoustic features (Grad-TTS), or hybrid systems that predict codec tokens; <strong>voice cloning</strong> raises consent and fraud concerns.</li><li><strong>Music</strong>: long-range structure is hard, so models combine local diffusion with global conditioning or autoregressive structure.</li><li><strong>Speech enhancement and separation</strong>: condition on a noisy signal and denoise.</li></ul>
+    </section>
+
+    <section id="three-d" data-track>
+      <h2>3D</h2>
+<p>3D training data is scarce compared with images, so a common approach <strong>borrows a 2D image prior</strong>.</p>
+<h3>Score distillation sampling (DreamFusion)</h3>
+<p>Optimise a 3D representation (a NeRF or 3D Gaussians) so that <strong>renderings from any camera angle look like samples</strong> of the text-conditioned image model:</p>
+<ol><li>Render the current 3D model from a random camera.</li><li>Add noise to the rendering, ask the diffusion model to predict the noise given the prompt.</li><li>The difference between predicted and actual noise gives a gradient that is <strong>pushed back through the renderer</strong> into the 3D parameters (the diffusion model's Jacobian is skipped).</li><li>Repeat from many views.</li></ol>
+<p>Pros: no 3D data. Cons: slow (tens of minutes), over-saturated colours, the "Janus problem" (multiple faces from multiple views).</p>
+<h3>Faster routes</h3>
+<ul><li><strong>Multi-view diffusion</strong> (Zero-1-to-3, MVDream, SV3D): fine-tune an image model to produce consistent views from a camera pose, then reconstruct 3D from the views.</li><li><strong>Feed-forward 3D generators</strong> (LRM and successors): predict a 3D representation from one or a few images in seconds.</li><li><strong>Direct 3D diffusion</strong> on point clouds, voxels, triplanes or meshes, as data grows.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx6-q04" data-topic="Beyond images" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does score distillation sampling optimise?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The text encoder <span class="q-why">No.</span></li>
+          <li data-key="B">A 3D representation, so that renderings from any angle look like samples from the image diffusion model <span class="q-why">Correct.</span></li>
+          <li data-key="C">The VAE <span class="q-why">No.</span></li>
+          <li data-key="D">The learning rate <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Gradients from the 2D diffusion prior flow through the renderer into 3D parameters.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How can you get 3D from a 2D model?</summary><div class="answer"><p>Score distillation sampling, or multi-view diffusion followed by reconstruction, or feed-forward 3D models.</p></div></details>
+      </div>
+    </section>
+
+    <section id="science" data-track>
+      <h2>Science and engineering</h2>
+<h3>Proteins and molecules</h3>
+<p>Atoms live in 3D, and a rotated or translated molecule is the same molecule, so the denoiser must be <strong>equivariant</strong> to rotations and translations (SE(3)). Examples: RFdiffusion designs protein backbones; AlphaFold 3 uses a diffusion module for structure prediction; DiffDock docks ligands; GeoDiff and others generate molecular conformations. Conditioning on binding targets or desired function guides design toward useful molecules. Experimental validation in the lab remains essential.</p>
+<h3>Weather, materials, medical imaging</h3>
+<p>Diffusion models produce <strong>ensembles</strong> of weather forecasts (GenCast), generate crystal structures, super-resolve and denoise MRI and CT, and synthesise training data. The probabilistic output is valuable when the truth is uncertain.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx6-q05" data-topic="Beyond images" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why must molecular diffusion denoisers be equivariant?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To run faster <span class="q-why">Not the reason.</span></li>
+          <li data-key="B">Rotating or translating a molecule should not change what it is, so the model should respect those symmetries <span class="q-why">Correct.</span></li>
+          <li data-key="C">To avoid noise <span class="q-why">No.</span></li>
+          <li data-key="D">Because atoms are discrete <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>SE(3)-equivariant networks build the symmetry in.</p></div>
+      </div>
+    </section>
+
+    <section id="robotics" data-track>
+      <h2>Robotics and decision making</h2>
+<h3>Diffusion policy</h3>
+<p>Treat a <strong>sequence of future actions</strong> as the data to generate, conditioned on the current observation (camera images, robot state). The denoiser (a temporal 1D U-Net or a transformer) outputs a multimodal distribution of action trajectories, which handles tasks with several valid ways to act (go left or right around an obstacle) where simple regression would average them into a bad action. Actions are predicted in chunks and executed with receding horizon replanning. Used for manipulation tasks learned from demonstrations.</p>
+<h3>Planning</h3>
+<p>Diffuser-style models generate whole trajectories with guidance toward high reward, treating planning as sampling.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx6-q06" data-topic="Beyond images" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is diffusion good for robot policies?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It needs no data <span class="q-why">No.</span></li>
+          <li data-key="B">It represents multimodal action distributions instead of averaging different valid choices <span class="q-why">Correct.</span></li>
+          <li data-key="C">It removes cameras <span class="q-why">No.</span></li>
+          <li data-key="D">It makes robots stronger <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Regression to the mean could pick an action between two valid options and collide.</p></div>
+      </div>
+    </section>
+
+    <section id="discrete" data-track>
+      <h2>Discrete diffusion and text</h2>
+<p>Gaussian noise does not apply to tokens. Alternatives:</p>
+<ul><li><strong>Masked (absorbing) diffusion</strong>: the forward process randomly <strong>masks</strong> tokens until all are masked; the model learns to unmask, trained with a cross-entropy-type loss. Sampling unmasks many tokens in parallel over several steps (MaskGIT, D3PM, MDLM, recent diffusion language models).</li><li><strong>Multinomial diffusion</strong>: randomly replace tokens with uniform random ones.</li><li><strong>Continuous embedding diffusion</strong>: add Gaussian noise to token embeddings, round at the end (Diffusion-LM).</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx6-02.py">import random
+random.seed(5)
+tokens = "diffusion models can also generate text".split()
+def mask(tokens, p):
+    return [t if random.random() &gt; p else "[M]" for t in tokens]
+for p in (0.0, 0.3, 0.7, 1.0):
+    print("mask prob %.1f -&gt;" % p, " ".join(mask(tokens, p)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>mask prob 0.0 -&gt; diffusion models can also generate text
+mask prob 0.3 -&gt; [M] models can also generate [M]
+mask prob 0.7 -&gt; [M] [M] [M] [M] [M] [M]
+mask prob 1.0 -&gt; [M] [M] [M] [M] [M] [M]</code></pre>
+<p>Compared with <strong>autoregressive</strong> models, discrete diffusion can generate in any order, fill in the middle (infilling) and decode many tokens per step, but autoregressive models still lead on quality at scale and exploit KV caching (<a href="../ai-ml-engineer-prep/01-inference-and-memory.html">AI/ML guide</a>).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx6-q07" data-topic="Beyond images" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the forward process in masked (absorbing) discrete diffusion?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Adding Gaussian noise to tokens <span class="q-why">That is continuous.</span></li>
+          <li data-key="B">Randomly replacing tokens with a mask symbol until all are masked <span class="q-why">Correct.</span></li>
+          <li data-key="C">Sorting tokens <span class="q-why">No.</span></li>
+          <li data-key="D">Deleting the vocabulary <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The model learns to unmask them.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How does diffusion handle text?</summary><div class="answer"><p>Use masking or token replacement as the corruption, or noise the embeddings.</p></div></details>
+      </div>
+    </section>
+
+    <section id="compare" data-track>
+      <h2>Choosing a generative family</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Family</th><th>Idea</th><th>Strengths</th><th>Weaknesses</th></tr></thead>
+<tbody>
+<tr><td>GAN</td><td>Generator versus discriminator</td><td>One-step sampling, sharp</td><td>Unstable training, mode collapse, limited coverage</td></tr><tr><td>VAE</td><td>Encoder, decoder, latent prior</td><td>Fast, good latents</td><td>Blurry on its own</td></tr><tr><td>Autoregressive</td><td>Predict next token (pixels or codes)</td><td>Simple likelihood, scales well, unified with language</td><td>Slow sequential sampling, fixed order</td></tr><tr><td>Normalising flow</td><td>Invertible map</td><td>Exact likelihood, one step</td><td>Architectural constraints</td></tr><tr><td>Diffusion and flow matching</td><td>Learn to denoise or transport</td><td>Stable, high quality, controllable, flexible conditioning</td><td>Many steps (reduced by distillation)</td></tr><tr><td>Hybrids</td><td>Autoregressive over latent tokens plus diffusion head, or diffusion plus adversarial loss</td><td>Combine strengths</td><td>Complexity</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout note"><span class="callout-title">Trend</span><p>Recent systems converge on <strong>latent space + transformer backbone + flow or diffusion objective + large, well-captioned data</strong>, whatever the modality.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx6-q08" data-topic="Beyond images" data-type="fill" data-answer="collapse">
+        <div class="q-stem"><p>GANs sample in one step but are hard to train and prone to mode <input class="q-input" aria-label="blank 1">.</p></div>
+        <div class="q-explain"><p>The generator may cover only a few modes of the data.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why did diffusion beat GANs in popularity?</summary><div class="answer"><p>Stable training, better coverage and flexible conditioning, with sampling cost reduced by better solvers and distillation.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Beyond images</h2>
+      <p class="muted">10 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Beyond images">
+<details class="recall iq" data-level="basic" data-topic="Beyond images"><summary><span class="tag ok">Basic</span> How is video generation different from image generation?</summary><div class="answer"><p>It adds a time dimension: much more data and the need for temporal consistency. Models add temporal attention or use space-time transformers over compressed video latents.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Beyond images"><summary><span class="tag ok">Basic</span> How does diffusion generate audio?</summary><div class="answer"><p>Represent audio as a spectrogram or codec latent, diffuse it with a U-Net or transformer, and convert back to a waveform with a vocoder or decoder.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Beyond images"><summary><span class="tag warn">Medium</span> What is score distillation sampling?</summary><div class="answer"><p>Optimise a 3D representation so renderings from random views are denoised well by a text-conditioned image diffusion model; the diffusion gradient flows through the renderer into 3D parameters.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Beyond images"><summary><span class="tag warn">Medium</span> What is the Janus problem in text-to-3D?</summary><div class="answer"><p>Multiple faces appear on one object because the 2D prior does not know which view it is seeing; view-dependent prompts and multi-view models reduce it.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Beyond images"><summary><span class="tag warn">Medium</span> Why use diffusion for robot policies?</summary><div class="answer"><p>It represents multimodal action distributions and generates action chunks conditioned on observations, instead of averaging different valid behaviours.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Beyond images"><summary><span class="tag warn">Medium</span> How does diffusion handle discrete data like text?</summary><div class="answer"><p>Use a discrete corruption such as masking tokens (absorbing diffusion) or token replacement, or add Gaussian noise to embeddings and round at the end.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Beyond images"><summary><span class="tag bad">Advanced</span> Why must protein diffusion models be equivariant?</summary><div class="answer"><p>A molecule&#x27;s identity does not change when rotated or translated, so SE(3)-equivariant denoisers build in the symmetry and learn more efficiently.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Beyond images"><summary><span class="tag bad">Advanced</span> Compare diffusion with GANs, VAEs and autoregressive models.</summary><div class="answer"><p>GANs sample in one step but are unstable and cover modes poorly; VAEs are fast but blurry alone; autoregressive models give exact likelihood and scale well but sample sequentially; diffusion is stable and flexible at the cost of multiple steps.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Beyond images"><summary><span class="tag bad">Advanced</span> What is a spacetime patch?</summary><div class="answer"><p>A token covering a small region over a few frames of the compressed video latent; transformers over such tokens handle variable durations, sizes and aspect ratios.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Beyond images"><summary><span class="tag bad">Advanced</span> Why is long video generation hard?</summary><div class="answer"><p>Compute grows with frames, errors accumulate over time, and the model must keep identity, physics and camera motion consistent; solutions include factorised attention, hierarchical generation and autoregressive extension.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="dx5-evaluation.html"><span class="dir">Previous</span><span>DX5 Evaluation, data, safety and ethics of image generators</span></a>
+      <a class="next" href="dx7-training-lab.html"><span class="dir">Next</span><span>DX7 Training lab: a tiny diffusion model, then training at scale</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

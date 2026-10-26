@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="M03">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>M3 Arrays and Lists | DSA Master Guide</title>
+<meta name="description" content="The most frequently tested data structure. Master traversal, in-place edits, prefix sums and Kadane.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<link rel="stylesheet" href="viz.css">
+<script src="viz.js" defer></script>
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Module 3</p>
+      <h1>Arrays and Lists</h1>
+      <p class="lede">The most frequently tested data structure. Master traversal, in-place edits, prefix sums and Kadane. Topics in this module: Array fundamentals and basic operations; frequency counting, duplicates, missing numbers and rotation; prefix sums and kadane's algorithm.</p>
+      <div class="meta"><span class="tag ok">Essential</span><span class="tag">3 topics</span><span class="tag">20 problems</span><span class="tag">55 interview questions</span></div>
+    </div>
+
+    <section id="why-this-module" data-track>
+      <h2>Start from scratch: why this module exists</h2>
+      <p>Arrays are the oldest and most common data structure: a numbered row of boxes in memory. Nearly every other structure is built on top of one. Because arrays are so basic, interviewers use them to test pointer thinking, in-place editing and careful handling of edge cases in the smallest possible setting.</p>
+      <p>The techniques here (frequency counting, prefix sums, Kadane, in-place pointers) are not array tricks only; they are the patterns reused for strings, sliding windows, hashing and dynamic programming.</p>
+      <p><strong>Who needs it:</strong> Anyone handling lists of data: analysts (columns), game developers (grids), ML engineers (tensors), and every candidate in a coding round.</p>
+      <p><strong>Before you start:</strong> Modules 1 and 2.</p>
+      <h3>After this module you can</h3>
+      <ul><li>Traverse, search, insert, delete and rotate arrays correctly.</li><li>Use frequency maps, prefix sums and Kadane to cut O(n^2) to O(n).</li><li>Modify arrays in place with O(1) extra space.</li><li>Avoid index and aliasing bugs.</li></ul>
+      <p><strong>Common pitfalls:</strong> Index out of range, modifying while iterating, copying references instead of lists, forgetting empty and single-element cases.</p>
+      <p><strong>Typical interview questions here:</strong> Second largest, missing number, rotate array, move zeroes, remove duplicates, maximum subarray, product except self, best time to buy and sell stock.</p>
+    </section>
+
+    <section id="c3_1" data-track>
+      <h2>Array fundamentals and basic operations</h2>
+      <p><span class="tag ok">Essential</span> <span class="tag">Topic 3.1</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>An array (a Python list) is an ordered collection of items stored one after another and accessed by an index that starts at 0.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Arrays are the default container for input data. Most problems are about scanning, modifying or searching one.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>A row of numbered lockers: you can open locker 7 instantly, but inserting a new locker in the middle means shifting all the lockers after it.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>You need to store many values of the same kind: marks of 60 students, daily temperatures, prices. Separate variables (m1, m2, ... m60) are impossible to loop over. You want ONE name for the whole group and a number to pick a member. That is an array.</p>
+      <p>How can the machine find the 5th item instantly? Store items one after another in memory in equal-sized slots. The address of item i is start + i x slot_size, a single multiplication and addition. That is why indexing is O(1), and why indexes start at 0 (the first item is at offset 0).</p>
+      <p>But this layout has a cost. To insert in the middle, every later item must slide over to keep the slots contiguous: O(n). To append, you need free space after the last item. If there is none, the whole array is copied to a bigger block. Python lists over-allocate extra capacity, so most appends are cheap and an occasional resize is amortised away.</p>
+      <p>Python lists hold references (pointers) to objects, not the objects themselves, so one list can hold numbers, strings and other lists. This is flexible but uses more memory than arrays in C. The array module and NumPy store raw numbers compactly when you need speed.</p>
+      <p>Almost every other structure you will meet (stacks, queues, heaps, hash tables, matrices) is built on arrays. Understanding the strengths and weaknesses of the array tells you why those structures were invented: to fix its weak spots (slow insert, slow search).</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="arr_ops:reverse"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Access/update nums[i]: O(1). Append at the end: O(1) amortised. Insert/delete in the middle or front: O(n) because elements shift.</li><li>Search for a value with "x in nums": O(n).</li><li>Reverse in place with two pointers: swap nums[lo] and nums[hi] and move them toward each other - use the animation to watch it.</li><li>Maximum: keep the largest seen so far. Second largest: keep two variables (see the problem library).</li><li>Negative indices count from the end: nums[-1] is the last element.</li><li>Slicing nums[a:b] creates a NEW list (O(b - a) time and space).</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>A Python list is a 'dynamic array'. The items sit next to each other in memory, so jumping to index i is one step (O(1)). Appending at the end is usually one step too. The expensive moves are at the front or middle: inserting or deleting there makes every later item shift one place, which costs O(n).</p>
+      <p>Indexing: the first item is index 0, the last is index n - 1 (or -1). Slicing nums[a:b] gives items from a up to but NOT including b. nums[::-1] reverses a copy. nums[::2] takes every second item. Slicing never raises an index error even when it goes past the end, but nums[i] does.</p>
+      <p>In-place means 'change the same list without making another big one'. In-place work needs O(1) extra space and usually uses pointers: one pointer reads and another writes (move zeroes, remove duplicates) or two pointers swap from the ends (reverse).</p>
+      <p>Looping safely: do not add or remove items from a list while a for loop is walking over it. The loop's position gets confused and items are skipped. Instead loop over a copy (for x in nums[:]) or build a new list.</p>
+      <p>Two-dimensional lists are lists of lists. Make them with [[0] * cols for _ in range(rows)]. The tempting shortcut [[0] * cols] * rows is a trap: it repeats the SAME inner list rows times, so changing one row changes all.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>CPython's list is a dynamic array of pointers. When it is full, it grows to about 1.125x its size (plus a little), so appends are amortised O(1). Removing from the end is O(1); removing from the front shifts everything and is O(n).</li><li>Slicing a[i:j] allocates a new list and copies j - i pointers, so it is O(j - i). a[:] is a shallow copy: the new list shares the same element objects.</li><li>Negative indexes are translated as len(a) + i, so a[-1] is the last element. An out-of-range single index raises IndexError, but out-of-range slice bounds are silently clipped.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Every programmer</td><td>Arrays hold input data in nearly every problem: marks, prices, readings, pixels.</td></tr><tr><td>Databases and spreadsheets</td><td>Rows and columns are arrays of arrays; indexing by position is the basic operation.</td></tr><tr><td>Graphics and ML engineers</td><td>Images and tensors are multi-dimensional arrays stored contiguously for fast processing.</td></tr><tr><td>Interviewers</td><td>Array questions test pointer thinking, edge cases and in-place manipulation in the most compact setting.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>list vs deque</td><td>A list is best for index access and append/pop at the end. deque gives O(1) at both ends but O(n) in the middle indexing.</td></tr><tr><td>list vs tuple</td><td>Tuples are immutable, smaller and hashable (can be dict keys). Use tuples for fixed records and lists for changing data.</td></tr><tr><td>list vs array/NumPy</td><td>A list is flexible for mixed data. array/NumPy are far more compact and fast for large numeric data.</td></tr><tr><td>list vs linked list</td><td>A list wins for random access and cache-friendly scanning. A linked list wins only for frequent insert/delete at known positions, which Python rarely needs.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>enumerate(nums) gives (index, value) pairs; zip(a, b) walks two lists together.</li><li>max(nums), min(nums), sum(nums), len(nums), sorted(nums), reversed(nums) all work directly.</li><li>List comprehension: squares = [x * x for x in nums if x &gt; 0].</li><li>nums.index(x) finds the first position (O(n) and raises ValueError if missing); nums.count(x) counts occurrences.</li><li>any(x &lt; 0 for x in nums) and all(x &gt; 0 for x in nums) are short ways to test a rule.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c3_1.py">def reverse_in_place(a):
+    lo, hi = 0, len(a) - 1
+    while lo &lt; hi:
+        a[lo], a[hi] = a[hi], a[lo]   # swap ends
+        lo += 1
+        hi -= 1
+    return a</code></pre>
+      <details class="box"><summary>Common list operations and their costs</summary><div class="d-body">
+<pre><code class="lang-py" data-embed="solutions/concepts/c3_1_extra1.py">nums = [5, 2, 8]
+nums.append(1)         # O(1)   [5, 2, 8, 1]
+nums.pop()             # O(1)   removes last
+nums.pop(0)            # O(n)   removes first, shifts the rest
+nums.insert(1, 9)      # O(n)
+nums.remove(9)         # O(n)   removes first occurrence
+x = 8 in nums          # O(n)
+nums.sort()            # O(n log n), in place
+rev = nums[::-1]       # O(n), new list
+total = sum(nums); mx = max(nums); mn = min(nums)   # each O(n)</code></pre>
+</div></details>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>reverse_in_place([1, 2, 3, 4, 5])</code>, returns <code>[5, 4, 3, 2, 1]</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>lo (after)</th><th>hi (after)</th><th>a (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>lo, hi = 0, len(a) - 1</code></td><td><strong><code>0</code></strong></td><td><strong><code>4</code></strong></td><td><strong><code>[1, 2, 3, 4, 5]</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>while lo &lt; hi:</code></td><td><code>0</code></td><td><code>4</code></td><td><code>[1, 2, 3, 4, 5]</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>a[lo], a[hi] = a[hi], a[lo]   # swap ends</code></td><td><code>0</code></td><td><code>4</code></td><td><strong><code>[5, 2, 3, 4, 1]</code></strong></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>lo += 1</code></td><td><strong><code>1</code></strong></td><td><code>4</code></td><td><code>[5, 2, 3, 4, 1]</code></td></tr>
+<tr><td class="num">5</td><td class="num">6</td><td><code>hi -= 1</code></td><td><code>1</code></td><td><strong><code>3</code></strong></td><td><code>[5, 2, 3, 4, 1]</code></td></tr>
+<tr><td class="num">6</td><td class="num">3</td><td><code>while lo &lt; hi:</code></td><td><code>1</code></td><td><code>3</code></td><td><code>[5, 2, 3, 4, 1]</code></td></tr>
+<tr><td class="num">7</td><td class="num">4</td><td><code>a[lo], a[hi] = a[hi], a[lo]   # swap ends</code></td><td><code>1</code></td><td><code>3</code></td><td><strong><code>[5, 4, 3, 2, 1]</code></strong></td></tr>
+<tr><td class="num">8</td><td class="num">5</td><td><code>lo += 1</code></td><td><strong><code>2</code></strong></td><td><code>3</code></td><td><code>[5, 4, 3, 2, 1]</code></td></tr>
+<tr><td class="num">9</td><td class="num">6</td><td><code>hi -= 1</code></td><td><code>2</code></td><td><strong><code>2</code></strong></td><td><code>[5, 4, 3, 2, 1]</code></td></tr>
+<tr><td class="num">10</td><td class="num">3</td><td><code>while lo &lt; hi:</code></td><td><code>2</code></td><td><code>2</code></td><td><code>[5, 4, 3, 2, 1]</code></td></tr>
+<tr><td class="num">11</td><td class="num">7</td><td><code>return a</code></td><td><code>2</code></td><td><code>2</code></td><td><code>[5, 4, 3, 2, 1]</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>n/2 swaps -&gt; O(n) time, O(1) extra space.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>IndexError by using index n (the last valid index is n - 1).</li><li>Modifying a list while looping over it.</li><li>a = b copies the reference, not the list; use b = a[:] or list(a).</li><li>Using insert(0, x) in a loop (O(n^2) total).</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>In-place + O(1) space usually means two pointers or swapping.</li><li>Words like "reverse", "rotate", "move" often hint at pointer techniques.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m03-problems.html#prob-second_largest">Second Largest Element</a></td><td><span class="tag ok">Easy</span></td><td>Arrays, single pass</td></tr><tr><td><a href="m03-problems.html#prob-missing_number">Missing Number</a> <span class="tag">LC 268</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Arrays, math / XOR</td></tr><tr><td><a href="m03-problems.html#prob-move_zeroes">Move Zeroes to the End</a> <span class="tag">LC 283</span></td><td><span class="tag ok">Easy</span></td><td>Arrays, two pointers (in-place)</td></tr><tr><td><a href="m03-problems.html#prob-remove_duplicates">Remove Duplicates from Sorted Array</a> <span class="tag">LC 26</span></td><td><span class="tag ok">Easy</span></td><td>Arrays, two pointers</td></tr><tr><td><a href="m03-problems.html#prob-plus_one">Plus One</a> <span class="tag">LC 66</span></td><td><span class="tag ok">Easy</span></td><td>Arrays as numbers, carry</td></tr><tr><td><a href="m03-problems.html#prob-max_profit">Best Time to Buy and Sell Stock</a> <span class="tag">LC 121</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Single pass, running minimum</td></tr><tr><td><a href="m03-problems.html#prob-rotate_right">Rotate Array Right by K</a> <span class="tag">LC 189</span></td><td><span class="tag warn">Medium</span></td><td>Arrays, reversal trick</td></tr><tr><td><a href="m03-problems.html#prob-next_permutation">Next Permutation</a> <span class="tag">LC 31</span></td><td><span class="tag warn">Medium</span></td><td>Array manipulation / pattern finding</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why do list indexes start at 0?</summary><div class="answer"><p>The index is the distance from the first element. The first element is 0 steps away, so its offset is 0. It also makes address arithmetic simple.</p></div></details>
+        <details class="recall"><summary>Why is inserting in the middle slow?</summary><div class="answer"><p>Items sit side by side, so everything after the insertion point must move one place to make room: O(n).</p></div></details>
+        <details class="recall"><summary>Why not use a list as a queue?</summary><div class="answer"><p>pop(0) shifts every remaining element: O(n). Use collections.deque for O(1) at both ends.</p></div></details>
+        <details class="recall"><summary>Why does b = a not copy a list?</summary><div class="answer"><p>Assignment copies the reference (the label), not the object. Both names point at the same list. Use a[:] or list(a) to copy.</p></div></details>
+        <details class="recall"><summary>Why is append fast even though the list occasionally resizes?</summary><div class="answer"><p>Python allocates extra spare room, so most appends just use a free slot. The rare resize cost is spread over many appends (amortised O(1)).</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c3_1-q1" data-topic="Arrays and Lists" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Which operation is O(n) on a Python list?</p></div>
+        <ul class="q-options">
+          <li data-key="A">nums[5]</li>
+          <li data-key="B">nums.append(3)</li>
+          <li data-key="C">nums.insert(0, 3)</li>
+          <li data-key="D">len(nums)</li>
+        </ul>
+        <div class="q-explain"><p>Inserting at the front shifts every other element.</p></div>
+      </div>
+      <div class="quiz" data-qid="c3_1-q2" data-topic="Arrays and Lists" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does nums[-2] return for [1,2,3,4]?</p></div>
+        <ul class="q-options">
+          <li data-key="A">2</li>
+          <li data-key="B">3</li>
+          <li data-key="C">4</li>
+          <li data-key="D">Error</li>
+        </ul>
+        <div class="q-explain"><p>Negative indices count from the end: -1 is 4, -2 is 3.</p></div>
+      </div>
+    </section>
+
+    <section id="c3_2" data-track>
+      <h2>Frequency counting, duplicates, missing numbers and rotation</h2>
+      <p><span class="tag ok">Essential</span> <span class="tag">Topic 3.2</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>Many array problems become easy when you count how often each value appears, or use mathematical tricks (sum formulas, XOR) and the reversal trick for rotation.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Counting avoids nested loops. Instead of comparing every pair you look values up in a dictionary.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>A ballot box: rather than comparing ballots against each other, you make one tally sheet and add a mark per ballot.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>A teacher asks: which marks appear more than once? Without a tool you would compare every mark with every other mark (n^2). The better human method is a tally sheet: go down the list once and put a stroke next to each mark. That tally sheet is a frequency map, and it shows the idea that most array problems hide: do not compare everything with everything; remember what you have seen.</p>
+      <p>A dictionary is the computer version of a tally sheet because looking up a key is O(1) on average. A list indexed by value does the same when values are small integers. Counting costs one pass; answering questions from the map costs one more.</p>
+      <p>Missing number: we know the SET of numbers that should be there. Instead of searching, use arithmetic: the full set sums to n(n+1)/2, so the shortfall is the missing number. When data has structure (a range, pairs), maths replaces searching and memory.</p>
+      <p>Rotation: moving every element k places looks like it needs a second array. The reversal trick shows in-place thinking: reversing the whole array flips the order and reversing each part fixes the inner order, with no extra memory. Many array puzzles are solved by combining a few reversals or swaps.</p>
+      <p>Merging two sorted lists introduced the two-pointer scan: because both lists are already ordered, the next smallest item is always one of the two fronts, so one pass is enough. Remember this: sorted input changes the best algorithm.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="freq"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Frequency map: freq[x] = freq.get(x, 0) + 1 for every x. Duplicates are the keys with count &gt; 1.</li><li>Missing number in 0..n: expected sum n(n+1)/2 minus actual sum.</li><li>Rotation by k: reduce k %= n, then reverse the whole list, reverse the first k, reverse the rest.</li><li>Merging two sorted lists: two pointers, always take the smaller front.</li><li>Sorting first can simplify problems: duplicates become adjacent.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Whenever a problem says 'how many times', 'which item appears twice', or 'is there a duplicate', your brain should say 'frequency map'. A frequency map is a dictionary where the key is the item and the value is how many times it appeared. You build it in one pass, then answer almost any counting question by reading it.</p>
+      <p>Counting without a dictionary: if values are small and known (like letters a-z or numbers 0-100) use a plain list as the counter, where the index is the value. counts[x] += 1. This is faster and shows you understand the idea behind counting sort.</p>
+      <p>Maths tricks save memory. For numbers 0 to n with one missing, the sum of 0..n is n(n+1)/2, so missing = expected - actual. For 'every number appears twice except one', XOR cancels pairs because x ^ x = 0. Both run in O(n) time and O(1) space.</p>
+      <p>Rotation by k: after k %= n, the last k items move to the front. The reversal trick does it in place: reverse the whole list, then reverse the first k items, then reverse the rest. Think of it as turning a sentence around and then fixing each part.</p>
+      <p>Merging two sorted lists is the heart of merge sort. Keep one pointer in each list, always take the smaller front item, and when one list ends copy what is left of the other. Linear time, no sorting needed.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>A Python dict stores keys in a hash table: hash(key) picks a slot, collisions are resolved by probing. Lookup is O(1) average. Counter is a dict subclass specialised for counting.</li><li>XOR works bit by bit: each bit of the result is 1 only if the bits differ. Because x ^ x = 0 and XOR is commutative and associative, any number appearing twice cancels out, no matter the order.</li><li>Sum-based tricks rely on exact integer arithmetic. In Python big integers prevent overflow, which is a benefit over C/Java where n(n+1)/2 can overflow 32-bit ints.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Data analysts</td><td>Counting categories, finding duplicates and detecting missing IDs are everyday cleaning tasks.</td></tr><tr><td>Fraud and security teams</td><td>Frequency maps find repeated card numbers, IP addresses or login attempts.</td></tr><tr><td>Interviewers</td><td>They use these problems to see whether you reach for a hash map or arithmetic trick instead of nested loops.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Counter vs sort-and-scan</td><td>Sorting makes equal items adjacent (O(n log n), O(1) extra with in-place sort) while Counter is O(n) with O(n) memory. Pick by whether memory or speed matters.</td></tr><tr><td>Sum formula vs set difference vs XOR for the missing number</td><td>Sum is simplest but can be wrong if there are duplicates or several missing values. XOR is safe from overflow in other languages. A set difference is O(n) space but handles any number of missing items.</td></tr><tr><td>Reversal trick vs slicing for rotation</td><td>Slicing nums[-k:] + nums[:-k] is shortest but uses O(n) extra memory. Reversal is in place; use it when asked for O(1) space.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>collections.Counter(nums) builds the frequency map; .most_common(k) returns the k most frequent.</li><li>d.get(x, 0) returns 0 if x is missing, so d[x] = d.get(x, 0) + 1 never crashes.</li><li>defaultdict(int) or defaultdict(list) creates missing keys automatically.</li><li>set(nums) removes duplicates; len(set(nums)) &lt; len(nums) means duplicates exist.</li><li>Rotation in one line: nums[-k:] + nums[:-k] (after k %= n).</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c3_2.py">def find_duplicates(nums):
+    freq = {}
+    for x in nums:
+        freq[x] = freq.get(x, 0) + 1    # count occurrences
+    return [k for k, v in freq.items() if v &gt; 1]</code></pre>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - search for every number</h4>
+      <p>For each value 0..n check whether it is in the list. 'in list' is O(n), so total O(n^2).</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c3_2_stage1.py">def missing_number(nums):
+    for v in range(len(nums) + 1):
+        if v not in nums:
+            return v</code></pre>
+      <p class="muted small">Check: <code>missing_number([3, 0, 1])</code> returns <code>2</code></p>
+      <h4>Stage 2 - use a set</h4>
+      <p>Membership in a set is O(1), giving O(n) time with O(n) memory.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c3_2_stage2.py">def missing_number(nums):
+    s = set(nums)
+    for v in range(len(nums) + 1):
+        if v not in s:
+            return v</code></pre>
+      <p class="muted small">Check: <code>missing_number([3, 0, 1])</code> returns <code>2</code></p>
+      <h4>Stage 3 - use arithmetic</h4>
+      <p>The numbers 0..n always add up to n(n+1)/2. The shortfall is the missing value: O(n) time, O(1) memory.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c3_2_stage3.py">def missing_number(nums):
+    n = len(nums)
+    return n * (n + 1) // 2 - sum(nums)</code></pre>
+      <p class="muted small">Check: <code>missing_number([3, 0, 1])</code> returns <code>2</code></p>
+      <h4>Stage 4 - use XOR</h4>
+      <p>XOR cancels equal numbers, so XOR of all indices and values leaves the missing number. Same cost as stage 3 but cannot overflow in languages with fixed-size integers.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c3_2_stage4.py">def missing_number(nums):
+    x = len(nums)
+    for i, v in enumerate(nums):
+        x ^= i ^ v
+    return x</code></pre>
+      <p class="muted small">Check: <code>missing_number([3, 0, 1])</code> returns <code>2</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>find_duplicates([4, 1, 4, 2, 1])</code>, returns <code>[4, 1]</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>x (after)</th><th>freq (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>freq = {}</code></td><td>-</td><td><strong><code>{}</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>4</code></strong></td><td><code>{}</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>freq[x] = freq.get(x, 0) + 1    # count occurrences</code></td><td><code>4</code></td><td><strong><code>{4: 1}</code></strong></td></tr>
+<tr><td class="num">4</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>1</code></strong></td><td><code>{4: 1}</code></td></tr>
+<tr><td class="num">5</td><td class="num">4</td><td><code>freq[x] = freq.get(x, 0) + 1    # count occurrences</code></td><td><code>1</code></td><td><strong><code>{4: 1, 1: 1}</code></strong></td></tr>
+<tr><td class="num">6</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>4</code></strong></td><td><code>{4: 1, 1: 1}</code></td></tr>
+<tr><td class="num">7</td><td class="num">4</td><td><code>freq[x] = freq.get(x, 0) + 1    # count occurrences</code></td><td><code>4</code></td><td><strong><code>{4: 2, 1: 1}</code></strong></td></tr>
+<tr><td class="num">8</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>2</code></strong></td><td><code>{4: 2, 1: 1}</code></td></tr>
+<tr><td class="num">9</td><td class="num">4</td><td><code>freq[x] = freq.get(x, 0) + 1    # count occurrences</code></td><td><code>2</code></td><td><strong><code>{4: 2, 1: 1, 2: 1}</code></strong></td></tr>
+<tr><td class="num">10</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>1</code></strong></td><td><code>{4: 2, 1: 1, 2: 1}</code></td></tr>
+<tr><td class="num">11</td><td class="num">4</td><td><code>freq[x] = freq.get(x, 0) + 1    # count occurrences</code></td><td><code>1</code></td><td><strong><code>{4: 2, 1: 2, 2: 1}</code></strong></td></tr>
+<tr><td class="num">12</td><td class="num">3</td><td><code>for x in nums:</code></td><td><code>1</code></td><td><code>{4: 2, 1: 2, 2: 1}</code></td></tr>
+<tr><td class="num">13</td><td class="num">5</td><td><code>return [k for k, v in freq.items() if v &gt; 1]</code></td><td><code>1</code></td><td><code>{4: 2, 1: 2, 2: 1}</code></td></tr>
+<tr><td class="num">14</td><td class="num">5</td><td><code>return [k for k, v in freq.items() if v &gt; 1]</code></td><td><code>1</code></td><td><code>{4: 2, 1: 2, 2: 1}</code></td></tr>
+<tr><td class="num">15</td><td class="num">5</td><td><code>return [k for k, v in freq.items() if v &gt; 1]</code></td><td><code>1</code></td><td><code>{4: 2, 1: 2, 2: 1}</code></td></tr>
+<tr><td class="num">16</td><td class="num">5</td><td><code>return [k for k, v in freq.items() if v &gt; 1]</code></td><td><code>1</code></td><td><code>{4: 2, 1: 2, 2: 1}</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>One pass to count (O(n)) and one pass over the distinct keys: O(n) time, O(n) space.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Using freq[x] += 1 on a missing key (KeyError) - use get() or defaultdict / Counter.</li><li>Forgetting k %= n in rotation.</li><li>Returning the first duplicate when asked for all of them.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"How many times" / "which element appears..." -&gt; frequency map.</li><li>"Missing / appears once / appears twice" -&gt; sum, XOR, or counting.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m03-problems.html#prob-missing_number">Missing Number</a> <span class="tag">LC 268</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Arrays, math / XOR</td></tr><tr><td><a href="m03-problems.html#prob-merge_sorted">Merge Two Sorted Lists</a> <span class="tag">LC 88</span></td><td><span class="tag ok">Easy</span></td><td>Two pointers</td></tr><tr><td><a href="m03-problems.html#prob-rotate_right">Rotate Array Right by K</a> <span class="tag">LC 189</span></td><td><span class="tag warn">Medium</span></td><td>Arrays, reversal trick</td></tr><tr><td><a href="m03-problems.html#prob-majority_element">Majority Element (Boyer-Moore)</a> <span class="tag">LC 169</span></td><td><span class="tag warn">Medium</span></td><td>Arrays, voting algorithm</td></tr><tr><td><a href="m03-problems.html#prob-find_duplicate_number">Find the Duplicate Number</a> <span class="tag">LC 287</span></td><td><span class="tag warn">Medium</span></td><td>Hashing or Floyd cycle trick</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why use a dictionary to count instead of count() in a loop?</summary><div class="answer"><p>list.count(x) scans the whole list, so calling it for every element is O(n^2). One dictionary pass is O(n).</p></div></details>
+        <details class="recall"><summary>Why does XOR find the single number?</summary><div class="answer"><p>XOR cancels equal numbers (x ^ x = 0) and does not care about order, so only the unpaired value survives.</p></div></details>
+        <details class="recall"><summary>Why not just sort to find duplicates?</summary><div class="answer"><p>Sorting works (equal items become neighbours) but costs O(n log n). A set or Counter is O(n).</p></div></details>
+        <details class="recall"><summary>Why take k %= n before rotating?</summary><div class="answer"><p>Rotating by n returns the original list, so only the remainder matters. It also prevents index errors for large k.</p></div></details>
+        <details class="recall"><summary>Why is the sum formula safe in Python but risky elsewhere?</summary><div class="answer"><p>Python integers do not overflow. In C/Java n(n+1)/2 can exceed 32-bit limits, so XOR is safer there.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c3_2-q1" data-topic="Arrays and Lists" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Best way to find the one missing number in 0..n in O(n) time and O(1) space?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Sort the list</li>
+          <li data-key="B">n(n+1)/2 minus the sum</li>
+          <li data-key="C">Nested loops</li>
+          <li data-key="D">Binary search on the unsorted list</li>
+        </ul>
+        <div class="q-explain"><p>The arithmetic series sum gives the expected total.</p></div>
+      </div>
+      <div class="quiz" data-qid="c3_2-q2" data-topic="Arrays and Lists" data-type="single" data-answer="B">
+        <div class="q-stem"><p>To rotate a list of length 7 right by k = 10, what effective k do you use?</p></div>
+        <ul class="q-options">
+          <li data-key="A">10</li>
+          <li data-key="B">3</li>
+          <li data-key="C">7</li>
+          <li data-key="D">0</li>
+        </ul>
+        <div class="q-explain"><p>10 % 7 = 3.</p></div>
+      </div>
+    </section>
+
+    <section id="c3_3" data-track>
+      <h2>Prefix sums and Kadane's algorithm</h2>
+      <p><span class="tag ok">Essential</span> <span class="tag">Topic 3.3</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>A prefix sum array stores running totals so any range sum is a subtraction. Kadane's algorithm finds the best contiguous subarray sum by deciding at every element whether to extend the current subarray or restart.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Range-sum queries and "maximum sum subarray" appear constantly. Prefix sums turn O(n) per query into O(1); Kadane turns O(n^2) into O(n).</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Prefix sums are the odometer of a car: distance between two towns is the difference of two readings. Kadane is a gambler who quits a losing streak and starts over.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Suppose a shop owner asks 100,000 times: 'how much did we sell between day l and day r?'. Adding the range each time is slow. The natural improvement: keep a running total after each day. Then the sales between two days is the difference of two running totals. That is a prefix sum, discovered by exactly this reasoning: precompute once, answer cheaply many times.</p>
+      <p>The pattern behind it is more general: when a computation repeats on overlapping pieces, store partial results. This is the same instinct as dynamic programming and caching.</p>
+      <p>Kadane's problem: the best stretch of days for profit when some days lose money. Every candidate stretch ends somewhere. For a stretch that ends at day i, the best one either starts at day i alone or extends the best stretch that ended at i-1. That two-way decision is the whole algorithm. It works because the best stretch ending at i only depends on the best stretch ending at i-1, which is the DP idea of optimal substructure.</p>
+      <p>Why not just try all stretches? There are about n^2/2 of them, and summing each costs more. Kadane compresses this to one pass because it throws away prefixes that can only hurt (negative running sums).</p>
+      <p>Prefix sums plus a dictionary: if a stretch from i+1 to j sums to k then prefix[j] - prefix[i] = k, so prefix[i] = prefix[j] - k. Looking up how many earlier prefixes equal that value counts every valid stretch ending at j in O(1).</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="arr_ops:kadane"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>prefix[0] = 0 and prefix[i] = nums[0] + ... + nums[i-1]. Sum of l..r (inclusive) = prefix[r+1] - prefix[l].</li><li>Kadane: cur = best sum of a subarray ending HERE. cur = max(x, cur + x). best = max(best, cur).</li><li>If cur + x &lt; x then the old running sum was negative - dropping it improves the result.</li><li>Dry run on [-2, 1, -3, 4, -1, 2]: cur = -2, 1, -2, 4, 3, 5; best ends at 5 (subarray [4, -1, 2]).</li><li>Watch the animation: the highlighted window is the best subarray found so far.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>A prefix sum array stores running totals. If nums = [2, 4, 1, 3] then prefix = [0, 2, 6, 7, 10]. To get the sum of a range, subtract two prefix values. Why does it work? prefix[r+1] is 'everything up to r' and prefix[l] is 'everything before l'. The difference is exactly the part in between.</p>
+      <p>Build it once in O(n), then answer every range question in O(1). If you have 100,000 questions on a list of 100,000 numbers, brute force is 10^10 steps while prefix sums take about 2 x 10^5.</p>
+      <p>Kadane's algorithm asks at every position: 'is it better to extend the subarray I was building, or start fresh here?'. If the running sum has become negative it can only hurt the future, so throw it away. That one decision per element is the whole algorithm.</p>
+      <p>Prefix sums plus a dictionary solve 'count subarrays with sum k': if prefix[j] - prefix[i] = k then prefix[i] = prefix[j] - k. While scanning, keep a dictionary of how many times each prefix has appeared and look up prefix - k. It works even with negative numbers, where sliding window fails.</p>
+      <p>Related idea: a difference array does range UPDATES fast. Instead of adding v to each cell in [l, r], add v at l and subtract v at r + 1. A prefix sum at the end rebuilds the final array.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Prefix sums trade O(n) extra memory for O(1) queries. They work for any invertible operation (sum, XOR, count). They do NOT work for max/min because you cannot 'subtract' a max.</li><li>Kadane runs with two variables, so space is O(1), and each element is touched once, giving O(n). The same pass can also track the start and end indices of the best subarray.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Finance and analytics teams</td><td>Cumulative totals, running balances and best period of profit are the same maths.</td></tr><tr><td>Image processing</td><td>Summed-area tables (2D prefix sums) compute box blurs and region sums instantly.</td></tr><tr><td>Databases</td><td>Aggregate queries over ranges use similar cumulative structures.</td></tr><tr><td>Interviewers</td><td>Kadane and prefix+hash-map are standard medium-level questions that test whether you see the DP/hashing pattern.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Prefix sums vs recomputing</td><td>Recompute if you have one or two queries. Prefix sums win when queries are many. If values change between queries use a Fenwick/segment tree.</td></tr><tr><td>Kadane vs divide and conquer</td><td>Both find the max subarray. Kadane is O(n) and simple; divide and conquer is O(n log n) but generalises to parallel computation.</td></tr><tr><td>Sliding window vs prefix+hash for sums</td><td>Sliding window needs non-negative numbers. Prefix + hash map handles negatives.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>from itertools import accumulate; prefix = [0] + list(accumulate(nums)).</li><li>float('-inf') is a safe starting value for a maximum.</li><li>max(a, b) keeps Kadane short: cur = max(x, cur + x).</li><li>Use dict.get(key, 0) for the prefix counts.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c3_3.py">def kadane(nums):
+    cur = best = nums[0]
+    for x in nums[1:]:
+        cur = max(x, cur + x)    # extend or restart
+        best = max(best, cur)
+    return best</code></pre>
+      <details class="box"><summary>Prefix sums in two lines</summary><div class="d-body">
+<pre><code class="lang-py" data-embed="solutions/concepts/c3_3_extra1.py">from itertools import accumulate
+nums = [2, 4, 1, 3]
+prefix = [0] + list(accumulate(nums))     # [0, 2, 6, 7, 10]
+print(prefix[3] - prefix[1])              # sum of nums[1..2] = 4 + 1 = 5</code></pre>
+</div></details>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - try every subarray and add it up</h4>
+      <p>Three nested loops: O(n^3). Clear but hopeless for large input.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c3_3_stage1.py">def max_subarray(nums):
+    best = nums[0]
+    for i in range(len(nums)):
+        for j in range(i, len(nums)):
+            best = max(best, sum(nums[i:j + 1]))
+    return best</code></pre>
+      <p class="muted small">Check: <code>max_subarray([-2, 1, -3, 4, -1, 2])</code> returns <code>5</code></p>
+      <h4>Stage 2 - keep a running sum</h4>
+      <p>Extending a subarray by one element only adds that element, so the innermost sum is unnecessary: O(n^2).</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c3_3_stage2.py">def max_subarray(nums):
+    best = nums[0]
+    for i in range(len(nums)):
+        total = 0
+        for j in range(i, len(nums)):
+            total += nums[j]
+            best = max(best, total)
+    return best</code></pre>
+      <p class="muted small">Check: <code>max_subarray([-2, 1, -3, 4, -1, 2])</code> returns <code>5</code></p>
+      <h4>Stage 3 - Kadane: decide at every element</h4>
+      <p>The best subarray ending here either extends the previous one or starts fresh. One pass, O(n), O(1) space.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c3_3_stage3.py">def max_subarray(nums):
+    cur = best = nums[0]
+    for x in nums[1:]:
+        cur = max(x, cur + x)
+        best = max(best, cur)
+    return best</code></pre>
+      <p class="muted small">Check: <code>max_subarray([-2, 1, -3, 4, -1, 2])</code> returns <code>5</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>kadane([-2, 1, -3, 4, -1, 2])</code>, returns <code>5</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>x (after)</th><th>cur (after)</th><th>best (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>cur = best = nums[0]</code></td><td>-</td><td><strong><code>-2</code></strong></td><td><strong><code>-2</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>for x in nums[1:]:</code></td><td><strong><code>1</code></strong></td><td><code>-2</code></td><td><code>-2</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>cur = max(x, cur + x)    # extend or restart</code></td><td><code>1</code></td><td><strong><code>1</code></strong></td><td><code>-2</code></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>best = max(best, cur)</code></td><td><code>1</code></td><td><code>1</code></td><td><strong><code>1</code></strong></td></tr>
+<tr><td class="num">5</td><td class="num">3</td><td><code>for x in nums[1:]:</code></td><td><strong><code>-3</code></strong></td><td><code>1</code></td><td><code>1</code></td></tr>
+<tr><td class="num">6</td><td class="num">4</td><td><code>cur = max(x, cur + x)    # extend or restart</code></td><td><code>-3</code></td><td><strong><code>-2</code></strong></td><td><code>1</code></td></tr>
+<tr><td class="num">7</td><td class="num">5</td><td><code>best = max(best, cur)</code></td><td><code>-3</code></td><td><code>-2</code></td><td><code>1</code></td></tr>
+<tr><td class="num">8</td><td class="num">3</td><td><code>for x in nums[1:]:</code></td><td><strong><code>4</code></strong></td><td><code>-2</code></td><td><code>1</code></td></tr>
+<tr><td class="num">9</td><td class="num">4</td><td><code>cur = max(x, cur + x)    # extend or restart</code></td><td><code>4</code></td><td><strong><code>4</code></strong></td><td><code>1</code></td></tr>
+<tr><td class="num">10</td><td class="num">5</td><td><code>best = max(best, cur)</code></td><td><code>4</code></td><td><code>4</code></td><td><strong><code>4</code></strong></td></tr>
+<tr><td class="num">11</td><td class="num">3</td><td><code>for x in nums[1:]:</code></td><td><strong><code>-1</code></strong></td><td><code>4</code></td><td><code>4</code></td></tr>
+<tr><td class="num">12</td><td class="num">4</td><td><code>cur = max(x, cur + x)    # extend or restart</code></td><td><code>-1</code></td><td><strong><code>3</code></strong></td><td><code>4</code></td></tr>
+<tr><td class="num">13</td><td class="num">5</td><td><code>best = max(best, cur)</code></td><td><code>-1</code></td><td><code>3</code></td><td><code>4</code></td></tr>
+<tr><td class="num">14</td><td class="num">3</td><td><code>for x in nums[1:]:</code></td><td><strong><code>2</code></strong></td><td><code>3</code></td><td><code>4</code></td></tr>
+<tr><td class="num">15</td><td class="num">4</td><td><code>cur = max(x, cur + x)    # extend or restart</code></td><td><code>2</code></td><td><strong><code>5</code></strong></td><td><code>4</code></td></tr>
+<tr><td class="num">16</td><td class="num">5</td><td><code>best = max(best, cur)</code></td><td><code>2</code></td><td><code>5</code></td><td><strong><code>5</code></strong></td></tr>
+<tr><td class="num">17</td><td class="num">3</td><td><code>for x in nums[1:]:</code></td><td><code>2</code></td><td><code>5</code></td><td><code>5</code></td></tr>
+<tr><td class="num">18</td><td class="num">6</td><td><code>return best</code></td><td><code>2</code></td><td><code>5</code></td><td><code>5</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>One pass: O(n) time, O(1) space. Building prefix sums: O(n) time and space, then O(1) per query.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Initialising best = 0 breaks all-negative arrays.</li><li>Off-by-one in prefix[r+1] - prefix[l].</li><li>Using sliding window for arrays with negatives.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"Maximum/minimum sum of a contiguous subarray" -&gt; Kadane.</li><li>"Sum of range" repeated many times -&gt; prefix sums.</li><li>"Count subarrays with sum k" -&gt; prefix sums + hash map.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m03-problems.html#prob-range_sum_queries">Range Sum Queries</a></td><td><span class="tag ok">Easy</span></td><td>Prefix sums</td></tr><tr><td><a href="m03-problems.html#prob-max_subarray">Maximum Subarray Sum (Kadane)</a> <span class="tag">LC 53</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Arrays, Kadane's algorithm / DP</td></tr><tr><td><a href="m03-problems.html#prob-equilibrium_index">Equilibrium Index</a></td><td><span class="tag warn">Medium</span></td><td>Prefix sums</td></tr><tr><td><a href="m03-problems.html#prob-max_product_subarray">Maximum Product Subarray</a> <span class="tag">LC 152</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Kadane variant (track max and min)</td></tr><tr><td><a href="m03-problems.html#prob-max_sum_circular">Maximum Sum Circular Subarray</a> <span class="tag">LC 918</span></td><td><span class="tag warn">Medium</span></td><td>Kadane (max and min)</td></tr><tr><td><a href="m03-problems.html#prob-product_except_self">Product of Array Except Self</a> <span class="tag">LC 238</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Prefix and suffix products</td></tr><tr><td><a href="m07-problems.html#prob-subarray_sum_k">Subarrays with Sum K</a> <span class="tag">LC 560</span></td><td><span class="tag bad">Hard</span></td><td>Prefix sum + hash map</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why does the prefix array start with 0?</summary><div class="answer"><p>So that sum(l..r) = prefix[r+1] - prefix[l] also works when l = 0 without a special case.</p></div></details>
+        <details class="recall"><summary>Why does Kadane restart when the running sum is negative?</summary><div class="answer"><p>A negative running sum can only lower any future subarray total, so the best choice is to start fresh at the current element.</p></div></details>
+        <details class="recall"><summary>Why not use sliding window for max subarray with negatives?</summary><div class="answer"><p>Windows assume that shrinking changes the sum in a known direction. Negative numbers break that assumption.</p></div></details>
+        <details class="recall"><summary>Why use prefix sums instead of recalculating each query?</summary><div class="answer"><p>Q queries on n items cost O(Qn) recalculating but only O(n + Q) with prefix sums.</p></div></details>
+        <details class="recall"><summary>Why initialise best with nums[0] and not 0?</summary><div class="answer"><p>If all numbers are negative the true answer is negative. Starting at 0 would wrongly return 0 (an empty subarray).</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c3_3-q1" data-topic="Arrays and Lists" data-type="single" data-answer="B">
+        <div class="q-stem"><p>For nums = [-3, -1, -2] what does Kadane return?</p></div>
+        <ul class="q-options">
+          <li data-key="A">0</li>
+          <li data-key="B">-1</li>
+          <li data-key="C">-3</li>
+          <li data-key="D">-6</li>
+        </ul>
+        <div class="q-explain"><p>All numbers are negative, so the best subarray is the single largest element, -1.</p></div>
+      </div>
+      <div class="quiz" data-qid="c3_3-q2" data-topic="Arrays and Lists" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Given prefix array P with P[0]=0, the sum of nums[2..4] is:</p></div>
+        <ul class="q-options">
+          <li data-key="A">P[4] - P[2]</li>
+          <li data-key="B">P[5] - P[2]</li>
+          <li data-key="C">P[5] - P[1]</li>
+          <li data-key="D">P[4] - P[1]</li>
+        </ul>
+        <div class="q-explain"><p>Sum(l..r) = P[r+1] - P[l].</p></div>
+      </div>
+    </section>
+
+    <h2 id="practice-problems">Practice problems for this module</h2>
+
+    <p>20 problems with hints, approach, dry run and tested solutions on the <a href="m03-problems.html">problem set for this module</a>.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m03-problems.html#prob-second_largest">Second Largest Element</a></td><td><span class="tag ok">Easy</span></td><td>Arrays, single pass</td></tr><tr><td><a href="m03-problems.html#prob-missing_number">Missing Number</a> <span class="tag">LC 268</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Arrays, math / XOR</td></tr><tr><td><a href="m03-problems.html#prob-move_zeroes">Move Zeroes to the End</a> <span class="tag">LC 283</span></td><td><span class="tag ok">Easy</span></td><td>Arrays, two pointers (in-place)</td></tr><tr><td><a href="m03-problems.html#prob-remove_duplicates">Remove Duplicates from Sorted Array</a> <span class="tag">LC 26</span></td><td><span class="tag ok">Easy</span></td><td>Arrays, two pointers</td></tr><tr><td><a href="m03-problems.html#prob-range_sum_queries">Range Sum Queries</a></td><td><span class="tag ok">Easy</span></td><td>Prefix sums</td></tr><tr><td><a href="m03-problems.html#prob-merge_sorted">Merge Two Sorted Lists</a> <span class="tag">LC 88</span></td><td><span class="tag ok">Easy</span></td><td>Two pointers</td></tr><tr><td><a href="m03-problems.html#prob-max_profit">Best Time to Buy and Sell Stock</a> <span class="tag">LC 121</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Single pass, running minimum</td></tr><tr><td><a href="m03-problems.html#prob-plus_one">Plus One</a> <span class="tag">LC 66</span></td><td><span class="tag ok">Easy</span></td><td>Arrays as numbers, carry</td></tr><tr><td><a href="m03-problems.html#prob-rotate_right">Rotate Array Right by K</a> <span class="tag">LC 189</span></td><td><span class="tag warn">Medium</span></td><td>Arrays, reversal trick</td></tr><tr><td><a href="m03-problems.html#prob-max_subarray">Maximum Subarray Sum (Kadane)</a> <span class="tag">LC 53</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Arrays, Kadane's algorithm / DP</td></tr><tr><td><a href="m03-problems.html#prob-equilibrium_index">Equilibrium Index</a></td><td><span class="tag warn">Medium</span></td><td>Prefix sums</td></tr><tr><td><a href="m03-problems.html#prob-majority_element">Majority Element (Boyer-Moore)</a> <span class="tag">LC 169</span></td><td><span class="tag warn">Medium</span></td><td>Arrays, voting algorithm</td></tr><tr><td><a href="m03-problems.html#prob-product_except_self">Product of Array Except Self</a> <span class="tag">LC 238</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Prefix and suffix products</td></tr><tr><td><a href="m03-problems.html#prob-find_duplicate_number">Find the Duplicate Number</a> <span class="tag">LC 287</span></td><td><span class="tag warn">Medium</span></td><td>Hashing or Floyd cycle trick</td></tr><tr><td><a href="m03-problems.html#prob-next_permutation">Next Permutation</a> <span class="tag">LC 31</span></td><td><span class="tag warn">Medium</span></td><td>Array manipulation / pattern finding</td></tr><tr><td><a href="m03-problems.html#prob-max_product_subarray">Maximum Product Subarray</a> <span class="tag">LC 152</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Kadane variant (track max and min)</td></tr><tr><td><a href="m03-problems.html#prob-best_time_stock_ii">Best Time to Buy and Sell Stock II</a> <span class="tag">LC 122</span></td><td><span class="tag warn">Medium</span></td><td>Greedy over a list</td></tr><tr><td><a href="m03-problems.html#prob-subarrays_div_k">Subarray Sums Divisible by K</a> <span class="tag">LC 974</span></td><td><span class="tag warn">Medium</span></td><td>Prefix sums + remainders</td></tr><tr><td><a href="m03-problems.html#prob-max_sum_circular">Maximum Sum Circular Subarray</a> <span class="tag">LC 918</span></td><td><span class="tag warn">Medium</span></td><td>Kadane (max and min)</td></tr><tr><td><a href="m03-problems.html#prob-trapping_rain">Trapping Rain Water</a> <span class="tag">LC 42</span></td><td><span class="tag bad">Hard</span></td><td>Two pointers (running maximums)</td></tr>
+</tbody>
+</table>
+</div>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Arrays and Lists</h2>
+      <p class="muted">55 questions: try to answer aloud in under a minute, then reveal. All questions from every module are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Arrays and Lists">
+<details class="recall iq" data-level="basic" data-topic="Arrays and Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you reverse a list in Python? Give two ways.</summary><div class="answer"><pre><code class="lang-py">nums.reverse()        # in place, O(1) extra space
+rev = nums[::-1]      # new reversed list, O(n) extra space</code></pre><p>You can also write the two-pointer swap loop yourself.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Arrays and Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why is inserting at the front of a list slow?</summary><div class="answer"><p>Every existing element has to move one position to the right to make room, so it takes O(n). If you need fast inserts at both ends, use collections.deque.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Arrays and Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you find the second largest element in one pass?</summary><div class="answer"><p>Keep two variables first and second. For each x: if x &gt; first then second = first and first = x; elif first &gt; x &gt; second then second = x. Return second (or -1 if it never changed). O(n) time, O(1) space.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Arrays and Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you remove duplicates from a sorted list in place?</summary><div class="answer"><p>Use a write pointer w starting at 1. For each element after the first, if it differs from nums[w-1], copy it to nums[w] and increase w. The first w items are the unique values.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Arrays and Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the difference between a shallow copy and a deep copy?</summary><div class="answer"><p>A shallow copy (a[:] or list(a)) creates a new outer list but the inner objects are shared. For a list of lists, changing an inner list changes both copies. A deep copy (copy.deepcopy) copies everything recursively.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Arrays and Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why is array indexing O(1)?</summary><div class="answer"><p>Elements sit in contiguous memory in equal-sized slots, so the address of element i is base + i x size, computed in one step. In Python the slots hold pointers.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Arrays and Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you find duplicates in a list in O(n)?</summary><div class="answer"><p>Count with a dictionary or Counter, then collect keys whose count is above 1. Or use a seen set and record an item when it is already in the set.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Arrays and Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you find the missing number from 0..n in O(n) time and O(1) space?</summary><div class="answer"><p>expected = n * (n + 1) // 2 and the answer is expected - sum(nums). XOR of all indices and values also works.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Arrays and Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How would you rotate an array by k in place?</summary><div class="answer"><p>Do k %= n, reverse the whole array, reverse the first k elements, reverse the remaining n - k elements. O(n) time, O(1) space.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Arrays and Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you find the element that appears once when all others appear twice?</summary><div class="answer"><p>XOR all the numbers. Equal numbers cancel (x ^ x = 0) and 0 ^ y = y, so only the single number remains.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Arrays and Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the Boyer-Moore voting algorithm?</summary><div class="answer"><p>It finds an element appearing more than n/2 times in O(1) space. Keep a candidate and a count. Same number: count + 1, different number: count - 1, when count is 0 pick a new candidate. The true majority cannot be fully cancelled out.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Arrays and Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why does XOR find the single number?</summary><div class="answer"><p>x ^ x = 0 and x ^ 0 = x, and XOR is order-independent, so every pair cancels and only the single number remains.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Arrays and Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Explain Kadane&#x27;s algorithm.</summary><div class="answer"><p>Scan once with cur = best sum of a subarray that ends at the current element. cur = max(x, cur + x) (extend or restart), best = max(best, cur). Time O(n), space O(1). Start best at nums[0] so all-negative arrays work.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Arrays and Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do prefix sums speed up range queries?</summary><div class="answer"><p>Precompute prefix[i] once in O(n). Then sum(l..r) = prefix[r+1] - prefix[l] in O(1) instead of looping each time.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Arrays and Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you count subarrays with sum exactly k, even with negative numbers?</summary><div class="answer"><p>Keep a running prefix sum and a dictionary of prefix frequencies starting with {0: 1}. For each element add count[prefix - k] to the answer, then record the current prefix. O(n) time.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Arrays and Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why does sliding window fail when the array has negative numbers?</summary><div class="answer"><p>Window logic relies on &#x27;adding an element increases the sum, removing decreases it&#x27;. With negatives that is not true, so you cannot decide whether to shrink or grow. Use prefix sums + hash map instead.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Arrays and Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What do you return if the array is all negative in the maximum subarray problem?</summary><div class="answer"><p>The largest single element (the least negative). That is why best must start at nums[0], not 0.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Arrays and Lists"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why do prefix sums fail for &#x27;range maximum&#x27;?</summary><div class="answer"><p>Subtraction undoes addition but nothing undoes max. Use a sparse table or segment tree for range max.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What does this print?</summary><div class="answer"><pre><code class="lang-py">a = [1, 2, 3]
+b = a
+b.append(4)
+print(a)</code></pre><p>[1, 2, 3, 4]. b = a copies the reference, not the list; both names point at the same object.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What is printed?</summary><div class="answer"><pre><code class="lang-py">grid = [[0] * 2] * 2
+grid[0][0] = 5
+print(grid)</code></pre><p>[[5, 0], [5, 0]]. Both rows are the same list object. Use [[0] * 2 for _ in range(2)].</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Reverse an array in place and explain complexity.</summary><div class="answer"><pre><code class="lang-py">def reverse(a):
+    lo, hi = 0, len(a) - 1
+    while lo &lt; hi:
+        a[lo], a[hi] = a[hi], a[lo]
+        lo += 1
+        hi -= 1</code></pre><p>O(n) time, O(1) extra space.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> Why do image libraries use arrays instead of linked lists?</summary><div class="answer"><p>Pixel access by coordinates must be O(1) and processing scans memory sequentially, which is fast for contiguous data thanks to CPU caching.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why do list indexes start at 0?</summary><div class="answer"><p>The index is the distance from the first element. The first element is 0 steps away, so its offset is 0. It also makes address arithmetic simple.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is inserting in the middle slow?</summary><div class="answer"><p>Items sit side by side, so everything after the insertion point must move one place to make room: O(n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use a list as a queue?</summary><div class="answer"><p>pop(0) shifts every remaining element: O(n). Use collections.deque for O(1) at both ends.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does b = a not copy a list?</summary><div class="answer"><p>Assignment copies the reference (the label), not the object. Both names point at the same list. Use a[:] or list(a) to copy.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is append fast even though the list occasionally resizes?</summary><div class="answer"><p>Python allocates extra spare room, so most appends just use a free slot. The rare resize cost is spread over many appends (amortised O(1)).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use enumerate instead of range(len(nums))?</summary><div class="answer"><p>enumerate gives index and value together, is clearer, and avoids indexing mistakes. Use range(len(...)) only when you really need to change items by index.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What does a = [1, 2, 3]; print(a[1:], a[:-1], a[::-1]) print?</summary><div class="answer"><p>[2, 3] [1, 2] [3, 2, 1].</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Write a function that returns True if a list is sorted in non-decreasing order.</summary><div class="answer"><pre><code class="lang-py">def is_sorted(a):
+    return all(a[i] &lt;= a[i + 1] for i in range(len(a) - 1))</code></pre><p>O(n) time, stops at the first violation.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Find the first non-repeating number in a list in O(n).</summary><div class="answer"><pre><code class="lang-py">from collections import Counter
+def first_unique(a):
+    c = Counter(a)
+    for x in a:
+        if c[x] == 1:
+            return x
+    return None</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What does Counter(&#x27;aab&#x27;) - Counter(&#x27;abb&#x27;) produce?</summary><div class="answer"><p>Counter({&#x27;a&#x27;: 1}). Subtraction keeps only positive counts: a has 2 - 1 = 1; b has 1 - 2 &lt; 0 and is dropped.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How would you find duplicate user IDs in a file with 10 million lines that does not fit memory?</summary><div class="answer"><p>Hash partition the IDs into many smaller files (same ID always lands in the same file) and check duplicates per file with a set, or use external sorting.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use a dictionary to count instead of count() in a loop?</summary><div class="answer"><p>list.count(x) scans the whole list, so calling it for every element is O(n^2). One dictionary pass is O(n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does XOR find the single number?</summary><div class="answer"><p>XOR cancels equal numbers (x ^ x = 0) and does not care about order, so only the unpaired value survives.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not just sort to find duplicates?</summary><div class="answer"><p>Sorting works (equal items become neighbours) but costs O(n log n). A set or Counter is O(n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why take k %= n before rotating?</summary><div class="answer"><p>Rotating by n returns the original list, so only the remainder matters. It also prevents index errors for large k.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is the sum formula safe in Python but risky elsewhere?</summary><div class="answer"><p>Python integers do not overflow. In C/Java n(n+1)/2 can exceed 32-bit limits, so XOR is safer there.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use a list of size max(nums) as a counter for any data?</summary><div class="answer"><p>If values are huge (10^9) the list needs gigabytes. Use a dictionary when the value range is large or unknown.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Return the element that appears exactly once when all others appear three times.</summary><div class="answer"><p>Count bits: for each bit position sum the bits across all numbers modulo 3; the remaining bits form the answer. O(32 n) time, O(1) space. A Counter is simpler (O(n) space).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What does Counter([1, 1, 2]).most_common(1) return?</summary><div class="answer"><p>[(1, 2)]: the most common element and its count.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Return the start and end index of the maximum subarray.</summary><div class="answer"><pre><code class="lang-py">def max_sub_idx(a):
+    best, cur, s, bs, be = a[0], a[0], 0, 0, 0
+    for i in range(1, len(a)):
+        if a[i] &gt; cur + a[i]:
+            cur, s = a[i], i
+        else:
+            cur += a[i]
+        if cur &gt; best:
+            best, bs, be = cur, s, i
+    return bs, be, best</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What does Kadane return for [-1, -2, -3] if best starts at 0?</summary><div class="answer"><p>0, which is wrong (an empty subarray) if the problem requires a non-empty one. Start best with the first element.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How would you answer &#x27;sales between any two dates&#x27; on a dashboard with a million rows?</summary><div class="answer"><p>Pre-aggregate daily totals and store cumulative sums so any range is two lookups, or use database indexes/window functions.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does the prefix array start with 0?</summary><div class="answer"><p>So that sum(l..r) = prefix[r+1] - prefix[l] also works when l = 0 without a special case.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does Kadane restart when the running sum is negative?</summary><div class="answer"><p>A negative running sum can only lower any future subarray total, so the best choice is to start fresh at the current element.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use sliding window for max subarray with negatives?</summary><div class="answer"><p>Windows assume that shrinking changes the sum in a known direction. Negative numbers break that assumption.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use prefix sums instead of recalculating each query?</summary><div class="answer"><p>Q queries on n items cost O(Qn) recalculating but only O(n + Q) with prefix sums.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why initialise best with nums[0] and not 0?</summary><div class="answer"><p>If all numbers are negative the true answer is negative. Starting at 0 would wrongly return 0 (an empty subarray).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why can&#x27;t prefix sums answer range maximum queries?</summary><div class="answer"><p>There is no inverse operation for max: knowing the max up to r and the max up to l-1 does not tell you the max of the middle part.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Arrays and Lists"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Count subarrays with sum equal to k using prefix sums.</summary><div class="answer"><pre><code class="lang-py">def count(nums, k):
+    seen, pre, ans = {0: 1}, 0, 0
+    for x in nums:
+        pre += x
+        ans += seen.get(pre - k, 0)
+        seen[pre] = seen.get(pre, 0) + 1
+    return ans</code></pre></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Arrays and Lists"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> How would you remove all occurrences of a value in place in O(n)?</summary><div class="answer"><p>Reader/writer pointers: copy non-matching items to the write index and return that index as the new length.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Arrays and Lists"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Do it with O(1) extra space when numbers are in the range 1..n.</summary><div class="answer"><p>Use the array itself as a counter by marking visited values with sign changes or by storing counts at index value, if modifying the input is allowed.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Arrays and Lists"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> What about a circular array (the subarray may wrap around)?</summary><div class="answer"><p>Answer = max(Kadane max, total sum - Kadane min). If all numbers are negative the wrap case must be ignored (return the Kadane max).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Arrays and Lists"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> How do you answer many range queries when values also change?</summary><div class="answer"><p>Use a Fenwick tree or segment tree: O(log n) per update and query.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="m02-problems.html"><span class="dir">Previous</span><span>Problems 2: Time & Space Complexity</span></a>
+      <a class="next" href="m03-problems.html"><span class="dir">Next</span><span>Problems 3: Arrays and Lists</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

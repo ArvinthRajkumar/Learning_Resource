@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="SQL7">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Analytics SQL: funnels, cohorts, retention, percentiles and time series | Python + SQL</title>
+<meta name="description" content="SQL for product and business analytics on a small app dataset: funnels, cohorts and retention, sessionisation, moving averages, percentiles, year-over-year, date spines, RFM segmentation and A/B test summaries.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SQL7</p>
+      <h1>Analytics SQL: funnels, cohorts, retention, percentiles and time series</h1>
+      <p class="lede">Analysts and data engineers spend their days turning event logs into answers. This part gives the standard patterns, each run on a small users and events dataset so you can see exactly what comes back.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="data" data-track>
+      <h2>The dataset</h2>
+<p>Two tables describe a small app. <code>users(id, name, signup_date, plan, country)</code> has 14 people who joined between January and March 2024. <code>events(id, user_id, event, ts, amount)</code> records <code>visit</code>, <code>add_to_cart</code> and <code>purchase</code> events (only purchases carry an <code>amount</code>).</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql7-01.sql">SELECT event, COUNT(*) AS n, COUNT(DISTINCT user_id) AS users, SUM(amount) AS revenue
+FROM events
+GROUP BY event
+ORDER BY n DESC;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>event</th><th>n</th><th>users</th><th>revenue</th></tr></thead>
+<tbody><tr><td>visit</td><td>49</td><td>14</td><td>NULL</td></tr><tr><td>add_to_cart</td><td>23</td><td>13</td><td>NULL</td></tr><tr><td>purchase</td><td>10</td><td>9</td><td>565</td></tr></tbody>
+</table>
+</div>
+<p>Always start analysis by profiling: row counts, distinct counts, date ranges and NULLs. Three quick checks that catch most data problems:</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql7-02.sql">SELECT COUNT(*) AS events, MIN(ts) AS first_event, MAX(ts) AS last_event,
+       SUM(amount IS NULL AND event = 'purchase') AS purchases_without_amount,
+       SUM(user_id NOT IN (SELECT id FROM users)) AS orphan_events
+FROM events;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>events</th><th>first_event</th><th>last_event</th><th>purchases_without_amount</th><th>orphan_events</th></tr></thead>
+<tbody><tr><td>82</td><td>2024-01-15 10:00:00</td><td>2024-04-28 14:00:00</td><td>0</td><td>0</td></tr></tbody>
+</table>
+</div>
+    </section>
+
+    <section id="funnel" data-track>
+      <h2>Funnels</h2>
+<p>A <strong>funnel</strong> counts how many users reach each step. Count <strong>distinct users</strong>, not events, and decide whether steps must happen in order.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql7-03.sql">SELECT
+  COUNT(DISTINCT CASE WHEN event = 'visit'       THEN user_id END) AS visited,
+  COUNT(DISTINCT CASE WHEN event = 'add_to_cart' THEN user_id END) AS added_to_cart,
+  COUNT(DISTINCT CASE WHEN event = 'purchase'    THEN user_id END) AS purchased
+FROM events;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>visited</th><th>added_to_cart</th><th>purchased</th></tr></thead>
+<tbody><tr><td>14</td><td>13</td><td>9</td></tr></tbody>
+</table>
+</div>
+<p>Turn counts into <strong>conversion rates</strong> between steps and from the top:</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql7-04.sql">WITH f AS (
+  SELECT COUNT(DISTINCT CASE WHEN event = 'visit'       THEN user_id END) AS v,
+         COUNT(DISTINCT CASE WHEN event = 'add_to_cart' THEN user_id END) AS c,
+         COUNT(DISTINCT CASE WHEN event = 'purchase'    THEN user_id END) AS p
+  FROM events)
+SELECT v, c, p,
+       ROUND(100.0 * c / v, 1) AS visit_to_cart_pct,
+       ROUND(100.0 * p / c, 1) AS cart_to_purchase_pct,
+       ROUND(100.0 * p / v, 1) AS overall_pct
+FROM f;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>v</th><th>c</th><th>p</th><th>visit_to_cart_pct</th><th>cart_to_purchase_pct</th><th>overall_pct</th></tr></thead>
+<tbody><tr><td>14</td><td>13</td><td>9</td><td>92.9</td><td>69.2</td><td>64.3</td></tr></tbody>
+</table>
+</div>
+<p>A strict <strong>ordered funnel</strong> requires each step to occur after the previous one for the same user:</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql7-05.sql">WITH first_step AS (
+  SELECT user_id, MIN(ts) AS t FROM events WHERE event = 'visit' GROUP BY user_id),
+second AS (
+  SELECT e.user_id, MIN(e.ts) AS t FROM events e JOIN first_step f ON f.user_id = e.user_id AND e.ts &gt;= f.t
+  WHERE e.event = 'add_to_cart' GROUP BY e.user_id),
+third AS (
+  SELECT e.user_id, MIN(e.ts) AS t FROM events e JOIN second s ON s.user_id = e.user_id AND e.ts &gt;= s.t
+  WHERE e.event = 'purchase' GROUP BY e.user_id)
+SELECT (SELECT COUNT(*) FROM first_step) AS step1,
+       (SELECT COUNT(*) FROM second) AS step2,
+       (SELECT COUNT(*) FROM third) AS step3;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>step1</th><th>step2</th><th>step3</th></tr></thead>
+<tbody><tr><td>14</td><td>11</td><td>4</td></tr></tbody>
+</table>
+</div>
+<p>Funnels by segment: add <code>GROUP BY plan</code> after joining <code>users</code>.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql7-06.sql">SELECT u.plan,
+       COUNT(DISTINCT u.id) AS users,
+       COUNT(DISTINCT CASE WHEN e.event = 'purchase' THEN u.id END) AS buyers,
+       ROUND(100.0 * COUNT(DISTINCT CASE WHEN e.event = 'purchase' THEN u.id END) / COUNT(DISTINCT u.id), 1) AS buyer_pct,
+       COALESCE(SUM(e.amount), 0) AS revenue
+FROM users u LEFT JOIN events e ON e.user_id = u.id
+GROUP BY u.plan
+ORDER BY revenue DESC;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>plan</th><th>users</th><th>buyers</th><th>buyer_pct</th><th>revenue</th></tr></thead>
+<tbody><tr><td>free</td><td>7</td><td>6</td><td>85.7</td><td>345</td></tr><tr><td>pro</td><td>5</td><td>3</td><td>60.0</td><td>220</td></tr><tr><td>team</td><td>2</td><td>0</td><td>0.0</td><td>0</td></tr></tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql7-q01" data-topic="Analytics SQL" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why count DISTINCT user_id in a funnel?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is faster <span class="q-why">Not the reason.</span></li>
+          <li data-key="B">A user can trigger many events but should count once per step <span class="q-why">Correct.</span></li>
+          <li data-key="C">NULLs <span class="q-why">No.</span></li>
+          <li data-key="D">Sorting <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Otherwise heavy users inflate the counts.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Ordered versus unordered funnel?</summary><div class="answer"><p>Ordered requires each step to occur after the previous one for the same user; unordered only checks that each step occurred.</p></div></details>
+      </div>
+    </section>
+
+    <section id="cohort" data-track>
+      <h2>Cohorts and retention</h2>
+<p>A <strong>cohort</strong> groups users by when they first did something (signup month). <strong>Retention</strong> asks how many of each cohort were active in month 0, 1, 2 after joining.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql7-07.sql">WITH activity AS (
+  SELECT DISTINCT u.id AS user_id,
+         substr(u.signup_date, 1, 7) AS cohort,
+         (CAST(substr(e.ts, 1, 4) AS INT) - CAST(substr(u.signup_date, 1, 4) AS INT)) * 12
+         + CAST(substr(e.ts, 6, 2) AS INT) - CAST(substr(u.signup_date, 6, 2) AS INT) AS month_n
+  FROM users u JOIN events e ON e.user_id = u.id)
+SELECT cohort,
+       COUNT(DISTINCT CASE WHEN month_n = 0 THEN user_id END) AS m0,
+       COUNT(DISTINCT CASE WHEN month_n = 1 THEN user_id END) AS m1,
+       COUNT(DISTINCT CASE WHEN month_n = 2 THEN user_id END) AS m2
+FROM activity
+GROUP BY cohort
+ORDER BY cohort;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>cohort</th><th>m0</th><th>m1</th><th>m2</th></tr></thead>
+<tbody><tr><td>2024-01</td><td>4</td><td>3</td><td>2</td></tr><tr><td>2024-02</td><td>7</td><td>4</td><td>2</td></tr><tr><td>2024-03</td><td>3</td><td>2</td><td>0</td></tr></tbody>
+</table>
+</div>
+<p>Read each row left to right: users active in the signup month, one month later, two months later. Divide by cohort size for percentages. Cohorts that are too recent have no later months yet (not churn, just missing time). <strong>Rolling retention</strong> (active on or after day N) and <strong>classic retention</strong> (active exactly on day N) answer different questions; state which you use.</p>
+<p>Customer <strong>lifetime value</strong> per cohort is the same shape with <code>SUM(amount)</code>:</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql7-08.sql">SELECT substr(u.signup_date, 1, 7) AS cohort,
+       COUNT(DISTINCT u.id) AS users,
+       COALESCE(SUM(e.amount), 0) AS revenue,
+       ROUND(1.0 * COALESCE(SUM(e.amount), 0) / COUNT(DISTINCT u.id), 1) AS revenue_per_user
+FROM users u LEFT JOIN events e ON e.user_id = u.id AND e.event = 'purchase'
+GROUP BY cohort
+ORDER BY cohort;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>cohort</th><th>users</th><th>revenue</th><th>revenue_per_user</th></tr></thead>
+<tbody><tr><td>2024-01</td><td>4</td><td>90</td><td>22.5</td></tr><tr><td>2024-02</td><td>7</td><td>360</td><td>51.4</td></tr><tr><td>2024-03</td><td>3</td><td>115</td><td>38.3</td></tr></tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql7-q02" data-topic="Analytics SQL" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is a cohort?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A random sample <span class="q-why">No.</span></li>
+          <li data-key="B">A group of users defined by a shared starting point, such as signup month <span class="q-why">Correct.</span></li>
+          <li data-key="C">A table <span class="q-why">No.</span></li>
+          <li data-key="D">An index <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Retention is measured per cohort.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-sql7-q03" data-topic="Analytics SQL" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why do recent cohorts show no later months?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Users churned <span class="q-why">Not necessarily.</span></li>
+          <li data-key="B">Not enough time has passed to observe those months <span class="q-why">Correct.</span></li>
+          <li data-key="C">A bug <span class="q-why">No.</span></li>
+          <li data-key="D">Wrong joins <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Missing time is not churn.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Classic versus rolling retention?</summary><div class="answer"><p>Classic counts users active exactly on day N; rolling counts users active on or after day N.</p></div></details>
+      </div>
+    </section>
+
+    <section id="sessions" data-track>
+      <h2>Sessionisation</h2>
+<p>A <strong>session</strong> is a run of events with gaps shorter than a threshold (say 30 minutes). Mark a new session where the gap from the previous event exceeds the threshold, then take a running sum of those marks. This is the gaps-and-islands trick from <a href="sql2-advanced.html">SQL2</a>.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql7-09.sql">WITH t AS (
+  SELECT user_id, started,
+         LAG(ended) OVER (PARTITION BY user_id ORDER BY started) AS prev_end
+  FROM sessions),
+m AS (
+  SELECT user_id, started,
+         CASE WHEN prev_end IS NULL OR (julianday(started) - julianday(prev_end)) * 1440 &gt; 30 THEN 1 ELSE 0 END AS new_session
+  FROM t)
+SELECT user_id, started,
+       SUM(new_session) OVER (PARTITION BY user_id ORDER BY started) AS session_no
+FROM m
+ORDER BY user_id, started;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>user_id</th><th>started</th><th>session_no</th></tr></thead>
+<tbody><tr><td>1</td><td>2024-03-01 09:00</td><td>1</td></tr><tr><td>1</td><td>2024-03-01 09:20</td><td>1</td></tr><tr><td>1</td><td>2024-03-01 11:00</td><td>2</td></tr><tr><td>2</td><td>2024-03-01 09:00</td><td>1</td></tr></tbody>
+</table>
+</div>
+<p>With real clickstreams, apply the same method to individual events ordered by time per user.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql7-q04" data-topic="Analytics SQL" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you assign session numbers?</p></div>
+        <ul class="q-options">
+          <li data-key="A">ROW_NUMBER over events <span class="q-why">No.</span></li>
+          <li data-key="B">Flag events whose gap from the previous one exceeds a threshold, then take a running sum of flags <span class="q-why">Correct.</span></li>
+          <li data-key="C">GROUP BY date <span class="q-why">No.</span></li>
+          <li data-key="D">DISTINCT <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>This is the gaps-and-islands technique.</p></div>
+      </div>
+    </section>
+
+    <section id="timeseries" data-track>
+      <h2>Time series: moving averages, growth and year-over-year</h2>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql7-10.sql">SELECT day, amount,
+       ROUND(AVG(amount) OVER (ORDER BY day ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 1) AS moving_avg_3,
+       amount - LAG(amount) OVER (ORDER BY day) AS change,
+       ROUND(100.0 * (amount - LAG(amount) OVER (ORDER BY day)) / LAG(amount) OVER (ORDER BY day), 1) AS change_pct,
+       SUM(amount) OVER (ORDER BY day) AS cumulative
+FROM daily_sales;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>day</th><th>amount</th><th>moving_avg_3</th><th>change</th><th>change_pct</th><th>cumulative</th></tr></thead>
+<tbody><tr><td>2024-03-01</td><td>100</td><td>100.0</td><td>NULL</td><td>NULL</td><td>100</td></tr><tr><td>2024-03-02</td><td>120</td><td>110.0</td><td>20</td><td>20.0</td><td>220</td></tr><tr><td>2024-03-03</td><td>90</td><td>103.3</td><td>-30</td><td>-25.0</td><td>310</td></tr><tr><td>2024-03-04</td><td>150</td><td>120.0</td><td>60</td><td>66.7</td><td>460</td></tr><tr><td>2024-03-05</td><td>130</td><td>123.3</td><td>-20</td><td>-13.3</td><td>590</td></tr><tr><td>2024-03-06</td><td>170</td><td>150.0</td><td>40</td><td>30.8</td><td>760</td></tr><tr><td>2024-03-07</td><td>160</td><td>153.3</td><td>-10</td><td>-5.9</td><td>920</td></tr></tbody>
+</table>
+</div>
+<p>For <strong>year-over-year</strong>, join a series to itself shifted by a year (<code>date(day, '-1 year')</code>) or use <code>LAG(x, 12)</code> over monthly rows. <strong>Seasonality</strong> makes month-over-month noisy; compare like with like.</p>
+<p>A <strong>date spine</strong> ensures days with no events still appear. Generate it with a recursive CTE and <code>LEFT JOIN</code> the data:</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql7-11.sql">WITH RECURSIVE spine(day) AS (
+  SELECT '2024-03-01' UNION ALL SELECT date(day, '+1 day') FROM spine WHERE day &lt; '2024-03-10')
+SELECT s.day, COALESCE(l.logins, 0) AS logins
+FROM spine s
+LEFT JOIN (SELECT day, COUNT(*) AS logins FROM logins GROUP BY day) l ON l.day = s.day
+ORDER BY s.day;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>day</th><th>logins</th></tr></thead>
+<tbody><tr><td>2024-03-01</td><td>2</td></tr><tr><td>2024-03-02</td><td>1</td></tr><tr><td>2024-03-03</td><td>2</td></tr><tr><td>2024-03-04</td><td>1</td></tr><tr><td>2024-03-05</td><td>1</td></tr><tr><td>2024-03-06</td><td>1</td></tr><tr><td>2024-03-07</td><td>1</td></tr><tr><td>2024-03-08</td><td>0</td></tr><tr><td>2024-03-09</td><td>1</td></tr><tr><td>2024-03-10</td><td>0</td></tr></tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql7-q05" data-topic="Analytics SQL" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does a date spine fix?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Slow queries <span class="q-why">No.</span></li>
+          <li data-key="B">Missing days that have no events, so they appear with zero <span class="q-why">Correct.</span></li>
+          <li data-key="C">Duplicates <span class="q-why">No.</span></li>
+          <li data-key="D">Time zones <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>LEFT JOIN data onto a generated calendar.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How to compute month-over-month change?</summary><div class="answer"><p>Use LAG over ordered months and divide the difference by the previous value.</p></div></details>
+      </div>
+    </section>
+
+    <section id="percentiles" data-track>
+      <h2>Percentiles, medians and distributions</h2>
+<p>PostgreSQL has <code>percentile_cont</code>; SQLite and MySQL do not, so use window functions: rank rows and pick the position.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql7-12.sql">WITH r AS (
+  SELECT amount,
+         ROW_NUMBER() OVER (ORDER BY amount) AS rn,
+         COUNT(*) OVER () AS n
+  FROM events WHERE event = 'purchase')
+SELECT
+  MIN(CASE WHEN rn &gt;= 0.5 * n THEN amount END) AS p50,
+  MIN(CASE WHEN rn &gt;= 0.9 * n THEN amount END) AS p90,
+  MIN(amount) AS min_amount, MAX(amount) AS max_amount, ROUND(AVG(amount), 1) AS mean
+FROM r;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>p50</th><th>p90</th><th>min_amount</th><th>max_amount</th><th>mean</th></tr></thead>
+<tbody><tr><td>50</td><td>120</td><td>20</td><td>120</td><td>56.5</td></tr></tbody>
+</table>
+</div>
+<p>Use <code>NTILE(4)</code> to bucket into quartiles and a <code>CASE</code> to build histograms:</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql7-13.sql">SELECT CASE WHEN amount &lt; 40 THEN '1: under 40'
+            WHEN amount &lt; 90 THEN '2: 40 to 89'
+            ELSE '3: 90 and over' END AS bucket,
+       COUNT(*) AS purchases, SUM(amount) AS revenue
+FROM events WHERE event = 'purchase'
+GROUP BY bucket
+ORDER BY bucket;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>bucket</th><th>purchases</th><th>revenue</th></tr></thead>
+<tbody><tr><td>1: under 40</td><td>4</td><td>95</td></tr><tr><td>2: 40 to 89</td><td>4</td><td>230</td></tr><tr><td>3: 90 and over</td><td>2</td><td>240</td></tr></tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql7-q06" data-topic="Analytics SQL" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How can you compute a median without percentile_cont?</p></div>
+        <ul class="q-options">
+          <li data-key="A">AVG <span class="q-why">That is the mean.</span></li>
+          <li data-key="B">Rank rows with ROW_NUMBER and pick the middle position <span class="q-why">Correct.</span></li>
+          <li data-key="C">MAX <span class="q-why">No.</span></li>
+          <li data-key="D">COUNT <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use window functions for ranks and counts.</p></div>
+      </div>
+    </section>
+
+    <section id="segments" data-track>
+      <h2>Segmentation: RFM and Pareto</h2>
+<p><strong>RFM</strong> scores customers by Recency, Frequency and Monetary value.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql7-14.sql">WITH rfm AS (
+  SELECT user_id,
+         CAST(julianday('2024-05-01') - julianday(MAX(ts)) AS INT) AS recency_days,
+         COUNT(*) AS frequency,
+         SUM(amount) AS monetary
+  FROM events WHERE event = 'purchase'
+  GROUP BY user_id)
+SELECT user_id, recency_days, frequency, monetary,
+       NTILE(3) OVER (ORDER BY recency_days DESC) AS r_score,
+       NTILE(3) OVER (ORDER BY frequency) AS f_score,
+       NTILE(3) OVER (ORDER BY monetary) AS m_score
+FROM rfm
+ORDER BY monetary DESC;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>user_id</th><th>recency_days</th><th>frequency</th><th>monetary</th><th>r_score</th><th>f_score</th><th>m_score</th></tr></thead>
+<tbody><tr><td>1</td><td>75</td><td>1</td><td>120</td><td>1</td><td>3</td><td>3</td></tr><tr><td>3</td><td>70</td><td>1</td><td>120</td><td>2</td><td>3</td><td>3</td></tr><tr><td>10</td><td>13</td><td>1</td><td>80</td><td>3</td><td>2</td><td>3</td></tr><tr><td>9</td><td>47</td><td>2</td><td>70</td><td>3</td><td>3</td><td>2</td></tr><tr><td>14</td><td>76</td><td>1</td><td>50</td><td>1</td><td>2</td><td>2</td></tr><tr><td>12</td><td>61</td><td>1</td><td>50</td><td>2</td><td>2</td><td>2</td></tr><tr><td>6</td><td>57</td><td>1</td><td>35</td><td>2</td><td>1</td><td>1</td></tr><tr><td>8</td><td>73</td><td>1</td><td>20</td><td>1</td><td>1</td><td>1</td></tr><tr><td>13</td><td>9</td><td>1</td><td>20</td><td>3</td><td>1</td><td>1</td></tr></tbody>
+</table>
+</div>
+<p>The <strong>Pareto (80/20)</strong> view ranks customers by revenue and shows the cumulative share:</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql7-15.sql">WITH rev AS (
+  SELECT user_id, SUM(amount) AS revenue FROM events WHERE event = 'purchase' GROUP BY user_id)
+SELECT user_id, revenue,
+       ROUND(100.0 * SUM(revenue) OVER (ORDER BY revenue DESC, user_id) / SUM(revenue) OVER (), 1) AS cumulative_pct
+FROM rev
+ORDER BY revenue DESC, user_id;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>user_id</th><th>revenue</th><th>cumulative_pct</th></tr></thead>
+<tbody><tr><td>1</td><td>120</td><td>21.2</td></tr><tr><td>3</td><td>120</td><td>42.5</td></tr><tr><td>10</td><td>80</td><td>56.6</td></tr><tr><td>9</td><td>70</td><td>69.0</td></tr><tr><td>12</td><td>50</td><td>77.9</td></tr><tr><td>14</td><td>50</td><td>86.7</td></tr><tr><td>6</td><td>35</td><td>92.9</td></tr><tr><td>8</td><td>20</td><td>96.5</td></tr><tr><td>13</td><td>20</td><td>100.0</td></tr></tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is RFM?</summary><div class="answer"><p>Segmenting customers by Recency of last purchase, Frequency of purchases and Monetary value.</p></div></details>
+      </div>
+    </section>
+
+    <section id="abtest" data-track>
+      <h2>A/B test summaries</h2>
+<p>SQL prepares the counts; a statistical test judges them. Assign users to variants, compute conversions and rates per variant, then test the difference in Python.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql7-16.sql">WITH assigned AS (
+  SELECT id AS user_id, CASE WHEN id % 2 = 0 THEN 'control' ELSE 'variant' END AS grp FROM users),
+conv AS (
+  SELECT user_id, MAX(event = 'purchase') AS bought FROM events GROUP BY user_id)
+SELECT a.grp, COUNT(*) AS users, SUM(COALESCE(c.bought, 0)) AS buyers,
+       ROUND(100.0 * SUM(COALESCE(c.bought, 0)) / COUNT(*), 1) AS conversion_pct
+FROM assigned a LEFT JOIN conv c ON c.user_id = a.user_id
+GROUP BY a.grp;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>grp</th><th>users</th><th>buyers</th><th>conversion_pct</th></tr></thead>
+<tbody><tr><td>control</td><td>7</td><td>5</td><td>71.4</td></tr><tr><td>variant</td><td>7</td><td>4</td><td>57.1</td></tr></tbody>
+</table>
+</div>
+<p>Check for <strong>sample ratio mismatch</strong> (groups far from the intended split), define the metric before the test, avoid peeking repeatedly, and compute significance and power with a statistics library. With small samples like these, differences are noise; the point here is the query shape.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql7-q07" data-topic="Analytics SQL" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is sample ratio mismatch?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A rounding error <span class="q-why">No.</span></li>
+          <li data-key="B">Observed group sizes differ from the intended split, signalling an assignment or logging problem <span class="q-why">Correct.</span></li>
+          <li data-key="C">A p-value <span class="q-why">No.</span></li>
+          <li data-key="D">A join type <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Check it before trusting the results.</p></div>
+      </div>
+    </section>
+
+    <section id="pitfalls" data-track>
+      <h2>Pitfalls in analytical SQL</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Pitfall</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td>Counting events when users were meant</td><td><code>COUNT(DISTINCT user_id)</code></td></tr><tr><td>Join fan-out multiplies sums</td><td>Aggregate each table before joining</td></tr><tr><td>Averaging averages</td><td>Sum numerators and denominators, then divide</td></tr><tr><td>Integer division</td><td>Multiply by <code>1.0</code> or cast</td></tr><tr><td>Time zones and day boundaries</td><td>Convert to one zone before truncating dates</td></tr><tr><td>Incomplete latest period</td><td>Exclude or label the partial day or month</td></tr><tr><td>Survivorship (only active users)</td><td>Start from the full population, <code>LEFT JOIN</code> activity</td></tr><tr><td>NULL in <code>NOT IN</code></td><td>Use <code>NOT EXISTS</code></td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql7-17.sql">-- Fan-out: joining users to both purchases and visits multiplies rows
+SELECT SUM(p.amount) AS wrong_revenue
+FROM events p JOIN events v ON v.user_id = p.user_id AND v.event = 'visit'
+WHERE p.event = 'purchase';</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>wrong_revenue</th></tr></thead>
+<tbody><tr><td>2030</td></tr></tbody>
+</table>
+</div>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql7-18.sql">SELECT SUM(amount) AS right_revenue FROM events WHERE event = 'purchase';</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>right_revenue</th></tr></thead>
+<tbody><tr><td>565</td></tr></tbody>
+</table>
+</div>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Define the population, count distinct users, aggregate before joining, use a date spine for gaps, state the retention and percentile definitions you choose, and sanity-check totals against a simple query. Most analytics errors are join fan-out and wrong denominators.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql7-q08" data-topic="Analytics SQL" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What happens if you join two one-to-many tables and then SUM?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Nothing <span class="q-why">No.</span></li>
+          <li data-key="B">Rows multiply (fan-out) and sums are overstated <span class="q-why">Correct.</span></li>
+          <li data-key="C">NULLs <span class="q-why">No.</span></li>
+          <li data-key="D">Errors <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Aggregate each side first, then join.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why avoid averaging averages?</summary><div class="answer"><p>Groups of different sizes weight incorrectly; sum numerators and denominators, then divide.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Analytics SQL</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Analytics SQL">
+<details class="recall iq" data-level="basic" data-topic="Analytics SQL"><summary><span class="tag ok">Basic</span> How do you compute a conversion rate in SQL?</summary><div class="answer"><p>Count distinct users at each step with conditional aggregation and divide, using a decimal literal to avoid integer division.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Analytics SQL"><summary><span class="tag ok">Basic</span> Why COUNT(DISTINCT user_id) in a funnel?</summary><div class="answer"><p>A user can generate many events at a step but should count once.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Analytics SQL"><summary><span class="tag warn">Medium</span> How do you compute cohort retention?</summary><div class="answer"><p>Assign each user a cohort (signup period), compute the activity period offset from it, count distinct active users per cohort and offset, and divide by cohort size.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Analytics SQL"><summary><span class="tag warn">Medium</span> How do you compute a running total and a moving average?</summary><div class="answer"><p>SUM(x) OVER (ORDER BY day) and AVG(x) OVER (ORDER BY day ROWS BETWEEN n PRECEDING AND CURRENT ROW).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Analytics SQL"><summary><span class="tag warn">Medium</span> How do you sessionise events?</summary><div class="answer"><p>Compute the gap from the previous event per user with LAG, flag gaps over a threshold, then take a running SUM of the flags to number sessions.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Analytics SQL"><summary><span class="tag warn">Medium</span> How do you fill missing dates in a time series?</summary><div class="answer"><p>Generate a date spine with a recursive CTE or calendar table and LEFT JOIN the data, using COALESCE for zeros.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Analytics SQL"><summary><span class="tag warn">Medium</span> How do you compute a median without a MEDIAN function?</summary><div class="answer"><p>Number rows with ROW_NUMBER and count with COUNT OVER, then average the one or two middle rows.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Analytics SQL"><summary><span class="tag warn">Medium</span> What is join fan-out and how do you avoid it?</summary><div class="answer"><p>Joining two one-to-many tables multiplies rows and inflates sums. Aggregate each table to the join grain first, or use subqueries or CTEs.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Analytics SQL"><summary><span class="tag bad">Advanced</span> Why is averaging averages wrong?</summary><div class="answer"><p>Groups with different sizes carry different weight. Sum the numerators and denominators across groups, then divide.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Analytics SQL"><summary><span class="tag bad">Advanced</span> What is RFM analysis?</summary><div class="answer"><p>Segmenting customers by recency of last purchase, frequency of purchases and monetary value, often with NTILE scores.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Analytics SQL"><summary><span class="tag bad">Advanced</span> How do you compute year-over-year growth?</summary><div class="answer"><p>Join or window each period to the same period a year earlier (LAG 12 for monthly data) and divide the difference by the earlier value, handling zero or missing prior values.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Analytics SQL"><summary><span class="tag bad">Advanced</span> What is sample ratio mismatch in an A/B test?</summary><div class="answer"><p>Observed group sizes deviating from the planned split, indicating assignment or logging bugs that invalidate the result.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Analytics SQL"><summary><span class="tag bad">Advanced</span> How do you handle time zones in daily metrics?</summary><div class="answer"><p>Convert timestamps to the business time zone before truncating to a date, and define the day boundary once in a shared view or model.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Analytics SQL"><summary><span class="tag bad">Advanced</span> How would you design an events table for analytics?</summary><div class="answer"><p>Append-only rows with user_id, event name, timestamp (UTC), properties as columns or JSON, partitioned by date and clustered by user, plus a deduplication key.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sql6-dialects-nosql.html"><span class="dir">Previous</span><span>SQL6 SQL dialects (PostgreSQL, MySQL, SQL Server, SQLite) and when to use NoSQL</span></a>
+      <a class="next" href="sql8-transactions-deep.html"><span class="dir">Next</span><span>SQL8 Transactions in depth: isolation anomalies, locking, MVCC and two-connection experiments</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="X2">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Advanced graph algorithms: shortest paths, MST, SCC, bridges and flow | DSA Master Guide</title>
+<meta name="description" content="Dijkstra, Bellman-Ford, Floyd-Warshall and 0-1 BFS, A*, minimum spanning trees with Kruskal and Prim, strongly connected components, bridges and articulation points, topological orders, bipartite checks and maximum flow, all verified.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part X2</p>
+      <h1>Advanced graph algorithms: shortest paths, MST, SCC, bridges and flow</h1>
+      <p class="lede">Module 14 covered traversal, Dijkstra and topological sort. This part adds the algorithms that appear in harder interviews and contests: negative weights, all-pairs paths, spanning trees, graph connectivity structure and flows. Each is tested against a simple reference.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~6 hours</span></div>
+    </div>
+
+    <section id="choose" data-track>
+      <h2>Choosing a shortest-path algorithm</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Situation</th><th>Algorithm</th><th>Time</th></tr></thead>
+<tbody>
+<tr><td>Unweighted graph</td><td>BFS</td><td>O(V + E)</td></tr><tr><td>Weights 0 or 1</td><td>0-1 BFS (deque)</td><td>O(V + E)</td></tr><tr><td>Non-negative weights</td><td>Dijkstra with a heap</td><td>O((V + E) log V)</td></tr><tr><td>Negative weights, detect negative cycles</td><td>Bellman-Ford</td><td>O(V E)</td></tr><tr><td>DAG with any weights</td><td>Topological order relaxation</td><td>O(V + E)</td></tr><tr><td>All pairs, small V</td><td>Floyd-Warshall</td><td>O(V^3)</td></tr><tr><td>Single target with a good heuristic</td><td>A*</td><td>depends on heuristic</td></tr><tr><td>Many queries on a static graph</td><td>Preprocessing (landmarks, contraction hierarchies)</td><td></td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/x2-01.py">import heapq, random
+random.seed(0)
+INF = float("inf")
+
+def make_graph(n, m, lo=1, hi=9):
+    edges = []
+    for _ in range(m):
+        u, v = random.randrange(n), random.randrange(n)
+        if u != v: edges.append((u, v, random.randint(lo, hi)))
+    return edges
+
+def dijkstra(n, edges, src):
+    adj = [[] for _ in range(n)]
+    for u, v, w in edges: adj[u].append((v, w))
+    dist = [INF] * n; dist[src] = 0
+    pq = [(0, src)]
+    while pq:
+        d, u = heapq.heappop(pq)
+        if d &gt; dist[u]: continue                      # stale entry
+        for v, w in adj[u]:
+            if d + w &lt; dist[v]:
+                dist[v] = d + w
+                heapq.heappush(pq, (dist[v], v))
+    return dist
+
+def bellman_ford(n, edges, src):
+    dist = [INF] * n; dist[src] = 0
+    for _ in range(n - 1):
+        changed = False
+        for u, v, w in edges:
+            if dist[u] + w &lt; dist[v]:
+                dist[v] = dist[u] + w; changed = True
+        if not changed: break
+    for u, v, w in edges:                              # one more pass: any improvement means a negative cycle
+        if dist[u] + w &lt; dist[v]: return None
+    return dist
+
+n = 30
+edges = make_graph(n, 120)
+assert dijkstra(n, edges, 0) == bellman_ford(n, edges, 0)
+print("Dijkstra equals Bellman-Ford on a random graph with non-negative weights")
+neg = [(0, 1, 2), (1, 2, -5), (2, 0, 1)]               # cycle total -2
+print("negative cycle detected:", bellman_ford(3, neg, 0) is None)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>Dijkstra equals Bellman-Ford on a random graph with non-negative weights
+negative cycle detected: True</code></pre>
+<h3>Why Dijkstra fails with negative edges</h3>
+<p>Dijkstra assumes that when a vertex is popped its distance is final, which holds only if adding an edge cannot decrease a path's length. A negative edge can later improve a vertex already settled. Bellman-Ford simply **relaxes every edge <code>V - 1</code> times**, enough for the shortest path (at most <code>V - 1</code> edges) to propagate; a further improvement reveals a <strong>negative cycle</strong>.</p>
+<h3>0-1 BFS</h3>
+<p>When every weight is 0 or 1 push 0-weight neighbours to the <strong>front</strong> of a deque and 1-weight neighbours to the back; this is Dijkstra in linear time.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x2-02.py">from collections import deque
+def zero_one_bfs(n, adj, src):
+    dist = [float("inf")] * n; dist[src] = 0
+    dq = deque([src])
+    while dq:
+        u = dq.popleft()
+        for v, w in adj[u]:
+            if dist[u] + w &lt; dist[v]:
+                dist[v] = dist[u] + w
+                dq.appendleft(v) if w == 0 else dq.append(v)
+    return dist
+adj = [[(1, 0), (2, 1)], [(3, 1)], [(3, 0)], []]
+print(zero_one_bfs(4, adj, 0))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[0, 0, 1, 1]</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x2-q01" data-topic="Advanced graphs" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which algorithm handles negative edge weights and detects negative cycles?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Dijkstra <span class="q-why">Fails with negative edges.</span></li>
+          <li data-key="B">Bellman-Ford <span class="q-why">Correct.</span></li>
+          <li data-key="C">BFS <span class="q-why">Unweighted only.</span></li>
+          <li data-key="D">Prim <span class="q-why">Spanning trees.</span></li>
+        </ul>
+        <div class="q-explain"><p>It relaxes all edges V - 1 times and checks for further improvement.</p></div>
+      </div>
+      <div class="quiz" data-qid="xd-x2-q02" data-topic="Advanced graphs" data-type="numeric" data-answer="4" data-tol="0">
+        <div class="q-stem"><p>Bellman-Ford on a graph with 5 vertices relaxes all edges how many times before the cycle check?</p></div>
+        <div class="q-explain"><p>V - 1 = 4 passes.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why does Dijkstra fail with negative edges?</summary><div class="answer"><p>A settled vertex can later be improved through a negative edge, breaking the assumption that popped distances are final.</p></div></details>
+      </div>
+    </section>
+
+    <section id="floyd" data-track>
+      <h2>All pairs: Floyd-Warshall</h2>
+<p>Dynamic programming over intermediate vertices: <code>dist[i][j] = min(dist[i][j], dist[i][k] + dist[k][j])</code> for <code>k</code> from 0 to <code>V - 1</code>. The loop order matters: **<code>k</code> must be the outermost loop**. It handles negative edges (a negative number on the diagonal means a negative cycle) and is the simplest all-pairs solution when <code>V</code> is a few hundred.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x2-03.py">INF = float("inf")
+def floyd(n, edges):
+    d = [[0 if i == j else INF for j in range(n)] for i in range(n)]
+    for u, v, w in edges: d[u][v] = min(d[u][v], w)
+    for k in range(n):
+        for i in range(n):
+            for j in range(n):
+                if d[i][k] + d[k][j] &lt; d[i][j]:
+                    d[i][j] = d[i][k] + d[k][j]
+    return d
+edges = [(0, 1, 3), (1, 2, -2), (0, 2, 4), (2, 3, 2), (3, 0, 7)]
+for row in floyd(4, edges): print(row)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[0, 3, 1, 3]
+[7, 0, -2, 0]
+[9, 12, 0, 2]
+[7, 10, 8, 0]</code></pre>
+<p>For path reconstruction store the <code>next</code> vertex. Johnson's algorithm reweights edges so Dijkstra can be used from every source on sparse graphs.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x2-q03" data-topic="Advanced graphs" data-type="single" data-answer="C">
+        <div class="q-stem"><p>In Floyd-Warshall which loop must be outermost?</p></div>
+        <ul class="q-options">
+          <li data-key="A">i <span class="q-why">Wrong.</span></li>
+          <li data-key="B">j <span class="q-why">Wrong.</span></li>
+          <li data-key="C">The intermediate vertex k <span class="q-why">Correct.</span></li>
+          <li data-key="D">Any order works <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Allowing vertex k as an intermediate must be fully processed before adding k + 1.</p></div>
+      </div>
+    </section>
+
+    <section id="astar" data-track>
+      <h2>A* search</h2>
+<p>A* is Dijkstra guided by a <strong>heuristic</strong> <code>h(v)</code> estimating the remaining cost to the goal; it expands vertices in order of <code>g(v) + h(v)</code>. If <code>h</code> is <strong>admissible</strong> (never overestimates) the first time the goal is popped the path is optimal; if also <strong>consistent</strong> (<code>h(u) &lt;= w(u, v) + h(v)</code>) no vertex is reopened. On a grid use Manhattan distance for 4-way moves, Chebyshev for 8-way, Euclidean for any direction.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x2-04.py">import heapq
+def astar(grid, start, goal):
+    h = lambda p: abs(p[0] - goal[0]) + abs(p[1] - goal[1])
+    pq, g, expanded = [(h(start), 0, start)], {start: 0}, 0
+    while pq:
+        f, cost, cur = heapq.heappop(pq)
+        if cost &gt; g[cur]: continue
+        expanded += 1
+        if cur == goal: return cost, expanded
+        for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nxt = (cur[0] + dr, cur[1] + dc)
+            if 0 &lt;= nxt[0] &lt; len(grid) and 0 &lt;= nxt[1] &lt; len(grid[0]) and grid[nxt[0]][nxt[1]] == 0:
+                if cost + 1 &lt; g.get(nxt, 10 ** 9):
+                    g[nxt] = cost + 1
+                    heapq.heappush(pq, (cost + 1 + h(nxt), cost + 1, nxt))
+    return None, expanded
+grid = [[0] * 20 for _ in range(20)]
+for r in range(1, 18): grid[r][10] = 1             # a wall with gaps at the top and bottom
+cost, expanded = astar(grid, (10, 0), (10, 19))
+print("shortest path length", cost, "| A* expanded", expanded, "of", 20 * 20, "cells")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>shortest path length 35 | A* expanded 252 of 400 cells</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x2-q04" data-topic="Advanced graphs" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A* returns an optimal path if the heuristic is:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Overestimating <span class="q-why">That can miss the optimum.</span></li>
+          <li data-key="B">Admissible: never overestimates the remaining cost <span class="q-why">Correct.</span></li>
+          <li data-key="C">Random <span class="q-why">No.</span></li>
+          <li data-key="D">Always zero only <span class="q-why">Zero gives Dijkstra, which is also fine but not the requirement.</span></li>
+        </ul>
+        <div class="q-explain"><p>Admissible heuristics guarantee optimality (consistency avoids reopening vertices).</p></div>
+      </div>
+    </section>
+
+    <section id="mst" data-track>
+      <h2>Minimum spanning trees</h2>
+<p>A <strong>spanning tree</strong> connects all vertices with <code>V - 1</code> edges; the <strong>minimum</strong> one has least total weight. Two classic greedy algorithms rely on the <strong>cut property</strong> (the cheapest edge crossing any cut belongs to some MST):</p>
+<ul><li><strong>Kruskal</strong>: sort edges by weight; add an edge if it connects two different components (use <strong>union-find</strong>). <code>O(E log E)</code>; good for sparse graphs.</li><li><strong>Prim</strong>: grow one tree from a start vertex, always adding the cheapest edge leaving it (heap). <code>O(E log V)</code>; good for dense graphs.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/x2-05.py">import heapq, random
+random.seed(1)
+class DSU:
+    def __init__(self, n): self.p, self.sz = list(range(n)), [1] * n
+    def find(self, x):
+        while self.p[x] != x:
+            self.p[x] = self.p[self.p[x]]
+            x = self.p[x]
+        return x
+    def union(self, a, b):
+        a, b = self.find(a), self.find(b)
+        if a == b: return False
+        if self.sz[a] &lt; self.sz[b]: a, b = b, a
+        self.p[b] = a; self.sz[a] += self.sz[b]
+        return True
+def kruskal(n, edges):
+    d, total = DSU(n), 0
+    for u, v, w in sorted(edges, key=lambda e: e[2]):
+        if d.union(u, v): total += w
+    return total
+def prim(n, edges):
+    adj = [[] for _ in range(n)]
+    for u, v, w in edges:
+        adj[u].append((w, v)); adj[v].append((w, u))
+    seen, total, pq = set(), 0, [(0, 0)]
+    while pq and len(seen) &lt; n:
+        w, u = heapq.heappop(pq)
+        if u in seen: continue
+        seen.add(u); total += w
+        for e in adj[u]:
+            if e[1] not in seen: heapq.heappush(pq, e)
+    return total
+n = 25
+edges = [(i, i + 1, random.randint(1, 20)) for i in range(n - 1)]                  # a path guarantees connectivity
+edges += [(random.randrange(n), random.randrange(n), random.randint(1, 20)) for _ in range(60)]
+edges = [e for e in edges if e[0] != e[1]]
+assert kruskal(n, edges) == prim(n, edges)
+print("Kruskal and Prim agree: MST weight", kruskal(n, edges))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>Kruskal and Prim agree: MST weight 80</code></pre>
+<p>If all edge weights are distinct the MST is unique. The MST is <strong>not</strong> the same as the shortest-path tree.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x2-q05" data-topic="Advanced graphs" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Kruskal's algorithm needs which supporting structure?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A trie <span class="q-why">No.</span></li>
+          <li data-key="B">Union-find to detect whether an edge connects two components <span class="q-why">Correct.</span></li>
+          <li data-key="C">A stack <span class="q-why">No.</span></li>
+          <li data-key="D">A segment tree <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Edges that join different components are added.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Kruskal versus Prim?</summary><div class="answer"><p>Kruskal sorts edges and unions components (good for sparse graphs); Prim grows a tree with a heap (good for dense graphs).</p></div></details>
+      </div>
+    </section>
+
+    <section id="scc" data-track>
+      <h2>Strongly connected components and bridges</h2>
+<h3>Strongly connected components (SCC)</h3>
+<p>In a directed graph, an SCC is a maximal set where every vertex reaches every other. Collapsing each SCC gives a <strong>DAG</strong>, which is why SCCs are the first step in analysing cyclic dependencies, 2-SAT and reachability. <strong>Kosaraju</strong>: DFS to get finish order, DFS on the <strong>reversed</strong> graph in decreasing finish order. <strong>Tarjan</strong> does it in one DFS with low-link values.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x2-06.py">import sys
+sys.setrecursionlimit(10000)
+def scc(n, edges):
+    adj = [[] for _ in range(n)]; radj = [[] for _ in range(n)]
+    for u, v in edges:
+        adj[u].append(v); radj[v].append(u)
+    seen, order = [False] * n, []
+    def dfs1(u):
+        seen[u] = True
+        for v in adj[u]:
+            if not seen[v]: dfs1(v)
+        order.append(u)
+    for u in range(n):
+        if not seen[u]: dfs1(u)
+    comp = [-1] * n
+    def dfs2(u, c):
+        comp[u] = c
+        for v in radj[u]:
+            if comp[v] &lt; 0: dfs2(v, c)
+    c = 0
+    for u in reversed(order):
+        if comp[u] &lt; 0:
+            dfs2(u, c); c += 1
+    return comp, c
+edges = [(0, 1), (1, 2), (2, 0), (2, 3), (3, 4), (4, 5), (5, 3), (6, 5)]
+comp, k = scc(7, edges)
+print("components:", k, "labels:", comp)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>components: 3 labels: [1, 1, 1, 2, 2, 2, 0]</code></pre>
+<h3>Bridges and articulation points (undirected)</h3>
+<p>A <strong>bridge</strong> is an edge whose removal disconnects the graph; an <strong>articulation point</strong> is such a vertex. Run a DFS recording each vertex's discovery time <code>tin</code> and the earliest discovery time reachable <code>low</code>. A tree edge <code>(u, v)</code> is a bridge if <code>low[v] &gt; tin[u]</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x2-07.py">import sys
+sys.setrecursionlimit(10000)
+def bridges(n, edges):
+    adj = [[] for _ in range(n)]
+    for i, (u, v) in enumerate(edges):
+        adj[u].append((v, i)); adj[v].append((u, i))
+    tin, low, timer, out = [-1] * n, [0] * n, [0], []
+    def dfs(u, parent_edge):
+        tin[u] = low[u] = timer[0]; timer[0] += 1
+        for v, i in adj[u]:
+            if i == parent_edge: continue
+            if tin[v] != -1:
+                low[u] = min(low[u], tin[v])
+            else:
+                dfs(v, i)
+                low[u] = min(low[u], low[v])
+                if low[v] &gt; tin[u]: out.append(edges[i])
+    for u in range(n):
+        if tin[u] == -1: dfs(u, -1)
+    return out
+edges = [(0, 1), (1, 2), (2, 0), (1, 3), (3, 4), (4, 5), (5, 3), (5, 6)]
+print("bridges:", bridges(7, edges))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>bridges: [(5, 6), (1, 3)]</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x2-q06" data-topic="Advanced graphs" data-type="single" data-answer="A">
+        <div class="q-stem"><p>In Tarjan's bridge-finding, a tree edge (u, v) is a bridge when:</p></div>
+        <ul class="q-options">
+          <li data-key="A">low[v] &gt; tin[u] <span class="q-why">Correct.</span></li>
+          <li data-key="B">low[v] &lt; tin[u] <span class="q-why">No.</span></li>
+          <li data-key="C">tin[v] = low[v] <span class="q-why">That identifies an SCC or component root.</span></li>
+          <li data-key="D">v is a leaf <span class="q-why">Not sufficient.</span></li>
+        </ul>
+        <div class="q-explain"><p>No back edge from v's subtree reaches u or above.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you find SCCs?</summary><div class="answer"><p>Kosaraju: DFS finish order, then DFS on the reversed graph; or Tarjan with low-link values in one pass.</p></div></details>
+      </div>
+    </section>
+
+    <section id="structure" data-track>
+      <h2>Topological orders, cycles and bipartite graphs</h2>
+<ul><li><strong>Kahn's algorithm</strong> (repeatedly remove zero in-degree vertices) gives an order and detects a cycle when it cannot place all vertices; <strong>lexicographically smallest order</strong> uses a min-heap instead of a queue. The number of orderings and longest path in a DAG follow from DP over this order.</li><li><strong>Bipartite check</strong>: two-colour the graph with BFS; an edge between equal colours (equivalently an odd cycle) means it is not bipartite. Bipartite graphs model matchings and two-team splits.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/x2-08.py">from collections import deque
+def is_bipartite(n, edges):
+    adj = [[] for _ in range(n)]
+    for u, v in edges: adj[u].append(v); adj[v].append(u)
+    color = [-1] * n
+    for s in range(n):
+        if color[s] != -1: continue
+        color[s] = 0; q = deque([s])
+        while q:
+            u = q.popleft()
+            for v in adj[u]:
+                if color[v] == -1: color[v] = 1 - color[u]; q.append(v)
+                elif color[v] == color[u]: return False
+    return True
+print("even cycle:", is_bipartite(4, [(0, 1), (1, 2), (2, 3), (3, 0)]), "| triangle:", is_bipartite(3, [(0, 1), (1, 2), (2, 0)]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>even cycle: True | triangle: False</code></pre>
+    </section>
+
+    <section id="flow" data-track>
+      <h2>Maximum flow</h2>
+<p>A <strong>flow network</strong> has capacities on edges, a source <code>s</code> and a sink <code>t</code>. A <strong>flow</strong> respects capacities and conserves flow at intermediate vertices. The <strong>max-flow min-cut theorem</strong>: the maximum flow equals the capacity of the minimum cut separating <code>s</code> from <code>t</code>.</p>
+<p><strong>Ford-Fulkerson</strong> repeatedly finds an <strong>augmenting path</strong> in the <strong>residual graph</strong> (edges with remaining capacity, plus reverse edges for undoing flow) and pushes flow along it. With BFS to choose shortest paths it is <strong>Edmonds-Karp</strong>, <code>O(V E^2)</code>; <strong>Dinic</strong> is faster in practice.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x2-09.py">from collections import deque
+def max_flow(n, cap, s, t):
+    flow = 0
+    while True:
+        parent = [-1] * n; parent[s] = s
+        q = deque([s])
+        while q and parent[t] == -1:
+            u = q.popleft()
+            for v in range(n):
+                if parent[v] == -1 and cap[u][v] &gt; 0:
+                    parent[v] = u; q.append(v)
+        if parent[t] == -1: return flow
+        bottleneck, v = float("inf"), t
+        while v != s:
+            bottleneck = min(bottleneck, cap[parent[v]][v]); v = parent[v]
+        v = t
+        while v != s:
+            cap[parent[v]][v] -= bottleneck; cap[v][parent[v]] += bottleneck; v = parent[v]
+        flow += bottleneck
+cap = [[0, 10, 10, 0, 0, 0],
+       [0, 0, 2, 4, 8, 0],
+       [0, 0, 0, 0, 9, 0],
+       [0, 0, 0, 0, 0, 10],
+       [0, 0, 0, 6, 0, 10],
+       [0, 0, 0, 0, 0, 0]]
+print("maximum flow:", max_flow(6, cap, 0, 5))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>maximum flow: 19</code></pre>
+<p><strong>Applications</strong>: bipartite matching (unit capacities: maximum matching equals maximum flow; Hopcroft-Karp is faster), assignment and scheduling, project selection, image segmentation, edge-disjoint paths, minimum cut for network reliability.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x2-q07" data-topic="Advanced graphs" data-type="single" data-answer="B">
+        <div class="q-stem"><p>The max-flow min-cut theorem states that:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Flow is always zero <span class="q-why">No.</span></li>
+          <li data-key="B">The value of a maximum flow equals the capacity of a minimum s-t cut <span class="q-why">Correct.</span></li>
+          <li data-key="C">Cuts are unique <span class="q-why">No.</span></li>
+          <li data-key="D">Flow needs negative edges <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Saturated edges of a maximum flow form a minimum cut.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is a residual graph?</summary><div class="answer"><p>The graph of remaining capacities, including reverse edges that allow undoing earlier flow.</p></div></details>
+      </div>
+    </section>
+
+    <section id="recognise" data-track>
+      <h2>Recognising graph problems</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Clue in the problem</th><th>Think</th></tr></thead>
+<tbody>
+<tr><td>Fewest steps, unit moves</td><td>BFS</td></tr><tr><td>Cheapest path, non-negative costs</td><td>Dijkstra</td></tr><tr><td>Negative costs, arbitrage, cycles</td><td>Bellman-Ford</td></tr><tr><td>All pairs on a small graph</td><td>Floyd-Warshall</td></tr><tr><td>Connect everything at minimum cost</td><td>MST (Kruskal with union-find)</td></tr><tr><td>Dependencies, order of tasks, build systems</td><td>Topological sort</td></tr><tr><td>Mutual reachability, cyclic dependencies</td><td>SCC</td></tr><tr><td>Single points of failure</td><td>Bridges, articulation points</td></tr><tr><td>Two groups, conflicts, matching</td><td>Bipartite, flow</td></tr><tr><td>Capacity, throughput, allocation</td><td>Max flow, min cut</td></tr><tr><td>Grid with obstacles</td><td>BFS, A* with a Manhattan heuristic</td></tr><tr><td>Group membership merging over time</td><td>Union-find</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Graph problems become easy once you name the model: weights or not, directed or not, cyclic or not, and whether you want a path, a tree, an order or a cut. Then pick the matching algorithm from the table.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x2-q08" data-topic="Advanced graphs" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Minimum cost to connect all cities with roads: which model?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Shortest path <span class="q-why">Single pair.</span></li>
+          <li data-key="B">Minimum spanning tree <span class="q-why">Correct.</span></li>
+          <li data-key="C">Topological sort <span class="q-why">No.</span></li>
+          <li data-key="D">Bipartite matching <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Connect everything with the least total cost.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name a clue for topological sort.</summary><div class="answer"><p>Tasks with prerequisites or dependency ordering, with a requirement to detect cycles.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Advanced graphs</h2>
+      <p class="muted">15 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Advanced graphs">
+<details class="recall iq" data-level="basic" data-topic="Advanced graphs"><summary><span class="tag ok">Basic</span> BFS versus DFS: when do you use each?</summary><div class="answer"><p>BFS for shortest paths in unweighted graphs and level order; DFS for cycle detection, topological order, components and backtracking.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Advanced graphs"><summary><span class="tag ok">Basic</span> Why can&#x27;t Dijkstra handle negative edges?</summary><div class="answer"><p>It finalises a node when popped assuming no later path can be shorter, which a negative edge can violate. Use Bellman-Ford instead.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Advanced graphs"><summary><span class="tag ok">Basic</span> What is the complexity of Dijkstra with a binary heap?</summary><div class="answer"><p>O((V + E) log V) in the lazy-deletion form.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Advanced graphs"><summary><span class="tag warn">Medium</span> Explain Bellman-Ford and negative cycles.</summary><div class="answer"><p>Relax every edge V - 1 times. If another pass still improves a distance, a negative cycle is reachable.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Advanced graphs"><summary><span class="tag warn">Medium</span> Floyd-Warshall: what does it compute and what is the loop order?</summary><div class="answer"><p>All-pairs shortest paths in O(V^3). The intermediate vertex k must be the outermost loop.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Advanced graphs"><summary><span class="tag warn">Medium</span> Kruskal versus Prim?</summary><div class="answer"><p>Kruskal sorts edges and joins components with union-find (good for sparse graphs). Prim grows a tree from a start node with a heap (good for dense graphs). Both are O(E log V).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Advanced graphs"><summary><span class="tag warn">Medium</span> How do you find strongly connected components?</summary><div class="answer"><p>Tarjan&#x27;s algorithm (low-link values in one DFS) or Kosaraju&#x27;s (DFS finishing order, then DFS on the reversed graph). Both O(V + E).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Advanced graphs"><summary><span class="tag warn">Medium</span> How do you test if a graph is bipartite?</summary><div class="answer"><p>BFS or DFS two-colouring; a conflict on an edge means an odd cycle, so it is not bipartite.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Advanced graphs"><summary><span class="tag warn">Medium</span> What are bridges and articulation points?</summary><div class="answer"><p>A bridge is an edge, and an articulation point a vertex, whose removal disconnects the graph. Found with DFS discovery times and low-link values in O(V + E).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Advanced graphs"><summary><span class="tag bad">Advanced</span> What is A* and when is it optimal?</summary><div class="answer"><p>Best-first search ordered by g + h, where h estimates the remaining cost. It is optimal with an admissible heuristic (never overestimates), and consistent heuristics avoid reopening nodes.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Advanced graphs"><summary><span class="tag bad">Advanced</span> How does max flow relate to min cut?</summary><div class="answer"><p>The max-flow min-cut theorem: the maximum flow equals the capacity of the minimum cut. Ford-Fulkerson with BFS (Edmonds-Karp) runs in O(V E^2).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Advanced graphs"><summary><span class="tag bad">Advanced</span> How is bipartite matching solved?</summary><div class="answer"><p>As a max-flow problem or with Hopcroft-Karp in O(E sqrt V); Konig&#x27;s theorem links the maximum matching to the minimum vertex cover in bipartite graphs.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Advanced graphs"><summary><span class="tag bad">Advanced</span> How do you solve 2-SAT?</summary><div class="answer"><p>Build the implication graph, compute SCCs; the formula is unsatisfiable iff a variable and its negation share a component, and a topological order yields an assignment.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Advanced graphs"><summary><span class="tag bad">Advanced</span> How would you find the shortest path with at most k edges?</summary><div class="answer"><p>Bellman-Ford limited to k rounds (using a copy of the previous distances) or BFS/Dijkstra on a state graph of (node, edges used).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Advanced graphs"><summary><span class="tag bad">Advanced</span> How do you detect a cycle in a directed versus undirected graph?</summary><div class="answer"><p>Directed: DFS with three colours or Kahn&#x27;s algorithm. Undirected: DFS/BFS that sees a visited node other than its parent, or union-find.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="x1-advanced-structures.html"><span class="dir">Previous</span><span>X1 Advanced data structures: Fenwick tree, segment tree, sparse table, AVL, LFU and more</span></a>
+      <a class="next" href="x3-advanced-dp.html"><span class="dir">Next</span><span>X3 Advanced dynamic programming: knapsacks, bitmasks, intervals, trees and optimisation</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

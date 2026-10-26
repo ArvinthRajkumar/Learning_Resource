@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD26">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Trade-offs, decision tables and mock interview walkthroughs | System Design</title>
+<meta name="description" content="How to defend decisions: technology choice tables, the latency numbers to memorise, a calculator for quick estimates, two annotated mock interviews with the interviewer&#x27;s follow-ups, common mistakes and a final checklist.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD26</p>
+      <h1>Trade-offs, decision tables and mock interview walkthroughs</h1>
+      <p class="lede">By now you know the pieces. Interviews reward judgement: choosing between them, saying why, and noticing what breaks. This part collects decision tables, a back-of-envelope toolkit and two full annotated walkthroughs you can rehearse aloud.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~3 hours</span></div>
+    </div>
+
+    <section id="numbers" data-track>
+      <h2>Latency and capacity numbers to memorise</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Operation</th><th>Typical time</th></tr></thead>
+<tbody>
+<tr><td>L1 cache reference</td><td>1 ns</td></tr><tr><td>Main memory reference</td><td>100 ns</td></tr><tr><td>Compress 1 KB</td><td>2 to 10 microseconds</td></tr><tr><td>Read 1 MB from memory</td><td>10 to 50 microseconds</td></tr><tr><td>SSD random read</td><td>100 microseconds</td></tr><tr><td>Round trip inside a data centre</td><td>0.5 ms</td></tr><tr><td>Read 1 MB from SSD</td><td>1 ms</td></tr><tr><td>Disk seek (spinning)</td><td>5 to 10 ms</td></tr><tr><td>Round trip same continent</td><td>30 to 80 ms</td></tr><tr><td>Round trip across oceans</td><td>150 to 300 ms</td></tr>
+</tbody>
+</table>
+</div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Rule of thumb</th><th>Value</th></tr></thead>
+<tbody>
+<tr><td>Seconds per day</td><td>86,400 (about 10^5)</td></tr><tr><td>Requests per day to QPS</td><td>divide by 10^5; peak is 2 to 5x average</td></tr><tr><td>One modern server</td><td>10k to 50k simple QPS, 64 to 512 GB RAM</td></tr><tr><td>Redis</td><td>100k+ ops/s per node</td></tr><tr><td>Relational database</td><td>1k to 10k QPS per node, depending on queries</td></tr><tr><td>Kafka</td><td>hundreds of thousands to millions of messages/s per cluster</td></tr><tr><td>Availability 99.9%</td><td>8.8 hours downtime per year</td></tr><tr><td>Availability 99.99%</td><td>52 minutes per year</td></tr><tr><td>Availability 99.999%</td><td>5 minutes per year</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd26-01.py">def downtime(avail):
+    mins = (1 - avail) * 365 * 24 * 60
+    return f"{mins / 60:.1f} h" if mins &gt;= 60 else f"{mins:.1f} min"
+for a in (0.99, 0.999, 0.9999, 0.99999):
+    print(f"{a * 100:g}% availability -&gt; {downtime(a)} of downtime per year")
+# Two components in series, each 99.9% available
+print("two 99.9% services in series:", f"{0.999 ** 2:.5f}", "| in parallel (either suffices):", f"{1 - 0.001 ** 2:.6f}")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>99% availability -&gt; 87.6 h of downtime per year
+99.9% availability -&gt; 8.8 h of downtime per year
+99.99% availability -&gt; 52.6 min of downtime per year
+99.999% availability -&gt; 5.3 min of downtime per year
+two 99.9% services in series: 0.99800 | in parallel (either suffices): 0.999999</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd26-q01" data-topic="Trade-offs and mocks" data-type="numeric" data-answer="100" data-tol="0">
+        <div class="q-stem"><p>Requests per day divided by 10^5 gives rough average QPS. For 8.64 billion requests per day, average QPS is about (in thousands)?</p></div>
+        <div class="q-explain"><p>8.64e9 / 86,400 = 100,000 QPS.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd26-q02" data-topic="Trade-offs and mocks" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which is faster?</p></div>
+        <ul class="q-options">
+          <li data-key="A">SSD random read <span class="q-why">About 100 microseconds.</span></li>
+          <li data-key="B">Main memory reference <span class="q-why">Correct, around 100 ns.</span></li>
+          <li data-key="C">Cross-continent round trip <span class="q-why">Tens of milliseconds.</span></li>
+          <li data-key="D">Disk seek <span class="q-why">Milliseconds.</span></li>
+        </ul>
+        <div class="q-explain"><p>Memory is orders of magnitude faster than SSD.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd26-q03" data-topic="Trade-offs and mocks" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Two services in series, each 99.9% available. The combined availability is about:</p></div>
+        <ul class="q-options">
+          <li data-key="A">99.9% <span class="q-why">No.</span></li>
+          <li data-key="B">99.8% <span class="q-why">Correct, 0.999 x 0.999 is about 0.998.</span></li>
+          <li data-key="C">99.99% <span class="q-why">No.</span></li>
+          <li data-key="D">100% <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Dependencies in series multiply, so availability drops.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Availability of 99.99% allows how much downtime per year?</summary><div class="answer"><p>About 52 minutes.</p></div></details>
+      </div>
+    </section>
+
+    <section id="calc" data-track>
+      <h2>A tiny estimation toolkit</h2>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd26-02.py">import math
+def estimate(users, actions_per_user, bytes_per_action, read_write_ratio, retention_years=5, peak=3):
+    writes_day = users * actions_per_user
+    write_qps = writes_day / 86400
+    read_qps = write_qps * read_write_ratio
+    storage_tb = writes_day * bytes_per_action * 365 * retention_years / 1e12
+    bandwidth_mbps = (write_qps + read_qps) * bytes_per_action * 8 / 1e6
+    return dict(write_qps=round(write_qps), peak_write_qps=round(write_qps * peak), read_qps=round(read_qps), peak_read_qps=round(read_qps * peak),
+                storage_tb=round(storage_tb, 1), bandwidth_mbps=round(bandwidth_mbps))
+print("URL shortener (100M new URLs/day? no: 100M/month):", estimate(users=3_300_000, actions_per_user=1, bytes_per_action=500, read_write_ratio=100))
+print("Chat (50M users, 40 msgs each, 200 B):          ", estimate(users=50_000_000, actions_per_user=40, bytes_per_action=200, read_write_ratio=1))
+print("Photo app (10M users, 2 photos, 2 MB, 20 views):", estimate(users=10_000_000, actions_per_user=2, bytes_per_action=2_000_000, read_write_ratio=20))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>URL shortener (100M new URLs/day? no: 100M/month): {'write_qps': 38, 'peak_write_qps': 115, 'read_qps': 3819, 'peak_read_qps': 11458, 'storage_tb': 3.0, 'bandwidth_mbps': 15}
+Chat (50M users, 40 msgs each, 200 B):           {'write_qps': 23148, 'peak_write_qps': 69444, 'read_qps': 23148, 'peak_read_qps': 69444, 'storage_tb': 730.0, 'bandwidth_mbps': 74}
+Photo app (10M users, 2 photos, 2 MB, 20 views): {'write_qps': 231, 'peak_write_qps': 694, 'read_qps': 4630, 'peak_read_qps': 13889, 'storage_tb': 73000.0, 'bandwidth_mbps': 77778}</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd26-q04" data-topic="Trade-offs and mocks" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which is a sensible first step in capacity estimation?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Pick a database <span class="q-why">Premature.</span></li>
+          <li data-key="B">Convert users and actions into per-second rates and storage per year <span class="q-why">Correct.</span></li>
+          <li data-key="C">Choose a cloud <span class="q-why">Premature.</span></li>
+          <li data-key="D">Write the code <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The numbers drive the design.</p></div>
+      </div>
+    </section>
+
+    <section id="choices" data-track>
+      <h2>Technology choice tables</h2>
+<h3>Which data store?</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Need</th><th>Choose</th><th>Why</th><th>Watch out</th></tr></thead>
+<tbody>
+<tr><td>Transactions, joins, constraints</td><td>PostgreSQL / MySQL</td><td>ACID, rich queries</td><td>Scale writes by sharding later</td></tr><tr><td>Very high write throughput, simple access</td><td>Cassandra / DynamoDB</td><td>Partitioned, tunable consistency</td><td>Model queries up front, no joins</td></tr><tr><td>Cache, counters, leaderboards, locks</td><td>Redis</td><td>Fast in-memory structures</td><td>Persistence and memory cost</td></tr><tr><td>Full-text search, log analytics</td><td>Elasticsearch / OpenSearch</td><td>Inverted index</td><td>Not a primary store</td></tr><tr><td>Files, images, backups</td><td>Object storage (S3)</td><td>Cheap, durable</td><td>High latency, no partial updates</td></tr><tr><td>Time series</td><td>InfluxDB / TimescaleDB / Prometheus</td><td>Compression, rollups</td><td>High cardinality hurts</td></tr><tr><td>Graph relationships</td><td>Neo4j / graph layer</td><td>Traversals</td><td>Hard to shard</td></tr><tr><td>Analytics over huge data</td><td>BigQuery / Snowflake / ClickHouse</td><td>Columnar</td><td>Not for OLTP</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Which communication style?</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Situation</th><th>Choose</th></tr></thead>
+<tbody>
+<tr><td>Need an immediate answer, simple flow</td><td>Synchronous REST/gRPC</td></tr><tr><td>Fire-and-forget, spikes, fan-out</td><td>Queue or pub/sub</td></tr><tr><td>Ordered stream, replay, many consumers</td><td>Kafka-style log</td></tr><tr><td>Browser needs live updates</td><td>WebSocket or Server-Sent Events</td></tr><tr><td>Cross-service transaction</td><td>Saga with events</td></tr><tr><td>Internal low-latency calls</td><td>gRPC</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Consistency choices</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Requirement</th><th>Choose</th></tr></thead>
+<tbody>
+<tr><td>Money, inventory, bookings</td><td>Strong consistency for the critical write; idempotency</td></tr><tr><td>Social counters, feeds, likes</td><td>Eventual consistency</td></tr><tr><td>User sees own writes</td><td>Read-your-writes (route to primary or session stickiness)</td></tr><tr><td>Global with conflicts</td><td>CRDTs, last-write-wins, or single owner region</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd26-q05" data-topic="Trade-offs and mocks" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A feed where likes may be a few seconds stale suits:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Strong consistency everywhere <span class="q-why">Unnecessary cost.</span></li>
+          <li data-key="B">Eventual consistency <span class="q-why">Correct.</span></li>
+          <li data-key="C">Two-phase commit <span class="q-why">Overkill.</span></li>
+          <li data-key="D">No database <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Relax consistency where the product tolerates it.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>When do you pick a log (Kafka) over a queue?</summary><div class="answer"><p>When you need ordered streams, replay and many independent consumers.</p></div></details>
+      </div>
+    </section>
+
+    <section id="mock1" data-track>
+      <h2>Annotated mock 1: design a pastebin-lite chat</h2>
+<p>Below is how a strong 35-minute answer unfolds for "<strong>Design a group chat service</strong>". Notes in italics are the thinking behind each move.</p>
+<ol><li><strong>Clarify (3 min)</strong>. "One-to-one and groups of up to 500? Text only or media? Message history? Online status? How many users?" <em>Show you separate scope from nice-to-have.</em> Assume 50M DAU, 40 messages each, delivery in under 500 ms, history kept 1 year, at-least-once with ordering per conversation.</li><li><strong>Estimate (3 min)</strong>. 2B messages/day is about 23,000 per second on average, 70,000 at peak. At 200 B each that is 400 GB/day, 150 TB/year. <em>Numbers justify the architecture: this needs partitioned storage, not one database.</em></li><li><strong>API and data (4 min)</strong>. WebSocket for send and receive, REST for history. <code>messages(conversation_id, message_id, sender, body, ts)</code>. <em>Partition key conversation_id keeps one chat's messages together and ordered.</em></li><li><strong>High-level design (8 min)</strong>. Clients keep WebSockets to <strong>gateway</strong> servers; a <strong>session registry</strong> (Redis) maps user to gateway; a <strong>chat service</strong> assigns a per-conversation sequence number, writes to a Cassandra-like store, and publishes to the recipients' gateways; offline users get a push notification and fetch history on reconnect.</li><li><strong>Deep dive 1: ordering and delivery (6 min)</strong>. Sequence numbers per conversation, client acks, resend on reconnect from the last seen sequence, idempotent message ids to dedupe retries. <em>Hits "at least once plus dedupe".</em></li><li><strong>Deep dive 2: groups (5 min)</strong>. Small groups fan out on write; very large channels fan out on read or via pub/sub topics. <em>Same trade-off as the news feed.</em></li><li><strong>Failures and trade-offs (4 min)</strong>. Gateway crash: clients reconnect through the load balancer and resync. Hot conversation: it is bounded by one partition, which is acceptable. Storage growth: tier old messages to cheap storage.</li></ol>
+<p><strong>Likely follow-ups.</strong> "How do you do read receipts?" (events per conversation, counters aggregated lazily). "End-to-end encryption?" (keys on devices, server stores ciphertext, loses server-side search). "Multi-region?" (home region per user, async replication, conflict-free per-conversation ordering by the home region).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd26-q06" data-topic="Trade-offs and mocks" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In the chat design, why partition messages by conversation id?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is random <span class="q-why">No.</span></li>
+          <li data-key="B">It keeps a conversation's messages together and ordered on one partition <span class="q-why">Correct.</span></li>
+          <li data-key="C">It saves storage <span class="q-why">No.</span></li>
+          <li data-key="D">It encrypts them <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Ordering is per partition.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you deliver chat messages reliably?</summary><div class="answer"><p>Per-conversation sequence numbers, acks, resend from the last seen sequence on reconnect, and idempotent message ids.</p></div></details>
+      </div>
+    </section>
+
+    <section id="mock2" data-track>
+      <h2>Annotated mock 2: design a rate-limited public API</h2>
+<p>Prompt: "<strong>Design an API platform that serves 100,000 requests per second with per-customer limits and usage billing.</strong>"</p>
+<ul><li><strong>Clarify</strong>: limits per second and per month? Burst? Fail open or closed? Real-time billing accuracy or hourly aggregates?</li><li><strong>Core</strong>: edge load balancer, <strong>API gateway</strong> (authentication, rate limit, routing), backend services. Limits use a <strong>token bucket</strong> per API key in Redis with an atomic Lua script; a local in-memory approximation reduces Redis load with periodic sync.</li><li><strong>Billing</strong>: do not bill on the request path. Emit a usage event per request (or batched counters) to Kafka, aggregate in a stream processor into hourly buckets, store in a warehouse, and reconcile with gateway logs. Idempotent event ids.</li><li><strong>Deep dive</strong>: limit accuracy versus latency (exact global counters cost a network hop; sharded counters give approximate limits); cross-region customers; noisy neighbours and isolation (separate pools for large customers).</li><li><strong>Failure modes</strong>: Redis down (fail open with local limits for safety); billing pipeline lag (late events, watermark and corrections); abuse (IP reputation, WAF).</li></ul>
+<p><strong>Likely follow-ups.</strong> "How do you change a customer's limit instantly?" (config pushed through a pub/sub invalidation). "Prove the invoice is right." (immutable usage log, idempotent ids, daily reconciliation against the gateway's own counters).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd26-q07" data-topic="Trade-offs and mocks" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why not bill customers on the API request path?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Billing is unimportant <span class="q-why">No.</span></li>
+          <li data-key="B">It adds latency and couples availability to billing; emit usage events and aggregate asynchronously <span class="q-why">Correct.</span></li>
+          <li data-key="C">Gateways cannot count <span class="q-why">They can.</span></li>
+          <li data-key="D">Bills should be random <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use idempotent events and reconcile.</p></div>
+      </div>
+    </section>
+
+    <section id="mistakes" data-track>
+      <h2>Common mistakes</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Mistake</th><th>Better</th></tr></thead>
+<tbody>
+<tr><td>Jumping to the architecture before the requirements</td><td>Spend the first minutes on scope and numbers</td></tr><tr><td>Naming technologies without reasons</td><td>"I'd use Redis because reads are 100:1 and we tolerate stale data for a minute"</td></tr><tr><td>One giant diagram of everything</td><td>Start simple, deepen where it matters</td></tr><tr><td>Ignoring failure</td><td>For every component ask: what if it is down, slow or wrong?</td></tr><tr><td>Treating the database as infinitely scalable</td><td>Do the storage and QPS math</td></tr><tr><td>Premature microservices or sharding</td><td>Begin with the simplest design that meets the numbers</td></tr><tr><td>Silent on trade-offs</td><td>State what you give up</td></tr><tr><td>Not listening to hints</td><td>The interviewer's questions steer you toward the deep dive they want</td></tr><tr><td>Forgetting security, privacy, cost, operations</td><td>One minute on each shows seniority</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd26-q08" data-topic="Trade-offs and mocks" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the best response when you do not know a number?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Stay silent <span class="q-why">No.</span></li>
+          <li data-key="B">State an assumption, label it, and show how the design changes if it is wrong <span class="q-why">Correct.</span></li>
+          <li data-key="C">Refuse to estimate <span class="q-why">No.</span></li>
+          <li data-key="D">Guess wildly without saying <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Interviewers value explicit assumptions.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name three common interview mistakes.</summary><div class="answer"><p>Skipping requirements, naming technology without reasons, and ignoring failures.</p></div></details>
+      </div>
+    </section>
+
+    <section id="checklist" data-track>
+      <h2>Final checklist</h2>
+<ul><li>Requirements: functional, non-functional, out of scope, SLO.</li><li>Numbers: QPS, peak, storage, bandwidth, cache size.</li><li>API and data model, with keys and indexes justified by the access pattern.</li><li>High-level picture: client, edge, services, data, async, observability.</li><li>Two deep dives with trade-offs and alternatives.</li><li>Failure handling: retries with idempotency, timeouts, circuit breakers, redundancy, backups, disaster recovery.</li><li>Scaling story: what breaks at 10x and what you do.</li><li>Security, privacy, cost, and operability (metrics, alerts, runbooks, deployments).</li></ul>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Good answers follow a repeatable path, justify every choice with a number or a requirement, and spend their time where the risk is. Rehearse aloud with a timer: structure matters as much as content.</p></div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Which topics should you touch even briefly?</summary><div class="answer"><p>Security, privacy, cost, observability and operations.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Trade-offs and mocks</h2>
+      <p class="muted">13 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Trade-offs and mocks">
+<details class="recall iq" data-level="basic" data-topic="Trade-offs and mocks"><summary><span class="tag ok">Basic</span> How would you structure a 45-minute system design interview?</summary><div class="answer"><p>Requirements and scope (5 min), estimates (5), API and data model (7), high-level design (10), deep dives (12), failures, scaling and wrap-up (6).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Trade-offs and mocks"><summary><span class="tag ok">Basic</span> Roughly how much downtime does 99.9% availability allow per year?</summary><div class="answer"><p>About 8.8 hours; 99.99% allows about 52 minutes.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trade-offs and mocks"><summary><span class="tag warn">Medium</span> What if you do not know a number the interviewer asks for?</summary><div class="answer"><p>State a reasonable assumption out loud, label it, and show how the design would change if it were different.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trade-offs and mocks"><summary><span class="tag warn">Medium</span> How do you decide between SQL and NoSQL?</summary><div class="answer"><p>Start from access patterns, consistency needs and scale: relational for transactions and ad hoc queries; wide-column or key-value for massive partitioned writes with known queries.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trade-offs and mocks"><summary><span class="tag warn">Medium</span> When would you choose a queue over a synchronous call?</summary><div class="answer"><p>When the work can be delayed, bursts need smoothing, there is fan-out, or you want to decouple failures from the caller.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trade-offs and mocks"><summary><span class="tag warn">Medium</span> How do you show that you considered failure?</summary><div class="answer"><p>For each component say what happens if it is down, slow or wrong, and name the mitigation: replication, retries with idempotency, timeouts, circuit breakers, backups.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Trade-offs and mocks"><summary><span class="tag warn">Medium</span> How do you scale a design from 1x to 10x?</summary><div class="answer"><p>Find the first bottleneck from the numbers (CPU, database writes, network, memory), then apply the cheapest remedy: cache, replicas, partitioning, queues, or bigger machines.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Trade-offs and mocks"><summary><span class="tag bad">Advanced</span> How would you design chat delivery to be reliable?</summary><div class="answer"><p>Per-conversation sequence numbers, client acknowledgements, resend from the last seen sequence on reconnect, and idempotent message ids to deduplicate retries.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Trade-offs and mocks"><summary><span class="tag bad">Advanced</span> How do you handle billing for an API platform?</summary><div class="answer"><p>Emit idempotent usage events asynchronously, aggregate in a stream processor, store immutable records, and reconcile against gateway logs.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Trade-offs and mocks"><summary><span class="tag bad">Advanced</span> Give an example of trading consistency for availability.</summary><div class="answer"><p>A shopping cart or feed can accept writes on any replica and converge later, while payments and inventory choose strong consistency.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Trade-offs and mocks"><summary><span class="tag bad">Advanced</span> What are the signs of an over-engineered design?</summary><div class="answer"><p>Microservices, sharding and multi-region for modest numbers, many technologies without reasons, and no discussion of operational cost.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Trade-offs and mocks"><summary><span class="tag bad">Advanced</span> How do you incorporate cost into a design?</summary><div class="answer"><p>Estimate compute, storage and egress, identify the dominant cost, and pick levers such as caching, tiering, reserved capacity and compression.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Trade-offs and mocks"><summary><span class="tag bad">Advanced</span> How do you respond if the interviewer challenges a choice?</summary><div class="answer"><p>Restate their concern, compare the alternative on the requirement that matters, and either defend with numbers or adapt with a clear explanation of the change.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd25-case-6.html"><span class="dir">Previous</span><span>SD25 Case studies 6: ID generator, distributed lock, job scheduler, order book, code judge, distributed file system</span></a>
+      <a class="next" href="sd27-glossary.html"><span class="dir">Next</span><span>SD27 System design glossary: terms, acronyms and patterns</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

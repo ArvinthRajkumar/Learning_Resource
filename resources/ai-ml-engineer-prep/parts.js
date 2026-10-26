@@ -1,0 +1,63 @@
+/* Manifest for this resource. base.js reads it for the parts menu, the hub
+   progress bars and the weak-areas links. "sections" is the number of
+   section[data-track] blocks on the page (tools/check_site.py verifies it).
+   Order = recommended reading order: foundations, core topics, design, coding, practice. */
+window.LR_RESOURCE = {
+  id: "ai-ml-engineer-prep",
+  title: "AI/ML Engineer Prep",
+  hub: "index.html",
+  parts: [
+    { id: "F1", file: "f1-ml-foundations.html", title: "ML foundations", sections: 9 },
+    { id: "F2", file: "f2-deep-learning-transformers.html", title: "Deep learning and transformers", sections: 8 },
+    { id: "F3", file: "f3-llm-training-scaling.html", title: "LLM training and scaling", sections: 6 },
+    { id: "F4", file: "f4-prompt-engineering.html", title: "Prompt engineering", sections: 6 },
+    { id: "01", file: "01-inference-and-memory.html", title: "Inference and memory math", sections: 10 },
+    { id: "02", file: "02-fine-tuning.html", title: "Fine-tuning: LoRA, QLoRA, DPO", sections: 7 },
+    { id: "03", file: "03-rag-and-retrieval.html", title: "RAG and retrieval", sections: 10 },
+    { id: "04", file: "04-evaluation-and-statistics.html", title: "Evaluation and statistics", sections: 7 },
+    { id: "05", file: "05-agents-and-tool-use.html", title: "Agents and tool use", sections: 6 },
+    { id: "06", file: "06-decoding-and-sampling.html", title: "Decoding and sampling", sections: 6 },
+    { id: "12", file: "12-llm-system-design.html", title: "LLM system design and MLOps", sections: 7 },
+    { id: "07", file: "07-coding-problems.html", title: "Coding problems (the big four)", sections: 5 },
+    { id: "08", file: "08-extra-coding-patterns.html", title: "Extra coding patterns", sections: 22 },
+    { id: "09", file: "09-questions-i-saw.html", title: "Questions I saw", sections: 17 },
+    { id: "13", file: "13-interview-questions.html", title: "Interview question bank", sections: 25 },
+    { id: "10", file: "10-practice-quiz.html", title: "Practice quiz (60 questions)", sections: 1 },
+    { id: "11", file: "11-cheat-sheet.html", title: "Cheat sheet (printable)", sections: 1 },
+    { id: "A1", file: "a1-classical-ml.html", title: "Classical machine learning algorithms from scratch", sections: 8 },
+    { id: "A2", file: "a2-math-for-ml.html", title: "Math for machine learning: linear algebra, calculus, probability and information theory", sections: 6 },
+    { id: "A3", file: "a3-deep-learning.html", title: "Deep learning training in depth: backprop, initialisation, normalisation, CNNs and RNNs", sections: 7 },
+    { id: "A4", file: "a4-nlp-embeddings.html", title: "NLP, tokenisation, embeddings and vector search", sections: 6 },
+    { id: "A5", file: "a5-llm-architectures.html", title: "LLM architectures and efficiency: attention variants, RoPE, MoE, quantisation and long context", sections: 9 },
+    { id: "A6", file: "a6-alignment-safety.html", title: "Alignment, RLHF and AI safety", sections: 8 },
+    { id: "A7", file: "a7-mlops.html", title: "MLOps: shipping and running machine learning in production", sections: 8 },
+    { id: "A8", file: "a8-vision.html", title: "Computer vision and multimodal models", sections: 8 },
+    { id: "A9", file: "a9-recsys.html", title: "Recommender systems, ranking and bandits", sections: 8 },
+    { id: "A10", file: "a10-reinforcement-learning.html", title: "Reinforcement learning from scratch", sections: 7 },
+    { id: "A11", file: "a11-stats-experiments.html", title: "Statistics and experimentation for ML", sections: 9 },
+    { id: "A12", file: "a12-llm-apps.html", title: "Advanced LLM application engineering: RAG, agents, evaluation and cost", sections: 7 }
+  ],
+  topics: {
+    "Foundations": "f1-ml-foundations.html",
+    "Inference": "01-inference-and-memory.html",
+    "Fine-tuning": "02-fine-tuning.html",
+    "RAG": "03-rag-and-retrieval.html",
+    "Evaluation": "04-evaluation-and-statistics.html",
+    "Agents": "05-agents-and-tool-use.html",
+    "Decoding": "06-decoding-and-sampling.html",
+    "System design": "12-llm-system-design.html",
+    "Coding": "07-coding-problems.html",
+    "Classical ML": "a1-classical-ml.html",
+    "Math for ML": "a2-math-for-ml.html",
+    "Deep learning": "a3-deep-learning.html",
+    "NLP and embeddings": "a4-nlp-embeddings.html",
+    "LLM architectures": "a5-llm-architectures.html",
+    "Alignment and safety": "a6-alignment-safety.html",
+    "MLOps": "a7-mlops.html",
+    "Vision and multimodal": "a8-vision.html",
+    "Recommender systems": "a9-recsys.html",
+    "Reinforcement learning": "a10-reinforcement-learning.html",
+    "Statistics and experiments": "a11-stats-experiments.html",
+    "LLM applications": "a12-llm-apps.html"
+  }
+};

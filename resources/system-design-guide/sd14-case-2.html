@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD14">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Case studies 2: news feed, chat, notifications, typeahead, web crawler | System Design</title>
+<meta name="description" content="Fan-out on write versus read for feeds, WebSocket chat with ordering and presence, multi-channel notifications, trie-based typeahead and a polite web crawler.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD14</p>
+      <h1>Case studies 2: news feed, chat, notifications, typeahead, web crawler</h1>
+      <p class="lede">These designs revolve around fan-out: one event needs to reach many people or many places. Each case shows how the answer changes with the numbers, such as follower counts, online users and crawl frontier size.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~4.5 hours</span></div>
+    </div>
+
+    <section id="news-feed" data-track>
+      <h2>Case 1: News feed</h2>
+<h3>Requirements</h3>
+<ul><li><strong>Functional</strong>: users post; users follow others; a user sees a feed of recent posts from people they follow, newest or ranked first; feed supports pagination.</li><li><strong>Non-functional</strong>: feed loads in under 200 ms; new posts appear within seconds; highly available; eventual consistency is fine.</li></ul>
+<h3>Estimates</h3>
+<p>300 million daily active users, each opens the feed 10 times a day and posts 0.5 times. Feed reads: 3 billion per day, about 35,000 per second (about 100,000 peak). Posts: 150 million per day, about 1,700 per second. Average user follows 200 accounts. Reads dominate by 20 to 1, so make reads cheap.</p>
+<h3>The central question: fan-out</h3>
+<p><strong>Fan-out on read (pull)</strong>: when a user opens the feed, fetch recent posts from everyone they follow, merge, sort. Cheap writes, expensive reads (200 lookups per feed).</p>
+<p><strong>Fan-out on write (push)</strong>: when a user posts, push the post id into the precomputed feed list of every follower. Reads become one lookup, writes cost one insert per follower.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>Fan-out on read</th><th>Fan-out on write</th></tr></thead>
+<tbody>
+<tr><td>Read cost</td><td>High (merge many sources)</td><td>Very low (one list)</td></tr><tr><td>Write cost</td><td>One insert</td><td>One insert per follower</td></tr><tr><td>Storage</td><td>Posts only</td><td>Posts plus feed lists</td></tr><tr><td>Problem</td><td>Slow feeds</td><td>The <strong>celebrity problem</strong>: 50 million followers means 50 million inserts per post</td></tr><tr><td>Freshness</td><td>Always current</td><td>Slight delay while fan-out completes</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Hybrid (what real systems do)</strong>: push for normal users, pull for celebrities. At read time merge the precomputed feed with recent posts from the few celebrities the user follows.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd14-01.py">from collections import defaultdict
+followers = {"alice": ["bob", "carol"], "star": ["bob", "carol", "dave"]}
+CELEB = 2                       # followers above this count are not pushed
+feeds = defaultdict(list)       # precomputed feed list per user (post ids, newest last)
+posts, celeb_posts = {}, defaultdict(list)
+
+def post(author, pid, ts):
+    posts[pid] = (author, ts)
+    if len(followers.get(author, [])) &gt; CELEB:
+        celeb_posts[author].append(pid)          # pull later
+    else:
+        for f in followers.get(author, []):
+            feeds[f].append(pid)                 # push now
+
+def read_feed(user, follows_celebs):
+    ids = list(feeds[user])
+    for c in follows_celebs:
+        ids += celeb_posts[c]
+    return sorted(ids, key=lambda p: -posts[p][1])
+
+post("alice", "p1", 1); post("star", "p2", 2); post("alice", "p3", 3)
+print(read_feed("bob", ["star"]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>['p3', 'p2', 'p1']</code></pre>
+<h3>High-level design</h3>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 294" role="img" aria-label="News feed with a fan-out service and per-user feed cache." style="min-width:760px"><defs><marker id="ah27" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah27a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah27b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah27d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="147.0" x2="234.0" y2="147.0" class="d-line" marker-end="url(#ah27)"/><line x1="382.3" y1="118.0" x2="469.7" y2="78.0" class="d-line" marker-end="url(#ah27)"/><text x="426.0" y="93.0" text-anchor="middle" class="d-sm d-muted">write post</text><line x1="501.3" y1="78.0" x2="350.7" y2="216.0" class="d-line" marker-end="url(#ah27)"/><text x="426.0" y="142.0" text-anchor="middle" class="d-sm d-muted">new post event</text><line x1="404.0" y1="245.0" x2="448.0" y2="245.0" class="d-line" marker-end="url(#ah27)"/><line x1="618.0" y1="245.0" x2="662.0" y2="245.0" class="d-line" marker-end="url(#ah27)"/><text x="640.0" y="240.0" text-anchor="middle" class="d-sm d-muted">who follows?</text><line x1="596.3" y1="216.0" x2="683.7" y2="176.0" class="d-line" marker-end="url(#ah27)"/><text x="640.0" y="191.0" text-anchor="middle" class="d-sm d-muted">push ids</text><line x1="404.0" y1="147.0" x2="662.0" y2="147.0" class="d-line" marker-end="url(#ah27)"/><text x="533.0" y="142.0" text-anchor="middle" class="d-sm d-muted">read feed</text><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="151.5" text-anchor="middle">Client</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-c"/><text x="319.0" y="151.5" text-anchor="middle">Feed API</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="46.0" text-anchor="middle">Post service</text><text x="533.0" y="61.0" text-anchor="middle">(posts DB + cache)</text><rect x="448.0" y="216.0" width="170" height="58" rx="8" class="d-e"/><text x="533.0" y="242.0" text-anchor="middle">Fan-out service</text><text x="533.0" y="257.0" text-anchor="middle">(workers)</text><rect x="234.0" y="216.0" width="170" height="58" rx="8" class="d-e"/><text x="319.0" y="249.5" text-anchor="middle">Message queue</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-d"/><text x="747.0" y="144.0" text-anchor="middle" class="d-sm">Feed cache</text><text x="747.0" y="159.0" text-anchor="middle" class="d-sm">(Redis lists/sorted sets)</text><rect x="662.0" y="216.0" width="170" height="58" rx="8" class="d-a"/><text x="747.0" y="249.5" text-anchor="middle">Follower graph</text></svg>
+</div>
+<figcaption>News feed with a fan-out service and per-user feed cache.</figcaption></figure>
+<h3>Deep dives</h3>
+<ul><li><strong>Storage</strong>: posts in a sharded store keyed by <code>post_id</code> (Snowflake ids sort by time). The follower graph in a store that supports "followers of X" and "followed by X" (two denormalised tables or a graph store). Feed lists in Redis as <strong>sorted sets</strong> scored by time, capped to the latest 500 to 1,000 ids.</li><li><strong>Hydration</strong>: the feed holds only ids; the API fetches post content, author and counters from caches in batch (<code>MGET</code>).</li><li><strong>Ranking</strong>: sort by time first; later add a ranking service using engagement signals and a machine learning model.</li><li><strong>Pagination</strong>: cursor on post id or timestamp, not offsets, so new posts do not shift pages.</li><li><strong>Inactive users</strong>: do not push to users who have not logged in for 30 days; build their feed on demand.</li><li><strong>Deletions and blocks</strong>: filter at read time, because removing from millions of lists is costly.</li><li><strong>Counters</strong> (likes, comments) are updated asynchronously and cached.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd14-q01" data-topic="Case studies 2" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the celebrity problem in fan-out on write?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Celebrities post too rarely <span class="q-why">No.</span></li>
+          <li data-key="B">A post by a user with tens of millions of followers causes tens of millions of inserts <span class="q-why">Correct.</span></li>
+          <li data-key="C">Celebrity feeds are encrypted <span class="q-why">No.</span></li>
+          <li data-key="D">They cannot be cached <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use a hybrid: push for normal users, pull and merge at read time for celebrities.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd14-q02" data-topic="Case studies 2" data-type="single" data-answer="B">
+        <div class="q-stem"><p>The feed list stores only post ids. Why?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Ids are secret <span class="q-why">No.</span></li>
+          <li data-key="B">Keeps the feed small; content is hydrated from caches in batch and stays up to date <span class="q-why">Correct.</span></li>
+          <li data-key="C">Databases cannot store text <span class="q-why">They can.</span></li>
+          <li data-key="D">To avoid pagination <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Duplicating full posts in every feed would multiply storage and make edits and deletes expensive.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Fan-out on write versus read?</summary><div class="answer"><p>Write pushes ids to followers' feeds (fast reads, costly writes); read merges at request time (cheap writes, slow reads). Hybrid handles celebrities.</p></div></details>
+      </div>
+    </section>
+
+    <section id="chat" data-track>
+      <h2>Case 2: Chat system</h2>
+<h3>Requirements</h3>
+<p>One-to-one and group chat (up to 500 members), delivery in near real time, message history, online presence, push notifications for offline users, multi-device sync, ordering within a conversation, messages are not lost.</p>
+<h3>Estimates</h3>
+<p>50 million daily users, 40 messages per user per day: 2 billion messages per day, about 23,000 per second (70,000 peak). Messages of 100 bytes: 200 GB per day, 73 TB per year. Concurrent connections about 10 million, so connection servers matter.</p>
+<h3>Transport</h3>
+<p>Use <strong>WebSocket</strong> for a persistent two-way connection; fall back to long polling. A <strong>connection (gateway) server</strong> holds each user's socket. Each server can hold about 50,000 to 100,000 connections, so 10 million concurrent users need a few hundred gateway servers.</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 1066 294" role="img" aria-label="Chat architecture. Gateways hold sockets; a session registry maps users to gateway servers." style="min-width:760px"><defs><marker id="ah28" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah28a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah28b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah28d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah28)"/><text x="212.0" y="44.0" text-anchor="middle" class="d-sm d-muted">WebSocket</text><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah28)"/><text x="426.0" y="44.0" text-anchor="middle" class="d-sm d-muted">send</text><line x1="596.3" y1="78.0" x2="683.7" y2="118.0" class="d-line" marker-end="url(#ah28)"/><text x="640.0" y="93.0" text-anchor="middle" class="d-sm d-muted">persist</text><line x1="533.0" y1="78.0" x2="533.0" y2="118.0" class="d-line" marker-end="url(#ah28)"/><text x="533.0" y="93.0" text-anchor="middle" class="d-sm d-muted">where is B?</text><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah28)"/><text x="640.0" y="44.0" text-anchor="middle" class="d-sm d-muted">deliver</text><line x1="832.0" y1="49.0" x2="876.0" y2="49.0" class="d-line" marker-end="url(#ah28)"/><text x="854.0" y="44.0" text-anchor="middle" class="d-sm d-muted">WebSocket</text><line x1="564.7" y1="78.0" x2="715.3" y2="216.0" class="d-line" marker-end="url(#ah28)"/><text x="640.0" y="142.0" text-anchor="middle" class="d-sm d-muted">if offline</text><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">User A</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-b"/><text x="319.0" y="53.5" text-anchor="middle">Chat gateway 1</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-d"/><text x="533.0" y="144.0" text-anchor="middle">Session registry</text><text x="533.0" y="159.0" text-anchor="middle">(Redis)</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-c"/><text x="533.0" y="53.5" text-anchor="middle">Chat service</text><rect x="876.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="961.0" y="53.5" text-anchor="middle">User B</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-b"/><text x="747.0" y="53.5" text-anchor="middle">Chat gateway 2</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-e"/><text x="747.0" y="144.0" text-anchor="middle">Message store</text><text x="747.0" y="159.0" text-anchor="middle">(wide-column)</text><rect x="662.0" y="216.0" width="170" height="58" rx="8" class="d-e"/><text x="747.0" y="249.5" text-anchor="middle">Push notifications</text></svg>
+</div>
+<figcaption>Chat architecture. Gateways hold sockets; a session registry maps users to gateway servers.</figcaption></figure>
+<h3>Message flow (one-to-one)</h3>
+<ol><li>A sends the message through gateway 1 with a client-generated <strong>message id</strong> (for idempotency).</li><li>The chat service assigns a <strong>sequence number</strong> within the conversation, persists the message, and acknowledges to A.</li><li>It looks up B's gateway in the registry. If B is online, deliver through gateway 2; B's client acks.</li><li>If B is offline, store it as undelivered and send a push notification; B syncs missed messages on reconnect, using "give me messages after sequence N".</li></ol>
+<h3>Ordering and ids</h3>
+<p>Order messages <strong>per conversation</strong>, not globally. Use a per-conversation sequence number (a counter owned by the partition for that conversation) or a time-ordered id. Clients display by sequence and detect gaps to request missing ones. Assign ids on the server, since client clocks lie.</p>
+<h3>Storage</h3>
+<p>Access pattern: "latest N messages of a conversation". Use a wide-column store (Cassandra, HBase) with <strong>partition key = conversation id</strong> and <strong>clustering key = message id</strong> descending. Keep a separate table of each user's conversation list. Old messages can move to cheaper storage.</p>
+<h3>Group chat</h3>
+<p>Fan-out per member: for small groups, deliver to each member's gateway; for large channels use pub/sub topics per group and have gateways subscribe on behalf of connected members. Store the message once, with delivery state per member only when needed.</p>
+<h3>Presence</h3>
+<p>Track online status with <strong>heartbeats</strong> from the client every few seconds stored in Redis with a TTL. A missing heartbeat expires the key and the user shows offline. For large friend lists, avoid broadcasting every change: fetch presence lazily when a chat is opened or subscribe only to visible contacts.</p>
+<h3>Other concerns</h3>
+<p>Delivery receipts (sent, delivered, read), end-to-end encryption (keys on devices), media via object storage with presigned URLs, rate limiting against spam, multi-device sync (each device has its own cursor).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd14-q03" data-topic="Case studies 2" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why use a per-conversation sequence number rather than client timestamps for ordering?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Timestamps are too long <span class="q-why">No.</span></li>
+          <li data-key="B">Client clocks are unreliable and a server-assigned sequence gives a total order per conversation <span class="q-why">Correct.</span></li>
+          <li data-key="C">Sequence numbers are faster to type <span class="q-why">No.</span></li>
+          <li data-key="D">Timestamps cannot be stored <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Clocks differ and drift, so ordering must come from a single owner of the conversation.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd14-q04" data-topic="Case studies 2" data-type="numeric" data-answer="200" data-tol="0">
+        <div class="q-stem"><p>One gateway server holds 50,000 connections. How many servers for 10 million concurrent connections?</p></div>
+        <div class="q-explain"><p>10,000,000 / 50,000 = 200 servers (plus headroom).</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How does a message reach an online and an offline user?</summary><div class="answer"><p>Online: delivered through the user's gateway found via the session registry. Offline: stored, push notification sent, synced on reconnect by sequence.</p></div></details>
+      </div>
+    </section>
+
+    <section id="notifications" data-track>
+      <h2>Case 3: Notification system</h2>
+<h3>Requirements</h3>
+<p>Send push, SMS and email notifications for events (promotions, alerts, receipts), respecting user preferences, at high volume, reliably, with no duplicates, and with rate limits and quiet hours.</p>
+<h3>Estimates</h3>
+<p>10 million notifications per day typical, with bursts of millions in minutes (a flash sale). Third-party providers (APNs, FCM, SMS gateways, email providers) are slow and rate-limited, so queues are essential.</p>
+<h3>Design</h3>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 294" role="img" aria-label="Notification pipeline. Each channel has its own queue and workers so one slow provider cannot block the others." style="min-width:760px"><defs><marker id="ah29" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah29a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah29b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah29d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="147.0" x2="234.0" y2="147.0" class="d-line" marker-end="url(#ah29)"/><line x1="382.3" y1="118.0" x2="469.7" y2="78.0" class="d-line" marker-end="url(#ah29)"/><line x1="404.0" y1="147.0" x2="448.0" y2="147.0" class="d-line" marker-end="url(#ah29)"/><line x1="382.3" y1="176.0" x2="469.7" y2="216.0" class="d-line" marker-end="url(#ah29)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah29)"/><line x1="618.0" y1="147.0" x2="662.0" y2="147.0" class="d-line" marker-end="url(#ah29)"/><line x1="618.0" y1="245.0" x2="662.0" y2="245.0" class="d-line" marker-end="url(#ah29)"/><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="144.0" text-anchor="middle">Services</text><text x="105.0" y="159.0" text-anchor="middle">(trigger events)</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-c"/><text x="319.0" y="144.0" text-anchor="middle" class="d-sm">Notification service</text><text x="319.0" y="159.0" text-anchor="middle" class="d-sm">(validate, prefs, template)</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-e"/><text x="533.0" y="53.5" text-anchor="middle">Push queue</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-e"/><text x="533.0" y="151.5" text-anchor="middle">SMS queue</text><rect x="448.0" y="216.0" width="170" height="58" rx="8" class="d-e"/><text x="533.0" y="249.5" text-anchor="middle">Email queue</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-b"/><text x="747.0" y="53.5" text-anchor="middle">Push workers</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-b"/><text x="747.0" y="151.5" text-anchor="middle">SMS workers</text><rect x="662.0" y="216.0" width="170" height="58" rx="8" class="d-b"/><text x="747.0" y="249.5" text-anchor="middle">Email workers</text></svg>
+</div>
+<figcaption>Notification pipeline. Each channel has its own queue and workers so one slow provider cannot block the others.</figcaption></figure>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Step</th><th>Responsibility</th></tr></thead>
+<tbody>
+<tr><td>Intake API</td><td>Authenticate, validate, idempotency key to avoid duplicates</td></tr><tr><td>Preferences and policy</td><td>Opt-outs, channel choice, quiet hours, frequency caps, localisation</td></tr><tr><td>Templating</td><td>Fill templates with data, per language</td></tr><tr><td>Routing</td><td>Put a job on the right channel queue with priority (OTP codes high, marketing low)</td></tr><tr><td>Workers</td><td>Call the provider with retries and backoff, rate limited to provider quotas</td></tr><tr><td>Tracking</td><td>Record sent, delivered, opened, failed; handle provider callbacks and bounces</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Deep dives</h3>
+<ul><li><strong>Reliability</strong>: at-least-once from queues plus idempotent sends (dedupe on notification id) for effectively once. DLQ for permanent failures.</li><li><strong>Priorities</strong>: separate queues or priority levels so a marketing blast never delays one-time passwords.</li><li><strong>Rate limits</strong>: per-provider and per-user throttles; spread a campaign over time (jittered scheduling).</li><li><strong>Providers</strong>: abstract behind an interface and fail over between vendors.</li><li><strong>Scheduling</strong>: a scheduler stores future jobs (sorted by time) and enqueues them when due.</li><li><strong>Unsubscribe and compliance</strong>: honour opt-out immediately, store consent, include required footers.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd14-q05" data-topic="Case studies 2" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why give each channel its own queue and worker pool?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To use more queues <span class="q-why">Not a goal.</span></li>
+          <li data-key="B">A slow or failing provider cannot block other channels, and each can scale and rate-limit independently <span class="q-why">Correct.</span></li>
+          <li data-key="C">Because SMS needs TLS <span class="q-why">No.</span></li>
+          <li data-key="D">To avoid templates <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Isolation (a bulkhead) keeps one provider outage from stalling everything.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you avoid duplicate notifications?</summary><div class="answer"><p>Idempotency keys at intake, at-least-once queues with deduplication on notification id before sending.</p></div></details>
+      </div>
+    </section>
+
+    <section id="typeahead" data-track>
+      <h2>Case 4: Typeahead (autocomplete)</h2>
+<h3>Requirements</h3>
+<p>As the user types a prefix, show the top 5 to 10 suggested queries in under 100 ms, ranked by popularity and recency, updated over time.</p>
+<h3>Estimates</h3>
+<p>5 billion searches per day, each typed with about 4 requests, so tens of billions of suggestion requests: about 230,000 per second, 700,000 at peak. Latency is the main challenge, so everything is cached or in memory.</p>
+<h3>Data structure: trie with top-k at each node</h3>
+<p>A <strong>trie</strong> stores queries character by character. Store at each node the precomputed <strong>top K completions</strong>, so a lookup walks the prefix (O(length)) and returns the stored list, with no subtree scan.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd14-02.py">import heapq
+class Trie:
+    def __init__(self, k=3):
+        self.k, self.root = k, {}
+    def add(self, query, count):
+        node = self.root
+        for ch in query:
+            node = node.setdefault(ch, {})
+            top = node.setdefault("#", [])
+            top.append((count, query))
+            top.sort(reverse=True)
+            del top[self.k:]
+    def suggest(self, prefix):
+        node = self.root
+        for ch in prefix:
+            if ch not in node: return []
+            node = node[ch]
+        return [q for c, q in node.get("#", [])]
+
+t = Trie()
+for q, c in [("system design", 90), ("system", 60), ("sql join", 80), ("sql index", 40), ("syntax", 10)]:
+    t.add(q, c)
+print(t.suggest("sy"), t.suggest("sql"), t.suggest("z"))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>['system design', 'system', 'syntax'] ['sql join', 'sql index'] []</code></pre>
+<h3>Architecture</h3>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="Suggestions are served from a precomputed structure; logs only update it periodically." style="min-width:760px"><defs><marker id="ah30" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah30a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah30b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah30d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah30)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah30)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah30)"/><line x1="747.0" y1="78.0" x2="747.0" y2="118.0" class="d-line" marker-end="url(#ah30)"/><line x1="662.0" y1="147.0" x2="618.0" y2="147.0" class="d-line" marker-end="url(#ah30)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">Query logs</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle" class="d-sm">Aggregation (batch or stream)</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle">Trie builder</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle" class="d-sm">Snapshots on trie servers</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="151.5" text-anchor="middle">Cache / CDN</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="151.5" text-anchor="middle">Browser</text></svg>
+</div>
+<figcaption>Suggestions are served from a precomputed structure; logs only update it periodically.</figcaption></figure>
+<ul><li><strong>Read path (fast)</strong>: the client sends the prefix after a short debounce (about 100 to 200 ms of typing pause), cancels outdated requests, and caches results. A CDN or edge cache serves popular prefixes. Trie servers keep the structure in memory, sharded by prefix range.</li><li><strong>Write path (slow)</strong>: do <strong>not</strong> update the trie on every search. Log queries, aggregate counts per hour or day with a batch or stream job, rebuild the top-k trie, and swap it in atomically (blue/green data).</li><li><strong>Freshness</strong>: add a small recent-trending overlay computed from a stream with time-decayed counts.</li><li><strong>Filtering</strong>: remove offensive or illegal suggestions before serving.</li><li><strong>Personalisation and language</strong>: separate tries per language or locale, a small personal layer from history.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd14-q06" data-topic="Case studies 2" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you serve suggestions in under 100 ms at 700,000 requests per second?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Query the database for each keystroke <span class="q-why">Too slow.</span></li>
+          <li data-key="B">Precompute top-k at each trie node, keep it in memory, cache and debounce on the client <span class="q-why">Correct.</span></li>
+          <li data-key="C">Sort the full query log per request <span class="q-why">Too slow.</span></li>
+          <li data-key="D">Use SMS <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Precomputation and caching turn each request into a prefix lookup.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What do you store at each trie node?</summary><div class="answer"><p>The precomputed top K completions for that prefix.</p></div></details>
+      </div>
+    </section>
+
+    <section id="crawler" data-track>
+      <h2>Case 5: Web crawler</h2>
+<h3>Requirements</h3>
+<p>Crawl billions of pages, discover new URLs by following links, store content for indexing, be <strong>polite</strong> (obey <code>robots.txt</code>, rate limits per host), avoid duplicates and traps, and be able to recrawl for freshness.</p>
+<h3>Estimates</h3>
+<p>1 billion pages per month: about 400 pages per second. At 100 KB average per page: 100 TB per month raw (less if compressed). Downloading dominates time, so crawl in parallel across many workers.</p>
+<h3>Components</h3>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 1066 294" role="img" aria-label="Crawler pipeline built around the URL frontier." style="min-width:760px"><defs><marker id="ah31" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah31a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah31b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah31d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="147.0" x2="234.0" y2="147.0" class="d-line" marker-end="url(#ah31)"/><line x1="404.0" y1="147.0" x2="448.0" y2="147.0" class="d-line" marker-end="url(#ah31)"/><line x1="533.0" y1="118.0" x2="533.0" y2="78.0" class="d-line" marker-end="url(#ah31)"/><line x1="618.0" y1="147.0" x2="662.0" y2="147.0" class="d-line" marker-end="url(#ah31)"/><line x1="683.7" y1="176.0" x2="596.3" y2="216.0" class="d-line" marker-end="url(#ah31)"/><text x="640.0" y="191.0" text-anchor="middle" class="d-sm d-muted">new links</text><line x1="469.7" y1="216.0" x2="382.3" y2="176.0" class="d-line" marker-end="url(#ah31)"/><text x="426.0" y="191.0" text-anchor="middle" class="d-sm d-muted">unseen only</text><line x1="832.0" y1="147.0" x2="876.0" y2="147.0" class="d-line" marker-end="url(#ah31)"/><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="151.5" text-anchor="middle">Seed URLs</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-c"/><text x="319.0" y="144.0" text-anchor="middle" class="d-sm">URL frontier</text><text x="319.0" y="159.0" text-anchor="middle" class="d-sm">(priority + politeness)</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="144.0" text-anchor="middle">Fetchers</text><text x="533.0" y="159.0" text-anchor="middle">(HTTP workers)</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-e"/><text x="533.0" y="53.5" text-anchor="middle">DNS cache</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-b"/><text x="747.0" y="151.5" text-anchor="middle" class="d-sm">Parser and link extractor</text><rect x="448.0" y="216.0" width="170" height="58" rx="8" class="d-d"/><text x="533.0" y="242.0" text-anchor="middle" class="d-sm">Dedupe</text><text x="533.0" y="257.0" text-anchor="middle" class="d-sm">(URL seen + content hash)</text><rect x="876.0" y="118.0" width="170" height="58" rx="8" class="d-a"/><text x="961.0" y="144.0" text-anchor="middle">Content store</text><text x="961.0" y="159.0" text-anchor="middle">(object storage)</text></svg>
+</div>
+<figcaption>Crawler pipeline built around the URL frontier.</figcaption></figure>
+<h3>The URL frontier</h3>
+<p>A queue of URLs to fetch with two jobs:</p>
+<ul><li><strong>Priority</strong>: crawl important or frequently changing pages first (PageRank-like score, change rate).</li><li><strong>Politeness</strong>: never hammer one host. Keep <strong>one queue per host</strong> and a rule that only one worker takes from a host at a time with a delay between requests (respect <code>Crawl-delay</code>).</li></ul>
+<h3>Avoiding duplicates</h3>
+<ul><li><strong>URL dedupe</strong>: normalise URLs (lowercase host, remove fragments, sort query parameters, resolve relative links) and keep a set of seen URLs. Billions of URLs are too many for a plain set in memory, so use a <strong>Bloom filter</strong> in front of a disk-backed store.</li><li><strong>Content dedupe</strong>: hash page content (or use <strong>SimHash</strong> for near-duplicates) so mirrors are stored once.</li><li><strong>Spider traps</strong> (infinitely generated URLs such as calendars): cap depth, URL length and pages per host.</li></ul>
+<h3>Other concerns</h3>
+<p><code>robots.txt</code> caching, DNS caching (DNS is a bottleneck), handling timeouts and slow servers, recrawl scheduling by change frequency, rendering JavaScript pages (headless browsers are expensive: use selectively), and checkpointing the frontier so a crash does not lose progress. Distribute by hashing the <strong>host</strong> so each worker owns a set of hosts, which makes politeness local.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd14-q07" data-topic="Case studies 2" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why keep one frontier queue per host?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To store more URLs <span class="q-why">No.</span></li>
+          <li data-key="B">To enforce politeness: rate limit requests per host <span class="q-why">Correct.</span></li>
+          <li data-key="C">To encrypt URLs <span class="q-why">No.</span></li>
+          <li data-key="D">To avoid DNS <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>A per-host queue lets one worker pace requests to each site.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you avoid re-crawling the same URL?</summary><div class="answer"><p>Normalise URLs and check a Bloom filter backed by a persistent seen-set; hash content to dedupe mirrors.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Case studies 2</h2>
+      <p class="muted">8 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Case studies 2">
+<details class="recall iq" data-level="basic" data-topic="Case studies 2"><summary><span class="tag ok">Basic</span> News feed: fan-out on read or write?</summary><div class="answer"><p>Write fan-out gives fast reads for most users; read fan-out avoids huge write amplification for celebrities. Use a hybrid.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 2"><summary><span class="tag warn">Medium</span> How do you store and paginate a feed?</summary><div class="answer"><p>Store post ids in per-user sorted sets (capped), hydrate content from caches in batch, and paginate with a cursor on id or time.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 2"><summary><span class="tag warn">Medium</span> Design chat: how are messages delivered and ordered?</summary><div class="answer"><p>Persistent WebSocket gateways with a session registry, messages persisted and sequenced per conversation, push for offline users, clients sync by last sequence.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 2"><summary><span class="tag warn">Medium</span> Design a notification system.</summary><div class="answer"><p>Intake API with idempotency, preference and template services, per-channel queues and worker pools with provider rate limits, retries, DLQs, priorities and delivery tracking.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 2"><summary><span class="tag warn">Medium</span> Design typeahead.</summary><div class="answer"><p>A trie with precomputed top-k per node served from memory and caches, rebuilt periodically from aggregated query logs, with client debouncing and a trending overlay.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 2"><summary><span class="tag bad">Advanced</span> How do you implement presence at scale?</summary><div class="answer"><p>Client heartbeats set a TTL key in Redis; absence means offline. Fetch or subscribe only for visible contacts to avoid broadcast storms.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 2"><summary><span class="tag bad">Advanced</span> Design a web crawler.</summary><div class="answer"><p>A prioritised URL frontier with per-host queues for politeness, distributed fetchers, DNS and robots caches, URL dedupe with a Bloom filter, content hashing, trap limits and recrawl scheduling.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 2"><summary><span class="tag bad">Advanced</span> How do you prevent a crawler from overloading a site?</summary><div class="answer"><p>One queue per host, a minimum delay between requests, obey robots.txt and Crawl-delay, and assign hosts to workers by hash so politeness is local.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd13-case-1.html"><span class="dir">Previous</span><span>SD13 Case studies 1: URL shortener, Pastebin, rate limiter, key-value store, distributed cache</span></a>
+      <a class="next" href="sd15-case-3.html"><span class="dir">Next</span><span>SD15 Case studies 3: video streaming, file sync, ride sharing, ticket booking, payments</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

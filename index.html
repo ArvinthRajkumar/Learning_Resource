@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en" data-resource="site" data-page="home">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Learning Resources</title>
+<meta name="description" content="A collection of self-contained, offline-friendly learning guides.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="assets/base.css">
+<script src="assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Library</p>
+      <h1>Learning Resources</h1>
+      <p class="lede">Self-contained guides that teach from first principles. Everything works offline: open any page straight from disk or from GitHub Pages.</p>
+    </div>
+
+    <label for="site-search" class="sr-only">Search resources</label>
+    <input id="site-search" class="search-input" type="search" placeholder="Search resources (press /)" autocomplete="off" data-search-target>
+    <div class="chip-row" id="tag-filter" role="group" aria-label="Filter by tag"></div>
+    <p class="muted small" id="result-count" aria-live="polite"></p>
+    <div class="grid" id="cards"></div>
+
+    <p class="footer">Progress, quiz scores and theme are stored only in this browser (localStorage). Press <kbd>?</kbd> for keyboard shortcuts.</p>
+  </main>
+</div>
+
+<!-- Inline copy of resources.json so the page also works when opened via file:// (browsers block fetch there).
+     Keep it in sync with: python3 tools/sync_resources.py -->
+<script type="application/json" id="resources-fallback">
+<!-- resources:start -->
+[
+  {
+    "id": "ai-ml-engineer-prep",
+    "title": "AI/ML Engineer Assessment Prep",
+    "description": "From ML and transformer basics to advanced LLM engineering: inference and memory math, fine-tuning, RAG, eval statistics, agents, decoding, system design, four hard coding problems plus 22 patterns with tested Python, 12 extra deep-dive parts (classical ML, maths, deep learning, NLP, LLM architectures, alignment, MLOps, vision, recommenders, reinforcement learning, statistics, LLM applications), a 329-question interview bank, a 60-question quiz and a printable cheat sheet.",
+    "tags": [
+      "llm",
+      "machine-learning",
+      "transformers",
+      "inference",
+      "rag",
+      "evaluation",
+      "fine-tuning",
+      "agents",
+      "system-design",
+      "coding",
+      "interview"
+    ],
+    "path": "resources/ai-ml-engineer-prep/index.html",
+    "updated": "2026-10-25"
+  },
+  {
+    "id": "dsa-master-guide",
+    "title": "DSA Master Guide (Python)",
+    "description": "Data structures and algorithms from zero, for coding rounds: 56 topics in 18 modules with interactive animations, dry-run tables and tested Python, 255 practice problems with hints and verified solutions, 30 patterns, LeetCode-style classics, 7 advanced parts (Fenwick and segment trees, shortest paths, flows, advanced DP, string algorithms, number theory, complexity theory, 20 extra problems), a 1,200-question interview bank, a 112-question assessment and a printable cheat sheet.",
+    "tags": [
+      "dsa",
+      "algorithms",
+      "data-structures",
+      "python",
+      "coding",
+      "leetcode",
+      "complexity",
+      "dynamic-programming",
+      "graphs",
+      "interview"
+    ],
+    "path": "resources/dsa-master-guide/index.html",
+    "updated": "2026-10-25"
+  },
+  {
+    "id": "diffusion-from-scratch",
+    "title": "Diffusion Models from Scratch",
+    "description": "Build your own image diffusion model with PyTorch on a 4GB GPU, assuming only Python: setup, a package reference, the full theory with worked numbers, every file of a working model, upgrades (EMA, cosine schedule, DDIM, classifier-free guidance), 7 deep-dive parts (math, samplers, latent diffusion, control, evaluation, other modalities, training at scale), a 123-question interview bank, a 34-question quiz and a cheat sheet.",
+    "tags": [
+      "diffusion",
+      "generative-ai",
+      "pytorch",
+      "deep-learning",
+      "u-net",
+      "ddpm",
+      "ddim",
+      "interview"
+    ],
+    "path": "resources/diffusion-from-scratch/index.html",
+    "updated": "2026-10-25"
+  },
+  {
+    "id": "system-design-guide",
+    "title": "System Design Guide",
+    "description": "System design from scratch to advanced: interview framework, estimation, networking, load balancing, databases, replication and sharding, consistency and consensus, caching, messaging, APIs, reliability, security and operations, search and big data, 10 advanced parts (storage engines, event-driven design, data processing, cloud, security, ML systems), 31 worked system designs, 5 low-level designs, trade-off and mock-interview guides, a glossary, tested code, a 311-question interview bank, a quiz and a cheat sheet.",
+    "tags": [
+      "system-design",
+      "distributed-systems",
+      "scalability",
+      "databases",
+      "caching",
+      "messaging",
+      "architecture",
+      "interview"
+    ],
+    "path": "resources/system-design-guide/index.html",
+    "updated": "2026-10-25"
+  },
+  {
+    "id": "python-sql-guide",
+    "title": "Python and SQL Guide",
+    "description": "Python and SQL from scratch to advanced, and together: language basics, data structures, OOP, generators and decorators, concurrency, testing and packaging; SQL queries, joins, windows, recursion, design, transactions and performance; DB-API, ORMs, pipelines, more than 320 executed examples, the standard library, data formats and HTTP, Python internals, design patterns, SQL dialects and NoSQL, analytics SQL, transactions in depth, 46 SQL problems, projects, a 265-question interview bank and a cheat sheet.",
+    "tags": [
+      "python",
+      "sql",
+      "databases",
+      "sqlite",
+      "orm",
+      "interview",
+      "data-engineering"
+    ],
+    "path": "resources/python-sql-guide/index.html",
+    "updated": "2026-10-25"
+  }
+]
+<!-- resources:end -->
+</script>
+<script>
+(function () {
+  "use strict";
+  var cards = document.getElementById("cards");
+  var input = document.getElementById("site-search");
+  var chips = document.getElementById("tag-filter");
+  var count = document.getElementById("result-count");
+  var data = [], activeTag = null;
+
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+  function fallback() {
+    var raw = document.getElementById("resources-fallback").textContent
+      .replace("<!-" + "- resources:start -->", "").replace("<!-" + "- resources:end -->", "");
+    return JSON.parse(raw);
+  }
+  function progressFor(r) {
+    // reads the per-resource progress written by base.js: lr:<id>:done:<page>, lr:<id>:meta:<page>
+    var done = 0, total = 0;
+    try {
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i), pre = "lr:" + r.id + ":meta:";
+        if (k.indexOf(pre) === 0) {
+          var page = k.slice(pre.length);
+          var meta = JSON.parse(localStorage.getItem(k)) || {};
+          var d = JSON.parse(localStorage.getItem("lr:" + r.id + ":done:" + page)) || [];
+          total += meta.total || 0;
+          done += Math.min(d.length, meta.total || 0);
+        }
+      }
+    } catch (e) { /* storage blocked */ }
+    return { done: done, total: total };
+  }
+  function render() {
+    var q = input.value.trim().toLowerCase();
+    var shown = data.filter(function (r) {
+      if (activeTag && r.tags.indexOf(activeTag) === -1) return false;
+      if (!q) return true;
+      var hay = (r.title + " " + r.description + " " + r.tags.join(" ")).toLowerCase();
+      return q.split(/\s+/).every(function (t) { return hay.indexOf(t) !== -1; });
+    });
+    cards.innerHTML = shown.map(function (r) {
+      var p = progressFor(r);
+      var pct = p.total ? Math.round(100 * p.done / p.total) : 0;
+      return '<a class="card" href="' + esc(r.path) + '"><h3>' + esc(r.title) + "</h3><p>" + esc(r.description) + "</p>" +
+        '<div class="tags">' + r.tags.map(function (t) { return '<span class="tag">' + esc(t) + "</span>"; }).join("") + "</div>" +
+        (p.total ? '<div class="progress" aria-label="progress"><span style="width:' + pct + '%"></span></div>' : "") +
+        '<div class="card-foot"><span>Updated ' + esc(r.updated) + "</span><span>" + (p.total ? pct + "% done" : "Not started") + "</span></div></a>";
+    }).join("");
+    count.textContent = shown.length + " of " + data.length + " resource" + (data.length === 1 ? "" : "s");
+  }
+  function renderChips() {
+    var tags = {};
+    data.forEach(function (r) { r.tags.forEach(function (t) { tags[t] = (tags[t] || 0) + 1; }); });
+    var names = Object.keys(tags).sort();
+    chips.innerHTML = '<button class="chip" type="button" data-tag="" aria-pressed="true">All</button>' +
+      names.map(function (t) { return '<button class="chip" type="button" data-tag="' + esc(t) + '" aria-pressed="false">' + esc(t) + "</button>"; }).join("");
+    chips.addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-tag]");
+      if (!b) return;
+      activeTag = b.getAttribute("data-tag") || null;
+      Array.prototype.forEach.call(chips.querySelectorAll("button"), function (x) { x.setAttribute("aria-pressed", String(x === b)); });
+      render();
+    });
+  }
+  function start(list) {
+    data = list.slice().sort(function (a, b) { return b.updated.localeCompare(a.updated); });
+    renderChips();
+    render();
+  }
+  input.addEventListener("input", render);
+  if (location.protocol === "file:" || !window.fetch) start(fallback());
+  else fetch("resources.json", { cache: "no-cache" }).then(function (r) {
+    if (!r.ok) throw new Error(r.status);
+    return r.json();
+  }).then(start).catch(function () { start(fallback()); });
+})();
+</script>
+</body>
+</html>

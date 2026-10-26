@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD11">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Observability, security and deployment | System Design</title>
+<meta name="description" content="Logs, metrics and traces, alerting, security fundamentals for system design, containers and Kubernetes, CI/CD, infrastructure as code, cost and capacity planning.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD11</p>
+      <h1>Observability, security and deployment</h1>
+      <p class="lede">Designing a system is half the job. The other half is seeing what it is doing, defending it, shipping changes safely and paying for it. Interviewers expect you to mention all four.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~3.5 hours</span></div>
+    </div>
+
+    <section id="observability" data-track>
+      <h2>Observability</h2>
+<h3>Intuition</h3>
+<p>Monitoring tells you <strong>that</strong> something is wrong. Observability lets you ask new questions to find out <strong>why</strong>, without shipping new code. You need three kinds of telemetry: logs, metrics and traces.</p>
+<h3>The three pillars</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Pillar</th><th>What it is</th><th>Good for</th><th>Cost</th></tr></thead>
+<tbody>
+<tr><td>Logs</td><td>Timestamped records of events</td><td>Detailed debugging of one event</td><td>High volume, expensive to store and search</td></tr><tr><td>Metrics</td><td>Numbers over time (counters, gauges, histograms)</td><td>Dashboards, alerts, trends, capacity</td><td>Cheap, aggregated</td></tr><tr><td>Traces</td><td>The path of one request across services, as spans</td><td>Finding which service or call is slow</td><td>Needs sampling, instrumentation</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Logging well</h3>
+<ul><li>Use <strong>structured logs</strong> (JSON) with fields such as <code>timestamp</code>, <code>level</code>, <code>service</code>, <code>request_id</code>, <code>user_id</code>, <code>latency_ms</code> so they can be queried.</li><li>Include a <strong>correlation id</strong> (request id) in every log line and pass it across services.</li><li>Log at the right level: DEBUG for development, INFO for key events, WARN for recoverable issues, ERROR for failures.</li><li>Never log secrets, passwords, tokens or full card numbers. Mind personal data.</li><li>Ship logs asynchronously to a central store (ELK or OpenSearch, Loki, Splunk, cloud logging). Sample high-volume low-value logs.</li></ul>
+<h3>Metrics well</h3>
+<p>Metric types: <strong>counter</strong> (only goes up: requests, errors), <strong>gauge</strong> (goes up and down: queue depth, memory), <strong>histogram</strong> (distribution: latency buckets, giving percentiles).</p>
+<p>Use <strong>RED</strong> for services: <strong>R</strong>ate, <strong>E</strong>rrors, <strong>D</strong>uration. Use <strong>USE</strong> for resources: <strong>U</strong>tilisation, <strong>S</strong>aturation, <strong>E</strong>rrors. The four <strong>golden signals</strong> (Google SRE): latency, traffic, errors, saturation.</p>
+<p>Avoid <strong>high-cardinality labels</strong> (user id as a label creates millions of time series and breaks the metrics store).</p>
+<h3>Distributed tracing</h3>
+<p>Each request gets a <strong>trace id</strong>. Every service call creates a <strong>span</strong> (name, start, duration, parent). Propagate the trace context in headers (W3C <code>traceparent</code>). A trace view shows a waterfall that reveals the slow hop. Tools: OpenTelemetry (standard instrumentation), Jaeger, Zipkin, Tempo.</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 98" role="img" aria-label="A trace is a tree of spans sharing one trace id." style="min-width:760px"><defs><marker id="ah20" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah20a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah20b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah20d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah20)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah20)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah20)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle" class="d-sm">Request enters gateway (trace id created)</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle">Service A span</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle">Service B span</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle">Database span</text></svg>
+</div>
+<figcaption>A trace is a tree of spans sharing one trace id.</figcaption></figure>
+<h3>Alerting</h3>
+<ul><li>Alert on <strong>symptoms users feel</strong> (error rate, latency SLO burn rate), not on every cause (high CPU alone).</li><li>Every alert must be <strong>actionable</strong>, urgent and have a runbook. Noisy alerts cause on-call fatigue and real incidents get ignored.</li><li><strong>Burn-rate alerts</strong> warn when the error budget is being consumed too quickly.</li><li>Page for urgent, ticket for non-urgent.</li></ul>
+<h3>Dashboards and incident response</h3>
+<p>A top-level dashboard per service with the golden signals. During an incident: <strong>detect, triage, mitigate (roll back first), resolve, then post-mortem</strong>. Mitigate before you root-cause.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd11-q01" data-topic="Operations" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which signal best finds which service in a call chain is slow?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Logs from one server <span class="q-why">Hard to correlate.</span></li>
+          <li data-key="B">Distributed traces <span class="q-why">Correct.</span></li>
+          <li data-key="C">Disk usage metric <span class="q-why">Not related.</span></li>
+          <li data-key="D">DNS TTL <span class="q-why">Not related.</span></li>
+        </ul>
+        <div class="q-explain"><p>Traces show a waterfall of spans for one request across services.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd11-q02" data-topic="Operations" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is putting the user id in a metric label a problem?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It leaks passwords <span class="q-why">Not the main issue.</span></li>
+          <li data-key="B">High cardinality creates millions of time series and breaks the metrics store <span class="q-why">Correct.</span></li>
+          <li data-key="C">It breaks dashboards only <span class="q-why">It breaks the store.</span></li>
+          <li data-key="D">It is encrypted <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use logs or traces for per-user detail, keep metric labels low-cardinality.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd11-q03" data-topic="Operations" data-type="single" data-answer="A">
+        <div class="q-stem"><p>An alert fires on CPU above 80 percent, but users are fine. Better practice is to alert on:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Symptoms users feel, such as error rate or SLO burn <span class="q-why">Correct.</span></li>
+          <li data-key="B">Every metric <span class="q-why">Causes alert fatigue.</span></li>
+          <li data-key="C">Nothing <span class="q-why">No.</span></li>
+          <li data-key="D">Log volume <span class="q-why">Not user-facing.</span></li>
+        </ul>
+        <div class="q-explain"><p>Alert on user-visible symptoms. Use dashboards for causes.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What are the three pillars?</summary><div class="answer"><p>Logs, metrics and traces.</p></div></details>
+        <details class="recall"><summary>RED and USE methods?</summary><div class="answer"><p>RED for services: rate, errors, duration. USE for resources: utilisation, saturation, errors.</p></div></details>
+      </div>
+    </section>
+
+    <section id="security" data-track>
+      <h2>Security fundamentals</h2>
+<h3>Think in layers</h3>
+<p><strong>Defence in depth</strong>: assume any single control can fail. Apply <strong>least privilege</strong> (every user, service and key has only the access it needs) and <strong>zero trust</strong> (authenticate and authorise every call, even inside the network).</p>
+<h3>The CIA triad</h3>
+<p><strong>Confidentiality</strong> (only authorised access), <strong>Integrity</strong> (data not tampered with), <strong>Availability</strong> (service stays up). DoS attacks target availability.</p>
+<h3>Data in transit and at rest</h3>
+<ul><li><strong>In transit</strong>: TLS everywhere, including between internal services (mTLS). HSTS for browsers.</li><li><strong>At rest</strong>: encrypt disks, databases and backups with keys from a <strong>KMS</strong> (key management service). Rotate keys. Separate who manages data from who holds keys.</li><li><strong>Secrets</strong>: never in source code or images. Use a secrets manager (Vault, AWS Secrets Manager), short-lived credentials and automatic rotation.</li><li><strong>Passwords</strong>: store only a salted, slow hash (bcrypt, scrypt, Argon2), never plain text or fast hashes like SHA-256 alone.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd11-01.py">import hashlib, os
+salt = os.urandom(16)
+pw = b"correct horse battery staple"
+slow = hashlib.scrypt(pw, salt=salt, n=2**12, r=8, p=1)
+print(len(slow), "byte derived key; same input with a different salt gives:", hashlib.scrypt(pw, salt=os.urandom(16), n=2**12, r=8, p=1) != slow)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>64 byte derived key; same input with a different salt gives: True</code></pre>
+<h3>Common web attacks and defences</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Attack</th><th>What happens</th><th>Defence</th></tr></thead>
+<tbody>
+<tr><td>SQL injection</td><td>Attacker input becomes part of a query</td><td>Parameterised queries, ORM, least-privilege DB user</td></tr><tr><td>XSS (cross-site scripting)</td><td>Script injected into a page runs in victims' browsers</td><td>Output encoding, Content Security Policy, HttpOnly cookies</td></tr><tr><td>CSRF</td><td>A malicious site makes the browser send an authenticated request</td><td>SameSite cookies, CSRF tokens</td></tr><tr><td>IDOR / broken access control</td><td>Access to others' objects by changing an id</td><td>Check ownership on every request</td></tr><tr><td>SSRF</td><td>Server fetches an attacker-chosen internal URL</td><td>Allow-lists, block metadata IPs, network egress rules</td></tr><tr><td>Brute force and credential stuffing</td><td>Guessing or reusing leaked passwords</td><td>Rate limiting, MFA, breached-password checks</td></tr><tr><td>DDoS</td><td>Overwhelming traffic</td><td>CDN and edge absorption, rate limits, autoscaling, scrubbing services</td></tr><tr><td>Supply chain</td><td>Malicious dependency</td><td>Pin and scan dependencies, signed artifacts</td></tr>
+</tbody>
+</table>
+</div>
+<p>The OWASP Top 10 is the standard checklist for web risks.</p>
+<h3>Network security</h3>
+<p>Put databases and internal services in <strong>private subnets</strong> with no public IP. Expose only the load balancer. Use <strong>security groups</strong> and network policies as default-deny allow lists. A <strong>WAF</strong> (web application firewall) filters malicious requests at the edge. Bastion hosts or identity-aware proxies for admin access.</p>
+<h3>Privacy and compliance</h3>
+<p>Know where personal data lives. Support deletion (GDPR "right to be forgotten") and export. Minimise what you collect, encrypt, restrict access, and keep <strong>audit logs</strong> of sensitive actions. Data residency may force regional storage.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd11-q04" data-topic="Operations" data-type="multi" data-answer="A,C,D">
+        <div class="q-stem"><p>Which defend against SQL injection? Select all.</p></div>
+        <ul class="q-options">
+          <li data-key="A">Parameterised queries</li>
+          <li data-key="B">String concatenation of user input</li>
+          <li data-key="C">A least-privilege database account</li>
+          <li data-key="D">Using an ORM correctly</li>
+        </ul>
+        <div class="q-explain"><p>Never build queries by concatenating untrusted input.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd11-q05" data-topic="Operations" data-type="single" data-answer="C">
+        <div class="q-stem"><p>How should passwords be stored?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Plain text <span class="q-why">Never.</span></li>
+          <li data-key="B">SHA-256 without salt <span class="q-why">Fast and rainbow-table friendly.</span></li>
+          <li data-key="C">Salted slow hash such as bcrypt, scrypt or Argon2 <span class="q-why">Correct.</span></li>
+          <li data-key="D">Encrypted with a fixed key <span class="q-why">Reversible.</span></li>
+        </ul>
+        <div class="q-explain"><p>Slow, salted hashing makes offline guessing expensive.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is defence in depth?</summary><div class="answer"><p>Layered controls so no single failure leaves the system exposed, plus least privilege and zero trust.</p></div></details>
+      </div>
+    </section>
+
+    <section id="containers" data-track>
+      <h2>Containers and orchestration</h2>
+<h3>Containers</h3>
+<p>A <strong>container</strong> packages an application with its dependencies and runs as an isolated process sharing the host kernel (using Linux namespaces and cgroups). Lighter and faster to start than a virtual machine. An <strong>image</strong> is the immutable template, built from a <code>Dockerfile</code> in layers.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>Virtual machine</th><th>Container</th></tr></thead>
+<tbody>
+<tr><td>Isolation</td><td>Strong (own kernel)</td><td>Process-level (shared kernel)</td></tr><tr><td>Start time</td><td>Minutes</td><td>Seconds or less</td></tr><tr><td>Size</td><td>GBs</td><td>MBs to hundreds of MBs</td></tr><tr><td>Density</td><td>Lower</td><td>Higher</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Kubernetes in one page</h3>
+<p>Kubernetes schedules containers across a cluster and keeps the <strong>desired state</strong>.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Concept</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>Pod</td><td>Smallest unit: one or more containers sharing network and storage</td></tr><tr><td>Deployment</td><td>Declares N replicas of a pod, handles rolling updates and rollbacks</td></tr><tr><td>Service</td><td>Stable virtual IP and DNS name that load balances across pods</td></tr><tr><td>Ingress</td><td>Routes external HTTP traffic to services</td></tr><tr><td>ConfigMap, Secret</td><td>Configuration and sensitive values injected into pods</td></tr><tr><td>HPA</td><td>Horizontal pod autoscaler, scales replicas on metrics</td></tr><tr><td>StatefulSet</td><td>Pods with stable identity and storage (databases, queues)</td></tr><tr><td>Probes</td><td>Liveness (restart if dead) and readiness (receive traffic when ready)</td></tr>
+</tbody>
+</table>
+</div>
+<p>Declare resource <strong>requests and limits</strong> so the scheduler can place pods and one pod cannot starve others.</p>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Pod, Deployment, Service?</summary><div class="answer"><p>Pod runs containers; Deployment keeps N replicas and rolls updates; Service gives a stable address with load balancing.</p></div></details>
+      </div>
+    </section>
+
+    <section id="cicd" data-track>
+      <h2>CI/CD and release strategies</h2>
+<h3>Continuous integration and delivery</h3>
+<p><strong>CI</strong>: every change is built and tested automatically. <strong>CD</strong>: every passing change is automatically deployable (delivery) or deployed (deployment).</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="A typical pipeline. Fail fast: cheap checks first." style="min-width:760px"><defs><marker id="ah21" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah21a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah21b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah21d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah21)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah21)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah21)"/><line x1="747.0" y1="78.0" x2="747.0" y2="118.0" class="d-line" marker-end="url(#ah21)"/><line x1="662.0" y1="147.0" x2="618.0" y2="147.0" class="d-line" marker-end="url(#ah21)"/><line x1="448.0" y1="147.0" x2="404.0" y2="147.0" class="d-line" marker-end="url(#ah21)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">Commit</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle">Build</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle">Unit tests</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle">Integration tests</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="151.5" text-anchor="middle">Package image</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="151.5" text-anchor="middle">Deploy to staging</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="151.5" text-anchor="middle">Deploy to production</text></svg>
+</div>
+<figcaption>A typical pipeline. Fail fast: cheap checks first.</figcaption></figure>
+<h3>Release strategies</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Strategy</th><th>How</th><th>Pros</th><th>Cons</th></tr></thead>
+<tbody>
+<tr><td>Rolling</td><td>Replace instances gradually</td><td>No extra capacity</td><td>Mixed versions during the roll</td></tr><tr><td>Blue/green</td><td>Two environments, flip traffic</td><td>Instant rollback</td><td>Double capacity during switch</td></tr><tr><td>Canary</td><td>Send a small percentage first, watch metrics, expand</td><td>Limits blast radius</td><td>Needs good metrics and automation</td></tr><tr><td>Feature flags</td><td>Ship dark, enable per user or percent</td><td>Decouples deploy from release</td><td>Flag debt, more test combinations</td></tr><tr><td>Shadow traffic</td><td>Mirror real requests to the new version without returning its answers</td><td>Safe load and correctness testing</td><td>Careful with side effects</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Database migrations without downtime</h3>
+<p>Use <strong>expand and contract</strong>: add the new column (nullable), deploy code that writes both, backfill, switch reads, then drop the old column in a later release. Never ship a change that requires code and schema to flip at the same instant.</p>
+<h3>Infrastructure as code</h3>
+<p>Describe infrastructure in versioned files (Terraform, CloudFormation, Pulumi) reviewed like code, so environments are reproducible and drift is detected. Treat servers as <strong>cattle, not pets</strong>: replace, do not repair.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd11-q06" data-topic="Operations" data-type="single" data-answer="B">
+        <div class="q-stem"><p>You must rename a database column with zero downtime. What is the safest approach?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Rename it in one deploy <span class="q-why">Old code breaks instantly.</span></li>
+          <li data-key="B">Expand and contract over several releases <span class="q-why">Correct.</span></li>
+          <li data-key="C">Take the site offline <span class="q-why">Downtime.</span></li>
+          <li data-key="D">Drop and recreate the table <span class="q-why">Data loss.</span></li>
+        </ul>
+        <div class="q-explain"><p>Add new, dual write, backfill, switch reads, then remove the old column.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd11-q07" data-topic="Operations" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which release strategy limits blast radius by exposing a new version to a small share of traffic first?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Big bang <span class="q-why">Opposite.</span></li>
+          <li data-key="B">Canary <span class="q-why">Correct.</span></li>
+          <li data-key="C">Cold standby <span class="q-why">A DR concept.</span></li>
+          <li data-key="D">Sticky sessions <span class="q-why">Unrelated.</span></li>
+        </ul>
+        <div class="q-explain"><p>Watch metrics on the canary and roll back automatically if they degrade.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Rolling, blue/green and canary?</summary><div class="answer"><p>Gradual replacement, full environment flip with instant rollback, and small-percentage exposure with metric checks.</p></div></details>
+      </div>
+    </section>
+
+    <section id="cost" data-track>
+      <h2>Cost and capacity</h2>
+<h3>Why cost is a design input</h3>
+<p>Cloud bills often decide between two good designs. Know the big levers:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Lever</th><th>Idea</th></tr></thead>
+<tbody>
+<tr><td>Right-sizing</td><td>Do not run 8-core machines at 5 percent</td></tr><tr><td>Autoscaling</td><td>Pay for what you use</td></tr><tr><td>Reserved or committed use, spot instances</td><td>Large discounts for predictable or interruptible work</td></tr><tr><td>Data transfer</td><td>Egress and cross-region traffic are expensive; keep traffic inside a zone and use CDNs</td></tr><tr><td>Storage tiers</td><td>Move cold data to cheaper classes with lifecycle rules</td></tr><tr><td>Caching and compression</td><td>Reduce backend and bandwidth cost</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Capacity planning</h3>
+<p>Measure current load, project growth, load test to find per-node limits, keep headroom, and review regularly. Load test <strong>before</strong> big events. Plan for the <strong>peak</strong>, not the average.</p>
+<div class="callout tip"><span class="callout-title">Interview tip</span><p>In the wrap-up say: "I would monitor error rate, p99 latency and saturation, alert on SLO burn, deploy with canaries and feature flags, encrypt in transit and at rest with least-privilege access, and review cost per request." That one sentence covers this entire part.</p></div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Operations</h2>
+      <p class="muted">10 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Operations">
+<details class="recall iq" data-level="basic" data-topic="Operations"><summary><span class="tag ok">Basic</span> What are logs, metrics and traces?</summary><div class="answer"><p>Logs are event records, metrics are aggregated numbers over time, traces follow one request across services. Together they provide observability.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Operations"><summary><span class="tag ok">Basic</span> What are the golden signals?</summary><div class="answer"><p>Latency, traffic, errors and saturation.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Operations"><summary><span class="tag warn">Medium</span> RED versus USE methods?</summary><div class="answer"><p>RED (rate, errors, duration) for request-driven services. USE (utilisation, saturation, errors) for resources like CPUs and disks.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Operations"><summary><span class="tag warn">Medium</span> What makes a good alert?</summary><div class="answer"><p>It reflects user-visible symptoms, is actionable, urgent and linked to a runbook. Burn-rate alerts on SLOs are better than raw resource thresholds.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Operations"><summary><span class="tag warn">Medium</span> How do you store passwords?</summary><div class="answer"><p>Salted slow hashes such as bcrypt, scrypt or Argon2, never plain text or fast hashes alone.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Operations"><summary><span class="tag warn">Medium</span> How do you prevent SQL injection and XSS?</summary><div class="answer"><p>Parameterised queries and least privilege for SQL injection. Output encoding, content security policy and HttpOnly cookies for XSS.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Operations"><summary><span class="tag warn">Medium</span> What is defence in depth and least privilege?</summary><div class="answer"><p>Layered controls so one failure is not fatal, and giving each identity only the access it needs.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Operations"><summary><span class="tag bad">Advanced</span> Describe expand and contract migrations.</summary><div class="answer"><p>Add the new schema element, write both old and new, backfill, switch reads, then remove the old in a later release, so code and schema never need to change at the same instant.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Operations"><summary><span class="tag bad">Advanced</span> Containers versus VMs and what Kubernetes provides?</summary><div class="answer"><p>Containers share the host kernel and are light and fast; VMs have stronger isolation. Kubernetes schedules containers, restarts failures, scales replicas, rolls out updates and provides service discovery.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Operations"><summary><span class="tag bad">Advanced</span> How do you control cloud cost in a design?</summary><div class="answer"><p>Right-size, autoscale, use commitments or spot capacity, reduce egress with CDNs and locality, tier cold storage, and cache and compress.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd10-reliability.html"><span class="dir">Previous</span><span>SD10 Reliability, availability and resilience</span></a>
+      <a class="next" href="sd12-data-systems.html"><span class="dir">Next</span><span>SD12 Search, big data and specialised data structures</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD13">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Case studies 1: URL shortener, Pastebin, rate limiter, key-value store, distributed cache | System Design</title>
+<meta name="description" content="Five fully worked designs: requirements, estimates, APIs, data models, architecture, deep dives and trade-offs for a URL shortener, Pastebin, a rate limiter, a Dynamo-style key-value store and a distributed cache.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD13</p>
+      <h1>Case studies 1: URL shortener, Pastebin, rate limiter, key-value store, distributed cache</h1>
+      <p class="lede">Each case follows the same shape so you can practise it under time pressure: requirements, estimates, API, data model, high-level design, deep dives, then failures and trade-offs. Read the problem, pause, design on paper, then compare.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~4 hours</span></div>
+    </div>
+
+    <section id="howto" data-track>
+      <h2>How to use the case studies</h2>
+<p>For every case: set a 35 minute timer, write requirements and numbers, draw the design, pick two deep dives, then read the model answer. The goal is not to match it, but to find gaps in your reasoning. Parts <a href="sd1-estimation.html">SD1</a> to <a href="sd12-data-systems.html">SD12</a> hold the building blocks used here.</p>
+    </section>
+
+    <section id="url-shortener" data-track>
+      <h2>Case 1: URL shortener</h2>
+<h3>Requirements</h3>
+<ul><li><strong>Functional</strong>: create a short URL for a long URL; redirect from short to long; optional custom alias and expiry.</li><li><strong>Non-functional</strong>: very high availability for redirects, redirect latency under 50 ms, short links are not guessable in order, links should not be lost.</li><li><strong>Out of scope</strong>: analytics dashboard, user accounts (mention as extensions).</li></ul>
+<h3>Estimates</h3>
+<p>100 million new URLs per month and reads 100 times writes, as worked in <a href="sd1-estimation.html">SD1</a>: about 40 writes per second, about 4,000 reads per second (12,000 peak), 6 TB over ten years, a cache of about 34 GB.</p>
+<h3>How long must the key be?</h3>
+<p>Use a-z, A-Z, 0-9 (<strong>base 62</strong>). A key of length L gives 62^L keys.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd13-01.py">for L in (6, 7, 8):
+    print(L, "chars:", format(62 ** L, ","), "keys")
+need = 100_000_000 * 12 * 10
+print("need over 10 years:", format(need, ","))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>6 chars: 56,800,235,584 keys
+7 chars: 3,521,614,606,208 keys
+8 chars: 218,340,105,584,896 keys
+need over 10 years: 12,000,000,000</code></pre>
+<p>Seven characters give 3.5 trillion keys, far more than the 12 billion needed.</p>
+<h3>API</h3>
+<pre><code>POST /v1/urls        {long_url, custom_alias?, expires_at?}  -&gt;  201 {short_url}
+GET  /{key}                                                   -&gt;  301 or 302 Location: long_url</code></pre>
+<p>Use <strong>302</strong> (temporary) if you want every click to reach you for analytics or to change targets. <strong>301</strong> (permanent) lets browsers cache the redirect and reduces load, but you lose control.</p>
+<h3>Data model</h3>
+<p><code>urls(key PK, long_url, user_id, created_at, expires_at)</code>. Access is by key only, so a key-value store or a sharded SQL table keyed by <code>key</code> works. 500 bytes per row x 12 billion rows is 6 TB.</p>
+<h3>Generating the key</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Approach</th><th>How</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>Hash and truncate</td><td>MD5 or SHA of the long URL, take 7 chars of base62</td><td>Collisions possible: check and retry with a salt; same URL gives same key</td></tr><tr><td>Counter and base62</td><td>Global counter encoded in base62</td><td>No collisions; keys are guessable in order unless you scramble the counter</td></tr><tr><td>Pre-generated key service</td><td>A service hands out unused keys in batches to app servers</td><td>No collisions at write time, simple servers; manage the key pool</td></tr><tr><td>Random</td><td>Random 7 chars, retry on collision</td><td>Simple, collision rate low while the space is mostly empty</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd13-02.py">import string
+ALPHABET = string.digits + string.ascii_lowercase + string.ascii_uppercase
+def b62(n):
+    if n == 0: return ALPHABET[0]
+    s = ""
+    while n: n, r = divmod(n, 62); s = ALPHABET[r] + s
+    return s
+def unb62(s):
+    n = 0
+    for ch in s: n = n * 62 + ALPHABET.index(ch)
+    return n
+for n in (0, 61, 62, 123456789, 3521614606207):
+    print(n, b62(n), unb62(b62(n)) == n)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>0 0 True
+61 Z True
+62 10 True
+123456789 8m0Kx True
+3521614606207 ZZZZZZZ True</code></pre>
+<h3>High-level design</h3>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 294" role="img" aria-label="URL shortener. Reads are served from the cache; writes use a key generator." style="min-width:760px"><defs><marker id="ah22" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah22a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah22b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah22d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="147.0" x2="234.0" y2="147.0" class="d-line" marker-end="url(#ah22)"/><line x1="404.0" y1="147.0" x2="448.0" y2="147.0" class="d-line" marker-end="url(#ah22)"/><line x1="596.3" y1="118.0" x2="683.7" y2="78.0" class="d-line" marker-end="url(#ah22)"/><text x="640.0" y="93.0" text-anchor="middle" class="d-sm d-muted">read</text><line x1="618.0" y1="147.0" x2="662.0" y2="147.0" class="d-line" marker-end="url(#ah22)"/><text x="640.0" y="142.0" text-anchor="middle" class="d-sm d-muted">miss / write</text><line x1="533.0" y1="176.0" x2="533.0" y2="216.0" class="d-line" marker-end="url(#ah22)"/><text x="533.0" y="191.0" text-anchor="middle" class="d-sm d-muted">new key</text><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="151.5" text-anchor="middle">Clients</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-c"/><text x="319.0" y="151.5" text-anchor="middle">Load balancer</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="144.0" text-anchor="middle">App servers</text><text x="533.0" y="159.0" text-anchor="middle">(stateless)</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-d"/><text x="747.0" y="46.0" text-anchor="middle">Cache</text><text x="747.0" y="61.0" text-anchor="middle">(Redis, key to URL)</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-a"/><text x="747.0" y="144.0" text-anchor="middle">Sharded DB</text><text x="747.0" y="159.0" text-anchor="middle">(by key)</text><rect x="448.0" y="216.0" width="170" height="58" rx="8" class="d-e"/><text x="533.0" y="242.0" text-anchor="middle">Key generation</text><text x="533.0" y="257.0" text-anchor="middle">service</text></svg>
+</div>
+<figcaption>URL shortener. Reads are served from the cache; writes use a key generator.</figcaption></figure>
+<h3>Deep dive</h3>
+<ul><li><strong>Read path</strong>: look up the key in cache; on a miss read the database and cache with a TTL. Hot links follow a skewed distribution, so a modest cache gives a 90 percent hit rate. Redirect with the right status code.</li><li><strong>Write path</strong>: take a key from the key service, store, return. Key service pre-generates keys into a table with <code>used</code> flag and hands out ranges (for example 1,000 at a time) to each app server, so no per-request coordination.</li><li><strong>Sharding</strong>: hash the key. Use consistent hashing or many fixed partitions to rebalance (<a href="sd5-replication-sharding.html">SD5</a>).</li><li><strong>Expiry</strong>: lazy deletion on read plus a background sweeper; return <code>410 Gone</code> for expired.</li><li><strong>Abuse</strong>: rate limit creation per user and IP, scan target URLs for malware, block loops to your own domain.</li></ul>
+<h3>Trade-offs and failures</h3>
+<p>Cache outage raises database load, so size the database for partial misses. Custom aliases need uniqueness checks on a strongly consistent store. Analytics can be added by emitting click events to a queue instead of writing synchronously.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd13-q01" data-topic="Case studies 1" data-type="numeric" data-answer="3.5" data-tol="0.1">
+        <div class="q-stem"><p>How many distinct 7 character base62 keys exist, in trillions? (round to one decimal)</p></div>
+        <div class="q-explain"><p>62^7 = 3,521,614,606,208, about 3.5 trillion.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd13-q02" data-topic="Case studies 1" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which redirect status lets you change the destination later and count every click?</p></div>
+        <ul class="q-options">
+          <li data-key="A">301 Moved Permanently <span class="q-why">Browsers cache it, so later clicks may not reach you.</span></li>
+          <li data-key="B">302 Found (temporary) <span class="q-why">Correct.</span></li>
+          <li data-key="C">200 OK <span class="q-why">Not a redirect.</span></li>
+          <li data-key="D">404 <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Temporary redirects are not cached by browsers, so each click hits your servers.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you generate short keys without collisions?</summary><div class="answer"><p>Counter in base62, or a pre-generated key service handing out ranges, or random with collision retry.</p></div></details>
+      </div>
+    </section>
+
+    <section id="pastebin" data-track>
+      <h2>Case 2: Pastebin</h2>
+<h3>Requirements</h3>
+<p>Users paste text, get a unique link, and others read it. Pastes expire after a chosen time. Reads dominate.</p>
+<h3>Estimates</h3>
+<p>1 million new pastes per day (12 per second), reads 5 times writes (60 per second). Average paste 10 KB: 10 GB per day, 3.6 TB per year. The numbers are small.</p>
+<h3>Design</h3>
+<ul><li><strong>Metadata</strong> in a database: <code>pastes(id, owner, created_at, expires_at, size, object_key)</code>.</li><li><strong>Content</strong> in <strong>object storage</strong> keyed by id, because it is larger and rarely queried by anything but id. Serve popular pastes through a CDN.</li><li><strong>Key generation</strong> as in the URL shortener (pre-generated keys).</li><li><strong>Read</strong>: look up metadata (cache), check expiry, return a redirect or stream the content from storage or CDN.</li><li><strong>Expiry</strong>: store <code>expires_at</code>, ignore expired pastes on read, delete with a periodic job and with storage lifecycle rules.</li><li><strong>Large pastes</strong>: limit size (for example 10 MB), compress, and upload directly to object storage with presigned URLs.</li></ul>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 98" role="img" aria-label="Pastebin: bytes in object storage, metadata in a database." style="min-width:760px"><defs><marker id="ah23" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah23a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah23b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah23d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah23)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah23)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah23)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">Client</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle">API</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle" class="d-sm">Metadata DB + Object storage</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle">CDN for reads</text></svg>
+</div>
+<figcaption>Pastebin: bytes in object storage, metadata in a database.</figcaption></figure>
+<p>The twist compared with the shortener: the <strong>payload is big</strong>, so separate metadata from blobs and offload reads to the CDN. Private pastes need unguessable ids (use long random ids, not counters) and authorisation checks.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd13-q03" data-topic="Case studies 1" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Where should the bytes of large pastes be stored?</p></div>
+        <ul class="q-options">
+          <li data-key="A">In the metadata table <span class="q-why">Bloats the database.</span></li>
+          <li data-key="B">Object storage, served via a CDN, with metadata in a database <span class="q-why">Correct.</span></li>
+          <li data-key="C">In memory only <span class="q-why">Not durable.</span></li>
+          <li data-key="D">In DNS <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Large immutable blobs belong in object storage; the database keeps small metadata.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is the key twist compared with the URL shortener?</summary><div class="answer"><p>Payloads are large, so metadata goes in a database and bytes in object storage behind a CDN.</p></div></details>
+      </div>
+    </section>
+
+    <section id="rate-limiter" data-track>
+      <h2>Case 3: Rate limiter</h2>
+<h3>Requirements</h3>
+<p>Limit each client (by API key, user or IP) to N requests per window. Low overhead (adds under 1 ms), accurate enough, works across many gateway servers, tolerates failure of the limiter store.</p>
+<h3>Where it sits</h3>
+<p>In the API gateway or as middleware, before the application. Return <code>429</code> with <code>Retry-After</code>.</p>
+<h3>Algorithms</h3>
+<p>Token bucket, leaky bucket, fixed and sliding windows (<a href="sd9-apis.html">SD9</a>). Token bucket is the usual pick.</p>
+<h3>Distributed state</h3>
+<p>All gateway nodes must share counters. Store in <strong>Redis</strong>, keyed by <code>limit:{client}:{window}</code>. Increment and set expiry <strong>atomically</strong> with a Lua script (check and update must not race).</p>
+<pre><code>-- Redis Lua sketch for a fixed window
+local c = redis.call('INCR', KEYS[1])
+if c == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+return c</code></pre>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 294" role="img" aria-label="Rate limiter with a shared Redis counter store." style="min-width:760px"><defs><marker id="ah24" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah24a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah24b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah24d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="147.0" x2="234.0" y2="147.0" class="d-line" marker-end="url(#ah24)"/><line x1="382.3" y1="118.0" x2="469.7" y2="78.0" class="d-line" marker-end="url(#ah24)"/><text x="426.0" y="93.0" text-anchor="middle" class="d-sm d-muted">atomic check</text><line x1="382.3" y1="176.0" x2="469.7" y2="216.0" class="d-line" marker-end="url(#ah24)"/><text x="426.0" y="191.0" text-anchor="middle" class="d-sm d-muted">cached rules</text><line x1="404.0" y1="147.0" x2="662.0" y2="147.0" class="d-line" marker-end="url(#ah24)"/><text x="533.0" y="142.0" text-anchor="middle" class="d-sm d-muted">allowed</text><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="151.5" text-anchor="middle">Client</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-c"/><text x="319.0" y="144.0" text-anchor="middle">API gateway</text><text x="319.0" y="159.0" text-anchor="middle">(rate limit check)</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-d"/><text x="533.0" y="46.0" text-anchor="middle" class="d-sm">Redis</text><text x="533.0" y="61.0" text-anchor="middle" class="d-sm">(counters, replicated)</text><rect x="448.0" y="216.0" width="170" height="58" rx="8" class="d-e"/><text x="533.0" y="242.0" text-anchor="middle">Rules service</text><text x="533.0" y="257.0" text-anchor="middle">(limits per plan)</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-b"/><text x="747.0" y="151.5" text-anchor="middle">Backend service</text></svg>
+</div>
+<figcaption>Rate limiter with a shared Redis counter store.</figcaption></figure>
+<h3>Deep dives</h3>
+<ul><li><strong>Race conditions</strong>: a read-then-write across two calls lets two requests both pass. Use atomic scripts or <code>INCR</code>.</li><li><strong>Sliding window counter</strong> gives accuracy without storing every timestamp: <code>estimate = current_count + previous_count x (1 - elapsed fraction)</code>.</li><li><strong>Scale</strong>: shard Redis by client key. Keep a small <strong>local</strong> token bucket per gateway and sync periodically if exact global limits are not required (trade accuracy for no network hop).</li><li><strong>Failure</strong>: if Redis is down, fail <strong>open</strong> (allow, risk overload) or <strong>closed</strong> (reject, risk outage). Choose per endpoint: open for reads, closed for expensive or sensitive calls.</li><li><strong>Rules</strong>: change limits without deploys via a rules service cached at the gateway.</li><li><strong>Fairness and burst</strong>: different limits per tier, plus a global limit to protect the backend.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd13-03.py">def sliding_window_estimate(prev_count, curr_count, elapsed_fraction):
+    return curr_count + prev_count * (1 - elapsed_fraction)
+# limit 100/min; previous minute had 80 requests, this minute 30 so far, 25% through
+print(sliding_window_estimate(80, 30, 0.25))   # 90.0, still under 100</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>90.0</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd13-q04" data-topic="Case studies 1" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why must the counter check and increment be atomic?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To save memory <span class="q-why">Not the reason.</span></li>
+          <li data-key="B">Two concurrent requests could both read the old value and both be allowed <span class="q-why">Correct.</span></li>
+          <li data-key="C">To log requests <span class="q-why">No.</span></li>
+          <li data-key="D">To avoid TLS <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use INCR or a Lua script so the read-modify-write cannot interleave.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Which algorithm and store?</summary><div class="answer"><p>Token bucket with atomic counters in Redis, enforced at the gateway, failing open or closed per endpoint.</p></div></details>
+      </div>
+    </section>
+
+    <section id="kv-store" data-track>
+      <h2>Case 4: Key-value store (Dynamo style)</h2>
+<h3>Requirements</h3>
+<p><code>put(key, value)</code> and <code>get(key)</code>. Highly available for writes, horizontally scalable, low latency, tunable consistency, survives node and zone failure. Single-key operations only.</p>
+<h3>Core design (the Dynamo recipe)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Concern</th><th>Technique</th></tr></thead>
+<tbody>
+<tr><td>Partitioning</td><td>Consistent hashing with virtual nodes (<a href="sd5-replication-sharding.html">SD5</a>)</td></tr><tr><td>Replication</td><td>Each key stored on N successive nodes on the ring</td></tr><tr><td>Consistency</td><td>Quorum: W writes, R reads, R + W &gt; N for stronger reads</td></tr><tr><td>Versioning and conflicts</td><td>Vector clocks; client or last-write-wins resolution</td></tr><tr><td>Temporary failures</td><td><strong>Sloppy quorum</strong> with <strong>hinted handoff</strong>: a stand-in node holds the write and passes it back</td></tr><tr><td>Permanent failures</td><td><strong>Anti-entropy</strong> with Merkle trees to compare and repair replicas</td></tr><tr><td>Membership and failure detection</td><td>Gossip protocol</td></tr><tr><td>Local storage</td><td>LSM tree (memtable, commit log, SSTables, Bloom filters, compaction)</td></tr>
+</tbody>
+</table>
+</div>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 638 294" role="img" aria-label="Dynamo-style ring. A coordinator node writes to N replicas (here 3) and returns after W acknowledge." style="min-width:638px"><defs><marker id="ah25" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah25a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah25b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah25d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="147.0" x2="234.0" y2="147.0" class="d-line" marker-end="url(#ah25)"/><text x="212.0" y="142.0" text-anchor="middle" class="d-sm d-muted">put(k, v)</text><line x1="382.3" y1="118.0" x2="469.7" y2="78.0" class="d-line" marker-end="url(#ah25)"/><line x1="404.0" y1="147.0" x2="448.0" y2="147.0" class="d-line" marker-end="url(#ah25)"/><line x1="382.3" y1="176.0" x2="469.7" y2="216.0" class="d-line" marker-end="url(#ah25)"/><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="151.5" text-anchor="middle">Client</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-c"/><text x="319.0" y="151.5" text-anchor="middle">Coordinator node</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="53.5" text-anchor="middle">Replica 1</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="151.5" text-anchor="middle">Replica 2</text><rect x="448.0" y="216.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="249.5" text-anchor="middle">Replica 3</text></svg>
+</div>
+<figcaption>Dynamo-style ring. A coordinator node writes to N replicas (here 3) and returns after W acknowledge.</figcaption></figure>
+<h3>Write path</h3>
+<ol><li>The client contacts any node, which becomes the <strong>coordinator</strong> (or uses a token-aware client).</li><li>The coordinator finds the N replicas for the key from the ring and sends the write to them in parallel.</li><li>Each replica appends to its <strong>commit log</strong>, writes to the <strong>memtable</strong>, and acknowledges.</li><li>The coordinator replies after W acknowledgements.</li></ol>
+<h3>Read path</h3>
+<p>Query R replicas, compare versions, return the newest (or all siblings if concurrent), and <strong>read repair</strong>: write the winner back to stale replicas.</p>
+<h3>Tuning</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Setting (N=3)</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td>W=1, R=1</td><td>Fastest, eventual</td></tr><tr><td>W=2, R=2</td><td>Strong enough for most uses, tolerates one failure</td></tr><tr><td>W=3, R=1</td><td>Fast reads, writes fail with any node down</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Trade-offs</h3>
+<p>Choose availability over strict consistency, so applications must handle conflicts. Do not offer multi-key transactions (they would need coordination across partitions). Hot keys and large values need care.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd13-q05" data-topic="Case studies 1" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In a 3-replica Dynamo-style store, which settings guarantee read-write overlap?</p></div>
+        <ul class="q-options">
+          <li data-key="A">W=1, R=1 <span class="q-why">No overlap.</span></li>
+          <li data-key="B">W=2, R=2 <span class="q-why">Correct, 2 + 2 &gt; 3.</span></li>
+          <li data-key="C">W=1, R=2 <span class="q-why">1 + 2 = 3, not greater than 3.</span></li>
+          <li data-key="D">W=0, R=3 <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>R + W &gt; N guarantees that every read quorum intersects every write quorum.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd13-q06" data-topic="Case studies 1" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does hinted handoff do?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Compresses data <span class="q-why">No.</span></li>
+          <li data-key="B">A stand-in node holds writes for a temporarily down replica and returns them when it recovers <span class="q-why">Correct.</span></li>
+          <li data-key="C">Elects a leader <span class="q-why">No.</span></li>
+          <li data-key="D">Encrypts data <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It keeps writes available during short failures.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>List the Dynamo techniques.</summary><div class="answer"><p>Consistent hashing, replication, quorums, vector clocks, sloppy quorum with hinted handoff, Merkle tree anti-entropy, gossip.</p></div></details>
+      </div>
+    </section>
+
+    <section id="dist-cache" data-track>
+      <h2>Case 5: Distributed cache</h2>
+<h3>Requirements</h3>
+<p>A cache cluster (Memcached or Redis-like): low latency (about 1 ms), very high throughput, horizontal scaling, hot-key handling, eviction, optional persistence and replication, node failures tolerated.</p>
+<h3>Design</h3>
+<ul><li><strong>Sharding</strong>: clients or a proxy map keys to nodes using <strong>consistent hashing</strong>. Adding a node moves about 1/N of keys, so most of the cache survives.</li><li><strong>Per node</strong>: a hash table for lookup and an <strong>LRU</strong> list for eviction (O(1) get and put, see <a href="sd7-caching.html">SD7</a>), TTL expiry (lazy plus periodic sampling), memory managed with slab allocation to avoid fragmentation.</li><li><strong>Replication</strong>: a primary and replica per shard. On primary loss, promote the replica. Warm replicas avoid a cold cache after failure.</li><li><strong>Protocol</strong>: a lightweight binary or text protocol over persistent connections, pipelining and batching (<code>MGET</code>).</li><li><strong>Client library</strong>: handles hashing, retries, timeouts, and a circuit breaker so a slow cache does not take down the app.</li></ul>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 638 294" role="img" aria-label="Cache cluster with a thin proxy layer and consistent hashing." style="min-width:638px"><defs><marker id="ah26" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah26a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah26b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah26d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="147.0" x2="234.0" y2="147.0" class="d-line" marker-end="url(#ah26)"/><line x1="382.3" y1="118.0" x2="469.7" y2="78.0" class="d-line" marker-end="url(#ah26)"/><line x1="404.0" y1="147.0" x2="448.0" y2="147.0" class="d-line" marker-end="url(#ah26)"/><line x1="382.3" y1="176.0" x2="469.7" y2="216.0" class="d-line" marker-end="url(#ah26)"/><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-b"/><text x="105.0" y="151.5" text-anchor="middle">App servers</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-c"/><text x="319.0" y="144.0" text-anchor="middle" class="d-sm">Cache proxy / client lib</text><text x="319.0" y="159.0" text-anchor="middle" class="d-sm">(consistent hash)</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-d"/><text x="533.0" y="53.5" text-anchor="middle" class="d-sm">Cache node 1 + replica</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-d"/><text x="533.0" y="151.5" text-anchor="middle" class="d-sm">Cache node 2 + replica</text><rect x="448.0" y="216.0" width="170" height="58" rx="8" class="d-d"/><text x="533.0" y="249.5" text-anchor="middle" class="d-sm">Cache node 3 + replica</text></svg>
+</div>
+<figcaption>Cache cluster with a thin proxy layer and consistent hashing.</figcaption></figure>
+<h3>Deep dives</h3>
+<ul><li><strong>Hot keys</strong>: detect with counters, then replicate the hot key to several nodes (<code>key#1</code>, <code>key#2</code>) and add a short-lived local cache in the client.</li><li><strong>Consistency with the database</strong>: cache-aside with delete on write; TTLs bound staleness.</li><li><strong>Failure</strong>: a lost node causes a miss spike for its keys; protect the database with request coalescing and rate limits.</li><li><strong>Memory limits and eviction policy</strong> per use: LRU for general, LFU for stable popularity, TTL for sessions.</li><li><strong>Multi-region</strong>: independent caches per region, with invalidation events or short TTLs rather than synchronous replication.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd13-q07" data-topic="Case studies 1" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why use consistent hashing in a cache cluster?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It encrypts keys <span class="q-why">No.</span></li>
+          <li data-key="B">Adding or removing a node remaps only a small fraction of keys <span class="q-why">Correct.</span></li>
+          <li data-key="C">It makes keys shorter <span class="q-why">No.</span></li>
+          <li data-key="D">It removes the need for eviction <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Naive modulo hashing would invalidate nearly the entire cache on resize.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you handle hot keys?</summary><div class="answer"><p>Replicate the key across nodes and add a short local cache in the client.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Case studies 1</h2>
+      <p class="muted">8 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Case studies 1">
+<details class="recall iq" data-level="basic" data-topic="Case studies 1"><summary><span class="tag ok">Basic</span> Design a URL shortener: how do you generate the key?</summary><div class="answer"><p>Use base62 on a counter or pre-generated unique ids, or hash and handle collisions. Seven base62 characters give 3.5 trillion keys.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 1"><summary><span class="tag warn">Medium</span> 301 or 302 for the redirect?</summary><div class="answer"><p>302 keeps traffic flowing through you for analytics and changeable targets. 301 is cached by browsers and cuts load but loses control.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 1"><summary><span class="tag warn">Medium</span> Design Pastebin: where does the content go?</summary><div class="answer"><p>In object storage behind a CDN, with metadata in a database and expiry handled by stored timestamps and lifecycle rules.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 1"><summary><span class="tag warn">Medium</span> Design a rate limiter: which algorithm and where is state?</summary><div class="answer"><p>Token bucket at the gateway with atomic counters in Redis per client key, with rules in a cached config service.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Case studies 1"><summary><span class="tag warn">Medium</span> Design a distributed cache.</summary><div class="answer"><p>Sharded nodes with consistent hashing, LRU and TTL eviction per node, replicas for failover, client library with timeouts and circuit breaker, hot-key handling and request coalescing.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 1"><summary><span class="tag bad">Advanced</span> How do you avoid races in a distributed rate limiter?</summary><div class="answer"><p>Make the check and update atomic using Redis INCR or a Lua script, or accept approximate limits with local buckets that sync periodically.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 1"><summary><span class="tag bad">Advanced</span> Design a key-value store with high availability.</summary><div class="answer"><p>Consistent hashing with virtual nodes, replication to N nodes, tunable quorums, vector clocks, hinted handoff, Merkle-tree anti-entropy, gossip membership and LSM storage.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Case studies 1"><summary><span class="tag bad">Advanced</span> How does hinted handoff work?</summary><div class="answer"><p>When a replica is down, another node accepts the write with a hint and delivers it when the replica returns, keeping writes available.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd12-data-systems.html"><span class="dir">Previous</span><span>SD12 Search, big data and specialised data structures</span></a>
+      <a class="next" href="sd14-case-2.html"><span class="dir">Next</span><span>SD14 Case studies 2: news feed, chat, notifications, typeahead, web crawler</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="F3">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>F3 LLM training and scaling | AI/ML Engineer Prep</title>
+<meta name="description" content="How LLMs are built: pretraining data and objective, the post-training pipeline, scaling laws and 6ND compute math, distributed training (data, tensor, pipeline, ZeRO/FSDP), mixed precision, benchmarks and pass@k, hallucination and reasoning models.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Foundations F3</p>
+      <h1>LLM training and scaling</h1>
+      <p class="lede">How a model goes from random weights to a helpful assistant, how much compute that takes (you can estimate it in one line), how training is split across thousands of GPUs, and how models are evaluated.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag">~2 hours</span></div>
+    </div>
+
+    <!-- ============================================================ 1 -->
+    <section id="training-pipeline" data-track>
+      <h2>The LLM training pipeline</h2>
+
+      <h3>Intuition</h3>
+      <p>Pretraining is reading the internet: the model learns language, facts and reasoning patterns by predicting the next token trillions of times. The result (a <strong>base model</strong>) is a brilliant autocomplete that does not follow instructions. Post-training teaches it to be an assistant: first by imitation (SFT on example conversations), then by preference (RLHF, DPO and related methods), increasingly with reinforcement learning on verifiable tasks.</p>
+
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 170" role="img" aria-label="Pipeline: data curation, pretraining (base model), supervised fine-tuning, preference optimization and RL, evaluation and safety, deployment">
+          <defs><marker id="p3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker></defs>
+          <rect x="10" y="40" width="110" height="56" rx="6" class="d-box"/><text x="65" y="64" text-anchor="middle" class="d-sm">data: crawl,</text><text x="65" y="80" text-anchor="middle" class="d-sm">filter, dedup</text>
+          <line x1="122" y1="68" x2="136" y2="68" class="d-line" marker-end="url(#p3)"/>
+          <rect x="138" y="40" width="130" height="56" rx="6" class="d-a"/><text x="203" y="64" text-anchor="middle" class="d-sm">pretraining</text><text x="203" y="80" text-anchor="middle" class="d-sm">trillions of tokens</text>
+          <line x1="270" y1="68" x2="284" y2="68" class="d-line" marker-end="url(#p3)"/>
+          <rect x="286" y="40" width="110" height="56" rx="6" class="d-c"/><text x="341" y="64" text-anchor="middle" class="d-sm">SFT</text><text x="341" y="80" text-anchor="middle" class="d-sm">demonstrations</text>
+          <line x1="398" y1="68" x2="412" y2="68" class="d-line" marker-end="url(#p3)"/>
+          <rect x="414" y="40" width="140" height="56" rx="6" class="d-e"/><text x="484" y="64" text-anchor="middle" class="d-sm">preference / RL</text><text x="484" y="80" text-anchor="middle" class="d-sm">RLHF, DPO, GRPO</text>
+          <line x1="556" y1="68" x2="570" y2="68" class="d-line" marker-end="url(#p3)"/>
+          <rect x="572" y="40" width="138" height="56" rx="6" class="d-b"/><text x="641" y="64" text-anchor="middle" class="d-sm">evals, red-team,</text><text x="641" y="80" text-anchor="middle" class="d-sm">deploy</text>
+          <text x="203" y="120" text-anchor="middle" class="d-sm d-muted">-&gt; base model</text>
+          <text x="420" y="120" text-anchor="middle" class="d-sm d-muted">-&gt; instruct / chat model</text>
+          <text x="10" y="155" class="d-sm">Compute: pretraining dominates (often well over 90%). Post-training is small in compute but decisive for behavior.</text>
+        </svg>
+        </div>
+        <figcaption>Base model to assistant. Each stage changes behavior far more than its share of compute suggests.</figcaption>
+      </figure>
+
+      <ul>
+        <li><strong>Data curation</strong>: web crawl (for example Common Crawl), code, books, papers. Language and quality filtering (classifier-based), deduplication (exact and MinHash near-duplicates), PII and toxicity filtering, and decontamination against benchmarks. Data quality and mixture matter as much as size.</li>
+        <li><strong>Base vs instruct</strong>: a base model continues text ("Q: What is the capital of France? Q: What is..."). An instruct model answers. Base models are better starting points for some fine-tunes. Instruct models are what you put behind a chat UI.</li>
+        <li><strong>Distillation</strong>: train a small "student" on the outputs or probability distributions of a large "teacher". It is how many strong small models are produced.</li>
+        <li><strong>Synthetic data</strong>: model-generated training examples, filtered by verifiers or other models. Widely used for SFT and reasoning data. It risks errors propagating and diversity collapsing.</li>
+      </ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="f3-pipe-1" data-topic="Foundations" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A base model answers "Write a haiku about rain" by continuing with more instructions. Why?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is too small <span class="q-why">Size is not the issue.</span></li>
+          <li data-key="B">It was only pretrained to continue text; instruction following comes from post-training (SFT, preference tuning) <span class="q-why">Correct.</span></li>
+          <li data-key="C">Its temperature is too high <span class="q-why">That does not cause this behavior.</span></li>
+          <li data-key="D">The tokenizer is broken <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Web text often contains lists of instructions, so continuing them is a likely completion.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name the stages from raw data to a chat model.</summary><div class="answer"><p>Data curation, pretraining, SFT, preference optimization or RL, then evaluation and safety.</p></div></details>
+        <details class="recall"><summary>What is knowledge distillation?</summary><div class="answer"><p>Training a smaller student to imitate a larger teacher's outputs or distributions.</p></div></details>
+        <details class="recall"><summary>Why deduplicate pretraining data?</summary><div class="answer"><p>It reduces memorization, saves compute, improves quality, and prevents benchmark contamination.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 2 -->
+    <section id="pretraining-objective" data-track>
+      <h2>The pretraining objective and teacher forcing</h2>
+
+      <h3>Intuition</h3>
+      <p>Give the model a sequence and ask it to predict every next token at once. Thanks to the causal mask, position t only sees tokens 1..t. One forward pass over a 4,096-token sequence produces 4,096 predictions and 4,096 loss terms. During training the model is always fed the <em>true</em> previous tokens (<strong>teacher forcing</strong>), not its own guesses. That parallelism is why transformers train so efficiently.</p>
+
+      <div class="formula">
+        <div class="f-title">Language modeling loss</div>
+        <div class="f-body">L = -(1/T) sum_{t=1}^{T} log p_theta(x_t | x_1 ... x_{t-1})
+perplexity = exp(L)</div>
+        <dl class="f-defs"><dt>x_t</dt><dd>token at position t</dd><dt>T</dt><dd>tokens in the batch</dd></dl>
+      </div>
+      <ul>
+        <li>A loss of 2.0 nats gives perplexity 7.39. A perplexity of 10 corresponds to a loss of 2.3026 nats.</li>
+        <li>Lower loss on held-out text tracks better downstream ability, though not perfectly.</li>
+        <li><strong>Exposure bias</strong>: training always conditions on gold prefixes, while generation conditions on the model's own outputs. Errors can compound.</li>
+        <li><strong>Context length</strong> is set during pretraining (often extended in a later phase). Attention cost grows as n^2, so long-context training is expensive.</li>
+      </ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="f3-obj-1" data-topic="Foundations" data-type="numeric" data-answer="7.389" data-tol="0.01">
+        <div class="q-stem"><p>Validation loss is 2.0 nats per token. Perplexity? (3 decimals)</p></div>
+        <div class="q-explain"><p>e^2 = 7.389.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is teacher forcing?</summary><div class="answer"><p>Feeding the ground-truth previous tokens during training, rather than the model's own predictions.</p></div></details>
+        <details class="recall"><summary>How many predictions does one training sequence of 4,096 tokens give?</summary><div class="answer"><p>About 4,096 (one per position), all in a single forward pass.</p></div></details>
+        <details class="recall"><summary>What is exposure bias?</summary><div class="answer"><p>The mismatch between training on gold prefixes and generating from the model's own outputs.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 3 -->
+    <section id="scaling-laws" data-track>
+      <h2>Scaling laws and compute math (6ND)</h2>
+
+      <h3>Intuition</h3>
+      <p>Loss falls smoothly and predictably (as a power law) as you scale parameters, data and compute. Given a fixed compute budget, there is an optimal split between a bigger model and more tokens. The Chinchilla paper (Hoffmann et al., 2022) found earlier models were undertrained: compute-optimal training uses roughly <strong>20 tokens per parameter</strong>.</p>
+
+      <div class="formula">
+        <div class="f-title">Compute estimates (dense transformers)</div>
+        <div class="f-body">training FLOPs   C  ~  6 * N * D          (2 forward + 4 backward per param per token)
+inference FLOPs     ~  2 * N per token
+time = C / (num_GPUs * peak_FLOPs * MFU)</div>
+        <dl class="f-defs"><dt>N</dt><dd>parameters</dd><dt>D</dt><dd>training tokens</dd><dt>MFU</dt><dd>model FLOPs utilization, often 30 to 50% in practice</dd></dl>
+      </div>
+
+      <div class="worked">
+        <span class="w-title">How much compute did a 7B model on 2T tokens take?</span>
+        <ol class="steps">
+          <li>C = 6 x 6.74e9 x 2e12 = 8.09e22 FLOPs.</li>
+          <li>One A100 at 312 TFLOPS (dense bf16) and 40% MFU does 1.25e14 FLOP/s.</li>
+          <li>8.09e22 / 1.25e14 = 6.5e8 GPU-seconds, about 180,000 A100-hours.</li>
+          <li>Sanity check: Meta's Llama 2 paper reports 184,320 A100-hours for the 7B model, consistent with about 40% utilization.</li>
+        </ol>
+        <span class="result">~180k A100-hours (about 7,500 GPU-days)</span>
+      </div>
+      <ul>
+        <li>Chinchilla itself: 70B parameters on 1.4T tokens (20 per parameter). GPT-3 (175B on 300B tokens, 1.7 per parameter) was undertrained by that standard.</li>
+        <li><strong>Overtraining small models is deliberate</strong>: inference cost scales with N, so training a small model far past compute-optimal makes it cheaper to serve. Meta reported Llama 3 8B was trained on over 15T tokens, about 1,875 tokens per parameter.</li>
+        <li>Inference FLOPs per token for 6.74B: 2N = 13.5 GFLOP. Decode is still memory bound, as part 01 explains.</li>
+        <li><strong>Emergent abilities</strong>: some benchmarks jump sharply with scale. Part of this is an artifact of discontinuous metrics like exact match. Smooth metrics often show steady improvement.</li>
+        <li><strong>Test-time compute</strong>: reasoning models spend more tokens thinking (long chains of thought, sampling and verifying) to trade inference compute for accuracy. This is a second scaling axis.</li>
+      </ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="f3-scale-1" data-topic="Foundations" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Under Chinchilla-style compute-optimal scaling, about how many training tokens suit a 10B-parameter model?</p></div>
+        <ul class="q-options">
+          <li data-key="A">10B <span class="q-why">1 token per parameter is badly undertrained.</span></li>
+          <li data-key="B">50B <span class="q-why">5 per parameter.</span></li>
+          <li data-key="C">200B <span class="q-why">20 tokens per parameter.</span></li>
+          <li data-key="D">10T <span class="q-why">1,000 per parameter: far past compute-optimal (though sometimes chosen to cut inference cost).</span></li>
+        </ul>
+        <div class="q-explain"><p>About 20 tokens per parameter is the compute-optimal rule of thumb. Production models often train much longer to be cheaper at inference.</p></div>
+      </div>
+      <div class="quiz" data-qid="f3-scale-2" data-topic="Foundations" data-type="fill" data-answer="6">
+        <div class="q-stem"><p>Training compute for a dense transformer is about <input class="q-input" aria-label="answer"> x N x D FLOPs.</p></div>
+        <div class="q-explain"><p>6: about 2 FLOPs per parameter per token forward and about 4 backward.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Where does the 6 in 6ND come from?</summary><div class="answer"><p>A forward pass is about 2 FLOPs per parameter per token (multiply + add). The backward pass is about twice that.</p></div></details>
+        <details class="recall"><summary>Why train small models on far more than 20 tokens per parameter?</summary><div class="answer"><p>It costs more training compute but gives a smaller model of the same quality, which is cheaper to serve.</p></div></details>
+        <details class="recall"><summary>What is MFU?</summary><div class="answer"><p>Model FLOPs utilization: the achieved useful FLOP/s divided by the hardware peak.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 4 -->
+    <section id="distributed-training" data-track>
+      <h2>Distributed training and mixed precision</h2>
+
+      <h3>Intuition</h3>
+      <p>A 70B model's training state does not fit on one GPU, and one GPU would take centuries anyway. So you split the <em>data</em> (each GPU sees different examples), the <em>model</em> (each GPU holds part of each layer, or a range of layers), and the <em>training state</em> (sharding optimizer states, gradients and weights). Real systems combine all of them ("3D parallelism").</p>
+
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Strategy</th><th>What is split</th><th>Communication</th><th>Use when</th></tr></thead>
+        <tbody>
+          <tr><td>Data parallel (DDP)</td><td>batches. Each GPU holds a full model copy.</td><td>all-reduce gradients every step</td><td>the model fits on one GPU</td></tr>
+          <tr><td>ZeRO-1 / 2 / 3, FSDP</td><td>optimizer states / + gradients / + parameters, sharded across data-parallel GPUs</td><td>gather parameters on demand (ZeRO-3)</td><td>full state does not fit. The default for large fine-tunes.</td></tr>
+          <tr><td>Tensor parallel</td><td>each weight matrix split across GPUs</td><td>all-reduce inside every layer</td><td>within a node with fast NVLink</td></tr>
+          <tr><td>Pipeline parallel</td><td>layer ranges (stages) on different GPUs</td><td>activations between stages. Micro-batches reduce idle "bubbles".</td><td>across nodes, very deep models</td></tr>
+          <tr><td>Sequence / context parallel</td><td>the sequence dimension</td><td>attention communication</td><td>very long contexts</td></tr>
+          <tr><td>Expert parallel</td><td>MoE experts</td><td>all-to-all token routing</td><td>MoE models</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <div class="worked">
+        <span class="w-title">Fine-tuning a 7B model fully with Adam on 8 GPUs</span>
+        <ol class="steps">
+          <li>State at about 16 bytes per parameter: 7e9 x 16 = 112 GB. That does not fit on one 80 GB GPU (before activations).</li>
+          <li>ZeRO-1 (shard only the 12 bytes of fp32 master weights and Adam moments): 2 + 2 + 12/8 = 5.5 bytes per parameter, about 38.5 GB per GPU.</li>
+          <li>ZeRO-3 / FSDP (shard everything): 112 / 8 = 14 GB per GPU, plus activations and temporary gathered layers.</li>
+        </ol>
+        <span class="result">Sharding turns "impossible" into ~14 to 39 GB per GPU</span>
+      </div>
+
+      <h3>Mixed precision and memory tricks</h3>
+      <ul>
+        <li><strong>bf16</strong> has the same exponent range as fp32 (8 exponent bits) with fewer mantissa bits, so no loss scaling is needed. <strong>fp16</strong> has a narrower range and needs loss scaling to avoid gradient underflow. bf16 is the default on A100 and H100.</li>
+        <li>An fp32 master copy of the weights keeps small updates from being rounded away.</li>
+        <li><strong>Activation (gradient) checkpointing</strong>: store only some activations and recompute the rest during backward. It trades about 30% more compute for much less memory.</li>
+        <li><strong>Gradient accumulation</strong>: sum gradients over several micro-batches before one optimizer step, to emulate a larger batch.</li>
+        <li>fp8 training (on H100-class GPUs) is used in some recent large runs, with careful scaling.</li>
+      </ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="f3-dist-1" data-topic="Foundations" data-type="single" data-answer="A">
+        <div class="q-stem"><p>Why is bf16 usually preferred over fp16 for training?</p></div>
+        <ul class="q-options">
+          <li data-key="A">bf16 has fp32's exponent range, so gradients rarely overflow or underflow and no loss scaling is needed <span class="q-why">Correct.</span></li>
+          <li data-key="B">bf16 has more mantissa precision than fp16 <span class="q-why">It has less (7 bits vs 10).</span></li>
+          <li data-key="C">bf16 uses half the memory of fp16 <span class="q-why">Both are 2 bytes.</span></li>
+          <li data-key="D">fp16 is not supported by GPUs <span class="q-why">It is.</span></li>
+        </ul>
+        <div class="q-explain"><p>Range matters more than precision for training stability.</p></div>
+      </div>
+      <div class="quiz" data-qid="f3-dist-2" data-topic="Foundations" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Which ZeRO stage also shards the model parameters themselves?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Stage 1 <span class="q-why">Optimizer states only.</span></li>
+          <li data-key="B">Stage 2 <span class="q-why">Adds gradients.</span></li>
+          <li data-key="C">Stage 3 (equivalent in spirit to FSDP full sharding) <span class="q-why">Correct.</span></li>
+          <li data-key="D">None <span class="q-why">Stage 3 does.</span></li>
+        </ul>
+        <div class="q-explain"><p>Stage 1: optimizer states. Stage 2: plus gradients. Stage 3: plus parameters.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Tensor vs pipeline parallelism?</summary><div class="answer"><p>Tensor splits each layer's matrices (communication every layer). Pipeline splits layers into stages (activations passed along, with bubbles).</p></div></details>
+        <details class="recall"><summary>What does activation checkpointing trade?</summary><div class="answer"><p>Extra compute (recomputation) for lower activation memory.</p></div></details>
+        <details class="recall"><summary>What is gradient accumulation?</summary><div class="answer"><p>Summing gradients across micro-batches before one update, to simulate a large batch with limited memory.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 5 -->
+    <section id="benchmarks" data-track>
+      <h2>Benchmarks, pass@k and human preference</h2>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Benchmark</th><th>Measures</th><th>Metric</th></tr></thead>
+        <tbody>
+          <tr><td>MMLU (and harder variants like MMLU-Pro)</td><td>knowledge across 57 subjects</td><td>multiple-choice accuracy</td></tr>
+          <tr><td>GSM8K, MATH</td><td>math word problems and competition math</td><td>exact-match final answer</td></tr>
+          <tr><td>HumanEval, MBPP, SWE-bench</td><td>code generation, real repository issues</td><td>pass@k (unit tests), resolved rate</td></tr>
+          <tr><td>GPQA</td><td>graduate-level science questions</td><td>accuracy</td></tr>
+          <tr><td>MT-Bench, AlpacaEval</td><td>chat quality</td><td>LLM-judge scores, win rate</td></tr>
+          <tr><td>Chatbot Arena (LMArena)</td><td>human pairwise preferences</td><td>Elo / Bradley-Terry ratings</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <div class="formula">
+        <div class="f-title">Unbiased pass@k (Chen et al., 2021)</div>
+        <div class="f-body">pass@k = 1 - C(n - c, k) / C(n, k)</div>
+        <dl class="f-defs"><dt>n</dt><dd>samples generated per problem</dd><dt>c</dt><dd>samples that pass the tests</dd><dt>k</dt><dd>attempts allowed</dd></dl>
+      </div>
+      <p>With n = 10 samples and c = 3 correct: pass@1 = 1 - 7/10 = 0.3. pass@5 = 1 - C(7,5)/C(10,5) = 1 - 21/252 = 0.9167. More attempts raise the chance that at least one is right.</p>
+      <div class="callout warn"><p class="mb-0">Benchmarks saturate and leak into training data (contamination). Public scores are a weak proxy for <em>your</em> task. Build task-specific evals (part 04).</p></div>
+
+      <h3>Hallucination</h3>
+      <ul>
+        <li><strong>What</strong>: fluent, confident output that is false or unsupported by the source.</li>
+        <li><strong>Why</strong>: the model is trained to produce likely text, not to verify truth. Gaps in knowledge, rare facts, and pressure to always answer (an "I don't know" was rarely rewarded) all contribute.</li>
+        <li><strong>Mitigations</strong>: retrieval grounding with citations (RAG), allowing and rewarding abstention, lower temperature for factual tasks, verification steps or tools, constrained outputs, and evals that measure faithfulness.</li>
+      </ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="f3-bench-1" data-topic="Foundations" data-type="numeric" data-answer="0.9167" data-tol="0.001">
+        <div class="q-stem"><p>A model generated n = 10 code samples for a problem and 3 pass the tests. Unbiased pass@5? (4 decimals)</p></div>
+        <div class="q-explain"><p>1 - C(7,5)/C(10,5) = 1 - 21/252 = 0.9167.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why are public benchmarks weak evidence for your product?</summary><div class="answer"><p>Contamination, saturation, and a mismatch with your task distribution.</p></div></details>
+        <details class="recall"><summary>How does Chatbot Arena rank models?</summary><div class="answer"><p>Crowdsourced pairwise human votes, fitted with an Elo or Bradley-Terry model.</p></div></details>
+        <details class="recall"><summary>Two hallucination mitigations?</summary><div class="answer"><p>RAG with citations, and allowing abstention (plus verification and evals).</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ interview -->
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: LLM training and scaling</h2>
+      <p class="muted">Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Training and scaling">
+<details class="recall iq" data-level="basic" data-topic="Training and scaling"><summary><span class="tag ok">Basic</span> What are the stages of training a chat LLM?</summary><div class="answer"><p>Pretraining on large text (next-token prediction) gives a base model. SFT on instruction/response demonstrations, then preference optimization (RLHF or DPO) and possibly RL on verifiable tasks, give a helpful, aligned assistant.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Training and scaling"><summary><span class="tag ok">Basic</span> What is the difference between a base model and an instruct model?</summary><div class="answer"><p>A base model continues text. An instruct (chat) model has been post-trained to follow instructions, use a chat template and refuse unsafe requests.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Training and scaling"><summary><span class="tag ok">Basic</span> What is perplexity?</summary><div class="answer"><p>exp of the average negative log-likelihood per token. Lower is better. It is the effective number of equally likely choices the model is uncertain between.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Training and scaling"><summary><span class="tag ok">Basic</span> What is teacher forcing?</summary><div class="answer"><p>During training the model is fed the true previous tokens instead of its own predictions, so all positions can be trained in parallel in one forward pass.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Training and scaling"><summary><span class="tag warn">Medium</span> Estimate the training FLOPs for a 7B model trained on 2T tokens.</summary><div class="answer"><p>C is about 6ND = 6 x 7e9 x 2e12, about 8.4e22 FLOPs (8.1e22 with the exact 6.74B). At about 125 TFLOP/s effective per A100 (40% MFU) that is roughly 180k GPU-hours.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Training and scaling"><summary><span class="tag warn">Medium</span> What did the Chinchilla paper find?</summary><div class="answer"><p>For a fixed compute budget, models should be trained on about 20 tokens per parameter. Many earlier models were too big and undertrained. Example: Chinchilla, 70B on 1.4T tokens.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Training and scaling"><summary><span class="tag warn">Medium</span> Why would anyone train a small model on far more tokens than compute-optimal?</summary><div class="answer"><p>Inference cost scales with model size. Overtraining a small model reaches the same quality at lower serving cost (Llama 3 8B used over 15T tokens), trading extra training compute for cheaper inference.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Training and scaling"><summary><span class="tag warn">Medium</span> Data parallelism vs tensor parallelism vs pipeline parallelism?</summary><div class="answer"><p>Data: split batches, all-reduce gradients. Tensor: split matrices within layers, with communication every layer (needs NVLink). Pipeline: split layers into stages, with micro-batches to reduce bubbles. Large runs combine all three.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Training and scaling"><summary><span class="tag warn">Medium</span> What are ZeRO stages 1, 2 and 3?</summary><div class="answer"><p>Sharding of the training state across data-parallel ranks. Stage 1 shards optimizer states, stage 2 adds gradients, stage 3 adds parameters (similar to FSDP full sharding). Memory per GPU drops roughly linearly with the number of GPUs.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Training and scaling"><summary><span class="tag warn">Medium</span> Why bf16 over fp16 for training?</summary><div class="answer"><p>bf16 keeps fp32&#x27;s 8-bit exponent (same dynamic range), so gradients rarely underflow and loss scaling is unnecessary. fp16 has more mantissa but a narrow range, so it needs loss scaling.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Training and scaling"><summary><span class="tag warn">Medium</span> What is knowledge distillation?</summary><div class="answer"><p>Training a smaller student model to match a larger teacher&#x27;s outputs (soft probabilities or generated responses). It transfers capability at lower inference cost.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Training and scaling"><summary><span class="tag warn">Medium</span> How is pass@k computed for code models?</summary><div class="answer"><p>Generate n samples per problem with c passing. The unbiased estimate is 1 - C(n-c, k)/C(n, k). With n = 10 and c = 3: pass@1 = 0.3, pass@5 is about 0.917.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Training and scaling"><summary><span class="tag bad">Advanced</span> What causes hallucinations, and how do you reduce them in a product?</summary><div class="answer"><p>Models are trained to produce plausible text, not verified truth. Gaps in knowledge and pressure to always answer cause fabrication. Reduce it with retrieval grounding and citations, abstention options, lower temperature, verification tools, constrained outputs, and faithfulness evals.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Training and scaling"><summary><span class="tag bad">Advanced</span> What is test-time compute scaling?</summary><div class="answer"><p>Improving accuracy by spending more inference compute per query: long chains of thought (reasoning models), self-consistency sampling, search with verifiers. It complements training-time scaling.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Training and scaling"><summary><span class="tag bad">Advanced</span> What is activation checkpointing and when do you use it?</summary><div class="answer"><p>Store only some activations in the forward pass and recompute the rest during backward. It cuts activation memory greatly at about one extra forward pass of compute. Use it when activations limit batch size or sequence length.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Training and scaling"><summary><span class="tag bad">Advanced</span> How would you detect benchmark contamination in a model?</summary><div class="answer"><p>Check n-gram or embedding overlap between benchmark items and training data, test on rephrased or freshly written items, compare performance on pre- vs post-cutoff items, and look for verbatim completion of test items.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="f2-deep-learning-transformers.html"><span class="dir">Previous</span><span>F2 Deep learning and transformers</span></a>
+      <a class="next" href="f4-prompt-engineering.html"><span class="dir">Next</span><span>F4 Prompt engineering</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

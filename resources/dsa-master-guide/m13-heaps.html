@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="M13">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>M13 Heaps & Priority Queues | DSA Master Guide</title>
+<meta name="description" content="Always know the smallest or largest element quickly. The right tool for top-K and merge problems.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<link rel="stylesheet" href="viz.css">
+<script src="viz.js" defer></script>
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Module 13</p>
+      <h1>Heaps &amp; Priority Queues</h1>
+      <p class="lede">Always know the smallest or largest element quickly. The right tool for top-K and merge problems. Topics in this module: Min-heaps, max-heaps and Python's heapq; top-k, kth largest and merging sorted lists.</p>
+      <div class="meta"><span class="tag warn">Important</span><span class="tag">2 topics</span><span class="tag">11 problems</span><span class="tag">36 interview questions</span></div>
+    </div>
+
+    <section id="why-this-module" data-track>
+      <h2>Start from scratch: why this module exists</h2>
+      <p>When you repeatedly need the smallest or largest item while new items arrive, scanning is slow and keeping a sorted list is slow to update. A heap keeps just enough order to give you the extreme item in O(1) and repair itself in O(log n).</p>
+      <p>Heaps power priority queues, top-K queries, scheduling and shortest-path algorithms.</p>
+      <p><strong>Who needs it:</strong> Operating systems, search/recommendation engines, network routers, and interviewers.</p>
+      <p><strong>Before you start:</strong> Modules 3, 7 and 12.</p>
+      <h3>After this module you can</h3>
+      <ul><li>Use heapq (min-heap and max-heap trick).</li><li>Explain sift up/down and heapify.</li><li>Solve top-K, kth largest, merge K lists and running median.</li><li>Know when a heap beats sorting.</li></ul>
+      <p><strong>Common pitfalls:</strong> Expecting a heap to be sorted, forgetting heapq is a min-heap, mixing comparable types in tuples.</p>
+      <p><strong>Typical interview questions here:</strong> Kth largest, top K frequent, merge K sorted lists, last stone weight, median of a stream, k closest points, task scheduler.</p>
+    </section>
+
+    <section id="c13_1" data-track>
+      <h2>Min-heaps, max-heaps and Python's heapq</h2>
+      <p><span class="tag warn">Important</span> <span class="tag">Topic 13.1</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>A heap is a complete binary tree stored in an array where each parent is &lt;= its children (min-heap) or &gt;= (max-heap). The root is always the minimum (or maximum).</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>A heap gives O(1) access to the min, and O(log n) insert and remove - much faster than re-sorting or scanning.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>A tournament bracket where the winner always floats to the top; when the winner leaves, the next best rises.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>An emergency room does not treat patients in arrival order; it treats the most urgent first. A program with the same need repeatedly asks for 'the smallest item' while new items keep arriving. A list needs O(n) to find the minimum each time. A sorted list makes finding the minimum O(1) but inserting O(n). We want both to be cheap.</p>
+      <p>A heap gives O(log n) for both by relaxing the goal: it does not keep everything sorted, only enough order to know the minimum. The rule 'every parent is smaller than its children' is a weaker rule than 'fully sorted', so repairing it after a change touches only one path from leaf to root, which has length log n.</p>
+      <p>Storing the tree in an array removes pointers: for a complete binary tree the layout is determined by index arithmetic. That makes heaps compact and cache friendly.</p>
+      <p>Push adds at the next free spot and sifts up. Pop removes the root, moves the last item to the root and sifts down. Each is a walk along one path: O(log n).</p>
+      <p>Heap sort and 'top K' problems follow directly: if you can always extract the best item cheaply, repeating gives sorted order or the K best.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="heap"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Array layout: for index i, the children are 2i + 1 and 2i + 2; the parent is (i - 1) // 2.</li><li>Push: add at the end, then sift UP (swap with parent while smaller).</li><li>Pop min: take the root, move the last element to the root, then sift DOWN (swap with the smaller child).</li><li>heapq.heapify(list) builds a heap in O(n). heappush/heappop are O(log n).</li><li>Max-heap trick: push negative numbers. For tuples (priority, item) the heap compares the first element.</li><li>Insert values in the visualiser and watch sift-up; then extract to watch sift-down.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>A heap is a special tree used when you repeatedly need the smallest (or largest) item. In a min-heap every parent is smaller than or equal to its children, so the smallest item is always at the top (the root). Unlike a BST the left and right children have no order between them.</p>
+      <p>A heap is stored in a plain array. For the item at index i, the children are at 2i + 1 and 2i + 2 and the parent is at (i - 1) // 2. No pointers are needed. The tree is 'complete': all levels are full except maybe the last, which fills from the left.</p>
+      <p>Push: add the new item at the end, then 'sift up' - swap it with its parent while it is smaller. Pop: take the root, move the last item to the root, then 'sift down' - swap it with its smaller child while it is bigger. Both take O(log n), the height of the tree.</p>
+      <p>heapq.heapify(list) builds a heap in O(n). Peeking at the smallest is O(1). Python only has a min-heap. For a max-heap, push negative values.</p>
+      <p>Heap sort is just: build a heap, then pop everything out. O(n log n).</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>heapq functions work on a plain list in place. heapify turns a list into a heap in O(n) using sift-down from the middle backward; most nodes are near the leaves and move very little.</li><li>A heap is not sorted: only the parent/child relation holds. Reading the heap list does not give sorted order; popping repeatedly does.</li><li>To change priority of an item in place you either remove-and-reinsert (O(n) search) or use lazy deletion: mark old entries as stale and skip them when popped (as in Dijkstra).</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Operating systems</td><td>Priority scheduling picks the next process via a heap.</td></tr><tr><td>Graph software</td><td>Dijkstra's shortest paths and Prim's MST use heaps.</td></tr><tr><td>Search and ranking</td><td>Top-K results from millions of items using a size-K heap.</td></tr><tr><td>Interviewers</td><td>Heap and top-K questions are among the most popular medium problems.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Heap vs sorted list vs BST</td><td>Heap: fastest for min/max with inserts. Sorted list: fast read, slow insert. BST: full order operations.</td></tr><tr><td>Heap vs sorting</td><td>To get the top K from n items: heap O(n log K), full sort O(n log n).</td></tr><tr><td>Min-heap vs max-heap in Python</td><td>heapq is min-only; negate values for max-heaps.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>import heapq; h = []; heapq.heappush(h, 5); smallest = heapq.heappop(h); h[0] peeks.</li><li>heapq.nsmallest(k, items, key=f) and heapq.nlargest(k, items) are shortcuts.</li><li>Tuples: heappush(h, (priority, item)); for ties make sure items are comparable.</li><li>Max-heap: heappush(h, -x); x = -heappop(h).</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c13_1.py">import heapq
+
+class MinHeap:
+    def __init__(self):
+        self.a = []
+
+    def push(self, x):
+        a = self.a
+        a.append(x)
+        i = len(a) - 1
+        while i &gt; 0 and a[(i - 1) // 2] &gt; a[i]:     # sift up
+            a[(i - 1) // 2], a[i] = a[i], a[(i - 1) // 2]
+            i = (i - 1) // 2
+
+    def pop(self):
+        a = self.a
+        top, a[0] = a[0], a[-1]
+        a.pop()
+        i = 0
+        while True:                                  # sift down
+            small, l, r = i, 2 * i + 1, 2 * i + 2
+            if l &lt; len(a) and a[l] &lt; a[small]: small = l
+            if r &lt; len(a) and a[r] &lt; a[small]: small = r
+            if small == i:
+                return top
+            a[i], a[small] = a[small], a[i]
+            i = small
+
+h = [5, 1, 8, 3]
+heapq.heapify(h)               # O(n)
+smallest = heapq.heappop(h)    # 1</code></pre>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Dry run of the related problem "Kth Largest Element": Call: <code>kth_largest([3, 2, 1, 5, 6, 4], 2)</code>, returns <code>5</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>x (after)</th><th>heap (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">4</td><td><code>heap = []                        # min-heap with the k largest values</code></td><td>-</td><td><strong><code>[]</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">5</td><td><code>for x in nums:</code></td><td><strong><code>3</code></strong></td><td><code>[]</code></td></tr>
+<tr><td class="num">3</td><td class="num">6</td><td><code>heapq.heappush(heap, x)</code></td><td><code>3</code></td><td><strong><code>[3]</code></strong></td></tr>
+<tr><td class="num">4</td><td class="num">7</td><td><code>if len(heap) &gt; k:</code></td><td><code>3</code></td><td><code>[3]</code></td></tr>
+<tr><td class="num">5</td><td class="num">5</td><td><code>for x in nums:</code></td><td><strong><code>2</code></strong></td><td><code>[3]</code></td></tr>
+<tr><td class="num">6</td><td class="num">6</td><td><code>heapq.heappush(heap, x)</code></td><td><code>2</code></td><td><strong><code>[2, 3]</code></strong></td></tr>
+<tr><td class="num">7</td><td class="num">7</td><td><code>if len(heap) &gt; k:</code></td><td><code>2</code></td><td><code>[2, 3]</code></td></tr>
+<tr><td class="num">8</td><td class="num">5</td><td><code>for x in nums:</code></td><td><strong><code>1</code></strong></td><td><code>[2, 3]</code></td></tr>
+<tr><td class="num">9</td><td class="num">6</td><td><code>heapq.heappush(heap, x)</code></td><td><code>1</code></td><td><strong><code>[1, 3, 2]</code></strong></td></tr>
+<tr><td class="num">10</td><td class="num">7</td><td><code>if len(heap) &gt; k:</code></td><td><code>1</code></td><td><code>[1, 3, 2]</code></td></tr>
+<tr><td class="num">11</td><td class="num">8</td><td><code>heapq.heappop(heap)      # drop the smallest</code></td><td><code>1</code></td><td><strong><code>[2, 3]</code></strong></td></tr>
+<tr><td class="num">12</td><td class="num">5</td><td><code>for x in nums:</code></td><td><strong><code>5</code></strong></td><td><code>[2, 3]</code></td></tr>
+<tr><td class="num">13</td><td class="num">6</td><td><code>heapq.heappush(heap, x)</code></td><td><code>5</code></td><td><strong><code>[2, 3, 5]</code></strong></td></tr>
+<tr><td class="num">14</td><td class="num">7</td><td><code>if len(heap) &gt; k:</code></td><td><code>5</code></td><td><code>[2, 3, 5]</code></td></tr>
+<tr><td class="num">15</td><td class="num">8</td><td><code>heapq.heappop(heap)      # drop the smallest</code></td><td><code>5</code></td><td><strong><code>[3, 5]</code></strong></td></tr>
+<tr><td class="num">16</td><td class="num">5</td><td><code>for x in nums:</code></td><td><strong><code>6</code></strong></td><td><code>[3, 5]</code></td></tr>
+<tr><td class="num">17</td><td class="num">6</td><td><code>heapq.heappush(heap, x)</code></td><td><code>6</code></td><td><strong><code>[3, 5, 6]</code></strong></td></tr>
+<tr><td class="num">18</td><td class="num">7</td><td><code>if len(heap) &gt; k:</code></td><td><code>6</code></td><td><code>[3, 5, 6]</code></td></tr>
+<tr><td class="num">19</td><td class="num">8</td><td><code>heapq.heappop(heap)      # drop the smallest</code></td><td><code>6</code></td><td><strong><code>[5, 6]</code></strong></td></tr>
+<tr><td class="num">20</td><td class="num">5</td><td><code>for x in nums:</code></td><td><strong><code>4</code></strong></td><td><code>[5, 6]</code></td></tr>
+<tr><td class="num">21</td><td class="num">6</td><td><code>heapq.heappush(heap, x)</code></td><td><code>4</code></td><td><strong><code>[4, 6, 5]</code></strong></td></tr>
+<tr><td class="num">22</td><td class="num">7</td><td><code>if len(heap) &gt; k:</code></td><td><code>4</code></td><td><code>[4, 6, 5]</code></td></tr>
+<tr><td class="num">23</td><td class="num">8</td><td><code>heapq.heappop(heap)      # drop the smallest</code></td><td><code>4</code></td><td><strong><code>[5, 6]</code></strong></td></tr>
+<tr><td class="num">24</td><td class="num">5</td><td><code>for x in nums:</code></td><td><code>4</code></td><td><code>[5, 6]</code></td></tr>
+<tr><td class="num">25</td><td class="num">9</td><td><code>return heap[0]</code></td><td><code>4</code></td><td><code>[5, 6]</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>Push/pop O(log n) (height of a complete tree), peek O(1), heapify O(n). Space O(n).</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Assuming the whole heap array is sorted (only the parent/child relation holds).</li><li>heapq is a min-heap only.</li><li>Popping from an empty heap.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"Kth largest", "always take the best", "merge sorted streams", "schedule by priority" -&gt; heap.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m13-problems.html#prob-last_stone_weight">Last Stone Weight</a> <span class="tag">LC 1046</span></td><td><span class="tag ok">Easy</span></td><td>Max-heap simulation</td></tr><tr><td><a href="m13-problems.html#prob-kth_largest">Kth Largest Element</a> <span class="tag">LC 215</span></td><td><span class="tag warn">Medium</span></td><td>Min-heap of size k</td></tr><tr><td><a href="m13-problems.html#prob-ugly_number_ii">Ugly Number II</a> <span class="tag">LC 264</span></td><td><span class="tag warn">Medium</span></td><td>Min-heap / three pointers</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why use a heap instead of a sorted list?</summary><div class="answer"><p>A sorted list makes inserts O(n); a heap makes insert and extract-min O(log n).</p></div></details>
+        <details class="recall"><summary>Why store a heap in an array?</summary><div class="answer"><p>A complete tree can be addressed by index arithmetic, so no pointers are needed.</p></div></details>
+        <details class="recall"><summary>Why is the heap not fully sorted?</summary><div class="answer"><p>Only the parent-child rule is kept, which is enough to find the minimum and is cheaper to maintain.</p></div></details>
+        <details class="recall"><summary>Why is heapify O(n)?</summary><div class="answer"><p>Most nodes are near the leaves and move very little; the total work sums to a linear series.</p></div></details>
+        <details class="recall"><summary>Why negate values for a max-heap?</summary><div class="answer"><p>heapq only provides a min-heap; negation reverses the order.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c13_1-q1" data-topic="Heaps &amp; Priority Queues" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Index of the left child of node i (0-indexed)?</p></div>
+        <ul class="q-options">
+          <li data-key="A">i + 1</li>
+          <li data-key="B">2i</li>
+          <li data-key="C">2i + 1</li>
+          <li data-key="D">i // 2</li>
+        </ul>
+        <div class="q-explain"><p>Left = 2i + 1, right = 2i + 2.</p></div>
+      </div>
+      <div class="quiz" data-qid="c13_1-q2" data-topic="Heaps &amp; Priority Queues" data-type="single" data-answer="A">
+        <div class="q-stem"><p>Time to build a heap from n items with heapify?</p></div>
+        <ul class="q-options">
+          <li data-key="A">O(n)</li>
+          <li data-key="B">O(n log n)</li>
+          <li data-key="C">O(log n)</li>
+          <li data-key="D">O(n^2)</li>
+        </ul>
+        <div class="q-explain"><p>Bottom-up heap construction is linear.</p></div>
+      </div>
+    </section>
+
+    <section id="c13_2" data-track>
+      <h2>Top-K, Kth largest and merging sorted lists</h2>
+      <p><span class="tag warn">Important</span> <span class="tag">Topic 13.2</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>Keep a small heap of the best K items seen so far. Its root is the "worst of the best", so it is the threshold a new item must beat.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>It reduces sorting O(n log n) to O(n log k) and handles streaming data where you cannot hold everything.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>The leaderboard of the top 10 players: when a new score arrives, compare it with the 10th place only.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Problem: from a stream of a million scores, report the 10 highest. Sorting all of them is O(n log n) and needs all data in memory. A simpler thought: if you already hold the 10 best, a new score only matters if it beats the 10th best. So keep the 10 best in a structure that tells you the weakest of them instantly.</p>
+      <p>That structure is a MIN-heap of size 10: the root is the smallest of the 10 best, i.e. the current threshold. A new score smaller than the root is ignored; a bigger one replaces the root. Each update is O(log 10). Total time O(n log K) and memory O(K).</p>
+      <p>It feels backwards to use a min-heap for the largest values, so it is a common interview mistake. The reason is that you want to eject the worst of the best quickly.</p>
+      <p>Merging K sorted lists uses the same insight differently: at any moment only the front of each list could be the next smallest, so a heap of K fronts always yields the next output in O(log K).</p>
+      <p>Running median uses two heaps meeting in the middle: a max-heap of the smaller half and a min-heap of the larger half give instant access to the middle values.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="heap"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Kth largest: min-heap of size k; push every element; if size &gt; k pop the smallest. The root is the answer.</li><li>Top K frequent: count with Counter, then take the k keys with the highest counts (heapq.nlargest(k, counts, key=counts.get)).</li><li>Merge k sorted lists: heap of (value, list_id, index) holding the current front of each list; pop the smallest and push that list's next item.</li><li>heapq.nlargest(k, nums) and nsmallest(k, nums) are shortcuts (about O(n log k)).</li><li>Median of a stream: a max-heap for the lower half plus a min-heap for the upper half.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Top-K problems share one trick: keep a heap of size K. To find the K LARGEST items use a MIN-heap of size K. The root of that heap is the smallest of the big ones, so it is the item that a new candidate must beat. When the heap grows past K, pop the smallest.</p>
+      <p>Cost: each of n items does a push and maybe a pop on a heap of size K, so O(n log K). Compare with sorting everything: O(n log n). For K much smaller than n, the heap is faster, and it works on streams where you cannot keep all data.</p>
+      <p>Kth largest = the root of that size-K min-heap at the end. Top K frequent = count with a Counter first, then take the K keys with the biggest counts.</p>
+      <p>Merge K sorted lists: put the first item of every list in a heap (value, which list, which index). Pop the smallest, add it to the output and push the next item of the same list. Total O(N log K) where N is the total number of items.</p>
+      <p>Running median uses two heaps: a max-heap for the smaller half and a min-heap for the larger half. Keep their sizes balanced; the median is at the top of one or between both tops.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>nlargest(k, data) internally uses a heap when k is small compared to n and sorts when k is close to n.</li><li>Counter.most_common(k) uses heapq.nlargest under the hood.</li><li>Heap operations compare tuples lexicographically: (priority, id, item) avoids comparing unorderable items when priorities tie.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Search engines and recommender systems</td><td>Top-K retrieval over huge candidate sets.</td></tr><tr><td>Monitoring and analytics</td><td>Streaming 'top 10 slowest requests' with bounded memory.</td></tr><tr><td>Interviewers</td><td>Kth largest, top K frequent, merge K lists and running median.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Heap vs quickselect</td><td>Quickselect finds the k-th element in O(n) average without extra memory but modifies the data and has a bad worst case. The heap works on streams.</td></tr><tr><td>Heap vs sort</td><td>Sort is simplest when memory allows and K is large.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>heapq.nlargest(k, nums) for K largest; heapq.nsmallest(k, nums) for K smallest.</li><li>Counter(nums).most_common(k) returns the top K by count.</li><li>Squared distance avoids the square root: x * x + y * y.</li><li>Use (value, list_index, item_index) tuples so equal values never compare lists.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c13_2.py">import heapq
+
+def kth_largest(nums, k):
+    heap = []                          # min-heap holding the k largest
+    for x in nums:
+        heapq.heappush(heap, x)
+        if len(heap) &gt; k:
+            heapq.heappop(heap)        # discard the smallest
+    return heap[0]</code></pre>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - sort everything</h4>
+      <p>Simplest: O(n log n) and needs all data in memory.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c13_2_stage1.py">def kth_largest(nums, k):
+    return sorted(nums, reverse=True)[k - 1]</code></pre>
+      <p class="muted small">Check: <code>kth_largest([3, 2, 1, 5, 6, 4], 2)</code> returns <code>5</code></p>
+      <h4>Stage 2 - keep only the k best in a min-heap</h4>
+      <p>The heap root is the weakest of the best k. O(n log k) time, O(k) space, works on streams.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c13_2_stage2.py">import heapq
+
+def kth_largest(nums, k):
+    heap = []
+    for x in nums:
+        heapq.heappush(heap, x)
+        if len(heap) &gt; k:
+            heapq.heappop(heap)
+    return heap[0]</code></pre>
+      <p class="muted small">Check: <code>kth_largest([3, 2, 1, 5, 6, 4], 2)</code> returns <code>5</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>kth_largest([3, 2, 1, 5, 6, 4], 2)</code>, returns <code>5</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>x (after)</th><th>heap (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">4</td><td><code>heap = []                          # min-heap holding the k largest</code></td><td>-</td><td><strong><code>[]</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">5</td><td><code>for x in nums:</code></td><td><strong><code>3</code></strong></td><td><code>[]</code></td></tr>
+<tr><td class="num">3</td><td class="num">6</td><td><code>heapq.heappush(heap, x)</code></td><td><code>3</code></td><td><strong><code>[3]</code></strong></td></tr>
+<tr><td class="num">4</td><td class="num">7</td><td><code>if len(heap) &gt; k:</code></td><td><code>3</code></td><td><code>[3]</code></td></tr>
+<tr><td class="num">5</td><td class="num">5</td><td><code>for x in nums:</code></td><td><strong><code>2</code></strong></td><td><code>[3]</code></td></tr>
+<tr><td class="num">6</td><td class="num">6</td><td><code>heapq.heappush(heap, x)</code></td><td><code>2</code></td><td><strong><code>[2, 3]</code></strong></td></tr>
+<tr><td class="num">7</td><td class="num">7</td><td><code>if len(heap) &gt; k:</code></td><td><code>2</code></td><td><code>[2, 3]</code></td></tr>
+<tr><td class="num">8</td><td class="num">5</td><td><code>for x in nums:</code></td><td><strong><code>1</code></strong></td><td><code>[2, 3]</code></td></tr>
+<tr><td class="num">9</td><td class="num">6</td><td><code>heapq.heappush(heap, x)</code></td><td><code>1</code></td><td><strong><code>[1, 3, 2]</code></strong></td></tr>
+<tr><td class="num">10</td><td class="num">7</td><td><code>if len(heap) &gt; k:</code></td><td><code>1</code></td><td><code>[1, 3, 2]</code></td></tr>
+<tr><td class="num">11</td><td class="num">8</td><td><code>heapq.heappop(heap)        # discard the smallest</code></td><td><code>1</code></td><td><strong><code>[2, 3]</code></strong></td></tr>
+<tr><td class="num">12</td><td class="num">5</td><td><code>for x in nums:</code></td><td><strong><code>5</code></strong></td><td><code>[2, 3]</code></td></tr>
+<tr><td class="num">13</td><td class="num">6</td><td><code>heapq.heappush(heap, x)</code></td><td><code>5</code></td><td><strong><code>[2, 3, 5]</code></strong></td></tr>
+<tr><td class="num">14</td><td class="num">7</td><td><code>if len(heap) &gt; k:</code></td><td><code>5</code></td><td><code>[2, 3, 5]</code></td></tr>
+<tr><td class="num">15</td><td class="num">8</td><td><code>heapq.heappop(heap)        # discard the smallest</code></td><td><code>5</code></td><td><strong><code>[3, 5]</code></strong></td></tr>
+<tr><td class="num">16</td><td class="num">5</td><td><code>for x in nums:</code></td><td><strong><code>6</code></strong></td><td><code>[3, 5]</code></td></tr>
+<tr><td class="num">17</td><td class="num">6</td><td><code>heapq.heappush(heap, x)</code></td><td><code>6</code></td><td><strong><code>[3, 5, 6]</code></strong></td></tr>
+<tr><td class="num">18</td><td class="num">7</td><td><code>if len(heap) &gt; k:</code></td><td><code>6</code></td><td><code>[3, 5, 6]</code></td></tr>
+<tr><td class="num">19</td><td class="num">8</td><td><code>heapq.heappop(heap)        # discard the smallest</code></td><td><code>6</code></td><td><strong><code>[5, 6]</code></strong></td></tr>
+<tr><td class="num">20</td><td class="num">5</td><td><code>for x in nums:</code></td><td><strong><code>4</code></strong></td><td><code>[5, 6]</code></td></tr>
+<tr><td class="num">21</td><td class="num">6</td><td><code>heapq.heappush(heap, x)</code></td><td><code>4</code></td><td><strong><code>[4, 6, 5]</code></strong></td></tr>
+<tr><td class="num">22</td><td class="num">7</td><td><code>if len(heap) &gt; k:</code></td><td><code>4</code></td><td><code>[4, 6, 5]</code></td></tr>
+<tr><td class="num">23</td><td class="num">8</td><td><code>heapq.heappop(heap)        # discard the smallest</code></td><td><code>4</code></td><td><strong><code>[5, 6]</code></strong></td></tr>
+<tr><td class="num">24</td><td class="num">5</td><td><code>for x in nums:</code></td><td><code>4</code></td><td><code>[5, 6]</code></td></tr>
+<tr><td class="num">25</td><td class="num">9</td><td><code>return heap[0]</code></td><td><code>4</code></td><td><code>[5, 6]</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>O(n log k) time, O(k) space.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Using a max-heap of size n (wasteful).</li><li>Off-by-one on k (the k-th largest is heap[0] after trimming).</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"Top/Kth", "k closest", "merge k", "running median" -&gt; heap.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m13-problems.html#prob-kth_largest">Kth Largest Element</a> <span class="tag">LC 215</span></td><td><span class="tag warn">Medium</span></td><td>Min-heap of size k</td></tr><tr><td><a href="m13-problems.html#prob-top_k_frequent">Top K Frequent Elements</a> <span class="tag">LC 347</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Heap + hash map</td></tr><tr><td><a href="m13-problems.html#prob-reorganize_string">Reorganize String</a> <span class="tag">LC 767</span></td><td><span class="tag warn">Medium</span></td><td>Max-heap (greedy)</td></tr><tr><td><a href="m13-problems.html#prob-kth_smallest_matrix">Kth Smallest Element in a Sorted Matrix</a> <span class="tag">LC 378</span></td><td><span class="tag warn">Medium</span></td><td>Min-heap merge</td></tr><tr><td><a href="m13-problems.html#prob-task_scheduler">Task Scheduler</a> <span class="tag">LC 621</span></td><td><span class="tag warn">Medium</span></td><td>Greedy counting / heap</td></tr><tr><td><a href="m13-problems.html#prob-k_closest">K Closest Points to Origin</a> <span class="tag">LC 973</span></td><td><span class="tag warn">Medium</span></td><td>Heap with a key</td></tr><tr><td><a href="m13-problems.html#prob-merge_k_sorted">Merge K Sorted Lists</a> <span class="tag">LC 23</span> <span class="tag accent">must-do</span></td><td><span class="tag bad">Hard</span></td><td>Heap merge</td></tr><tr><td><a href="m13-problems.html#prob-running_median">Median of a Data Stream</a> <span class="tag">LC 295</span> <span class="tag accent">must-do</span></td><td><span class="tag bad">Hard</span></td><td>Two heaps</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why a min-heap for the K largest?</summary><div class="answer"><p>Its root is the smallest of the current best K, the first to discard.</p></div></details>
+        <details class="recall"><summary>Why not sort for top-K?</summary><div class="answer"><p>O(n log n) versus O(n log K), and sorting needs all data at once.</p></div></details>
+        <details class="recall"><summary>Why does merge-K use a heap?</summary><div class="answer"><p>Only the front of each list can be next; the heap picks the smallest of K fronts in O(log K).</p></div></details>
+        <details class="recall"><summary>Why two heaps for a running median?</summary><div class="answer"><p>A max-heap holds the lower half and a min-heap the upper half, so the middle elements are always at the tops.</p></div></details>
+        <details class="recall"><summary>Why include an index in heap tuples?</summary><div class="answer"><p>To avoid comparing unorderable items when priorities tie.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c13_2-q1" data-topic="Heaps &amp; Priority Queues" data-type="single" data-answer="B">
+        <div class="q-stem"><p>For the k-th LARGEST element, which heap is used?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Max-heap of size n</li>
+          <li data-key="B">Min-heap of size k</li>
+          <li data-key="C">Min-heap of size n</li>
+          <li data-key="D">Stack</li>
+        </ul>
+        <div class="q-explain"><p>The smallest of the k largest is the k-th largest.</p></div>
+      </div>
+      <div class="quiz" data-qid="c13_2-q2" data-topic="Heaps &amp; Priority Queues" data-type="single" data-answer="A">
+        <div class="q-stem"><p>Complexity of kth_largest with a size-k heap?</p></div>
+        <ul class="q-options">
+          <li data-key="A">O(n log k)</li>
+          <li data-key="B">O(n^2)</li>
+          <li data-key="C">O(k log n)</li>
+          <li data-key="D">O(n)</li>
+        </ul>
+        <div class="q-explain"><p>n pushes, each O(log k).</p></div>
+      </div>
+    </section>
+
+    <h2 id="practice-problems">Practice problems for this module</h2>
+
+    <p>11 problems with hints, approach, dry run and tested solutions on the <a href="m13-problems.html">problem set for this module</a>.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m13-problems.html#prob-last_stone_weight">Last Stone Weight</a> <span class="tag">LC 1046</span></td><td><span class="tag ok">Easy</span></td><td>Max-heap simulation</td></tr><tr><td><a href="m13-problems.html#prob-kth_largest">Kth Largest Element</a> <span class="tag">LC 215</span></td><td><span class="tag warn">Medium</span></td><td>Min-heap of size k</td></tr><tr><td><a href="m13-problems.html#prob-top_k_frequent">Top K Frequent Elements</a> <span class="tag">LC 347</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Heap + hash map</td></tr><tr><td><a href="m13-problems.html#prob-k_closest">K Closest Points to Origin</a> <span class="tag">LC 973</span></td><td><span class="tag warn">Medium</span></td><td>Heap with a key</td></tr><tr><td><a href="m13-problems.html#prob-reorganize_string">Reorganize String</a> <span class="tag">LC 767</span></td><td><span class="tag warn">Medium</span></td><td>Max-heap (greedy)</td></tr><tr><td><a href="m13-problems.html#prob-kth_smallest_matrix">Kth Smallest Element in a Sorted Matrix</a> <span class="tag">LC 378</span></td><td><span class="tag warn">Medium</span></td><td>Min-heap merge</td></tr><tr><td><a href="m13-problems.html#prob-meeting_rooms_ii">Meeting Rooms II</a> <span class="tag">LC 253</span></td><td><span class="tag warn">Medium</span></td><td>Sort + min-heap of end times</td></tr><tr><td><a href="m13-problems.html#prob-task_scheduler">Task Scheduler</a> <span class="tag">LC 621</span></td><td><span class="tag warn">Medium</span></td><td>Greedy counting / heap</td></tr><tr><td><a href="m13-problems.html#prob-ugly_number_ii">Ugly Number II</a> <span class="tag">LC 264</span></td><td><span class="tag warn">Medium</span></td><td>Min-heap / three pointers</td></tr><tr><td><a href="m13-problems.html#prob-merge_k_sorted">Merge K Sorted Lists</a> <span class="tag">LC 23</span> <span class="tag accent">must-do</span></td><td><span class="tag bad">Hard</span></td><td>Heap merge</td></tr><tr><td><a href="m13-problems.html#prob-running_median">Median of a Data Stream</a> <span class="tag">LC 295</span> <span class="tag accent">must-do</span></td><td><span class="tag bad">Hard</span></td><td>Two heaps</td></tr>
+</tbody>
+</table>
+</div>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Heaps &amp; Priority Queues</h2>
+      <p class="muted">36 questions: try to answer aloud in under a minute, then reveal. All questions from every module are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Heaps & Priority Queues">
+<details class="recall iq" data-level="basic" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is a heap?</summary><div class="answer"><p>A complete binary tree stored in an array where each parent is smaller (min-heap) or larger (max-heap) than its children. The root is the minimum or maximum.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Complexity of heap operations?</summary><div class="answer"><p>Push and pop O(log n), peek O(1), build from a list O(n).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you create a max-heap in Python?</summary><div class="answer"><p>heapq is a min-heap, so store negated values and negate again when you pop.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the difference between a heap and a BST?</summary><div class="answer"><p>A heap only orders parent versus children and gives fast min/max. A BST orders the whole tree (left &lt; node &lt; right) and supports sorted traversal and search.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Explain sift-up and sift-down.</summary><div class="answer"><p>Sift-up: after inserting at the end, swap with the parent while smaller. Sift-down: after replacing the root, swap with the smaller child while bigger.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why is heapify O(n) and not O(n log n)?</summary><div class="answer"><p>Most nodes are near the bottom and sift only a short distance; the total work sums to a series that is O(n).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you find the k-th largest element efficiently?</summary><div class="answer"><p>Keep a min-heap of size k. Push each number and pop the smallest when the size exceeds k. The root is the answer. O(n log k).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why a min-heap for the K largest?</summary><div class="answer"><p>The root is the smallest of the K best so far, so it is the one to throw out when a better item arrives.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you merge K sorted lists?</summary><div class="answer"><p>Use a heap of the current front item of each list; repeatedly pop the smallest and push the next item from the same list. O(N log K).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you find the median of a stream?</summary><div class="answer"><p>Two heaps: max-heap for the lower half, min-heap for the upper half, balanced in size. Median is the top of the bigger heap or the average of both tops.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Top K frequent elements - approach?</summary><div class="answer"><p>Counter + heap (or sort). O(n log k) with a heap of size k.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why use a min-heap to track the K largest?</summary><div class="answer"><p>Its root is the smallest of the current top K, which is the first one to discard when a better candidate arrives.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Implement a max-heap class using heapq.</summary><div class="answer"><pre><code class="lang-py">import heapq
+class MaxHeap:
+    def __init__(self):
+        self.h = []
+    def push(self, x):
+        heapq.heappush(self.h, -x)
+    def pop(self):
+        return -heapq.heappop(self.h)
+    def peek(self):
+        return -self.h[0]</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> After heapq.heapify([5, 3, 8, 1]), what is h[0]?</summary><div class="answer"><p>1, the smallest element. The rest of the list is not necessarily sorted.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How does an OS scheduler pick the next process?</summary><div class="answer"><p>Each process has a priority; a heap (or similar) returns the highest-priority runnable one in O(log n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use a heap instead of a sorted list?</summary><div class="answer"><p>A sorted list makes inserts O(n); a heap makes insert and extract-min O(log n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why store a heap in an array?</summary><div class="answer"><p>A complete tree can be addressed by index arithmetic, so no pointers are needed.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is the heap not fully sorted?</summary><div class="answer"><p>Only the parent-child rule is kept, which is enough to find the minimum and is cheaper to maintain.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is heapify O(n)?</summary><div class="answer"><p>Most nodes are near the leaves and move very little; the total work sums to a linear series.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why negate values for a max-heap?</summary><div class="answer"><p>heapq only provides a min-heap; negation reverses the order.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use a heap to check whether an item exists?</summary><div class="answer"><p>Heaps do not support fast arbitrary search (O(n)).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Sort a list using heapq.</summary><div class="answer"><pre><code class="lang-py">import heapq
+def heap_sort(a):
+    h = a[:]
+    heapq.heapify(h)
+    return [heapq.heappop(h) for _ in range(len(h))]</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> Is the list [1, 5, 3, 7, 6, 4] a valid min-heap?</summary><div class="answer"><p>Yes. Every parent is &lt;= its children: 1 &lt;= 5, 3; 5 &lt;= 7, 6; 3 &lt;= 4.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Find the k-th largest element in a stream.</summary><div class="answer"><pre><code class="lang-py">import heapq
+class KthLargest:
+    def __init__(self, k, nums):
+        self.k, self.h = k, []
+        for x in nums:
+            self.add(x)
+    def add(self, x):
+        heapq.heappush(self.h, x)
+        if len(self.h) &gt; self.k:
+            heapq.heappop(self.h)
+        return self.h[0]</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> heapq.nlargest(2, [4, 1, 7, 3]) returns?</summary><div class="answer"><p>[7, 4].</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How would you show the 10 most-viewed videos from a stream of view events?</summary><div class="answer"><p>Maintain counts in a dict and periodically take heapq.nlargest(10, counts.items(), key=...), or maintain a bounded structure when updates are frequent.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why a min-heap for the K largest?</summary><div class="answer"><p>Its root is the smallest of the current best K, the first to discard.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not sort for top-K?</summary><div class="answer"><p>O(n log n) versus O(n log K), and sorting needs all data at once.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does merge-K use a heap?</summary><div class="answer"><p>Only the front of each list can be next; the heap picks the smallest of K fronts in O(log K).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why two heaps for a running median?</summary><div class="answer"><p>A max-heap holds the lower half and a min-heap the upper half, so the middle elements are always at the tops.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why include an index in heap tuples?</summary><div class="answer"><p>To avoid comparing unorderable items when priorities tie.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use quickselect for the kth largest?</summary><div class="answer"><p>It is O(n) on average but modifies the data and does not work on streams; the heap does.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Find the k smallest pairs sums from two sorted lists (outline).</summary><div class="answer"><p>Heap of (a[i] + b[j], i, j) seeded with (0, 0); pop the smallest and push the next candidates (i+1, j) and (i, j+1) with a visited set.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How might a leaderboard show the top 100?</summary><div class="answer"><p>Maintain a size-100 min-heap or sorted structure updated as scores arrive.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> How do you merge K sorted lists?</summary><div class="answer"><p>Heap of (value, list index, element index); pop the smallest, push the next element of that list. O(N log K).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Heaps &amp; Priority Queues"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Sort a nearly sorted array where each element is at most k places from its correct position.</summary><div class="answer"><p>Keep a min-heap of size k + 1: push each element and pop the minimum to the output. O(n log k).</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="m12-problems.html"><span class="dir">Previous</span><span>Problems 12: Trees & Binary Search Trees</span></a>
+      <a class="next" href="m13-problems.html"><span class="dir">Next</span><span>Problems 13: Heaps & Priority Queues</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

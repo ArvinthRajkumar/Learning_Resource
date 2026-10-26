@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en" data-resource="diffusion-from-scratch" data-page="DX4">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fine-tuning and control: LoRA, DreamBooth, ControlNet, inpainting and editing | Diffusion from scratch</title>
+<meta name="description" content="Ways to adapt and steer a diffusion model: full fine-tuning, LoRA with parameter counts, textual inversion, DreamBooth, ControlNet, adapters, image-to-image and SDEdit, inpainting, and prompt and seed control.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Diffusion from scratch</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part DX4</p>
+      <h1>Fine-tuning and control: LoRA, DreamBooth, ControlNet, inpainting and editing</h1>
+      <p class="lede">Training a foundation model costs millions of dollars, but you can adapt one for a few dollars. This part covers the standard adaptation and control techniques, what each changes, what it costs and when to choose it.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~4.5 hours</span></div>
+    </div>
+
+    <section id="adapt" data-track>
+      <h2>Adapting a pretrained model</h2>
+<h3>The options, from light to heavy</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Technique</th><th>What is trained</th><th>Typical data</th><th>Output size</th><th>Best for</th></tr></thead>
+<tbody>
+<tr><td>Prompting and seeds</td><td>nothing</td><td>none</td><td>0</td><td>Many styles and subjects already known to the model</td></tr><tr><td>Textual inversion</td><td>One new token embedding</td><td>3 to 20 images</td><td>few KB</td><td>A concept or style, cheap, limited</td></tr><tr><td>LoRA</td><td>Small low-rank matrices added to attention (and more)</td><td>10 to 1,000 images</td><td>2 to 200 MB</td><td>Styles, characters, concepts; most popular</td></tr><tr><td>DreamBooth</td><td>The whole U-Net (or LoRA) with a rare token</td><td>3 to 30 images</td><td>2 to 7 GB, or a LoRA</td><td>A specific subject (a pet, a person, a product)</td></tr><tr><td>Full fine-tuning</td><td>All weights</td><td>10,000 to millions</td><td>Full model</td><td>New domain, many styles, serious projects</td></tr><tr><td>ControlNet and adapters</td><td>Extra branch conditioned on a map (edges, pose, depth)</td><td>10,000+ pairs</td><td>0.3 to 1.5 GB (ControlNet), tens of MB (adapters)</td><td>Structural control</td></tr>
+</tbody>
+</table>
+</div>
+<p>Choose the lightest option that works. Heavier methods cost more and risk <strong>catastrophic forgetting</strong>: the model loses general abilities while fitting your small dataset.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx4-q01" data-topic="Diffusion control" data-type="multi" data-answer="A,B,D">
+        <div class="q-stem"><p>Which are lightweight ways to adapt a diffusion model? Select all.</p></div>
+        <ul class="q-options">
+          <li data-key="A">LoRA</li>
+          <li data-key="B">Textual inversion</li>
+          <li data-key="C">Training from scratch</li>
+          <li data-key="D">IP-Adapter</li>
+        </ul>
+        <div class="q-explain"><p>Training from scratch is the heaviest option.</p></div>
+      </div>
+    </section>
+
+    <section id="lora" data-track>
+      <h2>LoRA in detail</h2>
+<h3>The idea</h3>
+<p>A weight matrix <code>W</code> of shape <code>d_out x d_in</code> is frozen. Add a trainable <strong>low-rank update</strong>: <code>W' = W + (alpha / r) B A</code>, where <code>A</code> is <code>r x d_in</code>, <code>B</code> is <code>d_out x r</code> and <code>r</code> (the <strong>rank</strong>) is small (4 to 128). <code>B</code> starts at zero, so the model begins exactly unchanged. Only <code>A</code> and <code>B</code> receive gradients, which cuts optimiser memory and storage dramatically.</p>
+<div class="formula"><div class="f-title">LoRA parameters per matrix</div><div class="f-body">params = r (d_in + d_out)</div><dl class="f-defs"><dt>r</dt><dd>the rank</dd><dt>d_in, d_out</dt><dd>matrix sizes</dd></dl></div>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx4-01.py">d_in = d_out = 1024
+for r in (4, 8, 32, 128):
+    lora = r * (d_in + d_out)
+    full = d_in * d_out
+    print("rank %3d: %7d params vs %8d full (%.1f%%)" % (r, lora, full, 100 * lora / full))
+
+# a whole U-Net: suppose 160 attention matrices of about 1024 x 1024
+mats, r = 160, 8
+print("rank-8 LoRA over", mats, "matrices:", mats * r * 2 * 1024, "params =", round(mats * r * 2 * 1024 * 2 / 1e6, 1), "MB in fp16")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>rank   4:    8192 params vs  1048576 full (0.8%)
+rank   8:   16384 params vs  1048576 full (1.6%)
+rank  32:   65536 params vs  1048576 full (6.2%)
+rank 128:  262144 params vs  1048576 full (25.0%)
+rank-8 LoRA over 160 matrices: 2621440 params = 5.2 MB in fp16</code></pre>
+<h3>Where it is applied and what rank means</h3>
+<p>For diffusion, LoRA is usually attached to the <strong>attention projections</strong> (query, key, value, output) in the U-Net or DiT, and sometimes to the text encoder and convolutions. A larger rank gives more capacity (more detail, more risk of overfitting and larger files). Typical practice: rank 8 to 32 for styles, 4 to 16 for characters, learning rate about <code>1e-4</code>, a few thousand steps.</p>
+<h3>Using and combining LoRAs</h3>
+<p>Weights can be <strong>merged</strong> into the base model (<code>W + scale B A</code>) for zero inference overhead, or loaded at runtime with a <strong>scale</strong> between 0 and 1 (0.7 means 70 percent of the effect). Several LoRAs can be added together; too many conflicting ones cause artefacts. <strong>QLoRA-style</strong> training keeps the base weights in 4 or 8 bits to save memory.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx4-02.py"># A rank-1 update changes the output only along one direction: W' = W + b a^T
+W = [[1.0, 0.0], [0.0, 1.0]]
+b = [0.5, -0.5]        # d_out x 1
+a = [1.0, 2.0]         # 1 x d_in
+Wp = [[W[i][j] + b[i] * a[j] for j in range(2)] for i in range(2)]
+x = [3.0, 1.0]
+print("base output   :", [sum(W[i][j] * x[j] for j in range(2)) for i in range(2)])
+print("with LoRA     :", [sum(Wp[i][j] * x[j] for j in range(2)) for i in range(2)])
+print("delta  = b (a.x):", [bi * sum(aj * xj for aj, xj in zip(a, x)) for bi in b])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>base output   : [3.0, 1.0]
+with LoRA     : [5.5, -1.5]
+delta  = b (a.x): [2.5, -2.5]</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx4-q02" data-topic="Diffusion control" data-type="numeric" data-answer="16384" data-tol="0">
+        <div class="q-stem"><p>LoRA rank 8 on a 1024 x 1024 matrix. How many trainable parameters does it add?</p></div>
+        <div class="q-explain"><p>r (d_in + d_out) = 8 x 2048 = 16,384.</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx4-q03" data-topic="Diffusion control" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is B initialised to zero in LoRA?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To save memory <span class="q-why">Not the reason.</span></li>
+          <li data-key="B">So the adapted model starts identical to the base model <span class="q-why">Correct.</span></li>
+          <li data-key="C">To make A zero too <span class="q-why">No.</span></li>
+          <li data-key="D">To speed up merging <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>W + B A = W when B = 0, so training begins from the pretrained behaviour.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does LoRA change and what does it cost?</summary><div class="answer"><p>It adds trainable low-rank matrices B A to frozen weights, with r (d_in + d_out) parameters per matrix, a tiny fraction of the full count.</p></div></details>
+      </div>
+    </section>
+
+    <section id="subject" data-track>
+      <h2>DreamBooth and textual inversion</h2>
+<h3>Textual inversion</h3>
+<p>Freeze the whole model and learn <strong>one new word embedding</strong> (a pseudo-token such as <code>&lt;my-cat&gt;</code>) so that prompts using it recreate your concept. It trains in minutes, produces a tiny file, but cannot teach new details the model cannot already express.</p>
+<h3>DreamBooth</h3>
+<p>Fine-tune the model to bind a <strong>rare identifier</strong> (<code>sks dog</code>) to a specific subject from 3 to 30 images, while a <strong>prior preservation loss</strong> keeps the general class meaning (<code>dog</code>) intact: you also train on class images generated by the original model so that "dog" does not collapse into your dog. Without it, <strong>language drift</strong> and overfitting appear: every dog looks like yours.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Setting</th><th>Guidance</th></tr></thead>
+<tbody>
+<tr><td>Images</td><td>5 to 20, varied angles, lighting and backgrounds, same subject</td></tr><tr><td>Captions</td><td>A rare token plus the class, <code>a photo of sks dog</code>, optionally richer captions</td></tr><tr><td>Steps</td><td>400 to 1,500 at a small learning rate (about <code>1e-6</code> full fine-tune)</td></tr><tr><td>Prior preservation</td><td>100 to 200 class images, weight 1.0</td></tr><tr><td>LoRA-DreamBooth</td><td>Much cheaper, usually good enough</td></tr>
+</tbody>
+</table>
+</div>
+<p>Common failures: overfitting (the subject appears in every image regardless of the prompt, background copied), underfitting (the subject is not recognisable), and loss of style flexibility. Fix with fewer steps, lower learning rate, more variety, prior preservation or a lower LoRA scale.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx4-q04" data-topic="Diffusion control" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does the prior preservation loss in DreamBooth prevent?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Overheating <span class="q-why">No.</span></li>
+          <li data-key="B">Language drift: the class word losing its general meaning and every image looking like your subject <span class="q-why">Correct.</span></li>
+          <li data-key="C">Slow training <span class="q-why">No.</span></li>
+          <li data-key="D">Large files <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It trains on class images generated by the original model.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>DreamBooth versus textual inversion?</summary><div class="answer"><p>DreamBooth fine-tunes weights to bind a rare token to a subject; textual inversion only learns one embedding, so it is lighter and less expressive.</p></div></details>
+      </div>
+    </section>
+
+    <section id="controlnet" data-track>
+      <h2>ControlNet and adapters</h2>
+<h3>Structural control</h3>
+<p>A text prompt cannot say "this exact pose" or "these exact edges". <strong>ControlNet</strong> adds spatial control without damaging the base model:</p>
+<ol><li>Make a <strong>trainable copy</strong> of the U-Net encoder blocks, fed with the control image (Canny edges, depth, pose skeleton, segmentation, scribble).</li><li>The original weights stay <strong>locked</strong>.</li><li>Connect the copy to the decoder through <strong>zero convolutions</strong> (1 by 1 convolutions initialised to zero), so at the start the copy contributes nothing and training cannot break the pretrained behaviour.</li></ol>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="ControlNet: the locked U-Net plus a trainable copy of its encoder fed with the control map through zero convolutions." style="min-width:760px"><defs><marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah2a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah2b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah2d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah2)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah2)"/><text x="426.0" y="44.0" text-anchor="middle" class="d-sm d-muted">add</text><line x1="533.0" y1="78.0" x2="533.0" y2="118.0" class="d-line" marker-end="url(#ah2)"/><line x1="190.0" y1="147.0" x2="448.0" y2="147.0" class="d-line" marker-end="url(#ah2)"/><text x="319.0" y="142.0" text-anchor="middle" class="d-sm d-muted">cross-attn</text><line x1="618.0" y1="147.0" x2="662.0" y2="147.0" class="d-line" marker-end="url(#ah2)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-e"/><text x="105.0" y="46.0" text-anchor="middle">Control image</text><text x="105.0" y="61.0" text-anchor="middle">(edges, pose, depth)</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-b"/><text x="319.0" y="53.5" text-anchor="middle" class="d-sm">Trainable encoder copy</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-d"/><text x="533.0" y="53.5" text-anchor="middle">Zero convolutions</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-a"/><text x="533.0" y="144.0" text-anchor="middle">Locked U-Net</text><text x="533.0" y="159.0" text-anchor="middle">(base weights)</text><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-e"/><text x="105.0" y="151.5" text-anchor="middle">Text prompt</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-c"/><text x="747.0" y="151.5" text-anchor="middle">Denoised output</text></svg>
+</div>
+<figcaption>ControlNet: the locked U-Net plus a trainable copy of its encoder fed with the control map through zero convolutions.</figcaption></figure>
+<h3>Lighter alternatives</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Method</th><th>Idea</th><th>Size</th></tr></thead>
+<tbody>
+<tr><td>T2I-Adapter</td><td>Small network turns the control map into features added to the U-Net</td><td>tens of MB</td></tr><tr><td>IP-Adapter</td><td>Image prompt: encode a reference image with CLIP and inject through extra cross-attention</td><td>about 100 MB</td></tr><tr><td>ControlNet-LoRA, ControlNet-XS</td><td>Smaller ControlNets</td><td>smaller</td></tr><tr><td>Reference-only, style and face adapters</td><td>Copy appearance from a reference at inference</td><td>varies</td></tr>
+</tbody>
+</table>
+</div>
+<p>Control strength is a <strong>scale</strong> applied to the added features; lowering it (0.5 to 0.8) lets the prompt contribute.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx4-q05" data-topic="Diffusion control" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why does ControlNet connect through zero convolutions?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To make it faster <span class="q-why">Not the reason.</span></li>
+          <li data-key="B">So training starts with no effect and cannot damage the pretrained model <span class="q-why">Correct.</span></li>
+          <li data-key="C">To avoid GPUs <span class="q-why">No.</span></li>
+          <li data-key="D">To remove noise <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The added branch contributes nothing until its zero weights are learned.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How does ControlNet work?</summary><div class="answer"><p>A trainable copy of the encoder takes a control image and feeds the locked U-Net through zero convolutions.</p></div></details>
+      </div>
+    </section>
+
+    <section id="edit" data-track>
+      <h2>Editing: img2img, SDEdit, inpainting</h2>
+<h3>img2img (SDEdit)</h3>
+<p>Do not start from pure noise. Encode the input image, <strong>add noise only up to an intermediate timestep</strong>, then denoise from there. The <code>strength</code> parameter in <code>[0, 1]</code> chooses how much noise: low strength keeps the layout, high strength lets the prompt override it.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx4-03.py">steps = 30
+for strength in (0.2, 0.5, 0.8, 1.0):
+    run = int(steps * strength)
+    print("strength %.1f -&gt; start at step %2d, run %2d denoising steps (%.0f%% of full cost)" % (strength, steps - run, run, 100 * run / steps))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>strength 0.2 -&gt; start at step 24, run  6 denoising steps (20% of full cost)
+strength 0.5 -&gt; start at step 15, run 15 denoising steps (50% of full cost)
+strength 0.8 -&gt; start at step  6, run 24 denoising steps (80% of full cost)
+strength 1.0 -&gt; start at step  0, run 30 denoising steps (100% of full cost)</code></pre>
+<h3>Inpainting and outpainting</h3>
+<p>Fill a masked region consistently with the rest.</p>
+<ul><li><strong>Inpainting-trained models</strong> take extra input channels: the mask and the masked image, concatenated to the latent. They are trained on random masks.</li><li><strong>Without a special model</strong>, a trick (RePaint) denoises the whole image but, at each step, <strong>replaces the known region</strong> with a correctly noised copy of the original, so only the hole is generated.</li><li><strong>Outpainting</strong> extends the canvas with the same mechanism.</li></ul>
+<p>Blend mask edges softly, and match the lighting and the denoising strength to the context.</p>
+<h3>Prompt-level editing</h3>
+<p><strong>Prompt-to-prompt</strong> keeps the cross-attention maps of the original generation while changing words, editing objects without moving the layout. <strong>InstructPix2Pix</strong> conditions on an input image and an instruction ("make it winter") and is trained on synthetic edit triples. <strong>DDIM inversion</strong> recovers a noise that regenerates a real image, then you regenerate with an edited prompt (<a href="dx2-samplers.html">DX2</a>).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx4-q06" data-topic="Diffusion control" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In img2img, what does a higher strength do?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Keeps more of the input image <span class="q-why">Opposite.</span></li>
+          <li data-key="B">Adds more noise so the model changes the image more <span class="q-why">Correct.</span></li>
+          <li data-key="C">Reduces steps to zero <span class="q-why">No.</span></li>
+          <li data-key="D">Changes the VAE <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>More noise means the denoiser has more freedom.</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx4-q07" data-topic="Diffusion control" data-type="numeric" data-answer="18" data-tol="0">
+        <div class="q-stem"><p>30 total steps and strength 0.6. How many denoising steps run?</p></div>
+        <div class="q-explain"><p>30 x 0.6 = 18.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How does inpainting work without a special model?</summary><div class="answer"><p>At each step replace the known region with a noised copy of the original so only the masked region is generated.</p></div></details>
+      </div>
+    </section>
+
+    <section id="prompting" data-track>
+      <h2>Prompting, seeds and reproducibility</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Control</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td>Prompt</td><td>Content, style words, composition; order and emphasis matter (weights like <code>(word:1.3)</code> in some UIs)</td></tr><tr><td>Negative prompt</td><td>Pushes away from unwanted traits (<a href="dx3-latent.html">DX3</a>)</td></tr><tr><td>Seed</td><td>Fixes the initial noise: same prompt, seed, sampler, steps, size and model give the same image</td></tr><tr><td>Guidance scale</td><td>Prompt adherence versus diversity, typically 3 to 8</td></tr><tr><td>Steps and sampler</td><td>Detail and speed (<a href="dx2-samplers.html">DX2</a>)</td></tr><tr><td>Resolution and aspect</td><td>Stay near the training size, otherwise duplicated subjects appear; use hires fix or an upscaler</td></tr><tr><td>Clip skip</td><td>Use an earlier text-encoder layer for stylised models</td></tr>
+</tbody>
+</table>
+</div>
+<p>Reproducibility needs identical library versions, hardware and precision; tiny numeric differences change results.</p>
+<div class="callout tip"><span class="callout-title">Choosing a method</span><p>Need a style or a character: <strong>LoRA</strong>. A specific person or object with fidelity: <strong>DreamBooth LoRA</strong>. Exact pose or layout: <strong>ControlNet</strong>. Match a reference image's look: <strong>IP-Adapter</strong>. Change part of an image: <strong>inpainting</strong>. Change the whole image gently: <strong>img2img</strong>.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx4-q08" data-topic="Diffusion control" data-type="fill" data-answer="seed">
+        <div class="q-stem"><p>The same prompt, sampler, steps, size, model and <input class="q-input" aria-label="blank 1"> reproduce the same image.</p></div>
+        <div class="q-explain"><p>The seed fixes the initial noise.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does a negative prompt do?</summary><div class="answer"><p>It becomes the unconditional branch in guidance, pushing generation away from the described traits.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Diffusion control</h2>
+      <p class="muted">12 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Diffusion control">
+<details class="recall iq" data-level="basic" data-topic="Diffusion control"><summary><span class="tag ok">Basic</span> What is LoRA and why is it popular?</summary><div class="answer"><p>Low-rank adaptation freezes the base weights and trains small matrices B A added to attention layers, using about 0.1 to 1 percent of the parameters, producing tiny files that can be merged or swapped at inference.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Diffusion control"><summary><span class="tag ok">Basic</span> How many parameters does a rank-r LoRA add to a d_out by d_in matrix?</summary><div class="answer"><p>r times (d_in + d_out).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Diffusion control"><summary><span class="tag warn">Medium</span> DreamBooth versus textual inversion?</summary><div class="answer"><p>DreamBooth fine-tunes model weights to bind a rare token to a subject with prior preservation. Textual inversion trains only a new token embedding, so it is lighter but less expressive.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Diffusion control"><summary><span class="tag warn">Medium</span> What is prior preservation loss?</summary><div class="answer"><p>A regularisation that trains on class images generated by the original model so the class word keeps its general meaning and the model does not drift or overfit.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Diffusion control"><summary><span class="tag warn">Medium</span> How does ControlNet add spatial control without harming the base model?</summary><div class="answer"><p>It clones the encoder as a trainable branch fed with the control map and connects it to the frozen U-Net through zero-initialised convolutions, so training starts as an exact no-op.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Diffusion control"><summary><span class="tag warn">Medium</span> Explain img2img and the strength parameter.</summary><div class="answer"><p>Encode the input, add noise only to an intermediate timestep, then denoise. Strength sets how much noise: low keeps the layout, high lets the prompt override.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Diffusion control"><summary><span class="tag warn">Medium</span> How does inpainting work?</summary><div class="answer"><p>Inpainting-trained models receive the mask and masked image as extra channels. Alternatively, at each step replace the known region with a noised copy of the original so only the hole is generated.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Diffusion control"><summary><span class="tag bad">Advanced</span> What failure modes appear when fine-tuning on a few images?</summary><div class="answer"><p>Overfitting (the subject appears everywhere, backgrounds copied), language drift, catastrophic forgetting of general abilities; mitigate with fewer steps, lower learning rate, regularisation images and LoRA scale.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Diffusion control"><summary><span class="tag bad">Advanced</span> IP-Adapter versus ControlNet?</summary><div class="answer"><p>IP-Adapter injects a reference image&#x27;s CLIP features through extra cross-attention to transfer appearance or style; ControlNet injects spatial structure maps such as edges, depth or pose.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Diffusion control"><summary><span class="tag bad">Advanced</span> How can you edit a real photo with a text prompt while preserving layout?</summary><div class="answer"><p>DDIM-invert the photo to a noise code, reuse or blend cross-attention maps (prompt-to-prompt), regenerate with the edited prompt, or use an instruction-tuned editor such as InstructPix2Pix.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Diffusion control"><summary><span class="tag bad">Advanced</span> How do you choose a LoRA rank?</summary><div class="answer"><p>Start at 8 to 32 for styles and 4 to 16 for characters; raise rank for more capacity if underfitting, lower it if overfitting, watching file size and generalisation.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Diffusion control"><summary><span class="tag bad">Advanced</span> Why does generating far from the training resolution cause duplicated subjects?</summary><div class="answer"><p>The model learned composition at specific sizes; larger canvases are treated as several images. Use hires fix, tiled approaches, or models trained on multiple aspect ratios.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="dx3-latent.html"><span class="dir">Previous</span><span>DX3 Latent diffusion and how Stable Diffusion is built</span></a>
+      <a class="next" href="dx5-evaluation.html"><span class="dir">Next</span><span>DX5 Evaluation, data, safety and ethics of image generators</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

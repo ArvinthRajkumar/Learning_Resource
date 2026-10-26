@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="M17">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>M17 Bit Manipulation & Mathematics | DSA Master Guide</title>
+<meta name="description" content="Binary tricks and the number theory that appears in coding rounds.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<link rel="stylesheet" href="viz.css">
+<script src="viz.js" defer></script>
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Module 17</p>
+      <h1>Bit Manipulation &amp; Mathematics</h1>
+      <p class="lede">Binary tricks and the number theory that appears in coding rounds. Topics in this module: Binary numbers and bitwise operators; gcd, lcm, primes and divisibility; factorials, combinations and modular arithmetic.</p>
+      <div class="meta"><span class="tag warn">Important</span><span class="tag">3 topics</span><span class="tag">17 problems</span><span class="tag">56 interview questions</span></div>
+    </div>
+
+    <section id="why-this-module" data-track>
+      <h2>Start from scratch: why this module exists</h2>
+      <p>Computers store numbers as bits, so bit operations are the fastest operations available and give elegant O(1) tricks. Mathematics (gcd, primes, modular arithmetic, counting) appears as sub-steps in many problems and in anything asking for answers modulo 10^9 + 7.</p>
+      <p>This module collects the small set of mathematical and bit tools that repeatedly show up in coding rounds.</p>
+      <p><strong>Who needs it:</strong> Systems and embedded programmers, cryptographers, competitive programmers and interviewers.</p>
+      <p><strong>Before you start:</strong> Modules 1-2.</p>
+      <h3>After this module you can</h3>
+      <ul><li>Use AND/OR/XOR/shifts and standard bit tricks.</li><li>Compute gcd, lcm, primes and divisors efficiently.</li><li>Compute nCr and powers under a modulus.</li><li>Recognise when maths replaces a loop.</li></ul>
+      <p><strong>Common pitfalls:</strong> Operator precedence (use parentheses), negative numbers and ~, dividing under a modulus, floating point for integer square roots.</p>
+      <p><strong>Typical interview questions here:</strong> Single number, power of two, count set bits, gcd/lcm, sieve of Eratosthenes, nCr mod p, trailing zeros in factorial.</p>
+    </section>
+
+    <section id="c17_1" data-track>
+      <h2>Binary numbers and bitwise operators</h2>
+      <p><span class="tag warn">Important</span> <span class="tag">Topic 17.1</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>Computers store integers in binary (bits that are 0 or 1). Bitwise operators work on those bits directly: AND (&amp;), OR (|), XOR (^), NOT (~), left shift (&lt;&lt;), right shift (&gt;&gt;).</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Bit tricks give O(1) solutions to parity, power-of-two, counting bits and finding the unique number.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>A row of light switches: each switch (bit) is on or off; AND/OR/XOR describe how two rows of switches combine.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>A computer is built from switches that are on or off. Everything it stores, numbers, letters, pictures, is a pattern of those switches: bits. Binary is the number system that uses two digits, just as decimal uses ten. Position values double instead of multiplying by ten: 1101 = 8 + 4 + 0 + 1 = 13.</p>
+      <p>Because numbers are bit patterns, you can manipulate them directly. AND with a mask keeps only chosen bits. OR switches bits on. XOR flips where bits differ. A shift multiplies or divides by powers of two. These operations map to single CPU instructions, which is why they are the fastest operations a computer has.</p>
+      <p>The tricks in interviews are not magic; each follows from how binary works. n &amp; (n - 1) clears the lowest set bit: subtracting 1 flips the lowest set bit and all zeros below it, so AND-ing wipes exactly that bit. XOR of a value with itself is 0, so pairs cancel; x ^ 0 = x. These facts are enough to derive most solutions.</p>
+      <p>Bitmasks represent sets compactly: bit i on means item i is present. Iterating mask from 0 to 2^n - 1 visits all subsets, and operations on sets (union, intersection, membership) become OR, AND, and shift-and-test.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="bits"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Binary 13 = 1101 = 8 + 4 + 0 + 1. Python: bin(13), int("1101", 2).</li><li>a &amp; b: 1 only where both are 1. a | b: 1 where either is 1. a ^ b: 1 where bits differ. x ^ x = 0, x ^ 0 = x.</li><li>x &lt;&lt; k multiplies by 2^k; x &gt;&gt; k divides by 2^k (floor).</li><li>Odd/even: x &amp; 1 is 1 for odd. Check bit i: (x &gt;&gt; i) &amp; 1. Set bit i: x | (1 &lt;&lt; i). Clear bit i: x &amp; ~(1 &lt;&lt; i). Toggle: x ^ (1 &lt;&lt; i).</li><li>Power of two: n &gt; 0 and n &amp; (n - 1) == 0. Count set bits: repeat n &amp;= n - 1.</li><li>Find the unique element when all others appear twice: XOR everything.</li><li>Use the calculator to click bits on and off and see all operators update.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Every integer is stored as bits (0 or 1). 13 is 1101 in binary: 8 + 4 + 0 + 1. Bitwise operators work on every bit at the same time. AND (&amp;) gives 1 only if both bits are 1; OR (|) gives 1 if either is 1; XOR (^) gives 1 if the bits are different; NOT (~) flips bits.</p>
+      <p>Shifts: x &lt;&lt; k moves bits left, multiplying by 2^k. x &gt;&gt; k moves bits right, dividing by 2^k and rounding down. 1 &lt;&lt; i makes a number with only bit i on. This is how you build masks.</p>
+      <p>The four key bit tricks: check bit i with (x &gt;&gt; i) &amp; 1; set it with x | (1 &lt;&lt; i); clear it with x &amp; ~(1 &lt;&lt; i); toggle it with x ^ (1 &lt;&lt; i). x &amp; 1 is 1 for odd numbers.</p>
+      <p>Two more favourites: x &amp; (x - 1) removes the lowest set bit (this gives power-of-two checks and counting set bits). XOR properties (x ^ x = 0, x ^ 0 = x, order does not matter) find the single non-repeating number.</p>
+      <p>Bitmasks represent subsets: with n items, each number from 0 to 2^n - 1 is a subset (bit i on means item i is chosen). This enumerates all subsets without recursion.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Python ints are arbitrary precision and signed with two's complement semantics: ~5 is -6, and -1 has infinitely many leading ones. To work in 32 bits mask with &amp; 0xFFFFFFFF.</li><li>bin(x) shows the binary string; x.bit_count() (3.10+) counts set bits; int(s, 2) parses binary.</li><li>x &amp; -x isolates the lowest set bit because -x is ~x + 1, which keeps that bit and flips everything above it.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Embedded and systems programmers</td><td>Hardware registers, flags and permissions are bitfields.</td></tr><tr><td>Network engineers</td><td>IP address masks and subnetting use AND.</td></tr><tr><td>Graphics and compression engineers</td><td>Pixels and bitstreams are packed bit fields.</td></tr><tr><td>Interviewers</td><td>Bit tricks show understanding of representation and often yield O(1)-space solutions.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Bit tricks vs readable code</td><td>Use bit tricks when they give a real advantage (O(1) space, speed) or are standard idioms; otherwise clarity wins.</td></tr><tr><td>Bitmask vs set of items</td><td>Bitmask is faster and compact for up to about 20 items; a set is clearer for large or non-integer domains.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>bin(x) shows binary; int('101', 2) parses it; bin(x).count('1') counts set bits; x.bit_count() works in Python 3.10+.</li><li>Parentheses matter: (x &amp; 1) == 1 because == binds tighter than &amp;.</li><li>~x equals -x - 1 in Python (infinite sign bits).</li><li>Python ints never overflow, so no need to worry about 32-bit wraparound unless the problem says so.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c17_1.py">def get_bit(x, i):
+    return (x &gt;&gt; i) &amp; 1
+
+def set_bit(x, i):
+    return x | (1 &lt;&lt; i)
+
+def clear_bit(x, i):
+    return x &amp; ~(1 &lt;&lt; i)
+
+def toggle_bit(x, i):
+    return x ^ (1 &lt;&lt; i)
+
+def is_power_of_two(n):
+    return n &gt; 0 and n &amp; (n - 1) == 0</code></pre>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - test every bit</h4>
+      <p>Shift and test: loops once per bit position.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c17_1_stage1.py">def count_bits(n):
+    c = 0
+    while n:
+        c += n &amp; 1
+        n &gt;&gt;= 1
+    return c</code></pre>
+      <p class="muted small">Check: <code>count_bits(11)</code> returns <code>3</code></p>
+      <h4>Stage 2 - Kernighan's trick</h4>
+      <p>n &amp; (n - 1) clears the lowest set bit, so the loop runs once per SET bit.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c17_1_stage2.py">def count_bits(n):
+    c = 0
+    while n:
+        n &amp;= n - 1
+        c += 1
+    return c</code></pre>
+      <p class="muted small">Check: <code>count_bits(11)</code> returns <code>3</code></p>
+      <h4>Stage 3 - use the library</h4>
+      <p>In real code write bin(n).count('1') or n.bit_count() on Python 3.10+.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c17_1_stage3.py">def count_bits(n):
+    return bin(n).count('1')</code></pre>
+      <p class="muted small">Check: <code>count_bits(11)</code> returns <code>3</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Dry run of the related problem "Single Number (XOR)": Call: <code>single_number([4, 1, 2, 1, 2])</code>, returns <code>4</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>x (after)</th><th>result (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>result = 0</code></td><td>-</td><td><strong><code>0</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>4</code></strong></td><td><code>0</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>result ^= x</code></td><td><code>4</code></td><td><strong><code>4</code></strong></td></tr>
+<tr><td class="num">4</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>1</code></strong></td><td><code>4</code></td></tr>
+<tr><td class="num">5</td><td class="num">4</td><td><code>result ^= x</code></td><td><code>1</code></td><td><strong><code>5</code></strong></td></tr>
+<tr><td class="num">6</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>2</code></strong></td><td><code>5</code></td></tr>
+<tr><td class="num">7</td><td class="num">4</td><td><code>result ^= x</code></td><td><code>2</code></td><td><strong><code>7</code></strong></td></tr>
+<tr><td class="num">8</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>1</code></strong></td><td><code>7</code></td></tr>
+<tr><td class="num">9</td><td class="num">4</td><td><code>result ^= x</code></td><td><code>1</code></td><td><strong><code>6</code></strong></td></tr>
+<tr><td class="num">10</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>2</code></strong></td><td><code>6</code></td></tr>
+<tr><td class="num">11</td><td class="num">4</td><td><code>result ^= x</code></td><td><code>2</code></td><td><strong><code>4</code></strong></td></tr>
+<tr><td class="num">12</td><td class="num">3</td><td><code>for x in nums:</code></td><td><code>2</code></td><td><code>4</code></td></tr>
+<tr><td class="num">13</td><td class="num">5</td><td><code>return result</code></td><td><code>2</code></td><td><code>4</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>Every operation is O(1) for fixed-width integers (O(number of bits) in general).</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Confusing &amp; with and, | with or.</li><li>Operator precedence: == binds tighter than &amp; in Python, so write (n &amp; 1) == 1 with parentheses.</li><li>Using ~x and forgetting that Python ints are signed: ~5 is -6.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"Without extra space, appears twice", "powers of two", "subset by bitmask", "parity" -&gt; bits.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m17-problems.html#prob-single_number">Single Number (XOR)</a> <span class="tag">LC 136</span></td><td><span class="tag ok">Easy</span></td><td>Bit manipulation</td></tr><tr><td><a href="m17-problems.html#prob-is_power_of_two">Power of Two</a> <span class="tag">LC 231</span></td><td><span class="tag ok">Easy</span></td><td>Bit tricks</td></tr><tr><td><a href="m17-problems.html#prob-count_set_bits">Count Set Bits</a> <span class="tag">LC 191</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Bit manipulation (Brian Kernighan)</td></tr><tr><td><a href="m17-problems.html#prob-count_bits_list">Counting Bits</a> <span class="tag">LC 338</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Bit manipulation + DP</td></tr><tr><td><a href="m17-problems.html#prob-reverse_bits">Reverse Bits</a> <span class="tag">LC 190</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Bit manipulation</td></tr><tr><td><a href="m17-problems.html#prob-hamming_distance">Hamming Distance</a> <span class="tag">LC 461</span></td><td><span class="tag ok">Easy</span></td><td>XOR and bit counting</td></tr><tr><td><a href="m17-problems.html#prob-single_number_ii">Single Number II</a> <span class="tag">LC 137</span></td><td><span class="tag warn">Medium</span></td><td>Bit counting modulo 3</td></tr><tr><td><a href="m17-problems.html#prob-range_bitwise_and">Bitwise AND of Numbers Range</a> <span class="tag">LC 201</span></td><td><span class="tag warn">Medium</span></td><td>Bit manipulation (common prefix)</td></tr><tr><td><a href="m17-problems.html#prob-subsets_bitmask">All Subsets with Bitmasks</a></td><td><span class="tag warn">Medium</span></td><td>Bitmask enumeration</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why do bit tricks exist?</summary><div class="answer"><p>Computers store numbers as bits, and bit operations are the fastest and use no extra memory.</p></div></details>
+        <details class="recall"><summary>Why does n &amp; (n - 1) clear the lowest set bit?</summary><div class="answer"><p>Subtracting 1 flips that bit and all lower zeros; AND-ing keeps only the unchanged high bits.</p></div></details>
+        <details class="recall"><summary>Why is x ^ x equal to 0?</summary><div class="answer"><p>XOR gives 1 only where bits differ, and a number never differs from itself.</p></div></details>
+        <details class="recall"><summary>Why use parentheses with bit operators in Python?</summary><div class="answer"><p>== and comparisons bind tighter than &amp;, so x &amp; 1 == 1 is parsed as x &amp; (1 == 1).</p></div></details>
+        <details class="recall"><summary>Why does ~5 equal -6 in Python?</summary><div class="answer"><p>~x = -x - 1 in two's complement with unlimited sign bits.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c17_1-q1" data-topic="Bit Manipulation &amp; Mathematics" data-type="single" data-answer="C">
+        <div class="q-stem"><p>5 ^ 5 equals?</p></div>
+        <ul class="q-options">
+          <li data-key="A">5</li>
+          <li data-key="B">10</li>
+          <li data-key="C">0</li>
+          <li data-key="D">1</li>
+        </ul>
+        <div class="q-explain"><p>XOR of equal bits is 0.</p></div>
+      </div>
+      <div class="quiz" data-qid="c17_1-q2" data-topic="Bit Manipulation &amp; Mathematics" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which expression tests whether bit 3 of x is set?</p></div>
+        <ul class="q-options">
+          <li data-key="A">x &amp; 3</li>
+          <li data-key="B">(x &gt;&gt; 3) &amp; 1</li>
+          <li data-key="C">x | 3</li>
+          <li data-key="D">x ^ 3</li>
+        </ul>
+        <div class="q-explain"><p>Shift bit 3 to position 0 and mask it.</p></div>
+      </div>
+    </section>
+
+    <section id="c17_2" data-track>
+      <h2>GCD, LCM, primes and divisibility</h2>
+      <p><span class="tag warn">Important</span> <span class="tag">Topic 17.2</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>The GCD (greatest common divisor) is the largest number dividing both inputs; the LCM (least common multiple) is the smallest number both divide. A prime has exactly two divisors: 1 and itself.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>These show up in "simplify a fraction", "when do two events coincide", prime counting and divisor problems.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Two traffic lights blinking every 12 and 18 seconds: the LCM (36) tells you when they flash together; the GCD (6) is the largest step that divides both timings.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Number theory starts from divisibility: a divides b if b is a whole number multiple of a. From this simple idea come gcd, lcm, primes and many puzzle-like questions: when do two cycles align? Can this fraction be simplified? How many divisors does n have?</p>
+      <p>GCD: the largest number dividing both. The brute force tries all candidates. Euclid (about 300 BC) noticed that gcd(a, b) = gcd(b, a mod b), because any common divisor of a and b also divides the remainder. The numbers shrink fast (at least halving every two steps), so it takes about log steps.</p>
+      <p>Primes are the building blocks: every integer factorises uniquely into primes. To test whether n is prime, you only need to check divisors up to sqrt(n): if n = a x b then one of them is at most sqrt(n). To find all primes up to N at once, the sieve avoids repeated division by crossing out multiples, starting at p squared (smaller multiples were crossed out by smaller primes).</p>
+      <p>Divisors come in pairs (d, n/d), so counting them needs only a loop to sqrt(n). Perfect squares have an odd number of divisors since one pair collapses.</p>
+      <p>These tools show up as sub-steps of bigger problems: simplifying ratios, modular inverses, cycle lengths, counting arrangements and cryptography (RSA relies on the difficulty of factoring large numbers).</p>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Euclid: gcd(a, b) = gcd(b, a % b); gcd(a, 0) = a. LCM = a // gcd * b.</li><li>Python has math.gcd and math.lcm (3.9+).</li><li>Primality: trial division up to sqrt(n). Sieve of Eratosthenes for all primes below N: start with all True, for each prime p cross off p*p, p*p+p, ... Complexity O(N log log N).</li><li>Divisors of n come in pairs (d, n/d); loop d up to sqrt(n) to list all divisors in O(sqrt n).</li><li>Prime factorisation: divide out each factor from 2 while d*d &lt;= n; any remainder &gt; 1 is prime.</li><li>Divisibility: n % d == 0. Digit-sum divisibility by 3 and 9; last digits for 2, 5, 10.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>GCD (greatest common divisor) is the biggest number that divides both. Euclid's trick: gcd(a, b) = gcd(b, a % b) until b is 0. It is incredibly fast (about log steps). LCM (least common multiple) = a // gcd(a, b) * b. GCD of a list: fold with gcd.</p>
+      <p>Prime numbers have exactly two divisors. To test one number, try divisors up to its square root (if it has a factor bigger than its root, it has a matching smaller one). To find all primes up to N use the Sieve of Eratosthenes: mark multiples of each prime as not prime; start at p * p.</p>
+      <p>Divisors come in pairs (d, n / d) so counting or listing them needs a loop only up to sqrt(n). Perfect squares have an odd number of divisors because one pair is the same number twice.</p>
+      <p>Prime factorisation: divide n by 2, 3, 4... while d * d &lt;= n, collecting each factor; if something &gt; 1 is left, it is a prime factor. This powers questions about number of divisors, smallest prime factor and so on.</p>
+      <p>Divisibility quick facts: sum of digits divisible by 3 or 9, last digit for 2, 5 and 10, last two digits for 4. In code simply use n % d == 0.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Euclid's algorithm is iterative: a, b = b, a % b. Python provides math.gcd (and math.lcm from 3.9).</li><li>The sieve needs O(N) memory of booleans; a bytearray makes it compact and fast. Time O(N log log N).</li><li>math.isqrt(n) gives an exact integer square root without floating point errors, unlike int(n ** 0.5) for very large n.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Cryptographers</td><td>Primes, gcd and modular arithmetic underpin RSA and key exchange.</td></tr><tr><td>Hardware and signal engineers</td><td>Synchronising periodic events uses lcm.</td></tr><tr><td>Interviewers</td><td>Prime checks, sieve, gcd/lcm and divisor counting are common easy-medium questions.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Trial division vs sieve</td><td>Trial division tests a single number in O(sqrt n). The sieve finds all primes up to N efficiently; use it for many queries.</td></tr><tr><td>Euclid vs prime factorisation for gcd</td><td>Euclid is far faster and simpler.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>import math; math.gcd(a, b); math.lcm(a, b) (3.9+); math.isqrt(n) gives an exact integer square root.</li><li>Sieve: is_p = [True] * (n + 1); for p in range(2, isqrt(n) + 1): if is_p[p]: for m in range(p*p, n+1, p): is_p[m] = False.</li><li>functools.reduce(math.gcd, nums) gets the GCD of a list.</li><li>Prime check: all(n % d for d in range(2, isqrt(n) + 1)).</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c17_2.py">def gcd(a, b):
+    while b:
+        a, b = b, a % b
+    return a
+
+def lcm(a, b):
+    return a // gcd(a, b) * b
+
+def sieve(n):                             # primes &lt;= n
+    is_p = [True] * (n + 1)
+    is_p[0:2] = [False, False]
+    for p in range(2, int(n ** 0.5) + 1):
+        if is_p[p]:
+            for m in range(p * p, n + 1, p):
+                is_p[m] = False
+    return [i for i, ok in enumerate(is_p) if ok]
+
+def prime_factors(n):
+    res, d = [], 2
+    while d * d &lt;= n:
+        while n % d == 0:
+            res.append(d)
+            n //= d
+        d += 1
+    if n &gt; 1:
+        res.append(n)
+    return res</code></pre>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - test every divisor below n</h4>
+      <p>O(n) per number.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c17_2_stage1.py">def count_primes(n):
+    def is_p(x):
+        return x &gt; 1 and all(x % d for d in range(2, x))
+    return sum(is_p(x) for x in range(n))</code></pre>
+      <p class="muted small">Check: <code>count_primes(30)</code> returns <code>10</code></p>
+      <h4>Stage 2 - only test up to the square root</h4>
+      <p>A composite number has a factor at most sqrt(x): O(sqrt x) per number.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c17_2_stage2.py">def count_primes(n):
+    def is_p(x):
+        if x &lt; 2:
+            return False
+        d = 2
+        while d * d &lt;= x:
+            if x % d == 0:
+                return False
+            d += 1
+        return True
+    return sum(is_p(x) for x in range(n))</code></pre>
+      <p class="muted small">Check: <code>count_primes(30)</code> returns <code>10</code></p>
+      <h4>Stage 3 - the sieve</h4>
+      <p>Cross out multiples of each prime starting at p*p: O(n log log n) for ALL numbers at once.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c17_2_stage3.py">def count_primes(n):
+    if n &lt; 3:
+        return 0
+    sieve = [True] * n
+    sieve[0] = sieve[1] = False
+    for p in range(2, int(n ** 0.5) + 1):
+        if sieve[p]:
+            for m in range(p * p, n, p):
+                sieve[m] = False
+    return sum(sieve)</code></pre>
+      <p class="muted small">Check: <code>count_primes(30)</code> returns <code>10</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Dry run of the related problem "GCD and LCM": Call: <code>gcd_lcm(12, 18)</code>, returns <code>(6, 36)</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>x (after)</th><th>y (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>x, y = a, b</code></td><td><strong><code>12</code></strong></td><td><strong><code>18</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>while y:</code></td><td><code>12</code></td><td><code>18</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>x, y = y, x % y     # Euclid</code></td><td><strong><code>18</code></strong></td><td><strong><code>12</code></strong></td></tr>
+<tr><td class="num">4</td><td class="num">3</td><td><code>while y:</code></td><td><code>18</code></td><td><code>12</code></td></tr>
+<tr><td class="num">5</td><td class="num">4</td><td><code>x, y = y, x % y     # Euclid</code></td><td><strong><code>12</code></strong></td><td><strong><code>6</code></strong></td></tr>
+<tr><td class="num">6</td><td class="num">3</td><td><code>while y:</code></td><td><code>12</code></td><td><code>6</code></td></tr>
+<tr><td class="num">7</td><td class="num">4</td><td><code>x, y = y, x % y     # Euclid</code></td><td><strong><code>6</code></strong></td><td><strong><code>0</code></strong></td></tr>
+<tr><td class="num">8</td><td class="num">3</td><td><code>while y:</code></td><td><code>6</code></td><td><code>0</code></td></tr>
+<tr><td class="num">9</td><td class="num">5</td><td><code>return x, a // x * b</code></td><td><code>6</code></td><td><code>0</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>gcd O(log min(a, b)); sieve O(N log log N) time, O(N) space; prime_factors O(sqrt n).</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Computing LCM as a*b (overflow in other languages and not minimal).</li><li>Sieve starting from p+p instead of p*p (still correct, slower).</li><li>Treating 1 as prime.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"Largest common", "repeats together", "count primes", "factors" -&gt; number theory.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m17-problems.html#prob-gcd_lcm">GCD and LCM</a></td><td><span class="tag ok">Easy</span></td><td>Number theory (Euclid)</td></tr><tr><td><a href="m01-problems.html#prob-is_prime">Prime Check</a></td><td><span class="tag ok">Easy</span></td><td>Loops, math, sqrt optimisation</td></tr><tr><td><a href="m04-problems.html#prob-gcd_of_strings">Greatest Common Divisor of Strings</a> <span class="tag">LC 1071</span></td><td><span class="tag ok">Easy</span></td><td>Strings + gcd</td></tr><tr><td><a href="m17-problems.html#prob-happy_number">Happy Number</a> <span class="tag">LC 202</span></td><td><span class="tag ok">Easy</span></td><td>Hashing / cycle detection</td></tr><tr><td><a href="m17-problems.html#prob-count_divisors">Count Divisors</a></td><td><span class="tag ok">Easy</span></td><td>Number theory (pairs of divisors)</td></tr><tr><td><a href="m17-problems.html#prob-power_of_three">Power of Three</a></td><td><span class="tag ok">Easy</span></td><td>Math / loops</td></tr><tr><td><a href="m17-problems.html#prob-count_primes">Count Primes (Sieve of Eratosthenes)</a> <span class="tag">LC 204</span></td><td><span class="tag warn">Medium</span></td><td>Number theory, sieve</td></tr><tr><td><a href="m17-problems.html#prob-trailing_zeros">Trailing Zeros in n!</a> <span class="tag">LC 172</span></td><td><span class="tag warn">Medium</span></td><td>Math reasoning</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why stop trial division at sqrt(n)?</summary><div class="answer"><p>If n = a x b, one of a or b is at most sqrt(n).</p></div></details>
+        <details class="recall"><summary>Why does Euclid's algorithm work?</summary><div class="answer"><p>Any common divisor of a and b also divides a mod b, so gcd(a, b) = gcd(b, a mod b).</p></div></details>
+        <details class="recall"><summary>Why start crossing out at p*p in the sieve?</summary><div class="answer"><p>Smaller multiples have a smaller prime factor and are already crossed out.</p></div></details>
+        <details class="recall"><summary>Why compute lcm as a // gcd * b?</summary><div class="answer"><p>Dividing first avoids a huge intermediate product in languages with fixed-size integers.</p></div></details>
+        <details class="recall"><summary>Why does a perfect square have an odd number of divisors?</summary><div class="answer"><p>One divisor pair is the same number twice.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c17_2-q1" data-topic="Bit Manipulation &amp; Mathematics" data-type="single" data-answer="B">
+        <div class="q-stem"><p>gcd(48, 18) = ?</p></div>
+        <ul class="q-options">
+          <li data-key="A">3</li>
+          <li data-key="B">6</li>
+          <li data-key="C">12</li>
+          <li data-key="D">18</li>
+        </ul>
+        <div class="q-explain"><p>48 = 2*18 + 12; 18 = 1*12 + 6; 12 = 2*6 + 0 -&gt; 6.</p></div>
+      </div>
+      <div class="quiz" data-qid="c17_2-q2" data-topic="Bit Manipulation &amp; Mathematics" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why does trial division stop at sqrt(n)?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is faster to code</li>
+          <li data-key="B">A composite number has a factor &lt;= sqrt(n)</li>
+          <li data-key="C">Primes are below sqrt(n)</li>
+          <li data-key="D">Python limits it</li>
+        </ul>
+        <div class="q-explain"><p>If n = a*b with both a, b &gt; sqrt(n) then a*b &gt; n.</p></div>
+      </div>
+    </section>
+
+    <section id="c17_3" data-track>
+      <h2>Factorials, combinations and modular arithmetic</h2>
+      <p><span class="tag warn">Important</span> <span class="tag">Topic 17.3</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>Modular arithmetic keeps numbers small by working with remainders. Combinatorics counts arrangements: permutations (order matters) and combinations (order does not).</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Answers in many problems are huge, so the statement says "print the answer modulo 10^9 + 7".</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>A clock: 10 o'clock + 5 hours is 3 o'clock because we work modulo 12.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Counting questions ask 'in how many ways?'. If order matters (arranging letters), multiply choices: 5 people into a row is 5 x 4 x 3 x 2 x 1 = 5!. If order does not matter (picking a team), divide out the orderings: C(n, r) = n! / (r! (n - r)!). The pattern 'arrange then divide by the overcount' derives every formula here.</p>
+      <p>These numbers explode: 52! is about 8 x 10^67. Problem setters therefore ask for the answer modulo a prime, so that the output fits in a small number. Modular arithmetic works like a clock: you keep only the remainder after division by m.</p>
+      <p>Addition, subtraction and multiplication respect the modulus: you may reduce at every step. This is vital to keep intermediate numbers small (and fast) while still getting the right final remainder.</p>
+      <p>Division is the exception. You cannot divide remainders. Instead you multiply by the modular inverse of the divisor, which exists when the divisor and modulus are coprime. For a prime modulus p, Fermat's little theorem gives inverse(x) = x^(p-2) mod p, computed fast with pow(x, p - 2, p).</p>
+      <p>That chain of reasoning, count, then reduce, then handle division, is exactly how nCr mod p is computed in contests.</p>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Permutations of n distinct items: n!. Ordered selections of r from n: P(n, r) = n!/(n-r)!.</li><li>Combinations: C(n, r) = n! / (r! (n-r)!). Pascal: C(n, r) = C(n-1, r-1) + C(n-1, r).</li><li>Modular rules: (a + b) % m = ((a % m) + (b % m)) % m, same for multiplication and subtraction. Division is NOT allowed directly.</li><li>Division by x modulo a prime p is multiplication by the inverse pow(x, p-2, p) (Fermat). Python: pow(base, exp, mod) is fast modular exponentiation.</li><li>Python big integers never overflow, but results mod 10^9 + 7 are still required by the judge, and reducing early keeps numbers small and fast.</li><li>math.factorial, math.comb(n, r), math.perm(n, r) exist in Python 3.8+.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Counting arrangements: a permutation is an ordered arrangement (n! ways to arrange n different items). A combination chooses items where order does not matter: C(n, r) = n! / (r! (n - r)!). Choosing a team of 3 from 10 is C(10, 3) = 120; arranging 3 of 10 people in a line is 10 x 9 x 8 = 720.</p>
+      <p>Answers can be gigantic, so problems ask for the result 'modulo 10^9 + 7' (a prime number). Modulo is the remainder. Rules: (a + b) % m = ((a % m) + (b % m)) % m and the same for multiplication. Reduce after EVERY step to keep numbers small.</p>
+      <p>Division is the catch: you cannot divide modulo m directly. With a prime modulus p, dividing by x equals multiplying by x^(p-2) mod p (modular inverse, from Fermat's little theorem). Python's pow(x, p - 2, p) computes it quickly.</p>
+      <p>Pascal's triangle gives combinations without division: C(n, r) = C(n-1, r-1) + C(n-1, r). Good when n is small (up to a few thousand).</p>
+      <p>Fast exponentiation (power by squaring): x^n in O(log n) multiplications: x^n = (x^(n/2))^2 times x if n is odd. Python's pow(x, n, mod) already does this.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>10^9 + 7 is prime and fits in 30 bits, so the product of two residues fits in 60 bits, safe in 64-bit integers in other languages. Python needs no such care but the convention remains.</li><li>Python's pow(a, b, m) uses square-and-multiply in O(log b) steps.</li><li>Python's % returns a result with the sign of the modulus, so (a - b) % m is already non-negative.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Cryptographers</td><td>Modular exponentiation and inverses are the core of RSA.</td></tr><tr><td>Probability and data scientists</td><td>Counting combinations underlies probability and statistics.</td></tr><tr><td>Competitive programmers and interviewers</td><td>'Print the answer modulo 10^9 + 7' is a standard instruction.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Pascal's triangle vs factorial formula</td><td>Pascal: no division, good for small n (n up to a few thousand). Factorial + inverse: good for large n with a prime modulus.</td></tr><tr><td>math.comb vs manual</td><td>math.comb is exact and fast without a modulus; use manual modular code when a modulus is required.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>math.factorial(n), math.comb(n, r), math.perm(n, r) (Python 3.8+).</li><li>pow(base, exp, mod) is fast modular exponentiation.</li><li>MOD = 10**9 + 7; result = result * x % MOD.</li><li>Python's % always returns a non-negative result for a positive modulus.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c17_3.py">MOD = 1_000_000_007
+
+def mod_factorial(n):
+    result = 1
+    for i in range(2, n + 1):
+        result = result * i % MOD       # reduce at every step
+    return result
+
+def nCr(n, r):
+    if r &lt; 0 or r &gt; n:
+        return 0
+    num = den = 1
+    for i in range(r):
+        num = num * (n - i) % MOD
+        den = den * (i + 1) % MOD
+    return num * pow(den, MOD - 2, MOD) % MOD</code></pre>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Dry run of the related problem "Trailing Zeros in n!": Call: <code>trailing_zeros(25)</code>, returns <code>6</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>n (after)</th><th>count (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>count = 0</code></td><td><strong><code>25</code></strong></td><td><strong><code>0</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>while n:</code></td><td><code>25</code></td><td><code>0</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>n //= 5</code></td><td><strong><code>5</code></strong></td><td><code>0</code></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>count += n</code></td><td><code>5</code></td><td><strong><code>5</code></strong></td></tr>
+<tr><td class="num">5</td><td class="num">3</td><td><code>while n:</code></td><td><code>5</code></td><td><code>5</code></td></tr>
+<tr><td class="num">6</td><td class="num">4</td><td><code>n //= 5</code></td><td><strong><code>1</code></strong></td><td><code>5</code></td></tr>
+<tr><td class="num">7</td><td class="num">5</td><td><code>count += n</code></td><td><code>1</code></td><td><strong><code>6</code></strong></td></tr>
+<tr><td class="num">8</td><td class="num">3</td><td><code>while n:</code></td><td><code>1</code></td><td><code>6</code></td></tr>
+<tr><td class="num">9</td><td class="num">4</td><td><code>n //= 5</code></td><td><strong><code>0</code></strong></td><td><code>6</code></td></tr>
+<tr><td class="num">10</td><td class="num">5</td><td><code>count += n</code></td><td><code>0</code></td><td><code>6</code></td></tr>
+<tr><td class="num">11</td><td class="num">3</td><td><code>while n:</code></td><td><code>0</code></td><td><code>6</code></td></tr>
+<tr><td class="num">12</td><td class="num">6</td><td><code>return count</code></td><td><code>0</code></td><td><code>6</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>mod_factorial O(n); nCr O(r + log MOD).</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Dividing instead of multiplying by the modular inverse.</li><li>Forgetting to reduce after each multiplication when porting to other languages.</li><li>Negative remainder issues in C/Java (Python % is non-negative for positive m).</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"modulo 10^9+7", "number of ways to arrange/choose" -&gt; combinatorics + modular arithmetic.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m17-problems.html#prob-trailing_zeros">Trailing Zeros in n!</a> <span class="tag">LC 172</span></td><td><span class="tag warn">Medium</span></td><td>Math reasoning</td></tr><tr><td><a href="m11-problems.html#prob-fast_power">Fast Exponentiation</a></td><td><span class="tag warn">Medium</span></td><td>Recursion (divide and conquer)</td></tr><tr><td><a href="m17-problems.html#prob-my_pow">Pow(x, n)</a> <span class="tag">LC 50</span></td><td><span class="tag warn">Medium</span></td><td>Binary exponentiation</td></tr><tr><td><a href="m17-problems.html#prob-ncr_mod">nCr Modulo a Prime</a></td><td><span class="tag bad">Hard</span></td><td>Modular arithmetic</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why take the modulus at every step?</summary><div class="answer"><p>It keeps numbers small and fast and gives the same remainder because modular arithmetic respects + and x.</p></div></details>
+        <details class="recall"><summary>Why can't you divide under a modulus?</summary><div class="answer"><p>Remainders do not follow normal division; you multiply by the modular inverse instead.</p></div></details>
+        <details class="recall"><summary>Why does Fermat's little theorem give the inverse for a prime modulus?</summary><div class="answer"><p>x^(p-1) = 1 (mod p), so x^(p-2) is the inverse of x.</p></div></details>
+        <details class="recall"><summary>Why 10^9 + 7?</summary><div class="answer"><p>It is prime, fits in 30 bits and is conventional, so problems agree on one modulus.</p></div></details>
+        <details class="recall"><summary>Why not compute n! then divide?</summary><div class="answer"><p>n! is astronomically large; reduce at each step and use inverses.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c17_3-q1" data-topic="Bit Manipulation &amp; Mathematics" data-type="single" data-answer="B">
+        <div class="q-stem"><p>C(5, 2) = ?</p></div>
+        <ul class="q-options">
+          <li data-key="A">5</li>
+          <li data-key="B">10</li>
+          <li data-key="C">20</li>
+          <li data-key="D">25</li>
+        </ul>
+        <div class="q-explain"><p>5!/(2! 3!) = 120/12 = 10.</p></div>
+      </div>
+      <div class="quiz" data-qid="c17_3-q2" data-topic="Bit Manipulation &amp; Mathematics" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Python expression for fast modular exponentiation?</p></div>
+        <ul class="q-options">
+          <li data-key="A">a ** b % m only</li>
+          <li data-key="B">pow(a, b, m)</li>
+          <li data-key="C">math.mod(a, b, m)</li>
+          <li data-key="D">a ^ b % m</li>
+        </ul>
+        <div class="q-explain"><p>pow with 3 arguments uses fast exponentiation.</p></div>
+      </div>
+    </section>
+
+    <h2 id="practice-problems">Practice problems for this module</h2>
+
+    <p>17 problems with hints, approach, dry run and tested solutions on the <a href="m17-problems.html">problem set for this module</a>.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m17-problems.html#prob-single_number">Single Number (XOR)</a> <span class="tag">LC 136</span></td><td><span class="tag ok">Easy</span></td><td>Bit manipulation</td></tr><tr><td><a href="m17-problems.html#prob-is_power_of_two">Power of Two</a> <span class="tag">LC 231</span></td><td><span class="tag ok">Easy</span></td><td>Bit tricks</td></tr><tr><td><a href="m17-problems.html#prob-count_set_bits">Count Set Bits</a> <span class="tag">LC 191</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Bit manipulation (Brian Kernighan)</td></tr><tr><td><a href="m17-problems.html#prob-gcd_lcm">GCD and LCM</a></td><td><span class="tag ok">Easy</span></td><td>Number theory (Euclid)</td></tr><tr><td><a href="m17-problems.html#prob-hamming_distance">Hamming Distance</a> <span class="tag">LC 461</span></td><td><span class="tag ok">Easy</span></td><td>XOR and bit counting</td></tr><tr><td><a href="m17-problems.html#prob-count_divisors">Count Divisors</a></td><td><span class="tag ok">Easy</span></td><td>Number theory (pairs of divisors)</td></tr><tr><td><a href="m17-problems.html#prob-power_of_three">Power of Three</a></td><td><span class="tag ok">Easy</span></td><td>Math / loops</td></tr><tr><td><a href="m17-problems.html#prob-count_bits_list">Counting Bits</a> <span class="tag">LC 338</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Bit manipulation + DP</td></tr><tr><td><a href="m17-problems.html#prob-reverse_bits">Reverse Bits</a> <span class="tag">LC 190</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Bit manipulation</td></tr><tr><td><a href="m17-problems.html#prob-happy_number">Happy Number</a> <span class="tag">LC 202</span></td><td><span class="tag ok">Easy</span></td><td>Hashing / cycle detection</td></tr><tr><td><a href="m17-problems.html#prob-count_primes">Count Primes (Sieve of Eratosthenes)</a> <span class="tag">LC 204</span></td><td><span class="tag warn">Medium</span></td><td>Number theory, sieve</td></tr><tr><td><a href="m17-problems.html#prob-trailing_zeros">Trailing Zeros in n!</a> <span class="tag">LC 172</span></td><td><span class="tag warn">Medium</span></td><td>Math reasoning</td></tr><tr><td><a href="m17-problems.html#prob-subsets_bitmask">All Subsets with Bitmasks</a></td><td><span class="tag warn">Medium</span></td><td>Bitmask enumeration</td></tr><tr><td><a href="m17-problems.html#prob-single_number_ii">Single Number II</a> <span class="tag">LC 137</span></td><td><span class="tag warn">Medium</span></td><td>Bit counting modulo 3</td></tr><tr><td><a href="m17-problems.html#prob-range_bitwise_and">Bitwise AND of Numbers Range</a> <span class="tag">LC 201</span></td><td><span class="tag warn">Medium</span></td><td>Bit manipulation (common prefix)</td></tr><tr><td><a href="m17-problems.html#prob-my_pow">Pow(x, n)</a> <span class="tag">LC 50</span></td><td><span class="tag warn">Medium</span></td><td>Binary exponentiation</td></tr><tr><td><a href="m17-problems.html#prob-ncr_mod">nCr Modulo a Prime</a></td><td><span class="tag bad">Hard</span></td><td>Modular arithmetic</td></tr>
+</tbody>
+</table>
+</div>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Bit Manipulation &amp; Mathematics</h2>
+      <p class="muted">56 questions: try to answer aloud in under a minute, then reveal. All questions from every module are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Bit Manipulation & Mathematics">
+<details class="recall iq" data-level="basic" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you check if a number is a power of two?</summary><div class="answer"><p>n &gt; 0 and n &amp; (n - 1) == 0. A power of two has exactly one set bit and n - 1 flips it and everything below.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you count set bits?</summary><div class="answer"><p>Repeat n &amp;= n - 1 until n is 0 and count the steps (Brian Kernighan), or bin(n).count(&#x27;1&#x27;).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Find the number that appears once when every other appears twice.</summary><div class="answer"><p>XOR all elements. Pairs cancel to 0, leaving the single number.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you swap two numbers without a temp variable?</summary><div class="answer"><p>a ^= b; b ^= a; a ^= b. (In Python simply a, b = b, a.)</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What does x &amp; -x give?</summary><div class="answer"><p>The lowest set bit of x (used in Fenwick trees).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you generate all subsets with bits?</summary><div class="answer"><p>Loop mask from 0 to 2^n - 1 and include item i when (mask &gt;&gt; i) &amp; 1.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why does n &amp; (n - 1) clear the lowest set bit?</summary><div class="answer"><p>Subtracting 1 turns the lowest 1 into 0 and all lower zeros into ones; AND-ing with n keeps only the unchanged higher bits.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How does Euclid&#x27;s algorithm work?</summary><div class="answer"><p>gcd(a, b) = gcd(b, a % b) until b = 0; the answer is a. It is O(log min(a, b)).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you compute the LCM?</summary><div class="answer"><p>lcm(a, b) = a // gcd(a, b) * b.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you check whether a number is prime efficiently?</summary><div class="answer"><p>Test divisors from 2 up to sqrt(n). O(sqrt n). For many numbers use a sieve.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the Sieve of Eratosthenes and its complexity?</summary><div class="answer"><p>It marks multiples of every prime as composite, starting at p * p. O(n log log n) time, O(n) space.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you count the divisors of n?</summary><div class="answer"><p>Loop d up to sqrt(n); each divisor d adds itself and n / d (once if they are equal). O(sqrt n).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How many trailing zeros does n! have?</summary><div class="answer"><p>Count factors of 5: n/5 + n/25 + n/125 + ...</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why does the sieve start crossing out at p * p?</summary><div class="answer"><p>Smaller multiples of p have a smaller prime factor and were already crossed out.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the difference between permutations and combinations?</summary><div class="answer"><p>Permutations count ordered arrangements (n!/(n-r)!); combinations count unordered selections (n!/(r!(n-r)!)).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why do problems ask for the answer modulo 10^9 + 7?</summary><div class="answer"><p>The true answer is too large for fixed-size integers. A big prime modulus keeps numbers small and allows modular division.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you compute nCr modulo a prime?</summary><div class="answer"><p>Multiply the top terms, multiply the bottom terms, and multiply by the modular inverse of the bottom: num * pow(den, MOD - 2, MOD) % MOD.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Compute x^n quickly.</summary><div class="answer"><p>Square-and-multiply (binary exponentiation): O(log n). In Python pow(x, n) or pow(x, n, mod).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is (a - b) % m when a &lt; b?</summary><div class="answer"><p>In Python it is still non-negative (e.g. (3 - 5) % 7 = 5). In C/Java you would add m.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why can&#x27;t you divide modulo m directly?</summary><div class="answer"><p>Remainders do not support division the way integers do; (a / b) mod m is not (a mod m) / (b mod m). Multiply by the modular inverse instead.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Find the two numbers that appear once when all others appear twice.</summary><div class="answer"><p>XOR everything to get a ^ b. Take any set bit (lowest: x &amp; -x) to split numbers into two groups by that bit; XOR each group separately to get a and b.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What is ~5 in Python and why?</summary><div class="answer"><p>-6. ~x equals -x - 1 because of two&#x27;s complement with unlimited sign bits.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How do Unix file permissions use bits?</summary><div class="answer"><p>Read, write, execute are bits (4, 2, 1) for owner, group and others; permission checks use AND with the required mask.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why do bit tricks exist?</summary><div class="answer"><p>Computers store numbers as bits, and bit operations are the fastest and use no extra memory.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does n &amp; (n - 1) clear the lowest set bit?</summary><div class="answer"><p>Subtracting 1 flips that bit and all lower zeros; AND-ing keeps only the unchanged high bits.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is x ^ x equal to 0?</summary><div class="answer"><p>XOR gives 1 only where bits differ, and a number never differs from itself.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use parentheses with bit operators in Python?</summary><div class="answer"><p>== and comparisons bind tighter than &amp;, so x &amp; 1 == 1 is parsed as x &amp; (1 == 1).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does ~5 equal -6 in Python?</summary><div class="answer"><p>~x = -x - 1 in two&#x27;s complement with unlimited sign bits.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use bit tricks everywhere?</summary><div class="answer"><p>They hurt readability. Use them when they bring clear benefits (O(1) space, standard idioms).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Check whether a number is odd using bits.</summary><div class="answer"><p>return n &amp; 1 == 1 (written as (n &amp; 1) == 1).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What is 1 &lt;&lt; 3 and 16 &gt;&gt; 2?</summary><div class="answer"><p>8 and 4.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Return the prime factorisation of n as a dictionary of prime to exponent.</summary><div class="answer"><pre><code class="lang-py">def factorize(n):
+    f, d = {}, 2
+    while d * d &lt;= n:
+        while n % d == 0:
+            f[d] = f.get(d, 0) + 1
+            n //= d
+        d += 1
+    if n &gt; 1:
+        f[n] = f.get(n, 0) + 1
+    return f</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What is gcd(0, 5)?</summary><div class="answer"><p>5. gcd(a, 0) = a and gcd(0, b) = b.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> Why is factoring large numbers important for security?</summary><div class="answer"><p>RSA keys are products of two huge primes; security relies on factoring being computationally infeasible.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why stop trial division at sqrt(n)?</summary><div class="answer"><p>If n = a x b, one of a or b is at most sqrt(n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does Euclid&#x27;s algorithm work?</summary><div class="answer"><p>Any common divisor of a and b also divides a mod b, so gcd(a, b) = gcd(b, a mod b).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why start crossing out at p*p in the sieve?</summary><div class="answer"><p>Smaller multiples have a smaller prime factor and are already crossed out.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why compute lcm as a // gcd * b?</summary><div class="answer"><p>Dividing first avoids a huge intermediate product in languages with fixed-size integers.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does a perfect square have an odd number of divisors?</summary><div class="answer"><p>One divisor pair is the same number twice.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use floating point sqrt for primality?</summary><div class="answer"><p>Rounding errors can give the wrong bound for large n. Use math.isqrt or compare d * d &lt;= n.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Return all divisors of n in sorted order.</summary><div class="answer"><p>Loop d up to sqrt(n); add d and n // d; sort the result.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> gcd(0, 0) in Python?</summary><div class="answer"><p>0.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Compute nCr mod p for many queries efficiently.</summary><div class="answer"><p>Precompute factorials and inverse factorials up to N once, then nCr = fact[n] * inv_fact[r] * inv_fact[n - r] % p in O(1).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What is (-7) % 5 in Python?</summary><div class="answer"><p>3. Python&#x27;s modulo takes the sign of the divisor.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> Why are results printed modulo 10^9 + 7 in contests?</summary><div class="answer"><p>It keeps outputs bounded, is easy to check, and lets problem setters use huge counts without big-number arithmetic.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why take the modulus at every step?</summary><div class="answer"><p>It keeps numbers small and fast and gives the same remainder because modular arithmetic respects + and x.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why can&#x27;t you divide under a modulus?</summary><div class="answer"><p>Remainders do not follow normal division; you multiply by the modular inverse instead.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does Fermat&#x27;s little theorem give the inverse for a prime modulus?</summary><div class="answer"><p>x^(p-1) = 1 (mod p), so x^(p-2) is the inverse of x.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why 10^9 + 7?</summary><div class="answer"><p>It is prime, fits in 30 bits and is conventional, so problems agree on one modulus.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not compute n! then divide?</summary><div class="answer"><p>n! is astronomically large; reduce at each step and use inverses.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use pow(a, b, m) rather than a ** b % m?</summary><div class="answer"><p>pow with three arguments reduces during the computation and runs in O(log b) without creating a huge number.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Compute n! mod m for n up to 10^6.</summary><div class="answer"><p>Loop and multiply with % m at every step.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What is pow(2, 10, 1000)?</summary><div class="answer"><p>24 (1024 mod 1000).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Reverse the bits of a 32-bit unsigned integer.</summary><div class="answer"><p>Loop 32 times: shift result left and add the lowest bit of n, then shift n right. O(32).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Count the numbers up to n coprime with n.</summary><div class="answer"><p>Euler&#x27;s totient function: n multiplied by (1 - 1/p) for each distinct prime factor p.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Bit Manipulation &amp; Mathematics"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Compute a^b mod m for huge b.</summary><div class="answer"><p>Fast exponentiation: pow(a, b, m).</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="m16-problems.html"><span class="dir">Previous</span><span>Problems 16: Dynamic Programming</span></a>
+      <a class="next" href="m17-problems.html"><span class="dir">Next</span><span>Problems 17: Bit Manipulation & Mathematics</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

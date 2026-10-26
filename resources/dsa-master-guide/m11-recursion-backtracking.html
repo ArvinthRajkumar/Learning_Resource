@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="M11">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>M11 Recursion & Backtracking | DSA Master Guide</title>
+<meta name="description" content="Think recursively, then add &quot;choose / explore / un-choose&quot; to generate every possibility.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<link rel="stylesheet" href="viz.css">
+<script src="viz.js" defer></script>
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Module 11</p>
+      <h1>Recursion &amp; Backtracking</h1>
+      <p class="lede">Think recursively, then add "choose / explore / un-choose" to generate every possibility. Topics in this module: Recursion and the call stack; backtracking: subsets, permutations and combinations; n-queens and pruning.</p>
+      <div class="meta"><span class="tag ok">Essential</span><span class="tag">3 topics</span><span class="tag">14 problems</span><span class="tag">55 interview questions</span></div>
+    </div>
+
+    <section id="why-this-module" data-track>
+      <h2>Start from scratch: why this module exists</h2>
+      <p>Recursion expresses a problem in terms of smaller copies of itself. Backtracking adds an undo step so you can explore every combination of choices systematically, abandoning dead ends early.</p>
+      <p>These two ideas underpin trees, graphs, divide and conquer and dynamic programming, so a firm grasp here pays off in every later module.</p>
+      <p><strong>Who needs it:</strong> Game and puzzle solvers, compilers and parsers, constraint and scheduling software, and interviewers.</p>
+      <p><strong>Before you start:</strong> Modules 1-2.</p>
+      <h3>After this module you can</h3>
+      <ul><li>Write recursive functions with correct base cases.</li><li>Analyse recursion by drawing call trees.</li><li>Generate subsets, permutations and combinations.</li><li>Solve N-Queens with pruning.</li></ul>
+      <p><strong>Common pitfalls:</strong> Missing base cases, forgetting to undo choices, storing the path instead of a copy, huge recursion depth.</p>
+      <p><strong>Typical interview questions here:</strong> Factorial/Fibonacci, power function, subsets, permutations, combination sum, generate parentheses, N-Queens, word search, sudoku.</p>
+    </section>
+
+    <section id="c11_1" data-track>
+      <h2>Recursion and the call stack</h2>
+      <p><span class="tag ok">Essential</span> <span class="tag">Topic 11.1</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>Recursion solves a problem by solving smaller copies of the same problem. Each call gets its own frame on the call stack holding its own variables; frames are removed as calls return.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Trees, graphs, divide-and-conquer and backtracking are naturally recursive. You also need to know when recursion is too slow.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Nested Russian dolls: opening a doll reveals a smaller doll until you reach the tiniest one (base case); then you close them in reverse order.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Why does recursion exist? Because some problems are defined in terms of themselves. A folder contains files and folders. A sentence contains phrases that contain phrases. The factorial of 5 is 5 times the factorial of 4. If the definition is self-referential, the code that mirrors the definition is a function that calls itself.</p>
+      <p>To avoid infinite loops the definition needs an anchor, a case simple enough to answer directly (0! = 1, an empty folder, a leaf node). This is exactly the structure of a proof by mathematical induction: prove the base, then prove 'if true for smaller, true for this'. If you trust the smaller call, you only reason about one level at a time, which keeps your head from exploding.</p>
+      <p>The recursion tree explains cost. Draw each call as a node with its recursive calls as children. Total work is the sum of work at all nodes. Naive Fibonacci's tree is huge because fib(3) appears many times. Memoisation compresses the tree into a DAG where each distinct call appears once.</p>
+      <p>Recursion isn't free: each call uses a stack frame (time to create it, memory to keep it). In Python this also means a depth limit. Learn both ways of solving problems and choose deliberately.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="rec"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Three questions: (1) What is the base case? (2) How do I shrink the problem? (3) How do I combine the sub-result?</li><li>fib(n) = fib(n-1) + fib(n-2) with fib(0)=0, fib(1)=1. Each call spawns two more -&gt; the recursion TREE grows exponentially: O(2^n) calls.</li><li>The same sub-problems (fib(2), fib(3)...) are recomputed many times. Memoisation caches results and reduces the cost to O(n) (Module 16).</li><li>Python limits recursion depth to about 1000 (sys.setrecursionlimit can raise it). Deep recursion (like 10^5) should be converted to a loop.</li><li>Use the visualiser: it shows the call stack grow and shrink, and counts the number of calls.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Recursion means defining a solution using smaller copies of itself. To write one, ask three questions: What is the simplest case I can answer without recursion (base case)? How do I make the problem smaller? How do I combine the answer of the smaller problem into mine?</p>
+      <p>Look at fib(4). It calls fib(3) and fib(2); fib(3) calls fib(2) and fib(1)... The picture is a tree. The same sub-problems (like fib(2)) appear again and again. That is why plain recursive Fibonacci is O(2^n). Remember the answers (memoisation) and it becomes O(n).</p>
+      <p>Recursion uses the call stack. Each call stores its own variables. Deep recursion uses lots of memory and Python limits it (about 1000). Prefer loops for simple counting and use recursion when the problem is naturally nested: trees, graphs, divide and conquer.</p>
+      <p>Tail recursion (the recursive call is the last action) can be turned into a loop easily. Python does not optimise it for you.</p>
+      <p>Debugging tip: print the arguments at the start of the function with indentation based on depth, or draw the recursion tree by hand for a tiny input.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>CPython frames are heap-allocated objects; each Python-level call costs on the order of a microsecond and the default recursion limit of 1000 protects the C stack.</li><li>functools.lru_cache wraps the function and stores results in a dict keyed by arguments, which is why arguments must be hashable (use tuples not lists).</li><li>Mutual recursion and tail calls also appear, but CPython has no tail-call optimisation.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>File system tools and web crawlers</td><td>Walk nested directories or linked pages.</td></tr><tr><td>Compilers</td><td>Recursive-descent parsers process nested syntax.</td></tr><tr><td>AI and games</td><td>Game tree search and puzzle solvers.</td></tr><tr><td>Interviewers</td><td>Recursion is the foundation for trees, backtracking, divide-and-conquer and DP questions.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Recursion vs iteration</td><td>Iteration is faster and uses O(1) stack; recursion is clearer for self-similar structure.</td></tr><tr><td>Top-down memo vs bottom-up DP</td><td>Memo only computes needed states and is easy to write; bottom-up avoids recursion limits and can save space.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>@lru_cache(maxsize=None) turns a slow recursion into a fast memoised one.</li><li>sys.setrecursionlimit(10**6) raises the limit (be careful: very deep recursion can still crash).</li><li>Use default parameters to carry extra state, like memo=None.</li><li>Helper function inside: def solve(): def go(i): ... go(0).</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c11_1.py">def fib(n):
+    if n &lt; 2:                     # base cases: fib(0)=0, fib(1)=1
+        return n
+    return fib(n - 1) + fib(n - 2)
+
+def sum_digits(n):
+    if n &lt; 10:
+        return n
+    return n % 10 + sum_digits(n // 10)</code></pre>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - plain recursion</h4>
+      <p>Mirrors the definition but recomputes the same values: O(2^n).</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c11_1_stage1.py">def fib(n):
+    return n if n &lt; 2 else fib(n - 1) + fib(n - 2)</code></pre>
+      <p class="muted small">Check: <code>fib(20)</code> returns <code>6765</code></p>
+      <h4>Stage 2 - add a notebook (memoisation)</h4>
+      <p>Cache every answer the first time. Each n is computed once: O(n).</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c11_1_stage2.py">def fib(n, memo=None):
+    memo = {} if memo is None else memo
+    if n &lt; 2:
+        return n
+    if n not in memo:
+        memo[n] = fib(n - 1, memo) + fib(n - 2, memo)
+    return memo[n]</code></pre>
+      <p class="muted small">Check: <code>fib(20)</code> returns <code>6765</code></p>
+      <h4>Stage 3 - loop with two variables</h4>
+      <p>No recursion limit and O(1) space.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c11_1_stage3.py">def fib(n):
+    a, b = 0, 1
+    for _ in range(n):
+        a, b = b, a + b
+    return a</code></pre>
+      <p class="muted small">Check: <code>fib(20)</code> returns <code>6765</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>fib(4)</code>, returns <code>3</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">depth</th><th class="num">line</th><th>statement executed</th><th>n (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">1</td><td class="num">2</td><td><code>if n &lt; 2:                     # base cases: fib(0)=0, fib(1)=1</code></td><td><strong><code>4</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">1</td><td class="num">4</td><td><code>return fib(n - 1) + fib(n - 2)</code></td><td><strong><code>3</code></strong></td></tr>
+<tr><td class="num">3</td><td class="num">2</td><td class="num">2</td><td><code>if n &lt; 2:                     # base cases: fib(0)=0, fib(1)=1</code></td><td><code>3</code></td></tr>
+<tr><td class="num">4</td><td class="num">2</td><td class="num">4</td><td><code>return fib(n - 1) + fib(n - 2)</code></td><td><strong><code>2</code></strong></td></tr>
+<tr><td class="num">5</td><td class="num">3</td><td class="num">2</td><td><code>if n &lt; 2:                     # base cases: fib(0)=0, fib(1)=1</code></td><td><code>2</code></td></tr>
+<tr><td class="num">6</td><td class="num">3</td><td class="num">4</td><td><code>return fib(n - 1) + fib(n - 2)</code></td><td><strong><code>1</code></strong></td></tr>
+<tr><td class="num">7</td><td class="num">4</td><td class="num">2</td><td><code>if n &lt; 2:                     # base cases: fib(0)=0, fib(1)=1</code></td><td><code>1</code></td></tr>
+<tr><td class="num">8</td><td class="num">4</td><td class="num">3</td><td><code>return n</code></td><td><code>1</code></td></tr>
+<tr><td class="num">9</td><td class="num">4</td><td class="num">2</td><td><code>if n &lt; 2:                     # base cases: fib(0)=0, fib(1)=1</code></td><td><strong><code>0</code></strong></td></tr>
+<tr><td class="num">10</td><td class="num">4</td><td class="num">3</td><td><code>return n</code></td><td><code>0</code></td></tr>
+<tr><td class="num">11</td><td class="num">3</td><td class="num">2</td><td><code>if n &lt; 2:                     # base cases: fib(0)=0, fib(1)=1</code></td><td><strong><code>1</code></strong></td></tr>
+<tr><td class="num">12</td><td class="num">3</td><td class="num">3</td><td><code>return n</code></td><td><code>1</code></td></tr>
+<tr><td class="num">13</td><td class="num">2</td><td class="num">2</td><td><code>if n &lt; 2:                     # base cases: fib(0)=0, fib(1)=1</code></td><td><strong><code>2</code></strong></td></tr>
+<tr><td class="num">14</td><td class="num">2</td><td class="num">4</td><td><code>return fib(n - 1) + fib(n - 2)</code></td><td><strong><code>1</code></strong></td></tr>
+<tr><td class="num">15</td><td class="num">3</td><td class="num">2</td><td><code>if n &lt; 2:                     # base cases: fib(0)=0, fib(1)=1</code></td><td><code>1</code></td></tr>
+<tr><td class="num">16</td><td class="num">3</td><td class="num">3</td><td><code>return n</code></td><td><code>1</code></td></tr>
+<tr><td class="num">17</td><td class="num">3</td><td class="num">2</td><td><code>if n &lt; 2:                     # base cases: fib(0)=0, fib(1)=1</code></td><td><strong><code>0</code></strong></td></tr>
+<tr><td class="num">18</td><td class="num">3</td><td class="num">3</td><td><code>return n</code></td><td><code>0</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>fib: O(2^n) time, O(n) stack space. sum_digits: O(d) time and stack for d digits.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>No base case or an unreachable base case.</li><li>Recomputing the same subproblem (needs memoisation).</li><li>Exceeding the recursion limit on large input.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>Self-similar structure (trees, nested structure), "all ways to...", divide and conquer -&gt; recursion.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m11-problems.html#prob-palindrome_rec">Recursive Palindrome Check</a></td><td><span class="tag ok">Easy</span></td><td>Recursion on strings</td></tr><tr><td><a href="m16-problems.html#prob-fib_memo">Fibonacci with Memoization</a></td><td><span class="tag ok">Easy</span></td><td>Memoization (top-down DP)</td></tr><tr><td><a href="m11-problems.html#prob-fast_power">Fast Exponentiation</a></td><td><span class="tag warn">Medium</span></td><td>Recursion (divide and conquer)</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why does naive Fibonacci take exponential time?</summary><div class="answer"><p>It recomputes the same subproblems over and over (fib(3) many times).</p></div></details>
+        <details class="recall"><summary>Why add memoisation?</summary><div class="answer"><p>Each distinct n is computed once, reducing the work to O(n).</p></div></details>
+        <details class="recall"><summary>Why does Python limit recursion depth?</summary><div class="answer"><p>To protect the interpreter from running out of memory in endless recursion.</p></div></details>
+        <details class="recall"><summary>Why do recursion and induction feel alike?</summary><div class="answer"><p>Both solve the base case and then show that solving the smaller case lets you solve the bigger one.</p></div></details>
+        <details class="recall"><summary>Why not convert every recursion to a loop?</summary><div class="answer"><p>Some problems (trees, backtracking) are far clearer recursively.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c11_1-q1" data-topic="Recursion &amp; Backtracking" data-type="single" data-answer="C">
+        <div class="q-stem"><p>How many times is fib(1) computed by fib(4)?</p></div>
+        <ul class="q-options">
+          <li data-key="A">1</li>
+          <li data-key="B">2</li>
+          <li data-key="C">3</li>
+          <li data-key="D">5</li>
+        </ul>
+        <div class="q-explain"><p>fib(4) -&gt; fib(3)+fib(2); fib(3) -&gt; fib(2)+fib(1); fib(2) -&gt; fib(1)+fib(0): fib(1) appears 3 times.</p></div>
+      </div>
+      <div class="quiz" data-qid="c11_1-q2" data-topic="Recursion &amp; Backtracking" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Complexity of naive recursive Fibonacci?</p></div>
+        <ul class="q-options">
+          <li data-key="A">O(n)</li>
+          <li data-key="B">O(n log n)</li>
+          <li data-key="C">O(2^n)</li>
+          <li data-key="D">O(n^2)</li>
+        </ul>
+        <div class="q-explain"><p>Each call branches into two calls.</p></div>
+      </div>
+    </section>
+
+    <section id="c11_2" data-track>
+      <h2>Backtracking: subsets, permutations and combinations</h2>
+      <p><span class="tag ok">Essential</span> <span class="tag">Topic 11.2</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>Backtracking builds a solution one choice at a time. After exploring a choice, it undoes it ("un-choose") and tries the next option - like exploring a maze and walking back at dead ends.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>It generates all subsets, permutations, combinations and solves constraint puzzles (N-Queens, Sudoku) while pruning impossible branches early.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Choosing an outfit: pick a shirt, then trousers; if you do not like the result, put the trousers back and try different ones.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Some problems ask for ALL arrangements or ALL choices: every subset, every ordering, every valid way. There is no clever formula; you must generate them. How do you generate systematically without missing or repeating any? Make one decision at a time and explore both consequences.</p>
+      <p>Picture standing at a maze junction. You choose a corridor and walk. At a dead end you walk back to the junction and try the next corridor. 'Walking back' is the undo step. Backtracking is a depth-first search of the tree of all possible choices, where each node is a partial solution.</p>
+      <p>Why undo instead of copying the state each time? Copying is O(n) per step. Undoing is O(1) per step because you reverse only the last change (append then pop). That is why backtracking uses one shared list and push/pop.</p>
+      <p>Pruning is where backtracking beats brute force. If a partial solution already breaks a rule (sum too big, queen attacked), abandon the whole subtree. Large parts of the search space vanish without being visited.</p>
+      <p>Counting what you will generate (2^n, n!, Catalan numbers) tells you the largest n that is feasible. That is why constraints like n &lt;= 10 or n &lt;= 15 hint at backtracking.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="backtrack"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Template: record answer if complete -&gt; for each option: choose (append) -&gt; recurse -&gt; un-choose (pop).</li><li>Subsets: at each call the current path is a valid subset. Loop i from <code>start</code>; recurse with i + 1 so each element is used at most once and order does not repeat.</li><li>Permutations: use a <code>used</code> array; recurse with no start index; base case when len(path) == n.</li><li>Combination sum: recurse with the same index i to allow reuse; prune when remaining &lt; 0.</li><li>Sizes: subsets 2^n, permutations n!, combinations C(n, k). That is why backtracking only works for small n.</li><li>Always store a COPY of the path: res.append(path[:]).</li><li>The visualiser walks through the decision tree for subsets.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Backtracking is recursion for making a sequence of choices. At each step: choose an option, explore everything that follows from it, then UN-choose (undo) it and try the next option. Undoing is the 'back' in backtracking; it restores the state like walking back to a junction in a maze.</p>
+      <p>Use one shared list called path. Append the choice, recurse, then pop. Because you reuse the same list, never store the path itself in your results; store a copy (path[:]), otherwise later changes change your stored answer.</p>
+      <p>Subsets: at every call the current path is already a valid subset, so record it. Then try each later item (use a start index so you never choose items out of order and never repeat a subset). Permutations: choose any item not yet used; the answer is complete when the path has n items.</p>
+      <p>Combinations (choose k items) stop when the path length is k. Combination sum allows reuse: recurse with the same index. Prune early: if the remaining target is negative, stop; if a sorted candidate is already bigger than the target, break.</p>
+      <p>Duplicates: sort the input and skip an item that equals the previous item at the same level. This avoids generating the same subset twice.</p>
+      <p>Remember the size of the answer: subsets 2^n, permutations n!, so this technique is only for small n (about 20 for subsets, about 10 for permutations).</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>The recursion tree for subsets has 2^n leaves and depth n; permutations have n! leaves. Cost per leaf is O(n) to copy the path.</li><li>Sorting the input and skipping equal neighbours (i &gt; start and a[i] == a[i-1]) deduplicates results at a level without a set.</li><li>Pruning with sorted input: if candidates[i] &gt; remaining, every later candidate is also too big, so break instead of continue.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Puzzle and game solvers</td><td>Sudoku, crosswords, chess puzzles and logic puzzles.</td></tr><tr><td>Configuration and scheduling tools</td><td>Trying combinations of constraints (timetables, seating).</td></tr><tr><td>Compilers and regex engines</td><td>Pattern matching engines backtrack over alternatives.</td></tr><tr><td>Interviewers</td><td>Subsets, permutations, combination sum, N-Queens, word search and sudoku measure recursion skill.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Backtracking vs brute force</td><td>Brute force generates every full candidate then checks; backtracking checks rules while building, pruning early.</td></tr><tr><td>Backtracking vs DP</td><td>If the same subproblem repeats, memoise (DP). If you must list every solution, backtracking is required.</td></tr><tr><td>itertools vs manual backtracking</td><td>itertools.permutations/combinations/product are fast for simple cases; manual code is needed when pruning or custom constraints exist.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>res.append(path[:]) or res.append(list(path)) stores a copy.</li><li>itertools.permutations(nums), combinations(nums, k) and product(...) generate things for you in real code (but you must know the manual version).</li><li>Use nonlocal or a list for counters inside nested functions.</li><li>A set or boolean list 'used' marks which items are taken.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c11_2.py">def gen_subsets(nums, start, path, res):
+    res.append(path[:])                     # every path is a subset
+    for i in range(start, len(nums)):
+        path.append(nums[i])                # choose
+        gen_subsets(nums, i + 1, path, res) # explore
+        path.pop()                          # un-choose
+
+def subsets(nums):
+    res = []
+    gen_subsets(nums, 0, [], res)
+    return res</code></pre>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - build subsets by doubling</h4>
+      <p>Start with [[]]. For each item copy every existing subset and add the item. Simple and iterative.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c11_2_stage1.py">def subsets(nums):
+    res = [[]]
+    for x in nums:
+        res += [s + [x] for s in res]
+    return res</code></pre>
+      <p class="muted small">Check: <code>len(subsets([1, 2, 3]))</code> returns <code>8</code></p>
+      <h4>Stage 2 - backtracking</h4>
+      <p>Choose, explore, un-choose. This is the template that also handles pruning (combination sum, N-Queens).</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c11_2_stage2.py">def subsets(nums):
+    res, path = [], []
+    def go(start):
+        res.append(path[:])
+        for i in range(start, len(nums)):
+            path.append(nums[i])
+            go(i + 1)
+            path.pop()
+    go(0)
+    return res</code></pre>
+      <p class="muted small">Check: <code>len(subsets([1, 2, 3]))</code> returns <code>8</code></p>
+      <h4>Stage 3 - bitmasks</h4>
+      <p>Every number from 0 to 2^n - 1 is a subset. Short, but no pruning is possible.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c11_2_stage3.py">def subsets(nums):
+    n = len(nums)
+    return [[nums[i] for i in range(n) if m &gt;&gt; i &amp; 1] for m in range(1 &lt;&lt; n)]</code></pre>
+      <p class="muted small">Check: <code>len(subsets([1, 2, 3]))</code> returns <code>8</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>subsets([1, 2])</code>, returns <code>[[], [1], [1, 2], [2]]</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">depth</th><th class="num">line</th><th>statement executed</th><th>path (after)</th><th>res (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">1</td><td class="num">2</td><td><code>res.append(path[:])                     # every path is a subset</code></td><td><strong><code>[]</code></strong></td><td><strong><code>[[]]</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">1</td><td class="num">3</td><td><code>for i in range(start, len(nums)):</code></td><td><code>[]</code></td><td><code>[[]]</code></td></tr>
+<tr><td class="num">3</td><td class="num">1</td><td class="num">4</td><td><code>path.append(nums[i])                # choose</code></td><td><strong><code>[1]</code></strong></td><td><code>[[]]</code></td></tr>
+<tr><td class="num">4</td><td class="num">1</td><td class="num">5</td><td><code>gen_subsets(nums, i + 1, path, res) # explore</code></td><td><code>[1]</code></td><td><code>[[]]</code></td></tr>
+<tr><td class="num">5</td><td class="num">2</td><td class="num">2</td><td><code>res.append(path[:])                     # every path is a subset</code></td><td><code>[1]</code></td><td><strong><code>[[], [1]]</code></strong></td></tr>
+<tr><td class="num">6</td><td class="num">2</td><td class="num">3</td><td><code>for i in range(start, len(nums)):</code></td><td><code>[1]</code></td><td><code>[[], [1]]</code></td></tr>
+<tr><td class="num">7</td><td class="num">2</td><td class="num">4</td><td><code>path.append(nums[i])                # choose</code></td><td><strong><code>[1, 2]</code></strong></td><td><code>[[], [1]]</code></td></tr>
+<tr><td class="num">8</td><td class="num">2</td><td class="num">5</td><td><code>gen_subsets(nums, i + 1, path, res) # explore</code></td><td><code>[1, 2]</code></td><td><code>[[], [1]]</code></td></tr>
+<tr><td class="num">9</td><td class="num">3</td><td class="num">2</td><td><code>res.append(path[:])                     # every path is a subset</code></td><td><code>[1, 2]</code></td><td><strong><code>[[], [1], [1, 2]]</code></strong></td></tr>
+<tr><td class="num">10</td><td class="num">3</td><td class="num">3</td><td><code>for i in range(start, len(nums)):</code></td><td><code>[1, 2]</code></td><td><code>[[], [1], [1, 2]]</code></td></tr>
+<tr><td class="num">11</td><td class="num">2</td><td class="num">6</td><td><code>path.pop()                          # un-choose</code></td><td><strong><code>[1]</code></strong></td><td><code>[[], [1], [1, 2]]</code></td></tr>
+<tr><td class="num">12</td><td class="num">2</td><td class="num">3</td><td><code>for i in range(start, len(nums)):</code></td><td><code>[1]</code></td><td><code>[[], [1], [1, 2]]</code></td></tr>
+<tr><td class="num">13</td><td class="num">1</td><td class="num">6</td><td><code>path.pop()                          # un-choose</code></td><td><strong><code>[]</code></strong></td><td><code>[[], [1], [1, 2]]</code></td></tr>
+<tr><td class="num">14</td><td class="num">1</td><td class="num">3</td><td><code>for i in range(start, len(nums)):</code></td><td><code>[]</code></td><td><code>[[], [1], [1, 2]]</code></td></tr>
+<tr><td class="num">15</td><td class="num">1</td><td class="num">4</td><td><code>path.append(nums[i])                # choose</code></td><td><strong><code>[2]</code></strong></td><td><code>[[], [1], [1, 2]]</code></td></tr>
+<tr><td class="num">16</td><td class="num">1</td><td class="num">5</td><td><code>gen_subsets(nums, i + 1, path, res) # explore</code></td><td><code>[2]</code></td><td><code>[[], [1], [1, 2]]</code></td></tr>
+<tr><td class="num">17</td><td class="num">2</td><td class="num">2</td><td><code>res.append(path[:])                     # every path is a subset</code></td><td><code>[2]</code></td><td><strong><code>[[], [1], [1, 2], [2]]</code></strong></td></tr>
+<tr><td class="num">18</td><td class="num">2</td><td class="num">3</td><td><code>for i in range(start, len(nums)):</code></td><td><code>[2]</code></td><td><code>[[], [1], [1, 2], [2]]</code></td></tr>
+<tr><td class="num">19</td><td class="num">1</td><td class="num">6</td><td><code>path.pop()                          # un-choose</code></td><td><strong><code>[]</code></strong></td><td><code>[[], [1], [1, 2], [2]]</code></td></tr>
+<tr><td class="num">20</td><td class="num">1</td><td class="num">3</td><td><code>for i in range(start, len(nums)):</code></td><td><code>[]</code></td><td><code>[[], [1], [1, 2], [2]]</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>Subsets: O(n * 2^n) time (copying each subset), O(n) recursion depth.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Forgetting to un-choose (pop).</li><li>Appending the path itself instead of a copy.</li><li>Duplicates in input need sorting and skipping equal neighbours.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"Generate all", "list every", "all possible", n &lt;= 15 -&gt; backtracking.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m11-problems.html#prob-subsets">All Subsets (Power Set)</a> <span class="tag">LC 78</span></td><td><span class="tag warn">Medium</span></td><td>Backtracking</td></tr><tr><td><a href="m11-problems.html#prob-permutations">All Permutations</a> <span class="tag">LC 46</span></td><td><span class="tag warn">Medium</span></td><td>Backtracking</td></tr><tr><td><a href="m11-problems.html#prob-combination_sum">Combination Sum</a> <span class="tag">LC 39</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Backtracking with pruning</td></tr><tr><td><a href="m11-problems.html#prob-generate_parentheses">Generate Balanced Parentheses</a> <span class="tag">LC 22</span></td><td><span class="tag warn">Medium</span></td><td>Backtracking with constraints</td></tr><tr><td><a href="m11-problems.html#prob-word_search">Word Search</a> <span class="tag">LC 79</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Grid DFS + backtracking</td></tr><tr><td><a href="m11-problems.html#prob-combination_sum_ii">Combination Sum II</a> <span class="tag">LC 40</span></td><td><span class="tag warn">Medium</span></td><td>Backtracking + duplicate skipping</td></tr><tr><td><a href="m11-problems.html#prob-permutations_unique">Permutations II</a> <span class="tag">LC 47</span></td><td><span class="tag warn">Medium</span></td><td>Backtracking with duplicates</td></tr><tr><td><a href="m11-problems.html#prob-restore_ip">Restore IP Addresses</a> <span class="tag">LC 93</span></td><td><span class="tag warn">Medium</span></td><td>Backtracking on strings</td></tr><tr><td><a href="m11-problems.html#prob-letter_combinations">Phone Keypad Letter Combinations</a> <span class="tag">LC 17</span></td><td><span class="tag warn">Medium</span></td><td>Backtracking</td></tr><tr><td><a href="m11-problems.html#prob-subsets_with_dup">Subsets With Duplicates</a> <span class="tag">LC 90</span></td><td><span class="tag warn">Medium</span></td><td>Backtracking, skipping duplicates</td></tr><tr><td><a href="m11-problems.html#prob-palindrome_partitions">Palindrome Partitioning</a> <span class="tag">LC 131</span></td><td><span class="tag warn">Medium</span></td><td>Backtracking on strings</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why undo (pop) after each recursive call?</summary><div class="answer"><p>The shared path must return to its previous state before the next option is tried.</p></div></details>
+        <details class="recall"><summary>Why store path[:] and not path?</summary><div class="answer"><p>path keeps changing; a copy freezes the current answer.</p></div></details>
+        <details class="recall"><summary>Why use a start index in subsets?</summary><div class="answer"><p>It ensures each subset is built in increasing order so none is generated twice.</p></div></details>
+        <details class="recall"><summary>Why prune?</summary><div class="answer"><p>Cutting branches that cannot succeed avoids exploring huge parts of the search space.</p></div></details>
+        <details class="recall"><summary>Why sort the input for duplicate handling?</summary><div class="answer"><p>Equal values become adjacent, so a simple 'skip if equal to the previous' rule removes duplicate subsets.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c11_2-q1" data-topic="Recursion &amp; Backtracking" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How many subsets does a set of 4 elements have?</p></div>
+        <ul class="q-options">
+          <li data-key="A">8</li>
+          <li data-key="B">16</li>
+          <li data-key="C">24</li>
+          <li data-key="D">4</li>
+        </ul>
+        <div class="q-explain"><p>2^4 = 16.</p></div>
+      </div>
+      <div class="quiz" data-qid="c11_2-q2" data-topic="Recursion &amp; Backtracking" data-type="single" data-answer="B">
+        <div class="q-stem"><p>The "un-choose" step exists to...</p></div>
+        <ul class="q-options">
+          <li data-key="A">Save memory</li>
+          <li data-key="B">Restore state so other options can be tried</li>
+          <li data-key="C">Print output</li>
+          <li data-key="D">Sort the result</li>
+        </ul>
+        <div class="q-explain"><p>The shared path must be reset before trying the next choice.</p></div>
+      </div>
+    </section>
+
+    <section id="c11_3" data-track>
+      <h2>N-Queens and pruning</h2>
+      <p><span class="tag warn">Important</span> <span class="tag">Topic 11.3</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>N-Queens asks you to place n queens on an n x n board so none attack each other. Backtracking places one queen per row and abandons a placement as soon as it conflicts.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>It is the standard example of pruning: rejecting partial solutions early shrinks an enormous search space.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Seating guests who dislike each other: seat them one at a time and if the next guest has no valid seat, move the previous guest.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>N-Queens is the classic 'place things so none conflict'. A naive plan tries every placement of n queens on n^2 squares: astronomically many. Insight one: two queens can never share a row, so put exactly one per row and only choose columns. That alone reduces n^2-choose-n to n^n.</p>
+      <p>Insight two: check conflicts as you place. If a queen conflicts with an earlier one, do not continue; undo and try another column. Whole subtrees disappear. For n = 8 the full space has millions of branches but only about 2,000 board states are ever visited.</p>
+      <p>Insight three: make conflict checks O(1). A queen at (r, c) attacks column c, the diagonal where r - c is constant and the anti-diagonal where r + c is constant. Three sets give instant checks.</p>
+      <p>N-Queens teaches the full pattern of constraint satisfaction: choose, check, recurse, undo. Sudoku, graph colouring and scheduling are the same shape with different constraints.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="nqueens"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>One queen per row, so we only decide the column for each row.</li><li>Queens conflict if they share a column or a diagonal. Diagonals: row - col is constant on one direction, row + col on the other.</li><li>Keep three sets (cols, diag1, diag2) so each safety test is O(1).</li><li>Try each column; if safe, mark it, recurse to the next row, then unmark.</li><li>For n = 4 there are exactly two solutions. The visualiser shows queens being placed and removed.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>N-Queens: place n queens on an n x n chessboard so none can capture another. Queens attack along rows, columns and both diagonals. Because there must be exactly one queen per row, we place one queen per row and only decide the column.</p>
+      <p>Checking attacks fast: keep three sets: used columns, used 'down-left' diagonals (row - col is the same along one) and used 'down-right' diagonals (row + col is the same along the other). Checking a square is three O(1) set lookups.</p>
+      <p>The search: for row 0 try every column; if safe, place and recurse to the next row. If no column works in some row, return and move the previous queen. When we pass the last row, we found a solution.</p>
+      <p>Pruning is why it works: without pruning there are n^n placements; with pruning the search tree is tiny for small n (for n = 8 there are 92 solutions).</p>
+      <p>Other 'place things without conflicts' problems (Sudoku, graph colouring, word search) use exactly the same skeleton.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>The number of solutions for n = 1..8 is 1, 0, 0, 2, 10, 4, 40, 92. Search nodes visited are far fewer than n^n thanks to pruning.</li><li>Using bit masks for columns and diagonals makes it much faster in practice (an integer holds the occupied columns), but sets are clearer for interviews.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Chip designers and parallel computing</td><td>Placement problems with non-attacking constraints appear in resource allocation and memory layout.</td></tr><tr><td>Puzzle designers and solvers</td><td>Sudoku, knight's tour, magic squares.</td></tr><tr><td>Interviewers</td><td>A classic hard-medium backtracking question to see structured recursion and pruning.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Sets vs board scan</td><td>Sets give O(1) conflict checks; scanning the board each time is O(n).</td></tr><tr><td>Count vs list solutions</td><td>Counting needs no board copies; listing solutions needs a copy of the column positions when a solution is found.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>cols, d1, d2 = set(), set(), set()</li><li>Use nonlocal count or return the count from recursion.</li><li>Board as a list of column positions: cols_at_row[r] = c.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c11_3.py">def n_queens(n):
+    cols, d1, d2 = set(), set(), set()
+    count = 0
+    def place(row):
+        nonlocal count
+        if row == n:
+            count += 1
+            return
+        for c in range(n):
+            if c in cols or row - c in d1 or row + c in d2:
+                continue                       # pruned: attacked
+            cols.add(c); d1.add(row - c); d2.add(row + c)
+            place(row + 1)
+            cols.remove(c); d1.remove(row - c); d2.remove(row + c)
+    place(0)
+    return count</code></pre>
+      <h3>Dry run (variable values at every step)</h3>
+      <p>Trace the code by hand on a tiny input and write down every variable after each line.</p>
+      <h3>Time and space complexity</h3>
+      <p>Roughly O(n!) with heavy pruning in practice; O(n) space.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Checking safety in O(n) per placement (slow).</li><li>Forgetting to remove diagonals when backtracking.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>Constraint satisfaction: place items so that no two conflict.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m11-problems.html#prob-generate_parentheses">Generate Balanced Parentheses</a> <span class="tag">LC 22</span></td><td><span class="tag warn">Medium</span></td><td>Backtracking with constraints</td></tr><tr><td><a href="m11-problems.html#prob-n_queens_count">N-Queens (Count Solutions)</a> <span class="tag">LC 52</span></td><td><span class="tag bad">Hard</span></td><td>Backtracking</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why one queen per row?</summary><div class="answer"><p>Two queens in a row attack each other, so every row has exactly one.</p></div></details>
+        <details class="recall"><summary>Why use three sets for conflicts?</summary><div class="answer"><p>Columns, row-col diagonals and row+col diagonals can then be checked in O(1).</p></div></details>
+        <details class="recall"><summary>Why is pruning crucial?</summary><div class="answer"><p>Without it the search tries n^n placements; with it only safe partial boards are expanded.</p></div></details>
+        <details class="recall"><summary>Why does n = 2 and 3 have no solution?</summary><div class="answer"><p>There is no way to place the queens without attacks on such small boards.</p></div></details>
+        <details class="recall"><summary>Why backtrack instead of trying placements randomly?</summary><div class="answer"><p>Systematic search guarantees you find every solution or prove none exists.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c11_3-q1" data-topic="Recursion &amp; Backtracking" data-type="single" data-answer="A">
+        <div class="q-stem"><p>Which quantity is constant along one diagonal?</p></div>
+        <ul class="q-options">
+          <li data-key="A">row + col or row - col</li>
+          <li data-key="B">row only</li>
+          <li data-key="C">col only</li>
+          <li data-key="D">row * col</li>
+        </ul>
+        <div class="q-explain"><p>row - col is constant on one diagonal, row + col on the other.</p></div>
+      </div>
+      <div class="quiz" data-qid="c11_3-q2" data-topic="Recursion &amp; Backtracking" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Number of 4-Queens solutions?</p></div>
+        <ul class="q-options">
+          <li data-key="A">1</li>
+          <li data-key="B">2</li>
+          <li data-key="C">4</li>
+          <li data-key="D">24</li>
+        </ul>
+        <div class="q-explain"><p>There are exactly two distinct solutions on a 4 x 4 board.</p></div>
+      </div>
+    </section>
+
+    <h2 id="practice-problems">Practice problems for this module</h2>
+
+    <p>14 problems with hints, approach, dry run and tested solutions on the <a href="m11-problems.html">problem set for this module</a>.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m11-problems.html#prob-palindrome_rec">Recursive Palindrome Check</a></td><td><span class="tag ok">Easy</span></td><td>Recursion on strings</td></tr><tr><td><a href="m11-problems.html#prob-fast_power">Fast Exponentiation</a></td><td><span class="tag warn">Medium</span></td><td>Recursion (divide and conquer)</td></tr><tr><td><a href="m11-problems.html#prob-subsets">All Subsets (Power Set)</a> <span class="tag">LC 78</span></td><td><span class="tag warn">Medium</span></td><td>Backtracking</td></tr><tr><td><a href="m11-problems.html#prob-permutations">All Permutations</a> <span class="tag">LC 46</span></td><td><span class="tag warn">Medium</span></td><td>Backtracking</td></tr><tr><td><a href="m11-problems.html#prob-combination_sum">Combination Sum</a> <span class="tag">LC 39</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Backtracking with pruning</td></tr><tr><td><a href="m11-problems.html#prob-generate_parentheses">Generate Balanced Parentheses</a> <span class="tag">LC 22</span></td><td><span class="tag warn">Medium</span></td><td>Backtracking with constraints</td></tr><tr><td><a href="m11-problems.html#prob-letter_combinations">Phone Keypad Letter Combinations</a> <span class="tag">LC 17</span></td><td><span class="tag warn">Medium</span></td><td>Backtracking</td></tr><tr><td><a href="m11-problems.html#prob-subsets_with_dup">Subsets With Duplicates</a> <span class="tag">LC 90</span></td><td><span class="tag warn">Medium</span></td><td>Backtracking, skipping duplicates</td></tr><tr><td><a href="m11-problems.html#prob-palindrome_partitions">Palindrome Partitioning</a> <span class="tag">LC 131</span></td><td><span class="tag warn">Medium</span></td><td>Backtracking on strings</td></tr><tr><td><a href="m11-problems.html#prob-word_search">Word Search</a> <span class="tag">LC 79</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Grid DFS + backtracking</td></tr><tr><td><a href="m11-problems.html#prob-combination_sum_ii">Combination Sum II</a> <span class="tag">LC 40</span></td><td><span class="tag warn">Medium</span></td><td>Backtracking + duplicate skipping</td></tr><tr><td><a href="m11-problems.html#prob-permutations_unique">Permutations II</a> <span class="tag">LC 47</span></td><td><span class="tag warn">Medium</span></td><td>Backtracking with duplicates</td></tr><tr><td><a href="m11-problems.html#prob-restore_ip">Restore IP Addresses</a> <span class="tag">LC 93</span></td><td><span class="tag warn">Medium</span></td><td>Backtracking on strings</td></tr><tr><td><a href="m11-problems.html#prob-n_queens_count">N-Queens (Count Solutions)</a> <span class="tag">LC 52</span></td><td><span class="tag bad">Hard</span></td><td>Backtracking</td></tr>
+</tbody>
+</table>
+</div>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Recursion &amp; Backtracking</h2>
+      <p class="muted">55 questions: try to answer aloud in under a minute, then reveal. All questions from every module are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Recursion & Backtracking">
+<details class="recall iq" data-level="basic" data-topic="Recursion &amp; Backtracking"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What are the parts of a recursive function?</summary><div class="answer"><p>A base case that stops the recursion, a recursive case that calls the function with a smaller input, and (usually) a way to combine the results.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Recursion &amp; Backtracking"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why is naive recursive Fibonacci slow?</summary><div class="answer"><p>It recomputes the same values exponentially many times (O(2^n)). Memoisation reduces it to O(n).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Recursion &amp; Backtracking"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Recursion vs iteration - which is better?</summary><div class="answer"><p>Iteration is usually faster and uses O(1) stack. Recursion is clearer for trees, graphs and backtracking. Python has a recursion limit, so deep inputs need loops.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Recursion &amp; Backtracking"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is memoisation?</summary><div class="answer"><p>Caching results of function calls by their arguments so repeated calls return instantly.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Recursion &amp; Backtracking"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Write a recursive function for the sum of digits.</summary><div class="answer"><pre><code class="lang-py">def sum_digits(n):
+    if n &lt; 10:
+        return n
+    return n % 10 + sum_digits(n // 10)</code></pre></div></details>
+<details class="recall iq" data-level="basic" data-topic="Recursion &amp; Backtracking"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is a base case and what happens if it is missing or unreachable?</summary><div class="answer"><p>It is the case answered without recursion. If missing, the recursion never stops and Python raises RecursionError.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Recursion &amp; Backtracking"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Explain backtracking.</summary><div class="answer"><p>Build a solution step by step. At each step choose, recurse, then undo the choice. Prune branches that cannot lead to a valid answer.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Recursion &amp; Backtracking"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Generate all subsets of a list.</summary><div class="answer"><pre><code class="lang-py">def subsets(nums):
+    res, path = [], []
+    def go(start):
+        res.append(path[:])
+        for i in range(start, len(nums)):
+            path.append(nums[i])
+            go(i + 1)
+            path.pop()
+    go(0)
+    return res</code></pre></div></details>
+<details class="recall iq" data-level="basic" data-topic="Recursion &amp; Backtracking"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why must you copy the path before storing it?</summary><div class="answer"><p>path is a single list that keeps changing. If you store the list itself, all stored answers end up pointing to the same final (empty) list.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Recursion &amp; Backtracking"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you avoid duplicate subsets when the input has duplicates?</summary><div class="answer"><p>Sort the input and skip nums[i] if i &gt; start and nums[i] == nums[i - 1].</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Recursion &amp; Backtracking"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Time complexity of generating all permutations?</summary><div class="answer"><p>O(n x n!). There are n! permutations and each takes O(n) to copy.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Recursion &amp; Backtracking"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is pruning?</summary><div class="answer"><p>Stopping a branch early when it cannot possibly produce a valid solution (for example the remaining sum is already negative).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Recursion &amp; Backtracking"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the time complexity of generating all subsets?</summary><div class="answer"><p>O(n x 2^n): there are 2^n subsets and copying each takes up to O(n).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Recursion &amp; Backtracking"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Explain the N-Queens algorithm.</summary><div class="answer"><p>Place queens row by row. For each row try each column; skip squares attacked via column or diagonal (checked with sets); place, recurse, remove (backtrack). Count or collect solutions when all rows are filled.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Recursion &amp; Backtracking"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you check diagonals in constant time?</summary><div class="answer"><p>Cells on the same &#x27;/&#x27; diagonal share row + col, cells on the same &#x27;\&#x27; diagonal share row - col. Keep sets of those values.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Recursion &amp; Backtracking"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How many solutions does 8-Queens have?</summary><div class="answer"><p>92 (12 if you count rotations and reflections as the same).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Recursion &amp; Backtracking"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the time complexity?</summary><div class="answer"><p>Roughly O(n!) in the worst case, far smaller in practice due to pruning.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Recursion &amp; Backtracking"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Name another problem solved the same way.</summary><div class="answer"><p>Sudoku solver, word search in a grid, graph colouring, rat in a maze.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Recursion &amp; Backtracking"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you detect diagonal conflicts in O(1)?</summary><div class="answer"><p>Cells on the same diagonal share r - c and on the other diagonal share r + c; keep sets of used values.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Compute the n-th Fibonacci number in O(n) with memoisation.</summary><div class="answer"><pre><code class="lang-py">from functools import lru_cache
+@lru_cache(maxsize=None)
+def fib(n):
+    return n if n &lt; 2 else fib(n - 1) + fib(n - 2)</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> How many calls does fib(5) make without memoisation?</summary><div class="answer"><p>15 calls. The call counts follow calls(n) = calls(n-1) + calls(n-2) + 1.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How does an operating system list all files under a folder?</summary><div class="answer"><p>A recursive walk: for each entry, if it is a folder recurse into it; if it is a file record it.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does naive Fibonacci take exponential time?</summary><div class="answer"><p>It recomputes the same subproblems over and over (fib(3) many times).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why add memoisation?</summary><div class="answer"><p>Each distinct n is computed once, reducing the work to O(n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does Python limit recursion depth?</summary><div class="answer"><p>To protect the interpreter from running out of memory in endless recursion.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why do recursion and induction feel alike?</summary><div class="answer"><p>Both solve the base case and then show that solving the smaller case lets you solve the bigger one.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not convert every recursion to a loop?</summary><div class="answer"><p>Some problems (trees, backtracking) are far clearer recursively.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does a tail call not help in Python?</summary><div class="answer"><p>CPython does not optimise tail calls, so each call still uses a stack frame.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Write recursion to compute the sum of a list.</summary><div class="answer"><pre><code class="lang-py">def total(a, i=0):
+    return 0 if i == len(a) else a[i] + total(a, i + 1)</code></pre><p>(A loop or sum() is better in Python.)</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> How many calls does fact(5) make?</summary><div class="answer"><p>5 calls (n = 5, 4, 3, 2, 1) when the base case is n &lt;= 1.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Generate all combinations of k numbers from 1..n.</summary><div class="answer"><pre><code class="lang-py">def combine(n, k):
+    res, path = [], []
+    def go(start):
+        if len(path) == k:
+            res.append(path[:])
+            return
+        for i in range(start, n + 1):
+            path.append(i)
+            go(i + 1)
+            path.pop()
+    go(1)
+    return res</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> Why does res.append(path) produce a list of empty lists at the end?</summary><div class="answer"><p>All entries reference the same list object that is emptied by backtracking. Append a copy: path[:].</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> Where might a company use backtracking?</summary><div class="answer"><p>Shift scheduling, exam timetables, itinerary planning and any problem with many interacting constraints.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why undo (pop) after each recursive call?</summary><div class="answer"><p>The shared path must return to its previous state before the next option is tried.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why store path[:] and not path?</summary><div class="answer"><p>path keeps changing; a copy freezes the current answer.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use a start index in subsets?</summary><div class="answer"><p>It ensures each subset is built in increasing order so none is generated twice.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why prune?</summary><div class="answer"><p>Cutting branches that cannot succeed avoids exploring huge parts of the search space.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why sort the input for duplicate handling?</summary><div class="answer"><p>Equal values become adjacent, so a simple &#x27;skip if equal to the previous&#x27; rule removes duplicate subsets.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is backtracking only for small n?</summary><div class="answer"><p>The number of results grows as 2^n or n!, which becomes impossible beyond about n = 20 or 10.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Generate all combinations of k numbers from 1..n.</summary><div class="answer"><p>Backtrack with a start index; record the path when its length equals k.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Return all N-Queens boards as lists of strings.</summary><div class="answer"><p>Record the column of each row in a list; at the end build strings with &#x27;Q&#x27; at the column and &#x27;.&#x27; elsewhere, e.g. [&#x27;.Q..&#x27;, &#x27;...Q&#x27;, ...].</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> How many solutions does 6-Queens have?</summary><div class="answer"><p>4.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> Is N-Queens used in practice?</summary><div class="answer"><p>As a benchmark for constraint solvers and as a model of resource placement where items must not interfere.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why one queen per row?</summary><div class="answer"><p>Two queens in a row attack each other, so every row has exactly one.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use three sets for conflicts?</summary><div class="answer"><p>Columns, row-col diagonals and row+col diagonals can then be checked in O(1).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is pruning crucial?</summary><div class="answer"><p>Without it the search tries n^n placements; with it only safe partial boards are expanded.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does n = 2 and 3 have no solution?</summary><div class="answer"><p>There is no way to place the queens without attacks on such small boards.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why backtrack instead of trying placements randomly?</summary><div class="answer"><p>Systematic search guarantees you find every solution or prove none exists.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use brute force over all C(n^2, n) placements?</summary><div class="answer"><p>For n = 8 that is about 4.4 billion boards; backtracking visits only a few thousand.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Return one solution board for n queens, or an empty list.</summary><div class="answer"><p>Backtrack and stop at the first complete placement, then render columns as rows of strings.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Recursion &amp; Backtracking"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> Where do &#x27;no two conflicting&#x27; placements appear in practice?</summary><div class="answer"><p>Scheduling, seating charts, frequency assignment and layout problems where items must not clash.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Recursion &amp; Backtracking"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Convert a recursive DFS into an iterative one.</summary><div class="answer"><p>Use an explicit stack; push the start; pop a node, process it and push unvisited neighbours.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Recursion &amp; Backtracking"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Solve a Sudoku.</summary><div class="answer"><p>Backtrack on empty cells: try digits 1-9 that do not conflict in row, column and box; recurse; undo on failure. Track used digits in sets for O(1) checks.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Recursion &amp; Backtracking"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> How would you count subsets with sum k without listing them?</summary><div class="answer"><p>Use dynamic programming (subset-sum) instead of backtracking.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Recursion &amp; Backtracking"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> How could you speed it up?</summary><div class="answer"><p>Use bit masks for columns and both diagonals, or exploit symmetry by solving only half of the first row.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="m09-problems.html"><span class="dir">Previous</span><span>Problems 9: Linked Lists</span></a>
+      <a class="next" href="m11-problems.html"><span class="dir">Next</span><span>Problems 11: Recursion & Backtracking</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

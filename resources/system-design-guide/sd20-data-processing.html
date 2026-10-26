@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD20">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Distributed data processing: MapReduce, Spark, streaming and lakehouses | System Design</title>
+<meta name="description" content="Batch and stream processing: MapReduce and its shuffle, Spark&#x27;s lazy DAGs, partitioning and skew, windows and watermarks, Lambda versus Kappa, data lakes and warehouses, and approximate counting, with working models.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD20</p>
+      <h1>Distributed data processing: MapReduce, Spark, streaming and lakehouses</h1>
+      <p class="lede">When data no longer fits on one machine, computation has to move to the data. This part explains the model behind MapReduce and Spark, how streaming handles time and late events, how to avoid skew, and how modern data platforms are organised.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~4 hours</span></div>
+    </div>
+
+    <section id="batchstream" data-track>
+      <h2>Batch versus stream</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>Batch</th><th>Stream</th></tr></thead>
+<tbody>
+<tr><td>Input</td><td>Bounded dataset</td><td>Unbounded, continuous events</td></tr><tr><td>Latency</td><td>Minutes to hours</td><td>Milliseconds to seconds</td></tr><tr><td>Typical tools</td><td>Hadoop MapReduce, Spark, Hive, dbt</td><td>Kafka Streams, Flink, Spark Structured Streaming</td></tr><tr><td>Correctness</td><td>Easy to reason about, rerunnable</td><td>Needs state, time handling and late data rules</td></tr><tr><td>Use</td><td>Reports, ML training, backfills</td><td>Alerts, fraud, live dashboards, CDC</td></tr>
+</tbody>
+</table>
+</div>
+<p>Many systems need both. <strong>Lambda architecture</strong>: a batch layer for accuracy plus a speed layer for freshness, merged at query time (duplicated logic). <strong>Kappa architecture</strong>: a single stream processor over a replayable log (Kafka); reprocess history by replaying.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd20-q01" data-topic="Data processing" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the Kappa architecture?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Batch plus speed layers <span class="q-why">That is Lambda.</span></li>
+          <li data-key="B">A single stream-processing path over a replayable log, reprocessing by replay <span class="q-why">Correct.</span></li>
+          <li data-key="C">A key-value store <span class="q-why">No.</span></li>
+          <li data-key="D">A caching tier <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It avoids maintaining two code paths.</p></div>
+      </div>
+    </section>
+
+    <section id="mapreduce" data-track>
+      <h2>MapReduce</h2>
+<p>The model: <strong>map</strong> turns each input record into key-value pairs; the framework <strong>shuffles</strong> (groups all pairs with the same key onto one reducer); <strong>reduce</strong> aggregates each key's values. Because map and reduce are independent per record/key, they run in parallel over many machines, and a failed task is simply re-run.</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="The shuffle is the expensive step: data crosses the network and is sorted on disk." style="min-width:760px"><defs><marker id="ah46" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah46a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah46b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah46d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah46)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah46)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah46)"/><line x1="747.0" y1="78.0" x2="747.0" y2="118.0" class="d-line" marker-end="url(#ah46)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">Input splits</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle" class="d-sm">Map tasks emit (key, value)</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle" class="d-sm">Shuffle and sort by key</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle" class="d-sm">Reduce tasks aggregate</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="151.5" text-anchor="middle">Output files</text></svg>
+</div>
+<figcaption>The shuffle is the expensive step: data crosses the network and is sorted on disk.</figcaption></figure>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd20-01.py">import zlib
+from collections import defaultdict
+from itertools import chain
+docs = ["the cat sat on the mat", "the dog sat on the log", "the cat saw the dog"]
+def mapper(doc): return [(w, 1) for w in doc.split()]
+def combiner(pairs):                       # local pre-aggregation reduces shuffle volume
+    local = defaultdict(int)
+    for k, v in pairs: local[k] += v
+    return list(local.items())
+def shuffle(all_pairs, n_reducers=2):
+    parts = [defaultdict(list) for _ in range(n_reducers)]
+    for k, v in all_pairs: parts[zlib.crc32(k.encode()) % n_reducers][k].append(v)
+    return parts
+def reducer(k, vs): return k, sum(vs)
+mapped = [combiner(mapper(d)) for d in docs]
+raw = sum(len(mapper(d)) for d in docs); after = sum(len(m) for m in mapped)
+parts = shuffle(chain.from_iterable(mapped))
+result = dict(reducer(k, vs) for p in parts for k, vs in p.items())
+print("top words:", sorted(result.items(), key=lambda kv: (-kv[1], kv[0]))[:4])
+print(f"pairs shuffled: {raw} without combiner, {after} with combiner")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>top words: [('the', 6), ('cat', 2), ('dog', 2), ('on', 2)]
+pairs shuffled: 17 without combiner, 14 with combiner</code></pre>
+<h3>Joins at scale</h3>
+<ul><li><strong>Reduce-side join</strong>: shuffle both datasets by join key (general, expensive).</li><li><strong>Broadcast (map-side) join</strong>: ship the small table to every mapper, no shuffle for the large one.</li><li><strong>Sort-merge</strong> and <strong>bucketed joins</strong> when both sides are pre-partitioned by key.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd20-q02" data-topic="Data processing" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the purpose of a combiner?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To sort the output <span class="q-why">No.</span></li>
+          <li data-key="B">To pre-aggregate map output locally and reduce shuffle volume <span class="q-why">Correct.</span></li>
+          <li data-key="C">To start reducers <span class="q-why">No.</span></li>
+          <li data-key="D">To compress files <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Less data crosses the network.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd20-q03" data-topic="Data processing" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A broadcast join is best when:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Both tables are huge <span class="q-why">Shuffle join.</span></li>
+          <li data-key="B">One table is small enough to send to every worker <span class="q-why">Correct.</span></li>
+          <li data-key="C">There are no keys <span class="q-why">No.</span></li>
+          <li data-key="D">Data is unsorted <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>No shuffle of the big table is needed.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Where is the cost in MapReduce?</summary><div class="answer"><p>The shuffle: network transfer and on-disk sorting between map and reduce.</p></div></details>
+      </div>
+    </section>
+
+    <section id="skew" data-track>
+      <h2>Partitioning and data skew</h2>
+<p>Work is split by key. If one key is extremely common (a celebrity user, <code>null</code>), one reducer receives most of the data and the whole job waits for it (a <strong>straggler</strong>). Fixes: <strong>salting</strong> the hot key (append a random suffix, aggregate twice), a broadcast join for the small side, filtering nulls, and sampling to find heavy hitters.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd20-02.py">import random, zlib
+random.seed(0)
+keys = ["hot"] * 8000 + [f"k{i}" for i in range(2000)]
+def load(keys, n=4, salt=1):
+    buckets = [0] * n
+    for k in keys:
+        kk = f"{k}#{random.randrange(salt)}" if k == "hot" else k
+        buckets[zlib.crc32(kk.encode()) % n] += 1
+    return buckets
+print("no salting :", load(keys, 4, 1), "-&gt; one reducer carries most of the data")
+print("salted x 16:", load(keys, 4, 16), "-&gt; spread across reducers (then a small second aggregation)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>no salting : [499, 8501, 499, 501] -&gt; one reducer carries most of the data
+salted x 16: [2479, 2498, 2542, 2481] -&gt; spread across reducers (then a small second aggregation)</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd20-q04" data-topic="Data processing" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How does salting fix a hot key?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It deletes the key <span class="q-why">No.</span></li>
+          <li data-key="B">It splits one key into several sub-keys spread over reducers, then combines the partial results <span class="q-why">Correct.</span></li>
+          <li data-key="C">It encrypts it <span class="q-why">No.</span></li>
+          <li data-key="D">It sorts it <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Random suffixes distribute the load.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name three ways to handle skew.</summary><div class="answer"><p>Salt hot keys, broadcast the small side, and filter or special-case null/heavy keys.</p></div></details>
+      </div>
+    </section>
+
+    <section id="spark" data-track>
+      <h2>Spark: lazy DAGs in memory</h2>
+<p>Spark keeps data in memory as partitioned datasets (<strong>RDDs</strong>, now mostly <strong>DataFrames</strong>) and builds a <strong>DAG</strong> of transformations that is executed only when an <strong>action</strong> (<code>count</code>, <code>collect</code>, <code>write</code>) is called (<strong>lazy evaluation</strong>).</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Idea</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>Narrow transformation</td><td><code>map</code>, <code>filter</code>: each output partition depends on one input partition; pipelined, no shuffle</td></tr><tr><td>Wide transformation</td><td><code>groupByKey</code>, <code>join</code>, <code>repartition</code>: needs a shuffle and starts a new stage</td></tr><tr><td>Lineage</td><td>The recipe to recompute a lost partition (fault tolerance without replication)</td></tr><tr><td>Caching</td><td><code>cache()</code> keeps a dataset in memory for reuse (iterative ML, interactive work)</td></tr><tr><td>Catalyst / Tungsten</td><td>Query optimiser and code generation for DataFrames and SQL</td></tr>
+</tbody>
+</table>
+</div>
+<p>Practical tips: prefer <code>reduceByKey</code>/aggregations that combine locally before shuffling over <code>groupByKey</code>; choose partition counts of 2 to 4 per core; avoid collecting big data to the driver; use columnar formats (Parquet) with predicate pushdown and partition pruning.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd20-03.py">class Lazy:
+    """Miniature lazy pipeline: transformations record steps, an action runs them."""
+    def __init__(self, data, steps=()): self.data, self.steps = data, tuple(steps)
+    def map(self, f): return Lazy(self.data, self.steps + (("map", f),))
+    def filter(self, f): return Lazy(self.data, self.steps + (("filter", f),))
+    def collect(self):
+        out = []
+        for x in self.data:                       # one pass: narrow steps are pipelined
+            keep = True
+            for kind, f in self.steps:
+                if kind == "map": x = f(x)
+                elif not f(x): keep = False; break
+            if keep: out.append(x)
+        return out
+pipeline = Lazy(range(10)).map(lambda x: x * x).filter(lambda x: x % 2 == 0).map(lambda x: x + 1)
+print("steps recorded, nothing computed yet:", len(pipeline.steps))
+print("action runs the DAG:", pipeline.collect())</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>steps recorded, nothing computed yet: 3
+action runs the DAG: [1, 5, 17, 37, 65]</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd20-q05" data-topic="Data processing" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Which Spark operation triggers a shuffle?</p></div>
+        <ul class="q-options">
+          <li data-key="A">map <span class="q-why">Narrow.</span></li>
+          <li data-key="B">filter <span class="q-why">Narrow.</span></li>
+          <li data-key="C">groupByKey or join on non-co-partitioned data <span class="q-why">Correct.</span></li>
+          <li data-key="D">select a column <span class="q-why">Narrow.</span></li>
+        </ul>
+        <div class="q-explain"><p>Wide transformations redistribute data by key.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd20-q06" data-topic="Data processing" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is Spark's lineage useful?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It speeds up the CPU <span class="q-why">No.</span></li>
+          <li data-key="B">Lost partitions can be recomputed from their recipe <span class="q-why">Correct.</span></li>
+          <li data-key="C">It encrypts data <span class="q-why">No.</span></li>
+          <li data-key="D">It saves disk <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Fault tolerance without replicating intermediate data.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Narrow versus wide transformations?</summary><div class="answer"><p>Narrow keeps data in its partition (map, filter); wide needs a shuffle (join, groupBy) and creates a stage boundary.</p></div></details>
+      </div>
+    </section>
+
+    <section id="streaming" data-track>
+      <h2>Stream processing: time, windows and state</h2>
+<p>Two clocks: <strong>event time</strong> (when it happened) and <strong>processing time</strong> (when we saw it). Networks reorder and delay events, so streams use:</p>
+<ul><li><strong>Windows</strong>: tumbling (fixed, non-overlapping), sliding (overlapping), session (gap-based).</li><li><strong>Watermarks</strong>: a moving estimate "no event older than T will arrive"; a window is emitted when the watermark passes its end. Later events are <strong>late data</strong>: drop, side-output, or allow a bounded <strong>allowed lateness</strong>.</li><li><strong>State and checkpoints</strong>: operators keep state (counts, joins), snapshotted periodically to durable storage so a restart resumes exactly where it left off (Flink's checkpoints give exactly-once state).</li><li>Delivery semantics: at-most-once, at-least-once, exactly-once (state), with idempotent or transactional sinks for effects.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd20-04.py">events = [(1, "a"), (3, "a"), (4, "b"), (11, "a"), (2, "b"), (12, "b"), (25, "a"), (5, "a")]   # (event_time, key); some arrive out of order
+WINDOW, LATENESS = 10, 3
+windows, watermark, emitted, late = {}, 0, [], []
+for t, k in events:
+    w = t // WINDOW * WINDOW
+    if w + WINDOW &lt;= watermark - LATENESS:
+        late.append((t, k)); continue
+    windows.setdefault(w, {}); windows[w][k] = windows[w].get(k, 0) + 1
+    watermark = max(watermark, t)
+    for ws in sorted(list(windows)):
+        if ws + WINDOW &lt;= watermark - LATENESS:
+            emitted.append((ws, windows.pop(ws)))
+print("emitted windows:", emitted)
+print("still open:", windows, "| dropped as too late:", late)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>emitted windows: [(0, {'a': 2, 'b': 2}), (10, {'a': 1, 'b': 1})]
+still open: {20: {'a': 1}} | dropped as too late: [(5, 'a')]</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd20-q07" data-topic="Data processing" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does a watermark express?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The wall-clock time <span class="q-why">No.</span></li>
+          <li data-key="B">An estimate that events older than T are unlikely to still arrive, used to close windows <span class="q-why">Correct.</span></li>
+          <li data-key="C">A checksum <span class="q-why">No.</span></li>
+          <li data-key="D">A key <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It balances completeness against latency.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name the three window types.</summary><div class="answer"><p>Tumbling, sliding and session windows.</p></div></details>
+      </div>
+    </section>
+
+    <section id="approx" data-track>
+      <h2>Approximate algorithms at scale</h2>
+<p>Exact answers can be too expensive; sketches give small, mergeable approximations.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Structure</th><th>Error / size</th></tr></thead>
+<tbody>
+<tr><td>Set membership</td><td>Bloom filter (<a href="sd18-storage-engines.html">SD18</a>)</td><td>False positives only</td></tr><tr><td>Distinct count</td><td>HyperLogLog</td><td>About 2% error in roughly 12 KB</td></tr><tr><td>Frequency of items</td><td>Count-Min Sketch</td><td>Overestimates only</td></tr><tr><td>Heavy hitters (top-k)</td><td>Space-Saving / Misra-Gries</td><td>Bounded error</td></tr><tr><td>Quantiles (p99)</td><td>t-digest, GK, DDSketch</td><td>Small relative error</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd20-05.py">import random, hashlib
+random.seed(2)
+class CountMin:
+    def __init__(self, w=500, d=4): self.w, self.d, self.t = w, d, [[0] * w for _ in range(d)]
+    def _h(self, x, i): return int(hashlib.md5(f"{i}{x}".encode()).hexdigest(), 16) % self.w
+    def add(self, x):
+        for i in range(self.d): self.t[i][self._h(x, i)] += 1
+    def est(self, x): return min(self.t[i][self._h(x, i)] for i in range(self.d))
+stream = [f"u{min(int(random.paretovariate(1.2)), 2000)}" for _ in range(20000)]
+cm, exact = CountMin(), {}
+for x in stream:
+    cm.add(x); exact[x] = exact.get(x, 0) + 1
+top = sorted(exact, key=exact.get, reverse=True)[:3]
+print([(u, exact[u], cm.est(u)) for u in top], "(item, exact, estimate); estimates never undercount:", all(cm.est(u) &gt;= exact[u] for u in exact))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[('u1', 11320, 11320), ('u2', 3320, 3320), ('u3', 1570, 1570)] (item, exact, estimate); estimates never undercount: True</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd20-q08" data-topic="Data processing" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What kind of error does a Count-Min sketch make?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Underestimates only <span class="q-why">No.</span></li>
+          <li data-key="B">Overestimates only (collisions add counts) <span class="q-why">Correct.</span></li>
+          <li data-key="C">Both directions <span class="q-why">No.</span></li>
+          <li data-key="D">None <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Taking the minimum over rows keeps the overestimate small.</p></div>
+      </div>
+    </section>
+
+    <section id="lake" data-track>
+      <h2>Storage formats and platforms</h2>
+<ul><li><strong>Formats</strong>: CSV/JSON (easy, slow, big), <strong>Parquet/ORC</strong> (columnar, compressed, splittable, with statistics for pruning), <strong>Avro</strong> (row based, schema evolution, great for Kafka).</li><li><strong>Data warehouse</strong>: structured, SQL, governed, fast analytics (BigQuery, Snowflake, Redshift).</li><li><strong>Data lake</strong>: cheap object storage of raw files (S3/GCS), schema on read; flexible but can become a swamp.</li><li><strong>Lakehouse</strong>: open table formats (Delta Lake, Apache Iceberg, Hudi) add ACID transactions, schema evolution and time travel on lake files.</li><li><strong>ELT with dbt</strong>: load raw data, transform in the warehouse with versioned SQL models and tests.</li><li><strong>Orchestration</strong>: Airflow, Dagster, Prefect schedule dependent jobs as DAGs with retries and backfills. Make tasks idempotent, partition outputs by date, and record lineage.</li></ul>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Move code to data, minimise shuffles, watch for skew, partition by the key you filter and join on, handle event time with watermarks, and use sketches when exact is too costly. Reprocessable, idempotent jobs on columnar storage are the foundation of reliable pipelines.</p></div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What do Delta, Iceberg and Hudi add to a data lake?</summary><div class="answer"><p>ACID transactions, schema evolution, time travel and efficient upserts over files in object storage.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Data processing</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Data processing">
+<details class="recall iq" data-level="basic" data-topic="Data processing"><summary><span class="tag ok">Basic</span> Batch versus stream processing?</summary><div class="answer"><p>Batch processes bounded datasets with high latency and simple reasoning; stream processes unbounded events continuously with low latency and needs state and time handling.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Data processing"><summary><span class="tag ok">Basic</span> Explain MapReduce.</summary><div class="answer"><p>Map transforms records into key-value pairs, the shuffle groups pairs by key across the network, and reduce aggregates each key&#x27;s values. Failed tasks are simply rerun.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data processing"><summary><span class="tag warn">Medium</span> What is data skew and how do you fix it?</summary><div class="answer"><p>A few keys carry most of the data so one task straggles. Fix by salting hot keys, broadcasting the small side of a join, filtering nulls or splitting heavy keys.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data processing"><summary><span class="tag warn">Medium</span> Why is Spark often faster than MapReduce?</summary><div class="answer"><p>It keeps intermediate data in memory, pipelines narrow transformations, and optimises whole DAGs, instead of writing to disk between every stage.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data processing"><summary><span class="tag warn">Medium</span> Narrow versus wide transformations?</summary><div class="answer"><p>Narrow ones (map, filter) work within a partition and are pipelined. Wide ones (join, groupBy) need a shuffle and start a new stage.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data processing"><summary><span class="tag warn">Medium</span> What are event time, processing time and watermarks?</summary><div class="answer"><p>Event time is when it happened, processing time when it is seen. A watermark estimates how far event time has progressed so windows can close, trading completeness against latency.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data processing"><summary><span class="tag warn">Medium</span> Lambda versus Kappa architecture?</summary><div class="answer"><p>Lambda runs batch and speed layers and merges them, duplicating logic. Kappa uses only a stream processor over a replayable log and reprocesses by replay.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data processing"><summary><span class="tag warn">Medium</span> Why use Parquet instead of CSV for analytics?</summary><div class="answer"><p>Columnar layout, compression, schema and statistics enable column pruning and predicate pushdown, reading far less data.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Data processing"><summary><span class="tag bad">Advanced</span> How does Flink provide exactly-once state?</summary><div class="answer"><p>Periodic distributed checkpoints (barrier snapshots) of operator state and source offsets; on failure it restores the last checkpoint and replays. Sinks need transactions or idempotence for exactly-once effects.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Data processing"><summary><span class="tag bad">Advanced</span> Name sketches for approximate analytics.</summary><div class="answer"><p>Bloom filters (membership), HyperLogLog (distinct counts), Count-Min sketch (frequencies), t-digest (quantiles); small, mergeable and with bounded error.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Data processing"><summary><span class="tag bad">Advanced</span> How would you count unique visitors across billions of events per day?</summary><div class="answer"><p>HyperLogLog per dimension, merged across partitions; about 12 KB per counter gives around 2% error. Use exact counts only where required.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Data processing"><summary><span class="tag bad">Advanced</span> What problem do Delta Lake, Iceberg and Hudi solve?</summary><div class="answer"><p>ACID transactions, concurrent writes, schema evolution, time travel and efficient upserts on files in object storage.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Data processing"><summary><span class="tag bad">Advanced</span> Why must pipeline tasks be idempotent and partitioned by date?</summary><div class="answer"><p>Retries and backfills rerun tasks; overwriting a deterministic partition gives the same result without duplicates.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Data processing"><summary><span class="tag bad">Advanced</span> How do you join a huge fact table with a small dimension?</summary><div class="answer"><p>Broadcast join: send the small table to all workers and join locally, avoiding a shuffle of the large table.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd19-event-driven.html"><span class="dir">Previous</span><span>SD19 Event-driven architecture: CQRS, event sourcing, sagas and the outbox</span></a>
+      <a class="next" href="sd21-cloud-deployment.html"><span class="dir">Next</span><span>SD21 Cloud architecture and deployment: containers, Kubernetes, multi-region and cost</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

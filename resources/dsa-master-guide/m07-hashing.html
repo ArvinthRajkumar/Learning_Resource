@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="M07">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>M7 Hashing | DSA Master Guide</title>
+<meta name="description" content="Dictionaries and sets turn many O(n^2) searches into O(n). The single most useful optimisation in coding rounds.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<link rel="stylesheet" href="viz.css">
+<script src="viz.js" defer></script>
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Module 7</p>
+      <h1>Hashing</h1>
+      <p class="lede">Dictionaries and sets turn many O(n^2) searches into O(n). The single most useful optimisation in coding rounds. Topics in this module: Hash tables, dictionaries, sets and collisions; frequency maps and the two sum pattern; grouping with canonical keys and longest consecutive sequence.</p>
+      <div class="meta"><span class="tag ok">Essential</span><span class="tag">3 topics</span><span class="tag">14 problems</span><span class="tag">56 interview questions</span></div>
+    </div>
+
+    <section id="why-this-module" data-track>
+      <h2>Start from scratch: why this module exists</h2>
+      <p>Hashing answers the question 'can lookup be instant?'. Instead of searching for a key, compute where it must live from the key itself. Dictionaries and sets in Python are hash tables, and they are the single most useful tool for removing nested loops.</p>
+      <p>Whenever you catch yourself scanning a list repeatedly to find something, a hash table usually turns O(n^2) into O(n).</p>
+      <p><strong>Who needs it:</strong> Compilers (symbol tables), web caches, databases, security tools and almost every real application; interviewers love it for Two Sum style questions.</p>
+      <p><strong>Before you start:</strong> Modules 1-4.</p>
+      <h3>After this module you can</h3>
+      <ul><li>Use dict, set, Counter and defaultdict fluently.</li><li>Solve two-sum, duplicates, anagram groups, longest consecutive.</li><li>Explain collisions, resizing and average vs worst case.</li><li>Choose hash map vs sorting.</li></ul>
+      <p><strong>Common pitfalls:</strong> Using unhashable keys, modifying a dict while iterating, forgetting that order of sets is not guaranteed, inserting before checking in two-sum.</p>
+      <p><strong>Typical interview questions here:</strong> Two sum, contains duplicate, group anagrams, longest consecutive sequence, subarray sum equals k, design a hash map, LRU cache.</p>
+    </section>
+
+    <section id="c7_1" data-track>
+      <h2>Hash tables, dictionaries, sets and collisions</h2>
+      <p><span class="tag ok">Essential</span> <span class="tag">Topic 7.1</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>A hash table stores key-value pairs. A hash function converts a key into a number, which (mod table size) picks a bucket where the value lives. A set is a hash table with keys only.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Lookup, insert and delete take O(1) on average, while a list needs O(n) to search.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>A library with a code for each book: the code tells you the shelf immediately, instead of scanning every shelf.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Searching a list is O(n) because the items are in no useful order. Searching a sorted list is O(log n) but keeping it sorted makes inserting O(n). Can we get lookup, insert and delete all fast at once? The answer is hashing: compute from the KEY itself where the item should live.</p>
+      <p>Think of a coat check: you hand over a coat, receive ticket number 47 and the coat goes on hook 47. To retrieve it you do not search the hooks; you walk straight to hook 47. A hash function is the machine that turns a key (any text or number) into a hook number.</p>
+      <p>The catch: there are far more possible keys than hooks, so two keys can map to the same hook (a collision). A good hash function spreads keys evenly, and a good table handles collisions (chaining: a small list on each hook; open addressing: look for the next free hook). With an evenly spread hash and a table that grows when it gets crowded, each hook holds about one item on average, so operations are O(1) on average.</p>
+      <p>Why only unchangeable keys? If a key's content changes after insertion, its hash changes and the table could never find it again. That is why Python allows str, int, tuple (of hashables) and frozenset but not list or dict as keys.</p>
+      <p>Hash tables power dictionaries, sets, caches, symbol tables, database indexes and counting. It is arguably the most useful single data structure in everyday programming and the main source of O(n^2) to O(n) speedups in interviews.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="hash"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Python dict: d[key] = value, key in d, d.get(key, default), d.items(). Keys must be hashable (int, str, tuple - not list).</li><li>Hash function example: add the character codes of the key and take % table_size. Different keys can land in the same bucket - a collision.</li><li>Collision handling: chaining (each bucket holds a list) or open addressing (probe the next free slot). The visualiser uses chaining.</li><li>Average O(1), worst case O(n) when many keys collide. Python keeps collisions rare by resizing.</li><li>Sets give uniqueness and fast membership: set(nums), x in s, s.add(x), s &amp; t (intersection).</li><li>Use the visualiser to insert keys and look one up: see which bucket it lands in.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>A dictionary (hash table) works like a coat-check desk. You give your coat (value) and get a number (key); later you hand over the number and the coat is retrieved at once. Internally a hash function turns the key into a number, and that number (mod the table size) picks a bucket (a slot) where the pair is stored.</p>
+      <p>A collision happens when two different keys land in the same bucket. Two common fixes: chaining (the bucket holds a list of all pairs) and open addressing (look for the next free bucket). Python uses open addressing and resizes the table when it gets too full, so collisions stay rare and lookups stay O(1) on average.</p>
+      <p>Only hashable (unchangeable) things can be keys: numbers, strings, tuples of hashables. A list cannot be a key because it can change, and its hash would change too. If you need a list as a key, convert it to a tuple.</p>
+      <p>A set is a dictionary that stores only keys. Use it for 'have I seen this?' and for removing duplicates. Set operations are handy: a | b (union), a &amp; b (common items), a - b (in a but not b).</p>
+      <p>When to reach for a hash map: any time you catch yourself scanning a list again and again to look for something. Replace that scan with a dictionary lookup and an O(n^2) solution often becomes O(n).</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>CPython's dict stores entries in a compact array and an index table of slots; the slot is computed from hash(key) and collisions are resolved with probing. When the table is about two-thirds full it grows (resizes) and all keys are re-inserted, which is why single inserts are amortised O(1).</li><li>hash(x) must be consistent with ==: if a == b then hash(a) == hash(b). Python randomises string hashes per process (hash randomisation) to prevent attackers from crafting collision floods, so iteration order of a set of strings can differ between runs. Dict preserves insertion order (a language guarantee since 3.7) but sets do not.</li><li>Worst case: if many keys collide into one chain or probe sequence, operations degrade to O(n). Good hash functions and resizing make this extremely unlikely in practice.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Compilers and interpreters</td><td>Variable lookup (name to value) is a hash table; Python's own namespaces are dictionaries.</td></tr><tr><td>Web and database systems</td><td>Caches (key to value), session stores, hash indexes, and deduplication all rely on hashing.</td></tr><tr><td>Security engineers</td><td>Cryptographic hashes verify file integrity and store passwords safely (a different but related idea).</td></tr><tr><td>Interviewers</td><td>Whether you recognise 'seen before / count / lookup' as a hash problem is a core screening skill.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>dict vs list of pairs</td><td>dict: O(1) average lookup. List of pairs: O(n).</td></tr><tr><td>dict vs sorted list + bisect</td><td>dict is faster for exact lookups. Sorted list supports range queries, nearest value and ordered iteration.</td></tr><tr><td>set vs list for membership</td><td>'x in set' is O(1) average; 'x in list' is O(n). Convert to a set before repeated membership tests.</td></tr><tr><td>When NOT to hash</td><td>When you need ordered traversal, range queries (use sorted structures/trees) or when keys are mutable objects.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>d = {}; d[k] = v; k in d; d.get(k, default); d.pop(k, None); d.items(); d.keys(); d.values().</li><li>Use d.setdefault(k, []).append(v) or defaultdict(list) for groups.</li><li>Dictionaries keep insertion order in Python 3.7+.</li><li>Dictionary comprehension: {x: x * x for x in range(5)}.</li><li>Counter(nums)[x] returns 0 for missing keys instead of raising KeyError.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c7_1.py">def simple_hash(key, size=7):
+    total = 0
+    for ch in key:
+        total += ord(ch)        # add up character codes
+    return total % size         # bucket index</code></pre>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>simple_hash("cat")</code>, returns <code>4</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>ch (after)</th><th>total (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>total = 0</code></td><td>-</td><td><strong><code>0</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>for ch in key:</code></td><td><strong><code>'c'</code></strong></td><td><code>0</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>total += ord(ch)        # add up character codes</code></td><td><code>'c'</code></td><td><strong><code>99</code></strong></td></tr>
+<tr><td class="num">4</td><td class="num">3</td><td><code>for ch in key:</code></td><td><strong><code>'a'</code></strong></td><td><code>99</code></td></tr>
+<tr><td class="num">5</td><td class="num">4</td><td><code>total += ord(ch)        # add up character codes</code></td><td><code>'a'</code></td><td><strong><code>196</code></strong></td></tr>
+<tr><td class="num">6</td><td class="num">3</td><td><code>for ch in key:</code></td><td><strong><code>'t'</code></strong></td><td><code>196</code></td></tr>
+<tr><td class="num">7</td><td class="num">4</td><td><code>total += ord(ch)        # add up character codes</code></td><td><code>'t'</code></td><td><strong><code>312</code></strong></td></tr>
+<tr><td class="num">8</td><td class="num">3</td><td><code>for ch in key:</code></td><td><code>'t'</code></td><td><code>312</code></td></tr>
+<tr><td class="num">9</td><td class="num">5</td><td><code>return total % size         # bucket index</code></td><td><code>'t'</code></td><td><code>312</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>Hash computation is O(length of key). Dictionary operations are O(1) average, O(n) worst.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Using a list as a key (unhashable).</li><li>Assuming dict order has meaning in older Python (3.7+ keeps insertion order).</li><li>Modifying a dict while iterating over it.</li><li>Forgetting that "x in list" is O(n) but "x in set" is O(1).</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"Seen before?", "count of each", "lookup by key" -&gt; dict/set.</li><li>Nested loops comparing pairs -&gt; try a hash map.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m07-problems.html#prob-contains_duplicate">Contains Duplicate</a> <span class="tag">LC 217</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Hash set</td></tr><tr><td><a href="m07-problems.html#prob-first_repeating">First Repeating Element</a></td><td><span class="tag ok">Easy</span></td><td>Hash set / map</td></tr><tr><td><a href="m07-problems.html#prob-two_sum">Two Sum</a> <span class="tag">LC 1</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Hash map</td></tr><tr><td><a href="m07-problems.html#prob-intersection">Intersection of Two Arrays</a> <span class="tag">LC 349</span></td><td><span class="tag ok">Easy</span></td><td>Sets</td></tr><tr><td><a href="m07-problems.html#prob-valid_sudoku">Valid Sudoku</a> <span class="tag">LC 36</span></td><td><span class="tag warn">Medium</span></td><td>Hash sets</td></tr><tr><td><a href="m07-problems.html#prob-randomized_set">Insert Delete GetRandom O(1)</a> <span class="tag">LC 380</span></td><td><span class="tag warn">Medium</span></td><td>Design: list + hash map</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why is dictionary lookup O(1) on average?</summary><div class="answer"><p>A hash function turns the key into a slot number, so Python jumps straight to it instead of scanning.</p></div></details>
+        <details class="recall"><summary>Why can't lists be dictionary keys?</summary><div class="answer"><p>Lists can change, so their hash would change. Keys must be unchangeable (hashable).</p></div></details>
+        <details class="recall"><summary>Why does resizing keep dictionaries fast?</summary><div class="answer"><p>When the table gets crowded Python rebuilds it bigger, so each slot holds about one item and collisions stay rare.</p></div></details>
+        <details class="recall"><summary>Why use a set instead of a list for membership tests?</summary><div class="answer"><p>'x in set' is O(1) on average; 'x in list' is O(n).</p></div></details>
+        <details class="recall"><summary>Why not use a dictionary when you need sorted order?</summary><div class="answer"><p>Hash tables do not keep keys in sorted order. Use a sorted list or tree for ordered queries.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c7_1-q1" data-topic="Hashing" data-type="single" data-answer="A">
+        <div class="q-stem"><p>Average time for dict lookup?</p></div>
+        <ul class="q-options">
+          <li data-key="A">O(1)</li>
+          <li data-key="B">O(log n)</li>
+          <li data-key="C">O(n)</li>
+          <li data-key="D">O(n log n)</li>
+        </ul>
+        <div class="q-explain"><p>A good hash function maps keys to buckets directly.</p></div>
+      </div>
+      <div class="quiz" data-qid="c7_1-q2" data-topic="Hashing" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Which cannot be a dictionary key?</p></div>
+        <ul class="q-options">
+          <li data-key="A">tuple (1, 2)</li>
+          <li data-key="B">string</li>
+          <li data-key="C">list [1, 2]</li>
+          <li data-key="D">int</li>
+        </ul>
+        <div class="q-explain"><p>Lists are mutable and therefore unhashable.</p></div>
+      </div>
+    </section>
+
+    <section id="c7_2" data-track>
+      <h2>Frequency maps and the Two Sum pattern</h2>
+      <p><span class="tag ok">Essential</span> <span class="tag">Topic 7.2</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>The complement pattern: while scanning, store what you have seen in a dictionary so that for each new value you can ask "have I already seen the partner I need?" in O(1).</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Two Sum and its relatives (pair with a difference, count pairs) are among the most common interview questions.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>At a dance, each person remembers who is waiting. When a new person arrives, they check if their ideal partner is already on the list.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Two Sum asks for two numbers adding to a target. Start as a beginner: check every pair. For each number x you scan the whole list looking for target - x. The second scan is the expensive part: it is searching for a specific value.</p>
+      <p>Searching for a specific value is exactly what a hash table is good at. So replace the inner scan with a dictionary lookup. But which numbers should the dictionary contain? Everything seen so far; the partner is either already seen or will see us later when it arrives (and finds us). That means we only need to look backwards, one pass.</p>
+      <p>Notice the general lesson: a nested search often means 'for each item, find a partner with property P'. If P can be turned into a key (target - x, remainder, sorted letters), store items by that key and look up directly.</p>
+      <p>The 'check before insert' rule is not a trick but a consequence: when processing x we want a DIFFERENT earlier element, so x must not be in the table yet.</p>
+      <p>The same approach counts pairs, finds pairs with a given difference, finds pairs summing to a multiple of m (using remainders as keys) and, extended with prefix sums, finds subarrays with a given sum.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="twosum"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Goal: find i, j with nums[i] + nums[j] = target.</li><li>For each x compute need = target - x. If need is in seen, we found the pair. Otherwise store seen[x] = index.</li><li>Check BEFORE inserting so the same element is not used twice.</li><li>Example [2, 7, 11, 15], target 9: x=2 need 7 (not seen) store 2; x=7 need 2 (seen at 0) -&gt; answer [0, 1].</li><li>Step through the visualiser to watch the dict grow.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Two Sum is the best example of 'use memory to save time'. Brute force checks every pair, which is n x n. But for each number x you are really asking one question: 'Has the number (target - x) appeared before?'. A dictionary answers that in one step.</p>
+      <p>The loop: for each index i and value x, compute need = target - x. If need is in the dictionary, return its stored index and i. Otherwise store x with its index. Check BEFORE storing so that you never pair a number with itself unless it really appears twice (like [3, 3] with target 6).</p>
+      <p>The same 'complement' idea solves many variants: count pairs with a given sum or difference, check if two numbers differ by k, find pairs that sum to a multiple of m (store remainders), and subarray problems (store prefix sums).</p>
+      <p>Frequency maps are also the answer to: 'most frequent', 'top k frequent', 'is there an element that appears more than n/2 times', 'first element that repeats'.</p>
+      <p>Remember what the problem returns: indices or values, one answer or all answers, 0-indexed or 1-indexed. Many wrong answers come from returning the wrong thing.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>The dictionary maps value to index. Each iteration does one O(1) average lookup and one O(1) insert, so the loop is O(n). Memory grows to O(n).</li><li>With duplicates only the latest index is kept in the map when the same value appears again; for 'return indices' problems that is fine because the first occurrence is found when the second arrives.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Payment and billing systems</td><td>Matching a refund amount to an original transaction is a complement lookup.</td></tr><tr><td>Data reconciliation tools</td><td>Finding two records that together match a total uses the same idea.</td></tr><tr><td>Interviewers</td><td>Two Sum is the classic first question; follow-ups probe duplicates, sorted input, multiple answers and streams.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Hash map vs two pointers</td><td>Hash map: unsorted data, O(n) time, O(n) space, can return original indices. Two pointers: sorted data, O(1) space, but sorting loses original indices.</td></tr><tr><td>Hash map vs brute force</td><td>Brute force: no memory, O(n^2). Hash map spends memory for linear time.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>seen = {}; for i, x in enumerate(nums): if target - x in seen: return [seen[target - x], i]; seen[x] = i.</li><li>For counting pairs use total += seen.get(need, 0) then seen[x] = seen.get(x, 0) + 1.</li><li>Use a set instead of a dict when you do not need indices.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c7_2.py">def pair_exists(nums, target):
+    seen = set()
+    for x in nums:
+        if target - x in seen:     # partner already seen
+            return True
+        seen.add(x)
+    return False</code></pre>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - try every pair</h4>
+      <p>O(n^2) time, O(1) space.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c7_2_stage1.py">def two_sum(nums, target):
+    for i in range(len(nums)):
+        for j in range(i + 1, len(nums)):
+            if nums[i] + nums[j] == target:
+                return [i, j]</code></pre>
+      <p class="muted small">Check: <code>two_sum([2, 7, 11, 15], 9)</code> returns <code>[0, 1]</code></p>
+      <h4>Stage 2 - for each number look for its partner in a dict</h4>
+      <p>The inner scan is really a lookup of target - x. Store what you have seen: O(n).</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c7_2_stage2.py">def two_sum(nums, target):
+    seen = {}
+    for i, x in enumerate(nums):
+        if target - x in seen:
+            return [seen[target - x], i]
+        seen[x] = i</code></pre>
+      <p class="muted small">Check: <code>two_sum([2, 7, 11, 15], 9)</code> returns <code>[0, 1]</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>pair_exists([2, 7, 11, 15], 9)</code>, returns <code>True</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>x (after)</th><th>seen (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>seen = set()</code></td><td>-</td><td><strong><code>set()</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>2</code></strong></td><td><code>set()</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>if target - x in seen:     # partner already seen</code></td><td><code>2</code></td><td><code>set()</code></td></tr>
+<tr><td class="num">4</td><td class="num">6</td><td><code>seen.add(x)</code></td><td><code>2</code></td><td><strong><code>{2}</code></strong></td></tr>
+<tr><td class="num">5</td><td class="num">3</td><td><code>for x in nums:</code></td><td><strong><code>7</code></strong></td><td><code>{2}</code></td></tr>
+<tr><td class="num">6</td><td class="num">4</td><td><code>if target - x in seen:     # partner already seen</code></td><td><code>7</code></td><td><code>{2}</code></td></tr>
+<tr><td class="num">7</td><td class="num">5</td><td><code>return True</code></td><td><code>7</code></td><td><code>{2}</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>One pass: O(n) time, O(n) space (compared with O(n^2) brute force).</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Inserting before checking (pairs an element with itself).</li><li>Returning values when indices are requested.</li><li>Not handling duplicates ([3,3] target 6).</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"Pair that sums to / differs by k", "complement" -&gt; hash map.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m07-problems.html#prob-two_sum">Two Sum</a> <span class="tag">LC 1</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Hash map</td></tr><tr><td><a href="m07-problems.html#prob-first_repeating">First Repeating Element</a></td><td><span class="tag ok">Easy</span></td><td>Hash set / map</td></tr><tr><td><a href="m07-problems.html#prob-most_frequent_word">Most Frequent Word</a></td><td><span class="tag ok">Easy</span></td><td>Counter</td></tr><tr><td><a href="m07-problems.html#prob-four_sum_count">4Sum II</a> <span class="tag">LC 454</span></td><td><span class="tag warn">Medium</span></td><td>Hash map of pair sums</td></tr><tr><td><a href="m07-problems.html#prob-subarray_sum_k">Subarrays with Sum K</a> <span class="tag">LC 560</span></td><td><span class="tag bad">Hard</span></td><td>Prefix sum + hash map</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why check the dictionary before inserting?</summary><div class="answer"><p>So an element is never paired with itself; the partner must be an earlier element.</p></div></details>
+        <details class="recall"><summary>Why does the dictionary store value to index?</summary><div class="answer"><p>The answer needs indices, and the lookup key is the value we are searching for.</p></div></details>
+        <details class="recall"><summary>Why not sort and use two pointers when indices are needed?</summary><div class="answer"><p>Sorting destroys the original positions unless you store them separately.</p></div></details>
+        <details class="recall"><summary>Why is the hash map solution O(n) space?</summary><div class="answer"><p>In the worst case it stores every element before finding a pair.</p></div></details>
+        <details class="recall"><summary>Why does [3, 3] with target 6 still work?</summary><div class="answer"><p>When the second 3 arrives, the first 3 is already stored, and 6 - 3 = 3 is found.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c7_2-q1" data-topic="Hashing" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Time complexity of hash-based Two Sum?</p></div>
+        <ul class="q-options">
+          <li data-key="A">O(n^2)</li>
+          <li data-key="B">O(n log n)</li>
+          <li data-key="C">O(n)</li>
+          <li data-key="D">O(1)</li>
+        </ul>
+        <div class="q-explain"><p>One pass with O(1) average lookups.</p></div>
+      </div>
+      <div class="quiz" data-qid="c7_2-q2" data-topic="Hashing" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why check the map before inserting the current element?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Faster</li>
+          <li data-key="B">To avoid pairing an element with itself</li>
+          <li data-key="C">Python requires it</li>
+          <li data-key="D">To keep order</li>
+        </ul>
+        <div class="q-explain"><p>Otherwise x could match its own complement, e.g. 3 + 3 for target 6 with a single 3.</p></div>
+      </div>
+    </section>
+
+    <section id="c7_3" data-track>
+      <h2>Grouping with canonical keys and longest consecutive sequence</h2>
+      <p><span class="tag warn">Important</span> <span class="tag">Topic 7.3</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>A canonical key is a value that is identical for all items you want grouped (for example, the sorted letters of a word). A hash set can also test "is the next value present?" in O(1).</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>It generalises hashing: group anagrams, group by pattern, or detect sequences in unsorted data.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Sorting mail by postcode: the postcode is the canonical key that sends similar letters to the same box.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>To group things you need a way to say 'these two belong together'. Comparing every pair of items is O(n^2). A smarter idea is a canonical label: compute from each item a label that is IDENTICAL for items in the same group, then bucket by label. For anagrams the label is the sorted letters.</p>
+      <p>Choosing a good label is the creative part and shows up everywhere: group numbers by remainder modulo k, group strings by their pattern (egg and add), group points by slope, group files by hash of contents (duplicate file finder).</p>
+      <p>Longest consecutive sequence teaches a different trick: use the structure of the question to avoid redundant work. If x - 1 exists then x is not the start of a streak, so we skip it. Only starts are expanded, so every number is touched about twice. The lesson: look for a cheap test that tells you when work would be redundant.</p>
+      <p>Sets answer relationships between collections: intersection (both), union (either), difference (one but not the other). Whenever a problem says 'common', 'in A but not in B' or 'unique', think sets.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="hash"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Group anagrams: key = "".join(sorted(word)). groups[key].append(word).</li><li>Longest consecutive sequence: put numbers in a set; only start counting at x if x - 1 is NOT in the set (x starts a run); extend upward while x + 1 exists.</li><li>Each number is visited at most twice, so the whole algorithm is O(n) even though there is a while loop inside a for loop.</li><li>Counter(nums).most_common(k) returns the k most frequent elements.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Grouping with a signature: find something that is the same for every member of a group and use it as the dictionary key. For anagrams the signature is the sorted letters. For numbers that differ by a multiple of m it is the remainder. For words with the same pattern it is a normalised form ('egg' and 'add' both become 'abb').</p>
+      <p>Longest consecutive sequence in O(n) looks hard but has a neat trick. Put all numbers in a set. A number x is the START of a streak only if x - 1 is NOT in the set. From each start, count upward while x + 1 is in the set. Every number is counted at most once, so the nested loops are still O(n) overall.</p>
+      <p>Sets are great for comparing two collections: common items (a &amp; b), items in one but not the other (a - b) and all items (a | b). They also test 'is every item of A inside B' with a &lt;= b.</p>
+      <p>Hash maps can store lists, sets, counts or indices as values. Choose the value that lets you answer the question later in one lookup.</p>
+      <p>A warning: Counter and dict order does not matter for correctness, but your output may need sorting to match what the judge expects.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>A tuple of 26 counts or a sorted-letter string is hashable, so it can be a dict key. A list is not.</li><li>defaultdict(list) calls list() the first time a missing key is accessed, saving the 'if key not in d' check.</li><li>Set operations are implemented by hashing: a &amp; b iterates over the smaller set and checks membership in the other, O(min(len(a), len(b))).</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>File deduplication tools</td><td>Group files by content hash, then compare only inside groups.</td></tr><tr><td>Search engines</td><td>Group near-duplicate pages by a fingerprint.</td></tr><tr><td>Data teams</td><td>Group transactions by customer or by a normalised key before aggregating.</td></tr><tr><td>Interviewers</td><td>Group Anagrams and Longest Consecutive Sequence are staples for testing canonical keys and clever set use.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Sorted-string key vs count-tuple key</td><td>Sorted key costs O(k log k) per word; count-tuple costs O(k) but needs a fixed alphabet.</td></tr><tr><td>Set-based longest streak vs sorting</td><td>Sorting is O(n log n) and simpler to reason about; the set method is O(n) average.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>defaultdict(list) for groups; defaultdict(set) for unique members; defaultdict(int) for counts.</li><li>words sorted as keys: key = ''.join(sorted(w)) or tuple(sorted(w)).</li><li>dict.setdefault(key, []).append(item).</li><li>Counter(a) == Counter(b) compares two multisets.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c7_3.py">from collections import defaultdict
+
+def group_by_signature(words):
+    groups = defaultdict(list)
+    for w in words:
+        groups["".join(sorted(w))].append(w)
+    return list(groups.values())</code></pre>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - sort and scan</h4>
+      <p>Sort and count runs of consecutive values: O(n log n).</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c7_3_stage1.py">def longest(nums):
+    nums = sorted(set(nums))
+    best = cur = 1 if nums else 0
+    for i in range(1, len(nums)):
+        cur = cur + 1 if nums[i] == nums[i - 1] + 1 else 1
+        best = max(best, cur)
+    return best</code></pre>
+      <p class="muted small">Check: <code>longest([100, 4, 200, 1, 3, 2])</code> returns <code>4</code></p>
+      <h4>Stage 2 - use a set and only start at run starts</h4>
+      <p>A number x starts a run only if x - 1 is absent. Each number is visited about twice: O(n).</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c7_3_stage2.py">def longest(nums):
+    s = set(nums)
+    best = 0
+    for x in s:
+        if x - 1 not in s:
+            y = x
+            while y + 1 in s:
+                y += 1
+            best = max(best, y - x + 1)
+    return best</code></pre>
+      <p class="muted small">Check: <code>longest([100, 4, 200, 1, 3, 2])</code> returns <code>4</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>group_by_signature(["eat", "tea", "tan"])</code>, returns <code>[['eat', 'tea'], ['tan']]</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>w (after)</th><th>groups (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">4</td><td><code>groups = defaultdict(list)</code></td><td>-</td><td><strong><code>defaultdict(&lt;class 'list'&gt;, {})</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">5</td><td><code>for w in words:</code></td><td><strong><code>'eat'</code></strong></td><td><code>defaultdict(&lt;class 'list'&gt;, {})</code></td></tr>
+<tr><td class="num">3</td><td class="num">6</td><td><code>groups["".join(sorted(w))].append(w)</code></td><td><code>'eat'</code></td><td><strong><code>defaultdict(&lt;class 'list'&gt;, {'aet': ['eat']})</code></strong></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>for w in words:</code></td><td><strong><code>'tea'</code></strong></td><td><code>defaultdict(&lt;class 'list'&gt;, {'aet': ['eat']})</code></td></tr>
+<tr><td class="num">5</td><td class="num">6</td><td><code>groups["".join(sorted(w))].append(w)</code></td><td><code>'tea'</code></td><td><strong><code>defaultdict(&lt;class 'list'&gt;, {'aet': ['eat', 'tea']})</code></strong></td></tr>
+<tr><td class="num">6</td><td class="num">5</td><td><code>for w in words:</code></td><td><strong><code>'tan'</code></strong></td><td><code>defaultdict(&lt;class 'list'&gt;, {'aet': ['eat', 'tea']})</code></td></tr>
+<tr><td class="num">7</td><td class="num">6</td><td><code>groups["".join(sorted(w))].append(w)</code></td><td><code>'tan'</code></td><td><strong><code>defaultdict(&lt;class 'list'&gt;, {'aet': ['eat', 'tea'], 'ant': …</code></strong></td></tr>
+<tr><td class="num">8</td><td class="num">5</td><td><code>for w in words:</code></td><td><code>'tan'</code></td><td><code>defaultdict(&lt;class 'list'&gt;, {'aet': ['eat', 'tea'], 'ant': …</code></td></tr>
+<tr><td class="num">9</td><td class="num">7</td><td><code>return list(groups.values())</code></td><td><code>'tan'</code></td><td><code>defaultdict(&lt;class 'list'&gt;, {'aet': ['eat', 'tea'], 'ant': …</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>Grouping: O(n * k log k) for words of length k. Longest consecutive: O(n).</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Using the unsorted word as a key.</li><li>Starting the consecutive scan from every number (becomes O(n^2)).</li><li>Forgetting duplicates in the set approach (they are removed automatically).</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"Group together" -&gt; canonical key.</li><li>"Longest consecutive / streak" in unsorted data -&gt; set.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m07-problems.html#prob-word_pattern">Word Pattern</a> <span class="tag">LC 290</span></td><td><span class="tag ok">Easy</span></td><td>Two-way hash maps</td></tr><tr><td><a href="m07-problems.html#prob-isomorphic">Isomorphic Strings</a> <span class="tag">LC 205</span></td><td><span class="tag ok">Easy</span></td><td>Two-way mapping with dicts</td></tr><tr><td><a href="m07-problems.html#prob-intersection">Intersection of Two Arrays</a> <span class="tag">LC 349</span></td><td><span class="tag ok">Easy</span></td><td>Sets</td></tr><tr><td><a href="m07-problems.html#prob-group_anagrams">Group Anagrams</a> <span class="tag">LC 49</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Hash map with canonical key</td></tr><tr><td><a href="m07-problems.html#prob-longest_consecutive">Longest Consecutive Sequence</a> <span class="tag">LC 128</span> <span class="tag accent">must-do</span></td><td><span class="tag bad">Hard</span></td><td>Hash set trick</td></tr><tr><td><a href="m07-problems.html#prob-subarray_sum_k">Subarrays with Sum K</a> <span class="tag">LC 560</span></td><td><span class="tag bad">Hard</span></td><td>Prefix sum + hash map</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why use sorted letters as the key for anagrams?</summary><div class="answer"><p>All anagrams produce the same sorted string, so it is a canonical label for the group.</p></div></details>
+        <details class="recall"><summary>Why only start counting at numbers whose predecessor is missing?</summary><div class="answer"><p>Starting everywhere would recount each streak many times; starting only at streak beginnings counts each number about once.</p></div></details>
+        <details class="recall"><summary>Why use a set for the longest consecutive sequence?</summary><div class="answer"><p>It makes 'is x + 1 present?' an O(1) check.</p></div></details>
+        <details class="recall"><summary>Why is defaultdict(list) handy?</summary><div class="answer"><p>It creates an empty list for a missing key automatically, so groups can be appended to directly.</p></div></details>
+        <details class="recall"><summary>Why sort the output when grouping?</summary><div class="answer"><p>Dictionaries and sets may give arbitrary order; judges often expect a fixed order.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c7_3-q1" data-topic="Hashing" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Which key groups anagrams?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Word length</li>
+          <li data-key="B">First letter</li>
+          <li data-key="C">Sorted letters</li>
+          <li data-key="D">Last letter</li>
+        </ul>
+        <div class="q-explain"><p>Anagrams have identical sorted letters.</p></div>
+      </div>
+      <div class="quiz" data-qid="c7_3-q2" data-topic="Hashing" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In longest consecutive sequence, why start only when x - 1 is absent?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To sort the data</li>
+          <li data-key="B">To make each run counted once, giving O(n)</li>
+          <li data-key="C">To avoid negatives</li>
+          <li data-key="D">It is optional</li>
+        </ul>
+        <div class="q-explain"><p>Starting everywhere would recount the same run many times.</p></div>
+      </div>
+    </section>
+
+    <h2 id="practice-problems">Practice problems for this module</h2>
+
+    <p>14 problems with hints, approach, dry run and tested solutions on the <a href="m07-problems.html">problem set for this module</a>.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m07-problems.html#prob-two_sum">Two Sum</a> <span class="tag">LC 1</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Hash map</td></tr><tr><td><a href="m07-problems.html#prob-contains_duplicate">Contains Duplicate</a> <span class="tag">LC 217</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Hash set</td></tr><tr><td><a href="m07-problems.html#prob-first_repeating">First Repeating Element</a></td><td><span class="tag ok">Easy</span></td><td>Hash set / map</td></tr><tr><td><a href="m07-problems.html#prob-isomorphic">Isomorphic Strings</a> <span class="tag">LC 205</span></td><td><span class="tag ok">Easy</span></td><td>Two-way mapping with dicts</td></tr><tr><td><a href="m07-problems.html#prob-intersection">Intersection of Two Arrays</a> <span class="tag">LC 349</span></td><td><span class="tag ok">Easy</span></td><td>Sets</td></tr><tr><td><a href="m07-problems.html#prob-ransom_note">Ransom Note</a> <span class="tag">LC 383</span></td><td><span class="tag ok">Easy</span></td><td>Counting letters</td></tr><tr><td><a href="m07-problems.html#prob-most_frequent_word">Most Frequent Word</a></td><td><span class="tag ok">Easy</span></td><td>Counter</td></tr><tr><td><a href="m07-problems.html#prob-word_pattern">Word Pattern</a> <span class="tag">LC 290</span></td><td><span class="tag ok">Easy</span></td><td>Two-way hash maps</td></tr><tr><td><a href="m07-problems.html#prob-group_anagrams">Group Anagrams</a> <span class="tag">LC 49</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Hash map with canonical key</td></tr><tr><td><a href="m07-problems.html#prob-valid_sudoku">Valid Sudoku</a> <span class="tag">LC 36</span></td><td><span class="tag warn">Medium</span></td><td>Hash sets</td></tr><tr><td><a href="m07-problems.html#prob-four_sum_count">4Sum II</a> <span class="tag">LC 454</span></td><td><span class="tag warn">Medium</span></td><td>Hash map of pair sums</td></tr><tr><td><a href="m07-problems.html#prob-randomized_set">Insert Delete GetRandom O(1)</a> <span class="tag">LC 380</span></td><td><span class="tag warn">Medium</span></td><td>Design: list + hash map</td></tr><tr><td><a href="m07-problems.html#prob-longest_consecutive">Longest Consecutive Sequence</a> <span class="tag">LC 128</span> <span class="tag accent">must-do</span></td><td><span class="tag bad">Hard</span></td><td>Hash set trick</td></tr><tr><td><a href="m07-problems.html#prob-subarray_sum_k">Subarrays with Sum K</a> <span class="tag">LC 560</span></td><td><span class="tag bad">Hard</span></td><td>Prefix sum + hash map</td></tr>
+</tbody>
+</table>
+</div>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Hashing</h2>
+      <p class="muted">56 questions: try to answer aloud in under a minute, then reveal. All questions from every module are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Hashing">
+<details class="recall iq" data-level="basic" data-topic="Hashing"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How does a hash table work?</summary><div class="answer"><p>A hash function converts a key into an integer. The integer picks a bucket where the key-value pair is stored. Lookup recomputes the hash and goes straight to the bucket, so it is O(1) on average.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Hashing"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is a hash collision and how is it handled?</summary><div class="answer"><p>Two keys map to the same bucket. Handled by chaining (store several items in one bucket) or open addressing (probe for the next free slot).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Hashing"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why can&#x27;t a list be a dictionary key?</summary><div class="answer"><p>Lists are mutable, so their hash would change when they change. Use a tuple instead.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Hashing"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the worst-case time of a dict lookup?</summary><div class="answer"><p>O(n) if all keys collide into one bucket, but with a good hash function and resizing this practically never happens; average is O(1).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Hashing"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the difference between a set and a dict?</summary><div class="answer"><p>A set stores only unique keys. A dict stores key-value pairs. Both use hashing and have O(1) average lookup.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Hashing"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you count word frequencies?</summary><div class="answer"><pre><code class="lang-py">from collections import Counter
+freq = Counter(text.split())</code></pre></div></details>
+<details class="recall iq" data-level="basic" data-topic="Hashing"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Explain how a hash table handles collisions.</summary><div class="answer"><p>Chaining stores all colliding entries in a list at that slot. Open addressing probes other slots (linear, quadratic or double hashing) until it finds an empty one. Both rely on resizing so load stays low.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Hashing"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Solve Two Sum in O(n).</summary><div class="answer"><pre><code class="lang-py">def two_sum(nums, target):
+    seen = {}
+    for i, x in enumerate(nums):
+        if target - x in seen:
+            return [seen[target - x], i]
+        seen[x] = i</code></pre></div></details>
+<details class="recall iq" data-level="basic" data-topic="Hashing"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What if the array is sorted and you must use O(1) extra space?</summary><div class="answer"><p>Use two pointers at both ends: if the sum is too small move the left pointer right, too big move the right pointer left.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Hashing"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you handle duplicates like [3, 3] target 6?</summary><div class="answer"><p>Check the dictionary before inserting the current element. The first 3 is stored, and when the second 3 comes, 6 - 3 = 3 is found.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Hashing"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How would you count the number of pairs with sum k?</summary><div class="answer"><p>Keep a counter dictionary of previous values. For each x add counter[k - x] to the answer, then increase counter[x].</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Hashing"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the trade-off between the hash map and the two-pointer solution?</summary><div class="answer"><p>Hash map: O(n) time and O(n) space, works on unsorted data. Two pointers: O(n) time (after O(n log n) sort) and O(1) space but needs sorted data and loses original indices.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Hashing"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why is Two Sum O(n) even though a dict lookup could be O(n) worst case?</summary><div class="answer"><p>Hash lookups are O(1) on average because hashing spreads keys evenly; worst case is theoretical and extremely unlikely with Python&#x27;s dict.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Hashing"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you group anagrams?</summary><div class="answer"><p>Use a dictionary: key = &#x27;&#x27;.join(sorted(word)), value = list of words. Return the dictionary values. Time O(n k log k).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Hashing"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you find the longest consecutive sequence in O(n)?</summary><div class="answer"><p>Put numbers in a set. For each x with x - 1 not in the set, count how far x, x+1, x+2... continue. Track the maximum length.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Hashing"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why is the longest-consecutive algorithm O(n) even though it has nested loops?</summary><div class="answer"><p>The inner while loop only runs for the first number of each streak, and each number is visited at most once across all streaks.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Hashing"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you check if two words follow the same letter pattern (isomorphic)?</summary><div class="answer"><p>Keep two dictionaries mapping letters in both directions and check they stay consistent.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Hashing"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How can you find common elements of two arrays?</summary><div class="answer"><p>set(a) &amp; set(b). Time O(n + m).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Hashing"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why is the while loop inside the for loop in longest consecutive sequence not O(n^2)?</summary><div class="answer"><p>It only runs for numbers that start a streak, and each number belongs to exactly one streak, so total inner iterations are at most n.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What does this print?</summary><div class="answer"><pre><code class="lang-py">d = {}
+d[[1, 2]] = 'x'</code></pre><p>TypeError: unhashable type: &#x27;list&#x27;. Lists are mutable; use a tuple (1, 2) as the key.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What is the result of {1: &#x27;a&#x27;, True: &#x27;b&#x27;}?</summary><div class="answer"><p>{1: &#x27;b&#x27;}. True == 1 and hash(True) == hash(1), so they are the same key; the value is overwritten.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Implement a simple hash map with chaining.</summary><div class="answer"><pre><code class="lang-py">class HashMap:
+    def __init__(self, size=8):
+        self.b = [[] for _ in range(size)]
+    def put(self, k, v):
+        slot = self.b[hash(k) % len(self.b)]
+        for pair in slot:
+            if pair[0] == k:
+                pair[1] = v
+                return
+        slot.append([k, v])
+    def get(self, k, default=None):
+        for kk, v in self.b[hash(k) % len(self.b)]:
+            if kk == k:
+                return v
+        return default</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How does a web cache use a hash table?</summary><div class="answer"><p>The URL is the key and the stored response the value; a request is a single O(1) lookup, and an eviction policy (like LRU) decides what to drop when memory is full.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is dictionary lookup O(1) on average?</summary><div class="answer"><p>A hash function turns the key into a slot number, so Python jumps straight to it instead of scanning.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why can&#x27;t lists be dictionary keys?</summary><div class="answer"><p>Lists can change, so their hash would change. Keys must be unchangeable (hashable).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does resizing keep dictionaries fast?</summary><div class="answer"><p>When the table gets crowded Python rebuilds it bigger, so each slot holds about one item and collisions stay rare.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use a set instead of a list for membership tests?</summary><div class="answer"><p>&#x27;x in set&#x27; is O(1) on average; &#x27;x in list&#x27; is O(n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use a dictionary when you need sorted order?</summary><div class="answer"><p>Hash tables do not keep keys in sorted order. Use a sorted list or tree for ordered queries.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does Python randomise string hashes?</summary><div class="answer"><p>To prevent attackers from crafting many colliding keys that would slow a server down (a hash-flooding attack).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Find the first non-repeating word in a list of words.</summary><div class="answer"><p>Count with Counter, then scan the original list and return the first word with count 1.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What does len({1, 1.0, True}) print?</summary><div class="answer"><p>1. 1, 1.0 and True are equal and hash alike, so the set keeps one.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Count pairs (i &lt; j) with a[i] + a[j] == k.</summary><div class="answer"><pre><code class="lang-py">def count_pairs(a, k):
+    seen, total = {}, 0
+    for x in a:
+        total += seen.get(k - x, 0)
+        seen[x] = seen.get(x, 0) + 1
+    return total</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> Why does Two Sum fail on [3] with target 6 if you insert before checking?</summary><div class="answer"><p>It would find 3 for 6 - 3 and pair the element with itself. Check first, then insert.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why check the dictionary before inserting?</summary><div class="answer"><p>So an element is never paired with itself; the partner must be an earlier element.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does the dictionary store value to index?</summary><div class="answer"><p>The answer needs indices, and the lookup key is the value we are searching for.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not sort and use two pointers when indices are needed?</summary><div class="answer"><p>Sorting destroys the original positions unless you store them separately.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is the hash map solution O(n) space?</summary><div class="answer"><p>In the worst case it stores every element before finding a pair.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does [3, 3] with target 6 still work?</summary><div class="answer"><p>When the second 3 arrives, the first 3 is already stored, and 6 - 3 = 3 is found.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use a hash map when memory is extremely limited?</summary><div class="answer"><p>It needs O(n) extra space. With sorted data two pointers use O(1); otherwise sort first if indices are not needed.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Two Sum on a sorted array returning 1-indexed positions.</summary><div class="answer"><p>Use two pointers lo and hi; return [lo + 1, hi + 1] when the sum matches.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Find all numbers that appear in all of three lists.</summary><div class="answer"><pre><code class="lang-py">def common(a, b, c):
+    return sorted(set(a) &amp; set(b) &amp; set(c))</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What does set(&#x27;hello&#x27;) print and does the order matter?</summary><div class="answer"><p>A set of unique letters such as {&#x27;h&#x27;, &#x27;e&#x27;, &#x27;l&#x27;, &#x27;o&#x27;}; order is not guaranteed.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How can you find duplicate files quickly?</summary><div class="answer"><p>Group by file size, then by a hash of the contents (e.g. SHA-256), and compare bytes only for matching hashes.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use sorted letters as the key for anagrams?</summary><div class="answer"><p>All anagrams produce the same sorted string, so it is a canonical label for the group.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why only start counting at numbers whose predecessor is missing?</summary><div class="answer"><p>Starting everywhere would recount each streak many times; starting only at streak beginnings counts each number about once.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use a set for the longest consecutive sequence?</summary><div class="answer"><p>It makes &#x27;is x + 1 present?&#x27; an O(1) check.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is defaultdict(list) handy?</summary><div class="answer"><p>It creates an empty list for a missing key automatically, so groups can be appended to directly.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why sort the output when grouping?</summary><div class="answer"><p>Dictionaries and sets may give arbitrary order; judges often expect a fixed order.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not group anagrams by comparing every pair of words?</summary><div class="answer"><p>That is O(n^2 k). A canonical key puts each word in its group in one step.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Find the intersection of two arrays keeping duplicates (multiset).</summary><div class="answer"><p>Use Counter(a) &amp; Counter(b) and expand with .elements().</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Hashing"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How is &#x27;group by canonical key&#x27; used in data cleaning?</summary><div class="answer"><p>Normalising emails or names (lower-case, trimmed) and grouping by the normalised value finds duplicate customer records.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Hashing"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> What happens when the table gets too full and how do you fix it?</summary><div class="answer"><p>Chains grow and operations slow down. Resize to a larger table and rehash all keys; the cost is O(n) but amortised over many inserts.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Hashing"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Find all unique pairs, not just one.</summary><div class="answer"><p>Use a set of seen values and a set of result pairs stored as (min, max); or sort + two pointers skipping duplicates.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Hashing"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> The numbers arrive as a stream and you must answer &#x27;is there a pair?&#x27; after each arrival.</summary><div class="answer"><p>Maintain the set of seen numbers; for each new x check k - x in the set before adding x. O(1) per element.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Hashing"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Three Sum with a hash set instead of two pointers?</summary><div class="answer"><p>Fix one number and run two-sum with a set on the rest: O(n^2), but duplicate handling is trickier than with sorting.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Hashing"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Group strings that are shifts of each other (&#x27;abc&#x27;, &#x27;bcd&#x27;, &#x27;xyz&#x27;).</summary><div class="answer"><p>Use the differences between consecutive characters (mod 26) as the key.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="m05-problems.html"><span class="dir">Previous</span><span>Problems 5: Searching Algorithms</span></a>
+      <a class="next" href="m07-problems.html"><span class="dir">Next</span><span>Problems 7: Hashing</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

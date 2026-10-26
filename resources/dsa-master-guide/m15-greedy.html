@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="M15">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>M15 Greedy Algorithms | DSA Master Guide</title>
+<meta name="description" content="Make the locally best choice at every step - but only when you can justify it.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<link rel="stylesheet" href="viz.css">
+<script src="viz.js" defer></script>
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Module 15</p>
+      <h1>Greedy Algorithms</h1>
+      <p class="lede">Make the locally best choice at every step - but only when you can justify it. Topics in this module: The greedy idea and why greedy sometimes fails; interval and activity-selection greedy strategies.</p>
+      <div class="meta"><span class="tag warn">Important</span><span class="tag">2 topics</span><span class="tag">13 problems</span><span class="tag">36 interview questions</span></div>
+    </div>
+
+    <section id="why-this-module" data-track>
+      <h2>Start from scratch: why this module exists</h2>
+      <p>Sometimes the locally best choice is also globally best. When you can prove that, a problem collapses into a sort and one pass. The hard part is knowing when greedy is valid and when it is a trap.</p>
+      <p>This module trains both: efficient greedy algorithms (activity selection, jump game) and counterexamples that show where greedy fails and DP is needed.</p>
+      <p><strong>Who needs it:</strong> Schedulers, compression tools (Huffman), network and resource planners, and interviewers testing reasoning rather than coding.</p>
+      <p><strong>Before you start:</strong> Modules 6 and 7.</p>
+      <h3>After this module you can</h3>
+      <ul><li>Recognise greedy-friendly problems.</li><li>Justify a greedy choice with an exchange argument.</li><li>Find counterexamples quickly.</li><li>Solve interval and scheduling problems.</li></ul>
+      <p><strong>Common pitfalls:</strong> Assuming greedy works because the sample passes, wrong sorting key, no proof or counterexample attempt.</p>
+      <p><strong>Typical interview questions here:</strong> Activity selection, jump game, gas station, assign cookies, fractional knapsack, minimum platforms, why greedy fails for coin change.</p>
+    </section>
+
+    <section id="c15_1" data-track>
+      <h2>The greedy idea and why greedy sometimes fails</h2>
+      <p><span class="tag warn">Important</span> <span class="tag">Topic 15.1</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>A greedy algorithm builds a solution by always taking the choice that looks best right now, never reconsidering earlier choices.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>When a greedy choice is provably safe it gives very fast, simple solutions (often O(n log n) from sorting). When it is not safe you get a wrong answer that passes samples and fails hidden tests.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Filling a backpack by always grabbing the most valuable-looking item first: it works if you can take fractions, but fails if items are indivisible.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>When you give change, you instinctively hand over the biggest coin that fits, then the next biggest. You never reconsider. This is the greedy strategy: pick the best-looking option now. It is fast and simple because there is no search; the whole algorithm is a sort and one pass.</p>
+      <p>But 'best-looking now' is not always best overall. With coins 1, 3, 4 and amount 6, the biggest-first rule gives 4+1+1 (three coins) while 3+3 needs two. The lesson is that a greedy choice must be proven safe, not just plausible.</p>
+      <p>A choice is safe if some optimal solution contains it (greedy-choice property) and what is left is a smaller version of the same problem (optimal substructure). The standard proof is the exchange argument: take any optimal solution that does not use the greedy choice and show you can swap the greedy choice in without making it worse.</p>
+      <p>In practice: sort by a candidate key, try small counterexamples, and if none breaks it and you can sketch the exchange argument, trust it; otherwise move to DP. In an interview, explaining WHY the greedy choice is safe often matters more than the code.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="greedy"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>A problem is greedy-friendly when (1) a local best choice is safe (greedy-choice property) and (2) the rest is a smaller instance of the same problem (optimal substructure).</li><li>Typical greedy recipe: sort by a clever key, then scan once.</li><li>Counterexample: coins [1, 3, 4], amount 6. Greedy takes 4 then 1 + 1 = 3 coins, but 3 + 3 = 2 coins is optimal. Greedy fails here, DP is needed.</li><li>With coins [1, 2, 5, 10, 20, 50, 100] greedy IS optimal (canonical systems).</li><li>How to test a greedy idea: try to find a counterexample with small inputs (brute force). If you cannot, try an exchange argument: show that swapping any optimal solution towards your greedy choice does not make it worse.</li><li>Use the comparison tool: enter coins and an amount to see greedy vs optimal.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>A greedy algorithm makes the best-looking choice at each step and never looks back. It is fast and simple, but only correct when a local best choice is always safe. Many problems look greedy and are not, so always test your idea on tricky small cases.</p>
+      <p>Two things make greedy work: the greedy-choice property (picking the best local option never ruins the global optimum) and optimal substructure (after the choice, what remains is a smaller version of the same problem). The usual proof method is an exchange argument: take any optimal answer and show you can swap in the greedy choice without making it worse.</p>
+      <p>A classic failure: coins 1, 3, 4 and target 6. Greedy takes 4 then 1 and 1 (3 coins), but 3 + 3 uses only 2. For coin systems like 1, 2, 5, 10, 20, 50, 100 greedy is optimal, but you cannot assume that. When greedy is unsafe, use dynamic programming.</p>
+      <p>Typical greedy recipe: sort by a smart key and scan once. Examples: sort intervals by end time, sort items by value/weight ratio (fractional knapsack), sort tasks by deadline.</p>
+      <p>How to decide in an exam: think of a small counterexample for your greedy rule. If you cannot break it after a few tries and you can explain why a swap never hurts, trust it. Otherwise, consider DP.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Typical greedy runtime is O(n log n) for sorting plus O(n) for one scan. Memory is O(1) to O(n).</li><li>Huffman coding, Prim/Kruskal MST, Dijkstra and activity selection are all greedy algorithms with proofs.</li><li>Canonical coin systems (like 1, 2, 5, 10, 20, 50, 100) make greedy optimal; arbitrary systems do not.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Operating systems and networks</td><td>Scheduling (earliest deadline first), Huffman coding for compression.</td></tr><tr><td>Banks and cash machines</td><td>Change-making with canonical denominations.</td></tr><tr><td>Interviewers</td><td>They check that you justify a greedy rule and know when it fails.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Greedy vs DP</td><td>Greedy is faster and simpler but only valid when the greedy-choice property holds. DP is always correct when the problem has optimal substructure but costs more.</td></tr><tr><td>Greedy vs brute force</td><td>Brute force explores all options (exponential). Greedy commits to one (linear/log-linear).</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>sorted(items, key=lambda x: x[1]) sorts by the second field.</li><li>divmod(amount, coin) gives how many coins and the remainder at once.</li><li>zip(starts, ends) pairs data for sorting.</li><li>heapq helps when the 'best choice' changes over time.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c15_1.py">def greedy_coins(coins, amount):
+    count = 0
+    for c in sorted(coins, reverse=True):     # biggest coin first
+        count += amount // c
+        amount %= c
+    return count if amount == 0 else -1
+
+def dp_coins(coins, amount):
+    INF = float("inf")
+    dp = [0] + [INF] * amount
+    for a in range(1, amount + 1):
+        for c in coins:
+            if c &lt;= a:
+                dp[a] = min(dp[a], dp[a - c] + 1)
+    return dp[amount] if dp[amount] != INF else -1</code></pre>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - greedy (fast but not always right)</h4>
+      <p>Take the biggest coin first. Correct for canonical coin systems, wrong for [1, 3, 4] and amount 6.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c15_1_stage1.py">def coins(c, amount):
+    n = 0
+    for x in sorted(c, reverse=True):
+        n += amount // x
+        amount %= x
+    return n if amount == 0 else -1</code></pre>
+      <p class="muted small">Check: <code>coins([1, 3, 4], 6)</code> returns <code>3</code></p>
+      <h4>Stage 2 - dynamic programming (always right)</h4>
+      <p>Try every coin for every smaller amount and keep the best: finds 2 coins (3 + 3).</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c15_1_stage2.py">def coins(c, amount):
+    INF = float('inf')
+    dp = [0] + [INF] * amount
+    for a in range(1, amount + 1):
+        for x in c:
+            if x &lt;= a:
+                dp[a] = min(dp[a], dp[a - x] + 1)
+    return -1 if dp[amount] == INF else dp[amount]</code></pre>
+      <p class="muted small">Check: <code>coins([1, 3, 4], 6)</code> returns <code>2</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Dry run of the related problem "Minimum Currency Notes": Call: <code>min_coins_greedy(93)</code>, returns <code>5</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>d (after)</th><th>q (after)</th><th>amount (after)</th><th>count (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>count = 0</code></td><td>-</td><td>-</td><td><strong><code>93</code></strong></td><td><strong><code>0</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>for d in (2000, 500, 200, 100, 50, 20, 10, 5, 2, 1):</code></td><td><strong><code>2000</code></strong></td><td>-</td><td><code>93</code></td><td><code>0</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>q, amount = divmod(amount, d)</code></td><td><code>2000</code></td><td><strong><code>0</code></strong></td><td><code>93</code></td><td><code>0</code></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>count += q</code></td><td><code>2000</code></td><td><code>0</code></td><td><code>93</code></td><td><code>0</code></td></tr>
+<tr><td class="num">5</td><td class="num">3</td><td><code>for d in (2000, 500, 200, 100, 50, 20, 10, 5, 2, 1):</code></td><td><strong><code>500</code></strong></td><td><code>0</code></td><td><code>93</code></td><td><code>0</code></td></tr>
+<tr><td class="num">6</td><td class="num">4</td><td><code>q, amount = divmod(amount, d)</code></td><td><code>500</code></td><td><code>0</code></td><td><code>93</code></td><td><code>0</code></td></tr>
+<tr><td class="num">7</td><td class="num">5</td><td><code>count += q</code></td><td><code>500</code></td><td><code>0</code></td><td><code>93</code></td><td><code>0</code></td></tr>
+<tr><td class="num">8</td><td class="num">3</td><td><code>for d in (2000, 500, 200, 100, 50, 20, 10, 5, 2, 1):</code></td><td><strong><code>200</code></strong></td><td><code>0</code></td><td><code>93</code></td><td><code>0</code></td></tr>
+<tr><td class="num">9</td><td class="num">4</td><td><code>q, amount = divmod(amount, d)</code></td><td><code>200</code></td><td><code>0</code></td><td><code>93</code></td><td><code>0</code></td></tr>
+<tr><td class="num">10</td><td class="num">5</td><td><code>count += q</code></td><td><code>200</code></td><td><code>0</code></td><td><code>93</code></td><td><code>0</code></td></tr>
+<tr><td class="num">11</td><td class="num">3</td><td><code>for d in (2000, 500, 200, 100, 50, 20, 10, 5, 2, 1):</code></td><td><strong><code>100</code></strong></td><td><code>0</code></td><td><code>93</code></td><td><code>0</code></td></tr>
+<tr><td class="num">12</td><td class="num">4</td><td><code>q, amount = divmod(amount, d)</code></td><td><code>100</code></td><td><code>0</code></td><td><code>93</code></td><td><code>0</code></td></tr>
+<tr><td class="num">13</td><td class="num">5</td><td><code>count += q</code></td><td><code>100</code></td><td><code>0</code></td><td><code>93</code></td><td><code>0</code></td></tr>
+<tr><td class="num">14</td><td class="num">3</td><td><code>for d in (2000, 500, 200, 100, 50, 20, 10, 5, 2, 1):</code></td><td><strong><code>50</code></strong></td><td><code>0</code></td><td><code>93</code></td><td><code>0</code></td></tr>
+<tr><td class="num">15</td><td class="num">4</td><td><code>q, amount = divmod(amount, d)</code></td><td><code>50</code></td><td><strong><code>1</code></strong></td><td><strong><code>43</code></strong></td><td><code>0</code></td></tr>
+<tr><td class="num">16</td><td class="num">5</td><td><code>count += q</code></td><td><code>50</code></td><td><code>1</code></td><td><code>43</code></td><td><strong><code>1</code></strong></td></tr>
+<tr><td class="num">17</td><td class="num">3</td><td><code>for d in (2000, 500, 200, 100, 50, 20, 10, 5, 2, 1):</code></td><td><strong><code>20</code></strong></td><td><code>1</code></td><td><code>43</code></td><td><code>1</code></td></tr>
+<tr><td class="num">18</td><td class="num">4</td><td><code>q, amount = divmod(amount, d)</code></td><td><code>20</code></td><td><strong><code>2</code></strong></td><td><strong><code>3</code></strong></td><td><code>1</code></td></tr>
+<tr><td class="num">19</td><td class="num">5</td><td><code>count += q</code></td><td><code>20</code></td><td><code>2</code></td><td><code>3</code></td><td><strong><code>3</code></strong></td></tr>
+<tr><td class="num">20</td><td class="num">3</td><td><code>for d in (2000, 500, 200, 100, 50, 20, 10, 5, 2, 1):</code></td><td><strong><code>10</code></strong></td><td><code>2</code></td><td><code>3</code></td><td><code>3</code></td></tr>
+<tr><td class="num">21</td><td class="num">4</td><td><code>q, amount = divmod(amount, d)</code></td><td><code>10</code></td><td><strong><code>0</code></strong></td><td><code>3</code></td><td><code>3</code></td></tr>
+<tr><td class="num">22</td><td class="num">5</td><td><code>count += q</code></td><td><code>10</code></td><td><code>0</code></td><td><code>3</code></td><td><code>3</code></td></tr>
+<tr><td class="num">23</td><td class="num">3</td><td><code>for d in (2000, 500, 200, 100, 50, 20, 10, 5, 2, 1):</code></td><td><strong><code>5</code></strong></td><td><code>0</code></td><td><code>3</code></td><td><code>3</code></td></tr>
+<tr><td class="num">24</td><td class="num">4</td><td><code>q, amount = divmod(amount, d)</code></td><td><code>5</code></td><td><code>0</code></td><td><code>3</code></td><td><code>3</code></td></tr>
+<tr><td class="num">25</td><td class="num">5</td><td><code>count += q</code></td><td><code>5</code></td><td><code>0</code></td><td><code>3</code></td><td><code>3</code></td></tr>
+<tr><td class="num">26</td><td class="num">3</td><td><code>for d in (2000, 500, 200, 100, 50, 20, 10, 5, 2, 1):</code></td><td><strong><code>2</code></strong></td><td><code>0</code></td><td><code>3</code></td><td><code>3</code></td></tr>
+<tr><td class="num">27</td><td class="num">4</td><td><code>q, amount = divmod(amount, d)</code></td><td><code>2</code></td><td><strong><code>1</code></strong></td><td><strong><code>1</code></strong></td><td><code>3</code></td></tr>
+<tr><td class="num">28</td><td class="num">5</td><td><code>count += q</code></td><td><code>2</code></td><td><code>1</code></td><td><code>1</code></td><td><strong><code>4</code></strong></td></tr>
+<tr><td class="num">29</td><td class="num">3</td><td><code>for d in (2000, 500, 200, 100, 50, 20, 10, 5, 2, 1):</code></td><td><strong><code>1</code></strong></td><td><code>1</code></td><td><code>1</code></td><td><code>4</code></td></tr>
+<tr><td class="num">30</td><td class="num">4</td><td><code>q, amount = divmod(amount, d)</code></td><td><code>1</code></td><td><code>1</code></td><td><strong><code>0</code></strong></td><td><code>4</code></td></tr>
+<tr><td class="num">31</td><td class="num">5</td><td><code>count += q</code></td><td><code>1</code></td><td><code>1</code></td><td><code>0</code></td><td><strong><code>5</code></strong></td></tr>
+<tr><td class="num">32</td><td class="num">3</td><td><code>for d in (2000, 500, 200, 100, 50, 20, 10, 5, 2, 1):</code></td><td><code>1</code></td><td><code>1</code></td><td><code>0</code></td><td><code>5</code></td></tr>
+<tr><td class="num">33</td><td class="num">6</td><td><code>return count</code></td><td><code>1</code></td><td><code>1</code></td><td><code>0</code></td><td><code>5</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>Greedy coins: O(k log k) for k coin types. DP: O(amount * k).</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Assuming greedy works because it passes the sample.</li><li>Choosing the wrong sorting key (e.g. by duration instead of finish time).</li><li>Not handling the "cannot make the amount" case.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"Minimum number of...", "maximum number of non-overlapping..." plus sortable items -&gt; try greedy, then try to break it.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m15-problems.html#prob-min_coins_greedy">Minimum Currency Notes</a></td><td><span class="tag ok">Easy</span></td><td>Greedy (canonical coin system)</td></tr><tr><td><a href="m15-problems.html#prob-assign_cookies">Assign Cookies</a> <span class="tag">LC 455</span></td><td><span class="tag ok">Easy</span></td><td>Greedy matching with sorting</td></tr><tr><td><a href="m15-problems.html#prob-lemonade_change">Lemonade Stand Change</a> <span class="tag">LC 860</span></td><td><span class="tag ok">Easy</span></td><td>Greedy</td></tr><tr><td><a href="m15-problems.html#prob-can_jump">Jump Game</a> <span class="tag">LC 55</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Greedy reachability</td></tr><tr><td><a href="m15-problems.html#prob-fractional_knapsack">Fractional Knapsack</a></td><td><span class="tag warn">Medium</span></td><td>Greedy by ratio</td></tr><tr><td><a href="m03-problems.html#prob-best_time_stock_ii">Best Time to Buy and Sell Stock II</a> <span class="tag">LC 122</span></td><td><span class="tag warn">Medium</span></td><td>Greedy over a list</td></tr><tr><td><a href="m15-problems.html#prob-partition_labels">Partition Labels</a> <span class="tag">LC 763</span></td><td><span class="tag warn">Medium</span></td><td>Greedy with last positions</td></tr><tr><td><a href="m15-problems.html#prob-two_city_cost">Two City Scheduling</a> <span class="tag">LC 1029</span></td><td><span class="tag warn">Medium</span></td><td>Greedy by cost difference</td></tr><tr><td><a href="m15-problems.html#prob-gas_station">Gas Station</a> <span class="tag">LC 134</span></td><td><span class="tag warn">Medium</span></td><td>Greedy</td></tr><tr><td><a href="m15-problems.html#prob-candy">Candy</a> <span class="tag">LC 135</span></td><td><span class="tag bad">Hard</span></td><td>Greedy two passes</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why is greedy fast?</summary><div class="answer"><p>It makes one choice per step with no searching, usually after one sort.</p></div></details>
+        <details class="recall"><summary>Why not trust greedy by default?</summary><div class="answer"><p>A plausible local rule can fail globally (coins 1, 3, 4).</p></div></details>
+        <details class="recall"><summary>Why use an exchange argument?</summary><div class="answer"><p>It shows any optimal solution can be changed to include the greedy choice without becoming worse.</p></div></details>
+        <details class="recall"><summary>Why does fractional knapsack allow greedy but 0/1 does not?</summary><div class="answer"><p>Splitting items lets you fill the bag exactly; whole items can leave unusable space.</p></div></details>
+        <details class="recall"><summary>Why test a greedy idea on small counterexamples?</summary><div class="answer"><p>Most failures show up on tiny inputs, and finding one saves a wrong submission.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c15_1-q1" data-topic="Greedy Algorithms" data-type="single" data-answer="B">
+        <div class="q-stem"><p>For coins [1, 3, 4] and amount 6 the greedy answer is...</p></div>
+        <ul class="q-options">
+          <li data-key="A">2 coins</li>
+          <li data-key="B">3 coins</li>
+          <li data-key="C">4 coins</li>
+          <li data-key="D">6 coins</li>
+        </ul>
+        <div class="q-explain"><p>Greedy: 4 + 1 + 1 = 3 coins, while 3 + 3 uses only 2.</p></div>
+      </div>
+      <div class="quiz" data-qid="c15_1-q2" data-topic="Greedy Algorithms" data-type="single" data-answer="A">
+        <div class="q-stem"><p>Fractional knapsack is solved by greedy because...</p></div>
+        <ul class="q-options">
+          <li data-key="A">Items can be split, so the best ratio is always safe</li>
+          <li data-key="B">It is NP-hard</li>
+          <li data-key="C">Weights are equal</li>
+          <li data-key="D">Values are sorted</li>
+        </ul>
+        <div class="q-explain"><p>With fractions, taking the best value/weight first is optimal.</p></div>
+      </div>
+    </section>
+
+    <section id="c15_2" data-track>
+      <h2>Interval and activity-selection greedy strategies</h2>
+      <p><span class="tag warn">Important</span> <span class="tag">Topic 15.2</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>Interval problems ask to schedule, merge or cover ranges. Sorting the intervals by the right key (usually end time or start time) lets one linear scan decide everything.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Meeting rooms, activity selection, merging intervals and minimum platforms are common greedy/sorting questions.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Booking one conference room: always accept the meeting that ends earliest among those that fit - that leaves the most free time for the rest.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>You manage one meeting room and a pile of booking requests. You want to host as many meetings as possible. Which rule do you apply? Earliest start? Shortest meeting? Fewest conflicts? Try each on small examples and you will find counterexamples. The rule that always works is: take the meeting that ENDS earliest.</p>
+      <p>Why is earliest end the safe choice? Whatever the best schedule is, its first meeting ends no earlier than the earliest-ending meeting. Swap them: the new schedule has the same number of meetings and finishes at least as early, so it leaves at least as much room. That is the exchange argument in action.</p>
+      <p>Merging intervals is a related but different question: not 'pick as many as possible' but 'combine overlapping ones'. Sorting by START puts overlaps next to each other, so one pass merging into the last interval works.</p>
+      <p>Counting the maximum number of simultaneous events (rooms, platforms) is a sweep line problem: treat starts as +1 and ends as -1 on a timeline sorted by time and keep a running total; the peak is the answer.</p>
+      <p>Understanding which key to sort by (start, end, length) and why is the main skill; the code afterwards is tiny.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="activity"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Activity selection: sort by END time; take an activity if its start &gt;= the last chosen end.</li><li>Why end time? Choosing the earliest finish never blocks more options than any alternative (exchange argument).</li><li>Merge intervals: sort by START; extend the last interval if the next one overlaps, else start a new one.</li><li>Minimum platforms / rooms: sort starts and ends separately; sweep, counting how many are active at once.</li><li>Remove minimum intervals to make the rest non-overlapping = n - (max non-overlapping activities).</li><li>Use the visualiser to see which activities are accepted or skipped.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Interval problems ask about ranges [start, end]: meetings, trains, tasks. Nearly all of them start with sorting. The sort key depends on the question.</p>
+      <p>Activity selection (most non-overlapping meetings): sort by END time. Take the meeting that finishes earliest, then the next meeting that starts at or after that end, and so on. Finishing early leaves the most room for the rest.</p>
+      <p>Merge intervals: sort by START. If the next interval starts before or at the end of the current merged one, extend the end with max(end, next_end); otherwise start a new group. Do not forget max: a long interval can swallow a short one.</p>
+      <p>Minimum platforms / rooms: sort all arrival times and all departure times separately. Walk through them like a timeline: an arrival adds one train, a departure removes one. The maximum number at the same moment is the number of platforms needed.</p>
+      <p>Related: removing the fewest intervals to make the rest non-overlapping equals n minus the maximum selectable activities; inserting an interval into a sorted list; checking if a person can attend all meetings (any overlap after sorting means no).</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Sorting dominates: O(n log n). The greedy pass is O(n). The sweep-line method is O(n log n) for sorting events.</li><li>Touching intervals (end == next start) count as overlapping or not depending on the statement; the comparison operator (&lt; vs &lt;=) encodes this.</li><li>A min-heap of end times is an alternative for room allocation: pop the earliest end if it is &lt;= the new start, otherwise open a new room.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Airports and railways</td><td>Platform and gate allocation.</td></tr><tr><td>Calendar and meeting tools</td><td>Conflict detection, free-slot search, room booking.</td></tr><tr><td>Cloud schedulers</td><td>Packing jobs into machines by time.</td></tr><tr><td>Interviewers</td><td>Meeting rooms, merge intervals, non-overlapping intervals, minimum platforms.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Sort by end vs by start</td><td>End for selection (max count); start for merging.</td></tr><tr><td>Sweep line vs heap for rooms</td><td>Both O(n log n); sweep line is shorter, heap version generalises to assigning actual rooms.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>sorted(intervals) sorts by start then end.</li><li>sorted(zip(starts, ends), key=lambda p: p[1]) sorts by end.</li><li>Overlap test: a_start &lt;= b_end and b_start &lt;= a_end.</li><li>merged[-1][1] = max(merged[-1][1], end).</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c15_2.py">def select_activities(starts, ends):
+    chosen, last_end = [], float("-inf")
+    for s, e in sorted(zip(starts, ends), key=lambda p: p[1]):
+        if s &gt;= last_end:                 # compatible with the last chosen
+            chosen.append((s, e))
+            last_end = e
+    return chosen</code></pre>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>select_activities([1, 3, 0, 5], [2, 4, 6, 7])</code>, returns <code>[(1, 2), (3, 4), (5, 7)]</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>s (after)</th><th>e (after)</th><th>chosen (after)</th><th>last_end (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>chosen, last_end = [], float("-inf")</code></td><td>-</td><td>-</td><td><strong><code>[]</code></strong></td><td><strong><code>-inf</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>for s, e in sorted(zip(starts, ends), key=lambda p: p[1]):</code></td><td><strong><code>1</code></strong></td><td><strong><code>2</code></strong></td><td><code>[]</code></td><td><code>-inf</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>if s &gt;= last_end:                 # compatible with the last chosen</code></td><td><code>1</code></td><td><code>2</code></td><td><code>[]</code></td><td><code>-inf</code></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>chosen.append((s, e))</code></td><td><code>1</code></td><td><code>2</code></td><td><strong><code>[(1, 2)]</code></strong></td><td><code>-inf</code></td></tr>
+<tr><td class="num">5</td><td class="num">6</td><td><code>last_end = e</code></td><td><code>1</code></td><td><code>2</code></td><td><code>[(1, 2)]</code></td><td><strong><code>2</code></strong></td></tr>
+<tr><td class="num">6</td><td class="num">3</td><td><code>for s, e in sorted(zip(starts, ends), key=lambda p: p[1]):</code></td><td><strong><code>3</code></strong></td><td><strong><code>4</code></strong></td><td><code>[(1, 2)]</code></td><td><code>2</code></td></tr>
+<tr><td class="num">7</td><td class="num">4</td><td><code>if s &gt;= last_end:                 # compatible with the last chosen</code></td><td><code>3</code></td><td><code>4</code></td><td><code>[(1, 2)]</code></td><td><code>2</code></td></tr>
+<tr><td class="num">8</td><td class="num">5</td><td><code>chosen.append((s, e))</code></td><td><code>3</code></td><td><code>4</code></td><td><strong><code>[(1, 2), (3, 4)]</code></strong></td><td><code>2</code></td></tr>
+<tr><td class="num">9</td><td class="num">6</td><td><code>last_end = e</code></td><td><code>3</code></td><td><code>4</code></td><td><code>[(1, 2), (3, 4)]</code></td><td><strong><code>4</code></strong></td></tr>
+<tr><td class="num">10</td><td class="num">3</td><td><code>for s, e in sorted(zip(starts, ends), key=lambda p: p[1]):</code></td><td><strong><code>0</code></strong></td><td><strong><code>6</code></strong></td><td><code>[(1, 2), (3, 4)]</code></td><td><code>4</code></td></tr>
+<tr><td class="num">11</td><td class="num">4</td><td><code>if s &gt;= last_end:                 # compatible with the last chosen</code></td><td><code>0</code></td><td><code>6</code></td><td><code>[(1, 2), (3, 4)]</code></td><td><code>4</code></td></tr>
+<tr><td class="num">12</td><td class="num">3</td><td><code>for s, e in sorted(zip(starts, ends), key=lambda p: p[1]):</code></td><td><strong><code>5</code></strong></td><td><strong><code>7</code></strong></td><td><code>[(1, 2), (3, 4)]</code></td><td><code>4</code></td></tr>
+<tr><td class="num">13</td><td class="num">4</td><td><code>if s &gt;= last_end:                 # compatible with the last chosen</code></td><td><code>5</code></td><td><code>7</code></td><td><code>[(1, 2), (3, 4)]</code></td><td><code>4</code></td></tr>
+<tr><td class="num">14</td><td class="num">5</td><td><code>chosen.append((s, e))</code></td><td><code>5</code></td><td><code>7</code></td><td><strong><code>[(1, 2), (3, 4), (5, 7)]</code></strong></td><td><code>4</code></td></tr>
+<tr><td class="num">15</td><td class="num">6</td><td><code>last_end = e</code></td><td><code>5</code></td><td><code>7</code></td><td><code>[(1, 2), (3, 4), (5, 7)]</code></td><td><strong><code>7</code></strong></td></tr>
+<tr><td class="num">16</td><td class="num">3</td><td><code>for s, e in sorted(zip(starts, ends), key=lambda p: p[1]):</code></td><td><code>5</code></td><td><code>7</code></td><td><code>[(1, 2), (3, 4), (5, 7)]</code></td><td><code>7</code></td></tr>
+<tr><td class="num">17</td><td class="num">7</td><td><code>return chosen</code></td><td><code>5</code></td><td><code>7</code></td><td><code>[(1, 2), (3, 4), (5, 7)]</code></td><td><code>7</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>O(n log n) for sorting, O(n) scan; O(n) space.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Sorting by start time instead of end time.</li><li>Using &gt; instead of &gt;= for touching intervals (depends on the statement).</li><li>Not copying intervals before mutating them.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>Schedule/overlap/cover with a range per item -&gt; sort by end (selection) or start (merge).</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m15-problems.html#prob-max_activities">Activity Selection</a></td><td><span class="tag warn">Medium</span></td><td>Greedy: sort by finish time</td></tr><tr><td><a href="m18-problems.html#prob-merge_intervals">Merge Intervals</a> <span class="tag">LC 56</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Intervals, sorting</td></tr><tr><td><a href="m13-problems.html#prob-meeting_rooms_ii">Meeting Rooms II</a> <span class="tag">LC 253</span></td><td><span class="tag warn">Medium</span></td><td>Sort + min-heap of end times</td></tr><tr><td><a href="m15-problems.html#prob-non_overlapping_intervals">Non-overlapping Intervals</a> <span class="tag">LC 435</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Greedy by end time</td></tr><tr><td><a href="m15-problems.html#prob-jump_game_ii">Jump Game II (Minimum Jumps)</a> <span class="tag">LC 45</span></td><td><span class="tag warn">Medium</span></td><td>Greedy windows</td></tr><tr><td><a href="m15-problems.html#prob-min_platforms">Minimum Platforms (Meeting Rooms)</a></td><td><span class="tag bad">Hard</span></td><td>Greedy with sorting / sweep line</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why sort by end time for activity selection?</summary><div class="answer"><p>The earliest finishing activity leaves the most time for the rest.</p></div></details>
+        <details class="recall"><summary>Why sort by start for merging?</summary><div class="answer"><p>Overlapping intervals become adjacent, so one pass merges them.</p></div></details>
+        <details class="recall"><summary>Why take max(end) when merging?</summary><div class="answer"><p>The next interval may be contained inside the current one.</p></div></details>
+        <details class="recall"><summary>Why a sweep line for platforms?</summary><div class="answer"><p>Only the number of trains present at each moment matters, so sorted events suffice.</p></div></details>
+        <details class="recall"><summary>Why does shortest-first fail for selection?</summary><div class="answer"><p>A short interval in the middle can block two longer ones that would fit around it.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c15_2-q1" data-topic="Greedy Algorithms" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Activity selection sorts activities by...</p></div>
+        <ul class="q-options">
+          <li data-key="A">Start time</li>
+          <li data-key="B">Finish time</li>
+          <li data-key="C">Duration</li>
+          <li data-key="D">Name</li>
+        </ul>
+        <div class="q-explain"><p>Earliest finish leaves the most room.</p></div>
+      </div>
+      <div class="quiz" data-qid="c15_2-q2" data-topic="Greedy Algorithms" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Merging intervals starts by sorting on...</p></div>
+        <ul class="q-options">
+          <li data-key="A">End time</li>
+          <li data-key="B">Start time</li>
+          <li data-key="C">Length</li>
+          <li data-key="D">Nothing</li>
+        </ul>
+        <div class="q-explain"><p>Sorted by start, overlapping intervals become adjacent.</p></div>
+      </div>
+    </section>
+
+    <h2 id="practice-problems">Practice problems for this module</h2>
+
+    <p>13 problems with hints, approach, dry run and tested solutions on the <a href="m15-problems.html">problem set for this module</a>.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m15-problems.html#prob-min_coins_greedy">Minimum Currency Notes</a></td><td><span class="tag ok">Easy</span></td><td>Greedy (canonical coin system)</td></tr><tr><td><a href="m15-problems.html#prob-assign_cookies">Assign Cookies</a> <span class="tag">LC 455</span></td><td><span class="tag ok">Easy</span></td><td>Greedy matching with sorting</td></tr><tr><td><a href="m15-problems.html#prob-lemonade_change">Lemonade Stand Change</a> <span class="tag">LC 860</span></td><td><span class="tag ok">Easy</span></td><td>Greedy</td></tr><tr><td><a href="m15-problems.html#prob-max_activities">Activity Selection</a></td><td><span class="tag warn">Medium</span></td><td>Greedy: sort by finish time</td></tr><tr><td><a href="m15-problems.html#prob-can_jump">Jump Game</a> <span class="tag">LC 55</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Greedy reachability</td></tr><tr><td><a href="m15-problems.html#prob-fractional_knapsack">Fractional Knapsack</a></td><td><span class="tag warn">Medium</span></td><td>Greedy by ratio</td></tr><tr><td><a href="m15-problems.html#prob-gas_station">Gas Station</a> <span class="tag">LC 134</span></td><td><span class="tag warn">Medium</span></td><td>Greedy</td></tr><tr><td><a href="m15-problems.html#prob-jump_game_ii">Jump Game II (Minimum Jumps)</a> <span class="tag">LC 45</span></td><td><span class="tag warn">Medium</span></td><td>Greedy windows</td></tr><tr><td><a href="m15-problems.html#prob-non_overlapping_intervals">Non-overlapping Intervals</a> <span class="tag">LC 435</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Greedy by end time</td></tr><tr><td><a href="m15-problems.html#prob-partition_labels">Partition Labels</a> <span class="tag">LC 763</span></td><td><span class="tag warn">Medium</span></td><td>Greedy with last positions</td></tr><tr><td><a href="m15-problems.html#prob-two_city_cost">Two City Scheduling</a> <span class="tag">LC 1029</span></td><td><span class="tag warn">Medium</span></td><td>Greedy by cost difference</td></tr><tr><td><a href="m15-problems.html#prob-min_platforms">Minimum Platforms (Meeting Rooms)</a></td><td><span class="tag bad">Hard</span></td><td>Greedy with sorting / sweep line</td></tr><tr><td><a href="m15-problems.html#prob-candy">Candy</a> <span class="tag">LC 135</span></td><td><span class="tag bad">Hard</span></td><td>Greedy two passes</td></tr>
+</tbody>
+</table>
+</div>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Greedy Algorithms</h2>
+      <p class="muted">36 questions: try to answer aloud in under a minute, then reveal. All questions from every module are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Greedy Algorithms">
+<details class="recall iq" data-level="basic" data-topic="Greedy Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is a greedy algorithm?</summary><div class="answer"><p>An algorithm that builds a solution by always choosing the locally best option, hoping (or proving) it leads to the global best.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Greedy Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Give an example where greedy fails.</summary><div class="answer"><p>Coin change with coins [1, 3, 4] and amount 6: greedy gives 4+1+1 (3 coins), optimal is 3+3 (2 coins).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Greedy Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Greedy vs dynamic programming?</summary><div class="answer"><p>Greedy commits to one choice per step and is usually faster but only valid under certain properties. DP considers all choices via subproblems and is always correct when the structure fits.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Greedy Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Fractional vs 0/1 knapsack - which is greedy?</summary><div class="answer"><p>Fractional: greedy by value/weight ratio is optimal. 0/1 needs DP because you cannot split items.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Greedy Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you prove a greedy algorithm?</summary><div class="answer"><p>Show the greedy choice property with an exchange argument and the optimal substructure.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Greedy Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you prove that a greedy algorithm is correct?</summary><div class="answer"><p>Show the greedy-choice property with an exchange argument (an optimal solution can be modified to include the greedy choice) and optimal substructure (the rest is the same kind of problem).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Greedy Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Maximum number of non-overlapping meetings - approach?</summary><div class="answer"><p>Sort by end time and greedily pick each meeting whose start is &gt;= the last chosen end. O(n log n).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Greedy Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you merge overlapping intervals?</summary><div class="answer"><p>Sort by start; for each interval, if start &lt;= last merged end extend the end to the max, otherwise append a new interval.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Greedy Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you find the minimum number of meeting rooms or platforms?</summary><div class="answer"><p>Sort starts and ends separately and sweep: count +1 on a start and -1 on an end; the peak count is the answer. Or use a min-heap of end times.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Greedy Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why sort by end time for activity selection?</summary><div class="answer"><p>The activity that ends first leaves the maximum remaining time for other activities (exchange argument).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Greedy Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you decide if two intervals overlap?</summary><div class="answer"><p>They overlap if a.start &lt;= b.end and b.start &lt;= a.end (adjust the inequality if touching counts as no overlap).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Greedy Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why does sorting by shortest duration fail for activity selection?</summary><div class="answer"><p>A short meeting in the middle of the day can block two longer ones that would otherwise fit on either side.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Greedy Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Minimum number of arrows to burst balloons (intervals).</summary><div class="answer"><p>Sort by end; shoot at the first end, skip all balloons starting at or before that end, shoot again at the next uncovered balloon&#x27;s end. O(n log n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Greedy Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> For coins [1, 5, 6, 9] and amount 11, what does greedy give vs the optimum?</summary><div class="answer"><p>Greedy: 9 + 1 + 1 = 3 coins. Optimal: 5 + 6 = 2 coins.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Greedy Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> Where is a greedy algorithm used in compression?</summary><div class="answer"><p>Huffman coding repeatedly merges the two least frequent symbols to build an optimal prefix code.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Greedy Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is greedy fast?</summary><div class="answer"><p>It makes one choice per step with no searching, usually after one sort.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Greedy Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not trust greedy by default?</summary><div class="answer"><p>A plausible local rule can fail globally (coins 1, 3, 4).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Greedy Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use an exchange argument?</summary><div class="answer"><p>It shows any optimal solution can be changed to include the greedy choice without becoming worse.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Greedy Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does fractional knapsack allow greedy but 0/1 does not?</summary><div class="answer"><p>Splitting items lets you fill the bag exactly; whole items can leave unusable space.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Greedy Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why test a greedy idea on small counterexamples?</summary><div class="answer"><p>Most failures show up on tiny inputs, and finding one saves a wrong submission.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Greedy Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is Dijkstra a greedy algorithm?</summary><div class="answer"><p>It repeatedly finalises the closest unfinalised node, which is safe when weights are non-negative.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Greedy Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Minimum number of platforms (greedy sweep).</summary><div class="answer"><p>Sort arrivals and departures; sweep, adding a platform on arrival and releasing on departure; track the maximum.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Greedy Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What does greedy give for coins [1, 5, 6, 9] and amount 11?</summary><div class="answer"><p>3 coins (9 + 1 + 1), while 5 + 6 uses 2.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Greedy Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Meeting rooms II: minimum number of rooms.</summary><div class="answer"><pre><code class="lang-py">import heapq
+def min_rooms(iv):
+    iv.sort()
+    heap = []
+    for s, e in iv:
+        if heap and heap[0] &lt;= s:
+            heapq.heapreplace(heap, e)
+        else:
+            heapq.heappush(heap, e)
+    return len(heap)</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Greedy Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> Do [1, 3] and [3, 5] overlap?</summary><div class="answer"><p>Depends on the problem statement: if endpoints touch counts as overlap, yes (merge to [1, 5]); if intervals are half-open, no.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Greedy Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How does a booking system detect double-booking?</summary><div class="answer"><p>Keep reservations sorted by start (or in an interval tree) and check the new booking against its neighbours.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Greedy Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why sort by end time for activity selection?</summary><div class="answer"><p>The earliest finishing activity leaves the most time for the rest.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Greedy Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why sort by start for merging?</summary><div class="answer"><p>Overlapping intervals become adjacent, so one pass merges them.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Greedy Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why take max(end) when merging?</summary><div class="answer"><p>The next interval may be contained inside the current one.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Greedy Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why a sweep line for platforms?</summary><div class="answer"><p>Only the number of trains present at each moment matters, so sorted events suffice.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Greedy Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does shortest-first fail for selection?</summary><div class="answer"><p>A short interval in the middle can block two longer ones that would fit around it.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Greedy Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use a heap for merging intervals?</summary><div class="answer"><p>Sorting plus one pass is simpler and optimal; a heap is useful for room assignment.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Greedy Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Maximum number of overlapping intervals at any time.</summary><div class="answer"><p>Create events (start, +1) and (end, -1), sort them and keep a running count.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Greedy Algorithms"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Fractional knapsack vs 0/1 knapsack: which is greedy and why?</summary><div class="answer"><p>Fractional: sort by value/weight and take as much as possible; splitting makes the greedy choice safe. 0/1 cannot split, so greedy can fail; use DP.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Greedy Algorithms"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Insert a new interval into a sorted, non-overlapping list.</summary><div class="answer"><p>Copy intervals ending before the new one starts, merge all overlapping ones into one, then copy the rest. O(n).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Greedy Algorithms"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Can a person attend all meetings?</summary><div class="answer"><p>Sort by start and check that each meeting starts after the previous one ends.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="m14-problems.html"><span class="dir">Previous</span><span>Problems 14: Graphs</span></a>
+      <a class="next" href="m15-problems.html"><span class="dir">Next</span><span>Problems 15: Greedy Algorithms</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

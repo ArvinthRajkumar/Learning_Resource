@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD7">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Caching | System Design</title>
+<meta name="description" content="Why caches work, cache-aside, read-through, write-through, write-back, eviction policies with a tested LRU, invalidation, stampedes, Redis and multi-level caching.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD7</p>
+      <h1>Caching</h1>
+      <p class="lede">A cache stores a copy of data in a faster place so repeated requests skip the slow path. It is the single most effective performance tool in system design, and the source of its most confusing bugs.</p>
+      <div class="meta"><span class="tag ok">Basic</span><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~2.5 hours</span></div>
+    </div>
+
+    <section id="why" data-track>
+      <h2>Why caching works</h2>
+<h3>Intuition</h3>
+<p>You keep the milk in the kitchen fridge rather than going to the shop every time. Access patterns are not random: a small set of items is requested over and over (<strong>temporal locality</strong>), and items near a recently used one are likely to be used next (<strong>spatial locality</strong>). A cache keeps that small hot set in fast storage.</p>
+<h3>The payoff</h3>
+<div class="formula"><div class="f-title">Effective access time</div><div class="f-body">T = hit_rate x T_cache + (1 - hit_rate) x T_backend</div><dl class="f-defs"><dt>hit rate</dt><dd>fraction of requests served by the cache</dd><dt>T_cache</dt><dd>cache latency</dd><dt>T_backend</dt><dd>latency on a miss</dd></dl></div>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd7-01.py">t_cache, t_db = 1, 20          # milliseconds
+for hit in (0.0, 0.5, 0.9, 0.99):
+    t = hit * t_cache + (1 - hit) * t_db
+    print("hit rate %.2f -&gt; average %.2f ms" % (hit, t))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>hit rate 0.00 -&gt; average 20.00 ms
+hit rate 0.50 -&gt; average 10.50 ms
+hit rate 0.90 -&gt; average 2.90 ms
+hit rate 0.99 -&gt; average 1.19 ms</code></pre>
+<p>A 90 percent hit rate cut average latency from 20 ms to about 2.9 ms <strong>and</strong> removed 90 percent of load from the database. The second effect often matters more.</p>
+<h3>Where caches live</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Level</th><th>Example</th><th>Typical size and speed</th></tr></thead>
+<tbody>
+<tr><td>CPU</td><td>L1/L2/L3</td><td>KB to MB, nanoseconds</td></tr><tr><td>Application memory</td><td>In-process dictionary, Caffeine, Guava</td><td>MB to GB, no network hop but per-instance copies</td></tr><tr><td>Distributed cache</td><td>Redis, Memcached</td><td>GB to TB, about 1 ms over the network</td></tr><tr><td>Database buffer pool</td><td>InnoDB buffer pool, Postgres shared buffers</td><td>Part of the database</td></tr><tr><td>CDN</td><td>Cloudflare, CloudFront, Akamai</td><td>Edge locations near users</td></tr><tr><td>Browser</td><td>HTTP cache, service workers</td><td>Per user device</td></tr>
+</tbody>
+</table>
+</div>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 1066 98" role="img" aria-label="Layers of caching between a user and the database. A request is answered by the first layer that has it." style="min-width:760px"><defs><marker id="ah14" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah14a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah14b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah14d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah14)"/><text x="212.0" y="44.0" text-anchor="middle" class="d-sm d-muted">miss</text><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah14)"/><text x="426.0" y="44.0" text-anchor="middle" class="d-sm d-muted">miss</text><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah14)"/><text x="640.0" y="44.0" text-anchor="middle" class="d-sm d-muted">miss</text><line x1="832.0" y1="49.0" x2="876.0" y2="49.0" class="d-line" marker-end="url(#ah14)"/><text x="854.0" y="44.0" text-anchor="middle" class="d-sm d-muted">miss</text><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-e"/><text x="105.0" y="53.5" text-anchor="middle">Browser cache</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-e"/><text x="319.0" y="53.5" text-anchor="middle">CDN</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="53.5" text-anchor="middle">App in-memory cache</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-d"/><text x="747.0" y="53.5" text-anchor="middle">Redis</text><rect x="876.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="961.0" y="53.5" text-anchor="middle">Database</text></svg>
+</div>
+<figcaption>Layers of caching between a user and the database. A request is answered by the first layer that has it.</figcaption></figure>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd7-q01" data-topic="Caching" data-type="numeric" data-answer="2" data-tol="0.01">
+        <div class="q-stem"><p>Cache hit 1 ms, miss 21 ms (including the cache lookup). With a 95 percent hit rate what is the average latency in ms?</p></div>
+        <div class="q-explain"><p>0.95 x 1 + 0.05 x 21 = 0.95 + 1.05 = 2.0 ms.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why does a cache help beyond latency?</summary><div class="answer"><p>It removes load from the backend, protecting the database and letting it scale.</p></div></details>
+      </div>
+    </section>
+
+    <section id="strategies" data-track>
+      <h2>Caching strategies</h2>
+<h3>Cache-aside (lazy loading)</h3>
+<p>The application owns the logic.</p>
+<ol><li>Read: look in the cache. On a hit, return it.</li><li>On a miss, read the database, write the result into the cache (with a TTL), return it.</li><li>Write: update the database, then <strong>delete</strong> (invalidate) the cache entry.</li></ol>
+<p>Pros: only requested data is cached, the cache can fail without breaking correctness, simple. Cons: first read after expiry is slow, brief staleness window, and application code must do it right. This is the most common pattern (Redis in front of SQL).</p>
+<h3>Read-through</h3>
+<p>The application asks the cache, and the <strong>cache</strong> itself loads from the database on a miss. Same effect, cleaner application code, but needs a cache library that supports loaders.</p>
+<h3>Write-through</h3>
+<p>Writes go to the cache and the database together, synchronously. Pros: cache always fresh, reads fast. Cons: slower writes, caches data that may never be read.</p>
+<h3>Write-back (write-behind)</h3>
+<p>Writes go to the cache and are persisted to the database <strong>asynchronously</strong> in batches. Pros: very fast writes, absorbs bursts, batching saves I/O. Cons: <strong>data loss</strong> if the cache dies before flushing, more complex. Fits metrics, counters, view counts.</p>
+<h3>Write-around</h3>
+<p>Writes go directly to the database, bypassing the cache. Avoids filling the cache with data that is written once and rarely read. Reads fill it on demand.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Strategy</th><th>Read speed</th><th>Write speed</th><th>Consistency</th><th>Risk</th></tr></thead>
+<tbody>
+<tr><td>Cache-aside</td><td>Fast after first</td><td>Normal</td><td>Eventual (small window)</td><td>Stale on race</td></tr><tr><td>Read-through</td><td>Fast after first</td><td>Normal</td><td>Eventual</td><td>Cache library dependency</td></tr><tr><td>Write-through</td><td>Fast</td><td>Slower</td><td>Strong between cache and DB</td><td>Cache pollution</td></tr><tr><td>Write-back</td><td>Fast</td><td>Fastest</td><td>Eventual</td><td>Data loss on crash</td></tr><tr><td>Write-around</td><td>Slow first</td><td>Normal</td><td>Eventual</td><td>Misses after writes</td></tr>
+</tbody>
+</table>
+</div>
+<h3>A cache-aside implementation</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd7-02.py">import time
+
+class Cache:
+    def __init__(self):
+        self.d = {}
+    def get(self, k):
+        v = self.d.get(k)
+        if v and v[1] &gt; time.monotonic():
+            return v[0]
+        self.d.pop(k, None)
+        return None
+    def set(self, k, val, ttl):
+        self.d[k] = (val, time.monotonic() + ttl)
+    def delete(self, k):
+        self.d.pop(k, None)
+
+db = {"user:1": "Ada"}
+db_reads = [0]
+cache = Cache()
+
+def get_user(k):
+    v = cache.get(k)
+    if v is not None:
+        return v
+    db_reads[0] += 1                 # slow path
+    v = db[k]
+    cache.set(k, v, ttl=60)
+    return v
+
+def update_user(k, v):
+    db[k] = v
+    cache.delete(k)                  # invalidate, do not update
+
+for _ in range(5): get_user("user:1")
+update_user("user:1", "Grace")
+print(get_user("user:1"), "db reads:", db_reads[0])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>Grace db reads: 2</code></pre>
+<div class="callout tip"><span class="callout-title">Delete, do not update, on write</span><p>Updating the cache with the new value on write can race: two writers may finish in a different order in the cache than in the database, leaving the cache wrong until the TTL. Deleting the key lets the next read reload the latest value.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd7-q02" data-topic="Caching" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In cache-aside, what should the writer do to the cache after updating the database?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Update the cached value <span class="q-why">Can race and leave stale data.</span></li>
+          <li data-key="B">Delete the cached key <span class="q-why">Correct.</span></li>
+          <li data-key="C">Nothing <span class="q-why">Readers would see stale data until the TTL.</span></li>
+          <li data-key="D">Flush the whole cache <span class="q-why">Far too heavy.</span></li>
+        </ul>
+        <div class="q-explain"><p>Deleting lets the next read reload the latest value and avoids ordering races.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd7-q03" data-topic="Caching" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which strategy risks losing acknowledged writes if the cache crashes?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Write-through <span class="q-why">Writes the database synchronously.</span></li>
+          <li data-key="B">Write-back <span class="q-why">Correct.</span></li>
+          <li data-key="C">Cache-aside <span class="q-why">The database is the source of truth.</span></li>
+          <li data-key="D">Write-around <span class="q-why">Writes go straight to the database.</span></li>
+        </ul>
+        <div class="q-explain"><p>Write-back acknowledges after the cache write and persists later.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name the five strategies.</summary><div class="answer"><p>Cache-aside, read-through, write-through, write-back, write-around.</p></div></details>
+      </div>
+    </section>
+
+    <section id="eviction" data-track>
+      <h2>Eviction</h2>
+<h3>What eviction is</h3>
+<p>A cache is smaller than the data, so when it is full it must remove something.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Policy</th><th>Evicts</th><th>Good for</th><th>Weakness</th></tr></thead>
+<tbody>
+<tr><td>LRU (least recently used)</td><td>The item unused for longest</td><td>General purpose</td><td>A one-time scan can flush the hot set</td></tr><tr><td>LFU (least frequently used)</td><td>The item with fewest uses</td><td>Stable popularity</td><td>Slow to adapt, old favourites linger</td></tr><tr><td>FIFO</td><td>Oldest inserted</td><td>Simple</td><td>Ignores usage</td></tr><tr><td>Random</td><td>A random item</td><td>Very cheap</td><td>Unpredictable</td></tr><tr><td>TTL</td><td>Items past their time to live</td><td>Bounding staleness</td><td>Not a space policy by itself</td></tr><tr><td>W-TinyLFU</td><td>Combines recency and frequency</td><td>Excellent hit rate (Caffeine)</td><td>More complex</td></tr>
+</tbody>
+</table>
+</div>
+<h3>LRU with O(1) operations</h3>
+<p>Combine a <strong>hash map</strong> (find any key in O(1)) with a <strong>doubly linked list</strong> ordered by recency (move to front and remove the tail in O(1)). Python's <code>OrderedDict</code> does exactly that.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd7-03.py">from collections import OrderedDict
+
+class LRU:
+    def __init__(self, capacity):
+        self.cap, self.d = capacity, OrderedDict()
+    def get(self, k):
+        if k not in self.d:
+            return None
+        self.d.move_to_end(k)            # mark most recently used
+        return self.d[k]
+    def put(self, k, v):
+        self.d[k] = v
+        self.d.move_to_end(k)
+        if len(self.d) &gt; self.cap:
+            self.d.popitem(last=False)   # evict least recently used
+
+c = LRU(2)
+c.put("a", 1); c.put("b", 2)
+c.get("a")                # a becomes most recent
+c.put("c", 3)             # evicts b
+print(c.get("a"), c.get("b"), c.get("c"))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>1 None 3</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd7-q04" data-topic="Caching" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which data structure pair gives O(1) get and put for an LRU cache?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Array and binary search <span class="q-why">Not O(1).</span></li>
+          <li data-key="B">Hash map and doubly linked list <span class="q-why">Correct.</span></li>
+          <li data-key="C">Heap and set <span class="q-why">Not O(1) updates.</span></li>
+          <li data-key="D">Two stacks <span class="q-why">Wrong structure.</span></li>
+        </ul>
+        <div class="q-explain"><p>The hash map finds nodes; the linked list reorders recency in constant time.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>LRU versus LFU?</summary><div class="answer"><p>LRU evicts the least recently used; LFU evicts the least frequently used. LRU adapts faster, LFU keeps stable favourites.</p></div></details>
+      </div>
+    </section>
+
+    <section id="invalidation" data-track>
+      <h2>Invalidation and consistency</h2>
+<p>A famous joke says there are only two hard things in computer science: cache invalidation and naming things.</p>
+<h3>Approaches</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Approach</th><th>How</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>TTL</td><td>Entries expire after a fixed time</td><td>Simple, bounds staleness. Pick TTL from business tolerance</td></tr><tr><td>Explicit delete on write</td><td>The writer removes the key</td><td>Fresh, but every writer must know the keys</td></tr><tr><td>Event-driven</td><td>Database change events (CDC) invalidate caches</td><td>Decouples writers, near real time</td></tr><tr><td>Versioned keys</td><td>Put a version in the key (<code>user:1:v7</code>)</td><td>No invalidation needed, old keys expire</td></tr><tr><td>Write-through</td><td>Update the cache with the DB write</td><td>Fresh, extra write cost</td></tr>
+</tbody>
+</table>
+</div>
+<p>Add <strong>jitter</strong> to TTLs so many keys do not expire at the same instant.</p>
+<h3>Stale data races</h3>
+<p>Reader A misses and reads old value from DB. Writer updates DB and deletes the key. Reader A then writes the <strong>old</strong> value into the cache. Now the cache is stale until the TTL. Mitigations: short TTL as a safety net, versioning, or a delayed second delete.</p>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why add jitter to TTLs?</summary><div class="answer"><p>To stop many keys from expiring at the same moment and causing a stampede or avalanche.</p></div></details>
+      </div>
+    </section>
+
+    <section id="failures" data-track>
+      <h2>Cache failure modes</h2>
+<h3>Cache stampede (thundering herd)</h3>
+<p>A hot key expires and thousands of requests miss at once, all hitting the database. Fixes: <strong>request coalescing</strong> (one request rebuilds, others wait), a <strong>lock</strong> or lease on rebuild, <strong>stale-while-revalidate</strong> (serve the old value while refreshing), randomised TTLs, and <strong>early refresh</strong> shortly before expiry.</p>
+<h3>Cache penetration</h3>
+<p>Requests for keys that <strong>do not exist</strong> always miss and always hit the database (often an attack or bug). Fix: cache negative results with a short TTL, or use a <strong>Bloom filter</strong> of valid keys to reject impossible ones.</p>
+<h3>Cache avalanche</h3>
+<p>Many keys expire together, or the whole cache is down, so the database is overloaded. Fix: jittered TTLs, replicate the cache, rate limit and load shed, warm the cache before cutting over.</p>
+<h3>Hot key</h3>
+<p>One key receives more traffic than one cache node can handle. Fix: replicate the hot key across nodes (key suffixes <code>key#1..N</code>) and keep a small in-process cache in front.</p>
+<h3>Cold start</h3>
+<p>After a deploy or restart the cache is empty and the database sees full load. Fix: warm the cache from replay or a snapshot, ramp traffic.</p>
+<div class="callout warn"><span class="callout-title">Design rule</span><p>Never let the cache become required for correctness. If Redis dies, the system should slow down, not lose data or fall over. Size the database to survive some misses.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd7-q05" data-topic="Caching" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A very popular key expires and thousands of requests hit the database at once. This is:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Cache penetration <span class="q-why">That is requests for non-existent keys.</span></li>
+          <li data-key="B">Cache stampede <span class="q-why">Correct.</span></li>
+          <li data-key="C">Cold start <span class="q-why">That is an empty cache after restart.</span></li>
+          <li data-key="D">Eviction <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use request coalescing, locks, stale-while-revalidate and jittered TTLs.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd7-q06" data-topic="Caching" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A bot requests ids that do not exist, and every request goes to the database. What helps most?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A longer TTL on valid keys <span class="q-why">Does not help invalid keys.</span></li>
+          <li data-key="B">Cache negative results and use a Bloom filter of valid ids <span class="q-why">Correct.</span></li>
+          <li data-key="C">More database replicas only <span class="q-why">Treats the symptom.</span></li>
+          <li data-key="D">Disable the cache <span class="q-why">Worse.</span></li>
+        </ul>
+        <div class="q-explain"><p>Reject or cache the 'not found' answer so the database is not hit repeatedly.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name cache stampede, penetration and avalanche.</summary><div class="answer"><p>Stampede: one hot key expiring. Penetration: misses for non-existent keys. Avalanche: many keys expire or the cache fails together.</p></div></details>
+      </div>
+    </section>
+
+    <section id="redis" data-track>
+      <h2>Redis and Memcached</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>Memcached</th><th>Redis</th></tr></thead>
+<tbody>
+<tr><td>Data types</td><td>Strings only</td><td>Strings, hashes, lists, sets, sorted sets, streams, bitmaps, HyperLogLog</td></tr><tr><td>Persistence</td><td>None</td><td>Optional snapshots and append-only file</td></tr><tr><td>Replication and clustering</td><td>Client-side sharding</td><td>Primary-replica, Sentinel, Redis Cluster</td></tr><tr><td>Threading</td><td>Multi-threaded</td><td>Mostly single-threaded command execution (very fast, atomic)</td></tr><tr><td>Extras</td><td>Simple and lean</td><td>Pub/sub, Lua scripts, transactions, TTL per key, atomic increments</td></tr>
+</tbody>
+</table>
+</div>
+<p>Handy Redis patterns: <code>INCR</code> counters and rate limits, <strong>sorted sets</strong> for leaderboards, <code>SET key value NX EX 30</code> for a simple lock, lists as queues, pub/sub for fan-out, <code>EXPIRE</code> for sessions.</p>
+<p>Memory sizing example: 100 million keys x (key 20 B + value 100 B + about 50 B overhead) is about 17 GB, which fits one big node but you shard for throughput and availability.</p>
+    </section>
+
+    <section id="levels" data-track>
+      <h2>Multi-level and CDN caching</h2>
+<ul><li>Cache at the <strong>edge</strong> (CDN), <strong>application</strong> (in-process), and <strong>data</strong> (Redis) layers. Each layer has a different hit rate and consistency window.</li><li>An in-process cache of a few seconds in front of Redis absorbs hot keys with zero network cost, at the price of per-instance staleness.</li><li>HTTP caching headers (<code>Cache-Control</code>, <code>ETag</code>) let browsers and CDNs do the work for free (<a href="sd2-networking.html">SD2</a>).</li><li><strong>Cache keys</strong> must include everything the response varies on (user, language, device, version). A missing dimension serves one user's data to another, a serious security bug.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd7-q07" data-topic="Caching" data-type="fill" data-answer="data|response|content">
+        <div class="q-stem"><p>A cache key must include every dimension the response varies on, otherwise one user may be served another user's <input class="q-input" aria-label="blank 1">.</p></div>
+        <div class="q-explain"><p>Missing a dimension in the key can leak personalised data across users.</p></div>
+      </div>
+    </section>
+
+    <section id="sizing" data-track>
+      <h2>Sizing a cache</h2>
+<div class="worked"><span class="w-title">Worked example: product catalogue cache</span><ol class="steps"><li>50 million products, 2 KB each, total 100 GB. Traffic follows an 80/20 pattern.</li><li>Cache the hot 20 percent: 10 million products x 2 KB = 20 GB.</li><li>At 20 GB per node, two nodes plus one replica each need about 80 GB of RAM including overhead, or use bigger nodes.</li><li>Expected hit rate about 80 to 90 percent. At 20,000 requests per second, the database sees about 2,000 to 4,000.</li></ol><span class="result">A small Redis cluster protects the database. Measure the real hit rate and adjust.</span></div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Caching</h2>
+      <p class="muted">10 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Caching">
+<details class="recall iq" data-level="basic" data-topic="Caching"><summary><span class="tag ok">Basic</span> Why use a cache?</summary><div class="answer"><p>It serves repeated reads from fast memory, cutting latency and protecting the backend. It works because access patterns are skewed toward a hot set.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Caching"><summary><span class="tag ok">Basic</span> Explain cache-aside.</summary><div class="answer"><p>The application checks the cache, on a miss reads the database and populates the cache with a TTL, and on writes updates the database then invalidates the key.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Caching"><summary><span class="tag warn">Medium</span> Write-through versus write-back?</summary><div class="answer"><p>Write-through updates cache and database together (fresh, slower writes). Write-back writes to cache and persists later (fast, risks data loss if the cache fails before flushing).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Caching"><summary><span class="tag warn">Medium</span> LRU versus LFU?</summary><div class="answer"><p>LRU evicts the least recently used item; LFU evicts the least frequently used. LRU adapts quickly; LFU preserves stable favourites but adapts slowly. TinyLFU combines both.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Caching"><summary><span class="tag warn">Medium</span> What is a cache stampede and how do you prevent it?</summary><div class="answer"><p>A popular key expires and many requests rebuild it simultaneously. Prevent with request coalescing or locks, stale-while-revalidate, jittered TTLs and early refresh.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Caching"><summary><span class="tag warn">Medium</span> Cache penetration and avalanche?</summary><div class="answer"><p>Penetration: repeated requests for non-existent keys bypass the cache; fix with negative caching or a Bloom filter. Avalanche: many keys expire together or the cache fails; fix with jitter, replication and rate limiting.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Caching"><summary><span class="tag warn">Medium</span> Why delete rather than update the cache on write?</summary><div class="answer"><p>Updating can race with other writers and leave the cache holding an older value. Deleting lets the next read load the latest data.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Caching"><summary><span class="tag bad">Advanced</span> How do you handle a hot key?</summary><div class="answer"><p>Replicate it across nodes with key suffixes, add a short in-process cache in front, and cache aggressively. Sharding alone does not help because one key lives on one node.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Caching"><summary><span class="tag bad">Advanced</span> Redis versus Memcached?</summary><div class="answer"><p>Memcached is a simple multi-threaded string cache. Redis offers rich data types, persistence, replication, clustering, scripts and atomic operations, so it doubles as a lightweight data store.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Caching"><summary><span class="tag bad">Advanced</span> How do you keep cache and database consistent?</summary><div class="answer"><p>Accept bounded staleness with TTLs, invalidate on writes, use change data capture to invalidate or update, and avoid dual writes. For strict needs read from the database or use versioned keys.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd6-consistency.html"><span class="dir">Previous</span><span>SD6 Consistency, CAP, transactions and consensus</span></a>
+      <a class="next" href="sd8-messaging.html"><span class="dir">Next</span><span>SD8 Queues, streams and asynchronous processing</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

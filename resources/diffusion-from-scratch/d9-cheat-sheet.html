@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en" data-resource="diffusion-from-scratch" data-page="D9">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cheat sheet | Diffusion from scratch</title>
+<meta name="description" content="One page of formulas, shapes, defaults, VRAM levers and debugging fixes.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<style>
+  /* page-specific: dense cards that reflow to 2 columns on wide screens and in print */
+  .cheat { display: grid; gap: 12px; grid-template-columns: 1fr; }
+  .cheat .c { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 10px 12px; min-width: 0; }
+  .cheat h3 { margin: 0 0 6px; font-size: 1rem; color: var(--accent); }
+  .cheat p, .cheat li { font-size: .92rem; margin: 0 0 4px; }
+  .cheat ul { margin: 0; padding-left: 1.1rem; }
+  .cheat .f { font-family: var(--font-mono); font-size: .86rem; background: var(--code-bg); border-radius: 4px; padding: 4px 6px; margin: 4px 0; overflow-x: auto; white-space: pre; }
+  .cheat table { font-size: .86rem; }
+  .cheat th, .cheat td { padding: 4px 6px; }
+  .cheat .table-wrap { margin: 4px 0; }
+  @media (min-width: 900px) { .cheat { grid-template-columns: 1fr 1fr; } .cheat .wide { grid-column: 1 / -1; } }
+  @media print {
+    @page { margin: 10mm; }
+    body { font-size: 8.5pt; }
+    .page-head .lede, .page-head .meta, .print-hide { display: none !important; }
+    h1 { font-size: 14pt; margin: 0 0 4px; }
+    .cheat { grid-template-columns: 1fr 1fr; gap: 6px; }
+    .cheat .wide { grid-column: 1 / -1; }
+    .cheat .c { padding: 5px 7px; break-inside: avoid; }
+    .cheat p, .cheat li { font-size: 8pt; margin-bottom: 1px; }
+    .cheat .f { font-size: 7.5pt; padding: 2px 4px; white-space: pre-wrap; }
+    .cheat h3 { font-size: 9pt; margin-bottom: 2px; }
+    .cheat table { font-size: 7.5pt; }
+  }
+</style>
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Diffusion from scratch</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part D9</p>
+      <h1>Cheat sheet (printable)</h1>
+      <p class="lede">Quick review of every formula and number.</p>
+      <div class="meta"><span class="tag ok">Basic</span><span class="tag">10 min</span></div>
+    </div>
+
+    <p class="btn-row print-hide"><button class="btn" type="button" onclick="window.print()">Print this page</button></p>
+
+    <section id="cheat" data-track>
+      <h2 class="print-hide">Formulas and numbers</h2>
+      <div class="cheat">
+      <div class="c"><h3>Forward process (fixed, no learning)</h3>
+        <div class="f">alpha_t     = 1 - beta_t
+alpha_bar_t = alpha_1 * alpha_2 * ... * alpha_t</div>
+        <div class="f">x_t = sqrt(alpha_bar_t) * x_0 + sqrt(1 - alpha_bar_t) * noise</div>
+        <p>noise ~ N(0, I), the same shape as the image. One formula jumps to any t.</p>
+      </div>
+      <div class="c"><h3>Training step</h3>
+        <ul><li>batch of clean images x_0</li><li>t = random integer in [0, T) per image</li><li>noise = randn_like(x_0)</li><li>x_t = shortcut formula</li><li>pred = U-Net(x_t, t)</li><li>loss = mse(pred, noise)</li><li>backward, (clip), optimizer step, (EMA update)</li></ul>
+        <div class="f">loss = mean((real_noise - predicted_noise) ** 2)</div>
+      </div>
+      <div class="c"><h3>DDPM sampling step (t from T-1 down to 0)</h3>
+        <div class="f">x = 1/sqrt(alpha_t) * (x - (1 - alpha_t)/sqrt(1 - alpha_bar_t) * pred_noise)
+    + sqrt(beta_t) * z</div>
+        <p>z = fresh randn for every step except t = 0, where z = 0. Finish with clamp(-1, 1), then (x + 1) / 2.</p>
+      </div>
+      <div class="c"><h3>DDIM step (same model, fewer steps)</h3>
+        <div class="f">x0_hat = (x_t - sqrt(1 - ab_now) * pred_noise) / sqrt(ab_now)
+x_prev = sqrt(ab_prev) * x0_hat + sqrt(1 - ab_prev) * pred_noise</div>
+        <p>Visit about 50 of the 1000 timesteps: roughly 20x fewer U-Net calls. No retraining.</p>
+      </div>
+      <div class="c"><h3>Noise schedules</h3>
+        <p>Linear: <code>linspace(1e-4, 0.02, 1000)</code>. Cosine: define alpha_bar as a squared cosine, recover beta, clip at 0.999.</p>
+        <div class="table-wrap"><table><thead><tr><th>t</th><th>alpha_bar linear</th><th>alpha_bar cosine</th></tr></thead><tbody><tr><td>100</td><td>0.895</td><td>0.972</td></tr><tr><td>250</td><td>0.521</td><td>0.846</td></tr><tr><td>500</td><td>0.078</td><td>0.492</td></tr><tr><td>750</td><td>0.003</td><td>0.143</td></tr></tbody></table></div>
+      </div>
+      <div class="c"><h3>Classifier-free guidance</h3>
+        <ul><li>train: replace label with the null class ~10% of the time</li><li>embedding table has NUM_CLASSES + 1 rows</li><li>sample: run twice per step (label, null label)</li></ul>
+        <div class="f">pred = uncond + scale * (cond - uncond)</div>
+        <p>scale 1.0 = no extra push, about 3.0 to start. Costs 2x per step.</p>
+      </div>
+      <div class="c"><h3>Guide defaults (config.py)</h3>
+        <div class="table-wrap"><table><thead><tr><th>Setting</th><th>Value</th></tr></thead><tbody><tr><td>IMAGE_SIZE</td><td>32 (try 64 later)</td></tr><tr><td>TIMESTEPS</td><td>1000</td></tr><tr><td>BETA_START / BETA_END</td><td>1e-4 / 0.02</td></tr><tr><td>BASE_CHANNELS</td><td>32</td></tr><tr><td>CHANNEL_MULTS</td><td>(1, 2, 4) = 32, 64, 128</td></tr><tr><td>TIME_EMB_DIM</td><td>128 (MLP output 512)</td></tr><tr><td>BATCH_SIZE</td><td>16</td></tr><tr><td>LEARNING_RATE</td><td>1e-4 (AdamW)</td></tr><tr><td>Mixed precision</td><td>on (GradScaler)</td></tr><tr><td>EMA decay</td><td>0.999</td></tr></tbody></table></div>
+      </div>
+      <div class="c"><h3>4GB VRAM levers</h3>
+        <ul><li>resolution 32, then 64 (activations grow with its square)</li><li>batch 4 to 16, plus gradient accumulation</li><li>mixed precision (fp16 or bf16)</li><li>small U-Net: 32 to 64 base channels, 2 to 3 stages</li><li>attention only at the bottleneck</li></ul>
+      </div>
+      <div class="c"><h3>Gradient accumulation and clipping</h3>
+        <div class="f">effective batch = micro_batch * accumulation_steps
+loss = loss / accumulation_steps</div>
+        <div class="f">scaler.scale(loss).backward()
+scaler.unscale_(optimizer)
+clip_grad_norm_(model.parameters(), 1.0)
+scaler.step(optimizer); scaler.update()</div>
+      </div>
+      <div class="c wide"><h3>Debugging table</h3>
+        <div class="table-wrap"><table><thead><tr><th>Symptom</th><th>First fix</th></tr></thead><tbody><tr><td>CUDA out of memory</td><td>lower BATCH_SIZE, then IMAGE_SIZE or BASE_CHANNELS</td></tr><tr><td>size mismatch</td><td>print x.shape inside forward, work backward</td></tr><tr><td>tensors on different devices</td><td>add .to(config.DEVICE)</td></tr><tr><td>input and weight type differ</td><td>.float() on numpy-derived tensors</td></tr><tr><td>loss is nan</td><td>lower the learning rate, clip gradients, use scaler.scale</td></tr><tr><td>loss falls, images are noise</td><td>train longer, then check the sampling formula</td></tr></tbody></table></div>
+      </div>
+      <div class="c wide"><h3>Rough training time (RTX 2050, 4GB)</h3>
+        <div class="table-wrap"><table><thead><tr><th>Setup</th><th>Per epoch</th><th>Realistic total</th></tr></thead><tbody><tr><td>MNIST 32x32, batch 16, base 32</td><td>1 to 3 min</td><td>digits in 1 to 2 h</td></tr><tr><td>5k images 64x64, batch 8</td><td>3 to 8 min</td><td>overnight</td></tr><tr><td>64x64, base 64 channels</td><td>8 to 20 min</td><td>days, too slow to iterate</td></tr></tbody></table></div>
+      </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="d8-practice-quiz.html"><span class="dir">Previous</span><span>D8 Practice quiz (34 questions)</span></a>
+      <a class="next" href="d6-glossary.html"><span class="dir">Next</span><span>D6 Full glossary, A to Z</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

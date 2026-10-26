@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="PY7">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Working with data formats and the web: CSV, XML, URLs, HTTP clients and servers | Python + SQL</title>
+<meta name="description" content="Reading and writing CSV, JSON, XML and compressed files, parsing URLs, building and calling HTTP APIs with the standard library (including a local server you can test), retries, timeouts, validation and safe serialisation.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part PY7</p>
+      <h1>Working with data formats and the web: CSV, XML, URLs, HTTP clients and servers</h1>
+      <p class="lede">Most Python programs read data in one format and hand it to another system. This part covers the formats, how to validate untrusted input, and how HTTP works by building a tiny server and client on your own machine.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="csv" data-track>
+      <h2>CSV done properly</h2>
+<p>CSV looks simple and is full of traps: quoting, embedded commas and newlines, encodings, missing values and types (everything is text). Use the <code>csv</code> module, never <code>str.split(",")</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py7-01.py">import csv, io
+raw = 'id,name,city,amount\n1,"Smith, Ana",London,10.5\n2,Bo,"Paris\nFrance",\n3,Chloe,,7\n'
+rows = list(csv.DictReader(io.StringIO(raw)))
+for r in rows: print(r)
+total = sum(float(r["amount"]) for r in rows if r["amount"])
+print("total:", total, "| rows with missing amount:", [r["id"] for r in rows if not r["amount"]])
+out = io.StringIO()
+w = csv.DictWriter(out, fieldnames=["id", "name"], extrasaction="ignore", lineterminator="\n")
+w.writeheader(); w.writerows(rows)
+print(out.getvalue().strip().replace("\n", " / "))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>{'id': '1', 'name': 'Smith, Ana', 'city': 'London', 'amount': '10.5'}
+{'id': '2', 'name': 'Bo', 'city': 'Paris\nFrance', 'amount': ''}
+{'id': '3', 'name': 'Chloe', 'city': '', 'amount': '7'}
+total: 17.5 | rows with missing amount: ['2']
+id,name / 1,"Smith, Ana" / 2,Bo / 3,Chloe</code></pre>
+<p>Rules: open real files with <code>newline=""</code> and an explicit <code>encoding</code> (often <code>utf-8-sig</code> for files from Excel); convert types explicitly; treat empty strings as missing; stream large files row by row; check the header before trusting columns.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py7-q01" data-topic="Data formats and web" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why not parse CSV with line.split(',')?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is slower <span class="q-why">Not the reason.</span></li>
+          <li data-key="B">Quoted fields can contain commas and newlines <span class="q-why">Correct.</span></li>
+          <li data-key="C">Python forbids it <span class="q-why">No.</span></li>
+          <li data-key="D">CSV has no commas <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The csv module handles quoting and embedded delimiters.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Which three arguments matter when opening CSV files?</summary><div class="answer"><p>newline='', an explicit encoding, and the dialect or delimiter if it is not a comma.</p></div></details>
+      </div>
+    </section>
+
+    <section id="json" data-track>
+      <h2>JSON, safely</h2>
+<pre><code class="lang-py" data-embed="solutions/snippets/py7-02.py">import json
+doc = '{"user": {"id": 7, "tags": ["a", "b"]}, "score": 9.5, "active": true, "note": null}'
+data = json.loads(doc)
+print(data["user"]["tags"], data["active"], data["note"], type(data["score"]).__name__)
+print(json.dumps(data, sort_keys=True, separators=(",", ":")))
+print(json.dumps({"name": "café", "n": 1}, ensure_ascii=False), "|", json.dumps({"name": "café"}))
+try:
+    json.loads("{'bad': 'quotes'}")
+except json.JSONDecodeError as e:
+    print("invalid JSON:", e.msg, "at column", e.colno)
+try:
+    json.dumps({"when": __import__("datetime").date(2024, 1, 1)})
+except TypeError as e:
+    print("not serialisable:", e)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>['a', 'b'] True None float
+{"active":true,"note":null,"score":9.5,"user":{"id":7,"tags":["a","b"]}}
+{"name": "café", "n": 1} | {"name": "caf\u00e9"}
+invalid JSON: Expecting property name enclosed in double quotes at column 2
+not serialisable: Object of type date is not JSON serializable</code></pre>
+<p>Handle custom types with <code>default=</code> in <code>dumps</code> or <code>object_hook</code> in <code>loads</code>. JSON keys are always strings; integers larger than 2^53 lose precision in JavaScript; there is no date type (use ISO 8601 strings). Never parse untrusted data with <code>pickle</code> or <code>eval</code>: <code>json</code> is safe because it only builds plain data.</p>
+<h3>Validating untrusted input</h3>
+<p>Parse, then <strong>validate the shape and types</strong> before using it. Libraries such as <code>pydantic</code> and <code>jsonschema</code> do this; the idea in plain Python:</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py7-03.py">def validate_user(obj):
+    errors = []
+    if not isinstance(obj, dict): return ["body must be an object"]
+    if not isinstance(obj.get("name"), str) or not obj["name"].strip(): errors.append("name: non-empty string required")
+    age = obj.get("age")
+    if not isinstance(age, int) or isinstance(age, bool) or not 0 &lt;= age &lt;= 150: errors.append("age: integer 0..150 required")
+    email = obj.get("email", "")
+    if "@" not in email or email.startswith("@") or email.endswith("@"): errors.append("email: invalid")
+    extra = set(obj) - {"name", "age", "email"}
+    if extra: errors.append(f"unknown fields: {sorted(extra)}")
+    return errors
+print(validate_user({"name": "Ada", "age": 36, "email": "ada@example.com"}))
+print(validate_user({"name": " ", "age": True, "email": "nope", "admin": True}))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[]
+['name: non-empty string required', 'age: integer 0..150 required', 'email: invalid', "unknown fields: ['admin']"]</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py7-q02" data-topic="Data formats and web" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which data type does JSON lack?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Strings <span class="q-why">It has them.</span></li>
+          <li data-key="B">Dates <span class="q-why">Correct; use ISO 8601 strings.</span></li>
+          <li data-key="C">Arrays <span class="q-why">It has them.</span></li>
+          <li data-key="D">null <span class="q-why">It has it.</span></li>
+        </ul>
+        <div class="q-explain"><p>Serialise dates explicitly.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-py7-q03" data-topic="Data formats and web" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Which is safe for untrusted data?</p></div>
+        <ul class="q-options">
+          <li data-key="A">pickle.loads <span class="q-why">Can execute code.</span></li>
+          <li data-key="B">eval <span class="q-why">Executes code.</span></li>
+          <li data-key="C">json.loads (then validate) <span class="q-why">Correct.</span></li>
+          <li data-key="D">yaml.load without a safe loader <span class="q-why">Unsafe.</span></li>
+        </ul>
+        <div class="q-explain"><p>JSON builds only plain data.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why validate after json.loads?</summary><div class="answer"><p>Parsing only guarantees syntax; you still must check fields, types and ranges.</p></div></details>
+      </div>
+    </section>
+
+    <section id="xml" data-track>
+      <h2>XML</h2>
+<p><code>xml.etree.ElementTree</code> handles the common cases. For untrusted XML be aware of entity-expansion attacks; use the <code>defusedxml</code> package.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py7-04.py">import xml.etree.ElementTree as ET
+xml = """&lt;catalog&gt;
+  &lt;book id="b1"&gt;&lt;title&gt;Learning Python&lt;/title&gt;&lt;price currency="USD"&gt;29.5&lt;/price&gt;&lt;/book&gt;
+  &lt;book id="b2"&gt;&lt;title&gt;SQL Basics&lt;/title&gt;&lt;price currency="EUR"&gt;19&lt;/price&gt;&lt;/book&gt;
+&lt;/catalog&gt;"""
+root = ET.fromstring(xml)
+for b in root.findall("book"):
+    print(b.get("id"), "|", b.findtext("title"), "|", b.find("price").get("currency"), float(b.findtext("price")))
+new = ET.SubElement(root, "book", id="b3")
+ET.SubElement(new, "title").text = "Algorithms"
+print(ET.tostring(root, encoding="unicode").count("&lt;book"), "books after adding one")
+print(root.findall(".//price[@currency='EUR']")[0].text, "(XPath-like query)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>b1 | Learning Python | USD 29.5
+b2 | SQL Basics | EUR 19.0
+3 books after adding one
+19 (XPath-like query)</code></pre>
+    </section>
+
+    <section id="urls" data-track>
+      <h2>URLs and query strings</h2>
+<pre><code class="lang-py" data-embed="solutions/snippets/py7-05.py">from urllib.parse import urlparse, parse_qs, urlencode, quote, urljoin, urlunparse
+u = urlparse("https://user@example.com:8443/search/items?q=red+shoes&amp;page=2&amp;tag=a&amp;tag=b#top")
+print(u.scheme, u.hostname, u.port, u.path, u.fragment)
+print(parse_qs(u.query))
+print(urlencode({"q": "red shoes &amp; socks", "page": 3}), "|", quote("a b/c?d", safe=""))
+print(urljoin("https://example.com/docs/guide/", "../api/v1"), "|", urlunparse(("https", "example.com", "/x", "", "a=1", "")))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>https example.com 8443 /search/items top
+{'q': ['red shoes'], 'page': ['2'], 'tag': ['a', 'b']}
+q=red+shoes+%26+socks&amp;page=3 | a%20b%2Fc%3Fd
+https://example.com/docs/api/v1 | https://example.com/x?a=1</code></pre>
+<p>Build URLs with these helpers, never by string concatenation, so special characters are encoded correctly (and injection is avoided). Validate redirect targets and outbound URLs to prevent SSRF.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py7-q04" data-topic="Data formats and web" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why build query strings with urlencode?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is shorter <span class="q-why">No.</span></li>
+          <li data-key="B">It percent-encodes special characters correctly <span class="q-why">Correct.</span></li>
+          <li data-key="C">It is faster <span class="q-why">No.</span></li>
+          <li data-key="D">It adds auth <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Concatenation breaks on &amp; = spaces and enables injection.</p></div>
+      </div>
+    </section>
+
+    <section id="http" data-track>
+      <h2>HTTP in 5 minutes</h2>
+<p>HTTP is request and response text over TCP. A request has a <strong>method</strong>, <strong>path</strong>, <strong>headers</strong> and optional <strong>body</strong>; the response has a <strong>status code</strong>, headers and body.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>200 / 201 / 204</td><td>OK / Created / No content</td></tr><tr><td>301 / 302 / 304</td><td>Moved / Found / Not modified</td></tr><tr><td>400 / 401 / 403 / 404 / 409 / 422 / 429</td><td>Bad request / Unauthenticated / Forbidden / Not found / Conflict / Unprocessable / Too many requests</td></tr><tr><td>500 / 502 / 503 / 504</td><td>Server error / Bad gateway / Unavailable / Gateway timeout</td></tr>
+</tbody>
+</table>
+</div>
+<p>Methods: <code>GET</code> reads (safe, idempotent), <code>POST</code> creates or acts, <code>PUT</code> replaces (idempotent), <code>PATCH</code> partially updates, <code>DELETE</code> removes (idempotent). Safe retries need idempotent methods or an idempotency key.</p>
+<h3>A tiny server and a client, on your machine</h3>
+<p>The standard library can run a real HTTP server. Below a server runs in a background thread on a free local port, and a client calls it.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py7-06.py">import json, threading, urllib.request, urllib.error
+from http.server import BaseHTTPRequestHandler, HTTPServer
+ITEMS = {"1": {"id": 1, "name": "pen"}}
+class Handler(BaseHTTPRequestHandler):
+    def _send(self, code, payload):
+        body = json.dumps(payload).encode()
+        self.send_response(code); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(body))); self.end_headers()
+        self.wfile.write(body)
+    def do_GET(self):
+        key = self.path.rsplit("/", 1)[-1]
+        if self.path.startswith("/items/") and key in ITEMS: self._send(200, ITEMS[key])
+        else: self._send(404, {"error": "not found"})
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0))
+        try:
+            obj = json.loads(self.rfile.read(length))
+            ITEMS[str(len(ITEMS) + 1)] = {"id": len(ITEMS) + 1, **obj}
+            self._send(201, ITEMS[str(len(ITEMS))])
+        except (json.JSONDecodeError, TypeError):
+            self._send(400, {"error": "invalid JSON"})
+    def log_message(self, *a): pass
+server = HTTPServer(("127.0.0.1", 0), Handler)
+port = server.server_address[1]
+threading.Thread(target=server.serve_forever, daemon=True).start()
+base = f"http://127.0.0.1:{port}"
+def call(method, path, body=None):
+    req = urllib.request.Request(base + path, method=method, data=json.dumps(body).encode() if body is not None else None, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=3) as r: return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e: return e.code, json.loads(e.read())
+print(call("GET", "/items/1"))
+print(call("GET", "/items/99"))
+print(call("POST", "/items", {"name": "book"}))
+print(call("GET", "/items/2"))
+server.shutdown()</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>(200, {'id': 1, 'name': 'pen'})
+(404, {'error': 'not found'})
+(201, {'id': 2, 'name': 'book'})
+(200, {'id': 2, 'name': 'book'})</code></pre>
+<p>Real services use frameworks (FastAPI, Flask, Django) for routing, validation, auth and concurrency, but the protocol is exactly this.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py7-q05" data-topic="Data formats and web" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which HTTP method is idempotent and replaces a resource?</p></div>
+        <ul class="q-options">
+          <li data-key="A">POST <span class="q-why">Not idempotent.</span></li>
+          <li data-key="B">PUT <span class="q-why">Correct.</span></li>
+          <li data-key="C">PATCH <span class="q-why">Not necessarily idempotent.</span></li>
+          <li data-key="D">CONNECT <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Repeating a PUT leaves the same state.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-py7-q06" data-topic="Data formats and web" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What status should a server return for malformed JSON in a request body?</p></div>
+        <ul class="q-options">
+          <li data-key="A">200 <span class="q-why">No.</span></li>
+          <li data-key="B">400 <span class="q-why">Correct.</span></li>
+          <li data-key="C">404 <span class="q-why">No.</span></li>
+          <li data-key="D">503 <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Client error: bad request.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name the safe and idempotent HTTP methods.</summary><div class="answer"><p>GET is safe and idempotent; PUT and DELETE are idempotent; POST is neither.</p></div></details>
+      </div>
+    </section>
+
+    <section id="client" data-track>
+      <h2>Calling APIs reliably</h2>
+<p>Network calls fail. A robust client sets <strong>timeouts</strong>, <strong>retries</strong> idempotent requests with <strong>exponential backoff and jitter</strong>, respects <code>429 Retry-After</code>, and distinguishes retryable errors (timeouts, 502/503/504, 429) from permanent ones (400, 401, 404).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py7-07.py">import random
+random.seed(1)
+class Flaky:
+    """Fails twice with a 503, then succeeds."""
+    def __init__(self): self.calls = 0
+    def get(self):
+        self.calls += 1
+        if self.calls &lt;= 2: return 503, None
+        return 200, {"ok": True}
+def with_retries(fn, attempts=5, base=0.1):
+    delays = []
+    for i in range(attempts):
+        status, body = fn()
+        if status &lt; 500 and status != 429: return status, body, delays
+        delay = random.uniform(0, base * 2 ** i)               # full jitter
+        delays.append(round(delay, 3))                          # a real client would time.sleep(delay)
+    return status, None, delays
+f = Flaky()
+status, body, delays = with_retries(f.get)
+print("final:", status, body, "| attempts:", f.calls, "| back-off delays (s):", delays)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>final: 200 {'ok': True} | attempts: 3 | back-off delays (s): [0.013, 0.169]</code></pre>
+<p>With the popular <code>requests</code> or <code>httpx</code> libraries the same ideas apply: <code>timeout=(3.05, 10)</code>, a <code>Session</code> for connection reuse, <code>raise_for_status()</code>, and a retry adapter. Never call external services without a timeout; the default is to wait forever.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py7-q07" data-topic="Data formats and web" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which errors should an HTTP client retry?</p></div>
+        <ul class="q-options">
+          <li data-key="A">All of them <span class="q-why">No.</span></li>
+          <li data-key="B">Timeouts, 429 and 502/503/504, with backoff and for idempotent requests <span class="q-why">Correct.</span></li>
+          <li data-key="C">400 and 404 <span class="q-why">Permanent errors.</span></li>
+          <li data-key="D">None <span class="q-why">Misses transient failures.</span></li>
+        </ul>
+        <div class="q-explain"><p>Retrying a 400 will never help.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is exponential backoff with jitter?</summary><div class="answer"><p>Retry delays that grow exponentially with random variation so clients do not retry in lockstep.</p></div></details>
+      </div>
+    </section>
+
+    <section id="archives" data-track>
+      <h2>Compression and archives</h2>
+<pre><code class="lang-py" data-embed="solutions/snippets/py7-08.py">import gzip, zipfile, io, json
+payload = json.dumps([{"id": i, "text": "repeat " * 20} for i in range(200)]).encode()
+gz = gzip.compress(payload)
+print(f"gzip: {len(payload):,} -&gt; {len(gz):,} bytes ({len(gz) / len(payload):.1%}) | round trip ok: {gzip.decompress(gz) == payload}")
+buf = io.BytesIO()
+with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+    z.writestr("a.txt", "hello " * 50); z.writestr("dir/b.txt", "world")
+with zipfile.ZipFile(io.BytesIO(buf.getvalue())) as z:
+    print("zip members:", z.namelist(), "| read b:", z.read("dir/b.txt").decode())</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>gzip: 32,890 -&gt; 647 bytes (2.0%) | round trip ok: True
+zip members: ['a.txt', 'dir/b.txt'] | read b: world</code></pre>
+<p>When extracting archives from untrusted sources, check member paths for <code>..</code> (zip slip) and sizes (zip bombs).</p>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is zip slip?</summary><div class="answer"><p>An archive member with ../ in its path that writes outside the target directory on extraction.</p></div></details>
+      </div>
+    </section>
+
+    <section id="serialise" data-track>
+      <h2>Serialisation choices</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Format</th><th>Human readable</th><th>Schema</th><th>Speed / size</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>JSON</td><td>Yes</td><td>No</td><td>Medium</td><td>Universal; use for APIs</td></tr><tr><td>CSV</td><td>Yes</td><td>No</td><td>Medium</td><td>Flat tables only</td></tr><tr><td>XML</td><td>Yes</td><td>Optional (XSD)</td><td>Larger</td><td>Legacy, documents</td></tr><tr><td>YAML</td><td>Yes</td><td>No</td><td>Slow</td><td>Config; use <code>safe_load</code> only</td></tr><tr><td>Protocol Buffers / Avro</td><td>No</td><td>Yes</td><td>Small and fast</td><td>Services, Kafka</td></tr><tr><td>Parquet</td><td>No</td><td>Yes</td><td>Columnar, compressed</td><td>Analytics</td></tr><tr><td>pickle</td><td>No</td><td>No</td><td>Fast</td><td><strong>Python-only and unsafe on untrusted data</strong>: loading can run arbitrary code</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout warn"><span class="callout-title">Never unpickle untrusted bytes</span><p><code>pickle.loads</code> executes whatever the data tells it to. Use JSON or a schema-based format for data crossing a trust boundary. The same goes for <code>yaml.load</code> (use <code>safe_load</code>) and <code>eval</code>.</p></div>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Use the right parser, validate everything from outside, build URLs with helpers, set timeouts and retries on every network call, and pick a serialisation format for its reader: JSON for interchange, Parquet for analytics, never pickle across trust boundaries.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py7-q08" data-topic="Data formats and web" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is pickle dangerous across trust boundaries?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is slow <span class="q-why">No.</span></li>
+          <li data-key="B">Unpickling can execute arbitrary code <span class="q-why">Correct.</span></li>
+          <li data-key="C">It is lossy <span class="q-why">No.</span></li>
+          <li data-key="D">It is too large <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Only unpickle data you created yourself.</p></div>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Data formats and web</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Data formats and web">
+<details class="recall iq" data-level="basic" data-topic="Data formats and web"><summary><span class="tag ok">Basic</span> Why use the csv module instead of split(&#x27;,&#x27;)?</summary><div class="answer"><p>Fields may be quoted and contain commas, quotes and newlines. The csv module implements these rules and dialects.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Data formats and web"><summary><span class="tag ok">Basic</span> What types does JSON support?</summary><div class="answer"><p>Objects, arrays, strings, numbers, booleans and null. There is no date, bytes or set type, so serialise those explicitly.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Data formats and web"><summary><span class="tag ok">Basic</span> What do 200, 201, 204, 400, 401, 403, 404, 409, 429 and 500 mean?</summary><div class="answer"><p>OK, created, no content, bad request, unauthenticated, forbidden, not found, conflict, too many requests, server error.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data formats and web"><summary><span class="tag warn">Medium</span> Which HTTP methods are idempotent and which are safe?</summary><div class="answer"><p>GET, HEAD and OPTIONS are safe; GET, HEAD, PUT, DELETE and OPTIONS are idempotent. POST is neither and PATCH is not guaranteed idempotent.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data formats and web"><summary><span class="tag warn">Medium</span> How do you build a URL with query parameters safely?</summary><div class="answer"><p>Use urllib.parse.urlencode and urljoin or a client library&#x27;s params argument so special characters are percent-encoded.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data formats and web"><summary><span class="tag warn">Medium</span> What makes an HTTP client robust?</summary><div class="answer"><p>Timeouts on every call, retries with exponential backoff and jitter for transient errors on idempotent requests, respect for Retry-After, connection reuse, and clear handling of non-2xx responses.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data formats and web"><summary><span class="tag warn">Medium</span> Why is pickle unsafe for untrusted data?</summary><div class="answer"><p>Unpickling can call arbitrary functions, so loading attacker-supplied bytes can execute code. Use JSON or a schema-based format.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data formats and web"><summary><span class="tag warn">Medium</span> How do you validate incoming JSON?</summary><div class="answer"><p>Parse, then check structure, types, ranges and unknown fields with a schema library such as pydantic or jsonschema, returning specific errors.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Data formats and web"><summary><span class="tag warn">Medium</span> What is zip slip?</summary><div class="answer"><p>An archive entry with ../ in its path writes outside the extraction directory. Resolve and verify each target path before extracting.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Data formats and web"><summary><span class="tag bad">Advanced</span> How would you parse a 20 GB CSV?</summary><div class="answer"><p>Stream rows with csv.reader or pandas chunks, process incrementally, avoid holding everything in memory, and write results in a columnar format such as Parquet.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Data formats and web"><summary><span class="tag bad">Advanced</span> SSRF: what is it and how do you prevent it?</summary><div class="answer"><p>A server fetches a user-supplied URL and is tricked into reaching internal services or cloud metadata. Allow-list hosts, resolve and check IPs, block private ranges and disable redirects or re-validate them.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Data formats and web"><summary><span class="tag bad">Advanced</span> REST versus gRPC versus GraphQL in one line each?</summary><div class="answer"><p>REST uses resources over HTTP and is cacheable and simple; gRPC uses Protobuf over HTTP/2 for fast typed service calls; GraphQL lets clients specify exactly the fields they need from one endpoint.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Data formats and web"><summary><span class="tag bad">Advanced</span> How does an HTTP server handle many clients in Python?</summary><div class="answer"><p>Using threads, processes, or an async event loop (ASGI servers such as uvicorn); the framework routes requests while the server manages concurrency.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Data formats and web"><summary><span class="tag bad">Advanced</span> Why are XML parsers a security concern?</summary><div class="answer"><p>Entity expansion (billion laughs) and external entity (XXE) features can exhaust memory or read files. Use defusedxml for untrusted input.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="py6-stdlib.html"><span class="dir">Previous</span><span>PY6 The standard library tour: pathlib, datetime, decimal, collections and friends</span></a>
+      <a class="next" href="py8-internals.html"><span class="dir">Next</span><span>PY8 Python internals: objects, names, bytecode, memory, the import system and the data model</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

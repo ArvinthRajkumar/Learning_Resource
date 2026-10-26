@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en" data-resource="diffusion-from-scratch" data-page="DX3">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Latent diffusion and how Stable Diffusion is built | Diffusion from scratch</title>
+<meta name="description" content="Why diffusion in pixel space is expensive, autoencoders and the VAE, the latent U-Net, text conditioning with CLIP and cross-attention, diffusion transformers, the full text-to-image pipeline and its memory and compute numbers.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Diffusion from scratch</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part DX3</p>
+      <h1>Latent diffusion and how Stable Diffusion is built</h1>
+      <p class="lede">The model in the main guide works on pixels, which limits it to small images. Almost every practical text-to-image system works in a compressed latent space instead. This part builds Stable Diffusion piece by piece, with the shapes and the numbers.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="pixels" data-track>
+      <h2>The problem with pixels</h2>
+<h3>Cost scales with pixels</h3>
+<p>A U-Net costs time and memory in proportion to the number of spatial positions, and attention is <strong>quadratic</strong> in that number. A 512 by 512 RGB image has 786,432 values; a 1024 by 1024 image has four times as many, and its attention cost is sixteen times as large. Most of those pixels carry detail that is nearly invisible to the eye (sensor noise, tiny texture), yet the model spends capacity predicting it.</p>
+<p><strong>Latent diffusion</strong> (Rombach et al., 2022) splits the job:</p>
+<ol><li>A <strong>perceptual compression</strong> model (an autoencoder) removes imperceptible detail and keeps semantics, producing a much smaller latent.</li><li>The diffusion model works <strong>in that latent space</strong>, learning the content and layout.</li><li>The decoder turns the final latent back into pixels.</li></ol>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx3-01.py">pixel = 512 * 512 * 3
+latent = 64 * 64 * 4
+print("pixel values:", pixel, " latent values:", latent, " ratio: %.0fx fewer" % (pixel / latent))
+tokens_pixel, tokens_latent = 512 * 512, 64 * 64
+print("attention pairs ratio: %.0fx fewer" % ((tokens_pixel / tokens_latent) ** 2))
+for size in (256, 512, 768, 1024):
+    side = size // 8
+    print(size, "px image -&gt; latent", side, "x", side, "x 4 =", side * side * 4, "values")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>pixel values: 786432  latent values: 16384  ratio: 48x fewer
+attention pairs ratio: 4096x fewer
+256 px image -&gt; latent 32 x 32 x 4 = 4096 values
+512 px image -&gt; latent 64 x 64 x 4 = 16384 values
+768 px image -&gt; latent 96 x 96 x 4 = 36864 values
+1024 px image -&gt; latent 128 x 128 x 4 = 65536 values</code></pre>
+<p>A downsampling factor of 8 per side with 4 latent channels gives <strong>48 times fewer values</strong> than the RGB image, and far smaller attention maps. This is why Stable Diffusion could run on consumer GPUs.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx3-q01" data-topic="Latent diffusion" data-type="numeric" data-answer="48" data-tol="0">
+        <div class="q-stem"><p>A 512 x 512 RGB image versus a 64 x 64 x 4 latent. How many times fewer values does the latent have?</p></div>
+        <div class="q-explain"><p>786,432 / 16,384 = 48.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why latent diffusion?</summary><div class="answer"><p>Pixel space is large and mostly imperceptible detail; compress with a VAE and diffuse the small latent.</p></div></details>
+      </div>
+    </section>
+
+    <section id="vae" data-track>
+      <h2>The autoencoder</h2>
+<h3>Structure</h3>
+<p>An <strong>autoencoder</strong> has an encoder <code>E</code> that maps an image to a latent <code>z = E(x)</code> and a decoder <code>D</code> that reconstructs <code>x_hat = D(z)</code>. Stable Diffusion's is a <strong>KL-regularised VAE</strong>: the encoder outputs a mean and variance, a latent is sampled from that Gaussian, and a small KL penalty keeps latents close to a standard normal so the space is well behaved. It is trained <strong>before</strong> the diffusion model and then frozen.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Loss term</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td>Pixel reconstruction (L1 or L2)</td><td>Faithful colours and layout</td></tr><tr><td>Perceptual loss (LPIPS)</td><td>Sharp, natural-looking detail</td></tr><tr><td>Adversarial (patch GAN) loss</td><td>Realistic texture, avoids blur</td></tr><tr><td>KL penalty (tiny weight)</td><td>Keeps the latent space smooth</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Scaling factor</h3>
+<p>Latents have a different standard deviation from unit Gaussian noise, so Stable Diffusion multiplies encoder output by a constant (<code>0.18215</code> for SD 1.x) before diffusion and divides by it before decoding. Forgetting it is a classic bug: colours come out wrong.</p>
+<h3>Limits of the VAE</h3>
+<p>The decoder is a bottleneck for <strong>fine detail</strong>: small faces, text and thin lines can be damaged by an 8x compression. Remedies: more latent channels (16 in SD3 and Flux), better decoders, and refiner or upscaler stages.</p>
+<h3>Training in latent space</h3>
+<p>The training loop of the main guide is unchanged except that the image is first encoded: <code>z0 = E(x) * scale</code>, then noise is added to <code>z0</code>, and the network predicts that noise. Because the encoder is frozen, you can <strong>precompute latents once</strong> and reuse them every epoch, saving time.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx3-q02" data-topic="Latent diffusion" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why does Stable Diffusion multiply latents by a constant like 0.18215?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To encrypt them <span class="q-why">No.</span></li>
+          <li data-key="B">To bring their scale close to unit variance so it matches the diffusion noise <span class="q-why">Correct.</span></li>
+          <li data-key="C">To change the image size <span class="q-why">No.</span></li>
+          <li data-key="D">To speed up the decoder <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Diffusion assumes roughly unit-variance data; the constant normalises latent scale.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is trained first and frozen?</summary><div class="answer"><p>The autoencoder, trained with reconstruction, perceptual, adversarial and small KL losses.</p></div></details>
+      </div>
+    </section>
+
+    <section id="text" data-track>
+      <h2>Conditioning: text, cross-attention and CLIP</h2>
+<h3>Text encoder</h3>
+<p>The prompt is tokenised and passed through a pretrained <strong>text encoder</strong> that produces a sequence of vectors, one per token. SD 1.x uses CLIP ViT-L/14 (77 tokens, 768 dimensions). SDXL uses two CLIP encoders. Newer models (SD3, Flux, Imagen) add or use a large language-model encoder such as T5 for better understanding of long and compositional prompts.</p>
+<div class="formula"><div class="f-title">Text embedding shape</div><div class="f-body">text_emb in R^(L x d)</div><dl class="f-defs"><dt>L</dt><dd>token count, 77 for CLIP</dd><dt>d</dt><dd>embedding width, 768 for CLIP ViT-L</dd></dl></div>
+<h3>Cross-attention</h3>
+<p>Inside each U-Net block, image features <strong>ask</strong> the text what to draw. Let <code>Q</code> be computed from image features (one query per spatial position) and <code>K, V</code> from the text embedding:</p>
+<div class="formula"><div class="f-title">Cross-attention</div><div class="f-body">Attention(Q, K, V) = softmax( Q K^T / sqrt(d_k) ) V</div><dl class="f-defs"><dt>Q</dt><dd>from the image latent</dd><dt>K, V</dt><dd>from the text tokens</dd></dl></div>
+<p>Each pixel position receives a weighted mix of word vectors. This is how "a red ball on a blue table" can paint red where the ball is: the pixels over the ball attend to "red" and "ball". Visualising these attention maps shows an object-by-word heat map, which prompt-to-prompt editing exploits.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx3-02.py">import math
+# Tiny cross-attention with 3 words and 2 pixels, d = 2
+text = {"red": [1.0, 0.0], "ball": [0.5, 0.5], "table": [0.0, 1.0]}
+words = list(text)
+K = [text[w] for w in words]
+V = K
+pixels = {"pixel on ball": [1.0, 0.2], "pixel on table": [0.0, 1.0]}
+def softmax(xs):
+    m = max(xs); e = [math.exp(x - m) for x in xs]; s = sum(e); return [x / s for x in e]
+for name, q in pixels.items():
+    scores = [sum(a * b for a, b in zip(q, k)) / math.sqrt(2) for k in K]
+    w = softmax(scores)
+    print(name, dict(zip(words, [round(x, 2) for x in w])))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>pixel on ball {'red': 0.43, 'ball': 0.32, 'table': 0.24}
+pixel on table {'red': 0.22, 'ball': 0.32, 'table': 0.46}</code></pre>
+<p>The pixel on the ball puts most weight on "red" and "ball"; the pixel on the table puts most weight on "table".</p>
+<h3>Shapes through the U-Net</h3>
+<p>For a 512 px image: latent <code>4 x 64 x 64</code>; the first self-attention layer sees <code>64 x 64 = 4,096</code> positions; the lowest resolution is <code>8 x 8</code> with 64 positions. Text conditioning enters at every cross-attention layer, at several resolutions. The <strong>timestep</strong> still enters through the embedding added to every ResBlock, as in the main guide.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx3-q03" data-topic="Latent diffusion" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In cross-attention, where do the keys and values come from?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The image latent <span class="q-why">That gives queries (self-attention uses it for all).</span></li>
+          <li data-key="B">The text embedding <span class="q-why">Correct.</span></li>
+          <li data-key="C">The timestep <span class="q-why">No.</span></li>
+          <li data-key="D">The VAE decoder <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Queries come from image features; keys and values come from the prompt tokens.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How does text enter the U-Net?</summary><div class="answer"><p>Cross-attention layers where image features are queries and CLIP or T5 tokens are keys and values.</p></div></details>
+      </div>
+    </section>
+
+    <section id="unet" data-track>
+      <h2>Architecture of the denoiser</h2>
+<h3>The latent U-Net</h3>
+<p>Same ideas as the guide (ResBlocks, downsampling, skip connections, attention) scaled up:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>SD 1.5</th><th>SDXL</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>U-Net parameters</td><td>about 860 million</td><td>about 2.6 billion</td><td>Counts approximate</td></tr><tr><td>Text encoders</td><td>CLIP ViT-L</td><td>CLIP ViT-L + OpenCLIP ViT-bigG</td><td></td></tr><tr><td>Native resolution</td><td>512</td><td>1024</td><td></td></tr><tr><td>Latent channels</td><td>4</td><td>4</td><td></td></tr><tr><td>Extras</td><td></td><td>Micro-conditioning on size and crop, optional refiner</td><td></td></tr>
+</tbody>
+</table>
+</div>
+<p>Blocks in a typical down stage: <code>ResBlock, SpatialTransformer (self-attention + cross-attention + feed-forward), ResBlock, ..., Downsample</code>. The "spatial transformer" flattens the feature map into a sequence, applies attention layers, then reshapes it back.</p>
+<h3>Diffusion transformers (DiT) and MMDiT</h3>
+<p>Replace the convolutional U-Net with a <strong>transformer</strong> over <strong>patches</strong> of the latent: cut the latent into <code>p x p</code> patches, embed each as a token, add position encodings, and run standard transformer blocks, with the timestep and conditioning injected by <strong>adaptive layer norm</strong> (a scale and shift predicted from the conditioning). Transformers scale predictably with size and data. <strong>MMDiT</strong> (SD3) uses two token streams, text and image, with separate weights, that attend to each other in joint attention, so text can be updated by image content as well as the reverse.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>U-Net</th><th>Diffusion transformer</th></tr></thead>
+<tbody>
+<tr><td>Inductive bias</td><td>Locality, multi-scale</td><td>Little; learned from data</td></tr><tr><td>Scaling</td><td>Good, ad hoc</td><td>Excellent, follows transformer scaling laws</td></tr><tr><td>Resolution flexibility</td><td>Fully convolutional, fixed ratios</td><td>Sequence length changes with image size</td></tr><tr><td>Used by</td><td>SD 1.x, 2.x, SDXL</td><td>DiT, SD3, Flux, Sora-style video models</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx3-03.py"># DiT token counts: a 1024 px image, latent 128 x 128 x 16 channels, patch size 2
+side, patch = 128, 2
+tokens = (side // patch) ** 2
+print("tokens per image:", tokens)
+print("self-attention score matrix per head per layer:", tokens * tokens, "entries")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>tokens per image: 4096
+self-attention score matrix per head per layer: 16777216 entries</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx3-q04" data-topic="Latent diffusion" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does adaptive layer norm (adaLN) do in a DiT block?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Normalises text only <span class="q-why">No.</span></li>
+          <li data-key="B">Predicts a scale and shift from the timestep and conditioning to modulate the block <span class="q-why">Correct.</span></li>
+          <li data-key="C">Replaces attention <span class="q-why">No.</span></li>
+          <li data-key="D">Adds noise <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It injects conditioning by modulating normalised activations.</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx3-q05" data-topic="Latent diffusion" data-type="fill" data-answer="joint">
+        <div class="q-stem"><p>In an MMDiT block text and image tokens are processed in <input class="q-input" aria-label="blank 1"> attention.</p></div>
+        <div class="q-explain"><p>Both streams attend to each other in one attention operation.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>U-Net versus DiT?</summary><div class="answer"><p>U-Net uses convolutions and multi-scale structure; DiT uses patch tokens and transformer blocks with adaLN, scaling better.</p></div></details>
+      </div>
+    </section>
+
+    <section id="pipeline" data-track>
+      <h2>The full text-to-image pipeline</h2>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="The inference pipeline of a latent diffusion model." style="min-width:760px"><defs><marker id="ah1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah1a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah1b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah1d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah1)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah1)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah1)"/><line x1="747.0" y1="78.0" x2="747.0" y2="118.0" class="d-line" marker-end="url(#ah1)"/><line x1="662.0" y1="147.0" x2="618.0" y2="147.0" class="d-line" marker-end="url(#ah1)"/><line x1="448.0" y1="147.0" x2="404.0" y2="147.0" class="d-line" marker-end="url(#ah1)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">Prompt</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle">Text encoder</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle">Random latent z_T</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle" class="d-sm">Denoiser loop (CFG, scheduler)</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="151.5" text-anchor="middle">Latent z_0</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="151.5" text-anchor="middle">VAE decoder</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="151.5" text-anchor="middle">Image</text></svg>
+</div>
+<figcaption>The inference pipeline of a latent diffusion model.</figcaption></figure>
+<ol><li><strong>Encode the prompt</strong> (and an empty or negative prompt for guidance) with the text encoder.</li><li>Sample a random latent <code>z_T</code> from <code>Normal(0, I)</code> of shape <code>4 x H/8 x W/8</code>. The <strong>seed</strong> fixes it.</li><li>For each scheduler timestep: run the denoiser on the latent twice (conditional and unconditional), combine with CFG, and take a scheduler step.</li><li>Decode <code>z_0 / scale</code> with the VAE decoder to get pixels. Clamp and convert to 8-bit.</li><li>Optionally run a safety checker and upscale.</li></ol>
+<pre><code class="lang-py"># With the diffusers library (display only; needs a GPU and model weights)
+import torch
+from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler
+pipe = StableDiffusionPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", torch_dtype=torch.float16).to("cuda")
+pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
+generator = torch.Generator("cuda").manual_seed(42)
+image = pipe("a watercolor fox in a forest", num_inference_steps=25, guidance_scale=7.5,
+             negative_prompt="blurry, low quality", generator=generator).images[0]
+image.save("fox.png")</code></pre>
+<h3>Negative prompts</h3>
+<p>A <strong>negative prompt</strong> replaces the empty unconditional prompt in classifier-free guidance: <code>eps = eps(negative) + w (eps(prompt) - eps(negative))</code>. The sampler is pushed <strong>away from</strong> the negative direction and toward the prompt.</p>
+<h3>Memory and speed numbers</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Item</th><th>Rough size (fp16)</th></tr></thead>
+<tbody>
+<tr><td>SD 1.5 U-Net (860 M params)</td><td>about 1.7 GB</td></tr><tr><td>CLIP text encoder (123 M)</td><td>about 0.25 GB</td></tr><tr><td>VAE (84 M)</td><td>about 0.17 GB</td></tr><tr><td>Activations at 512 px</td><td>1 to 3 GB, higher at 1024 px</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx3-04.py">for name, params in (("U-Net", 860e6), ("text encoder", 123e6), ("VAE", 84e6)):
+    print("%-13s %.2f GB in fp16, %.2f GB in fp32" % (name, params * 2 / 1e9, params * 4 / 1e9))
+print("total fp16: %.2f GB" % ((860e6 + 123e6 + 84e6) * 2 / 1e9))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>U-Net         1.72 GB in fp16, 3.44 GB in fp32
+text encoder  0.25 GB in fp16, 0.49 GB in fp32
+VAE           0.17 GB in fp16, 0.34 GB in fp32
+total fp16: 2.13 GB</code></pre>
+<p>Run on 4 to 6 GB of VRAM with fp16, <strong>attention slicing</strong>, <strong>VAE tiling</strong>, model offloading, or <code>xformers</code> and PyTorch scaled-dot-product attention. Quantised variants (8-bit, 4-bit) shrink further.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx3-q06" data-topic="Latent diffusion" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What replaces the empty prompt in guidance when you give a negative prompt?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Nothing <span class="q-why">No.</span></li>
+          <li data-key="B">The unconditional branch uses the negative prompt, so the sampler is pushed away from it <span class="q-why">Correct.</span></li>
+          <li data-key="C">A random seed <span class="q-why">No.</span></li>
+          <li data-key="D">The VAE <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>eps = eps_neg + w (eps_prompt - eps_neg).</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx3-q07" data-topic="Latent diffusion" data-type="numeric" data-answer="128" data-tol="0">
+        <div class="q-stem"><p>A 1024 px image uses a latent downsampled by 8 per side. What is the latent side length?</p></div>
+        <div class="q-explain"><p>1024 / 8 = 128.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>List the inference steps.</summary><div class="answer"><p>Encode prompt, sample latent, denoise with CFG and a scheduler, decode with the VAE, post-process.</p></div></details>
+      </div>
+    </section>
+
+    <section id="compare" data-track>
+      <h2>What changed from the main guide</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Main guide (pixel DDPM)</th><th>Latent diffusion</th></tr></thead>
+<tbody>
+<tr><td>Works on 32 or 64 px images</td><td>Works on 64 to 128 px latents that decode to 512 to 1024 px images</td></tr><tr><td>Unconditional or class label</td><td>Text via cross-attention</td></tr><tr><td>T = 1000, ancestral</td><td>20 to 50 steps, fast solvers</td></tr><tr><td>One network</td><td>VAE + text encoder + denoiser (three models)</td></tr><tr><td>Trains from scratch on small data</td><td>Trains on billions of image-text pairs, usually fine-tuned by users</td></tr><tr><td>Plain MSE</td><td>MSE (or v) with SNR weighting, EMA, large-scale engineering</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout tip"><span class="callout-title">Mapping</span><p>Everything you built in phases 1 to 4 is the <strong>denoiser and training loop</strong> of this system. Swapping the data for VAE latents and adding a cross-attention input is the entire conceptual gap to Stable Diffusion.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx3-q08" data-topic="Latent diffusion" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the main reason latent diffusion is cheaper?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It uses fewer layers <span class="q-why">Not the reason.</span></li>
+          <li data-key="B">Diffusion runs on a compressed latent with far fewer positions, so convolutions and attention cost much less <span class="q-why">Correct.</span></li>
+          <li data-key="C">It skips training <span class="q-why">No.</span></li>
+          <li data-key="D">It uses UDP <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Compression reduces the number of positions the denoiser must process.</p></div>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Latent diffusion</h2>
+      <p class="muted">12 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Latent diffusion">
+<details class="recall iq" data-level="basic" data-topic="Latent diffusion"><summary><span class="tag ok">Basic</span> Why do diffusion models work in a latent space?</summary><div class="answer"><p>Pixel space is large and mostly imperceptible detail. A VAE compresses 8 times per side (about 48 times fewer values), making the denoiser far cheaper and enabling high resolution on ordinary GPUs.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Latent diffusion"><summary><span class="tag ok">Basic</span> What are the main components of Stable Diffusion?</summary><div class="answer"><p>A VAE (encoder and decoder), a text encoder (CLIP), a denoiser (U-Net or transformer) with cross-attention to the text, and a scheduler.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Latent diffusion"><summary><span class="tag warn">Medium</span> How does text condition the image?</summary><div class="answer"><p>Prompt tokens are encoded to a sequence of vectors; cross-attention layers use image features as queries and text vectors as keys and values, so each position gathers relevant words.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Latent diffusion"><summary><span class="tag warn">Medium</span> What is the VAE scaling factor?</summary><div class="answer"><p>A constant (0.18215 for SD 1.x) that normalises latent variance so it matches the unit-variance noise assumption; omitting it gives wrong colours.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Latent diffusion"><summary><span class="tag warn">Medium</span> What does a negative prompt do?</summary><div class="answer"><p>It replaces the empty prompt in classifier-free guidance so the sampler is pushed away from the negative description and toward the positive one.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Latent diffusion"><summary><span class="tag warn">Medium</span> Why is the VAE decoder a quality bottleneck?</summary><div class="answer"><p>8x compression loses fine detail such as small faces, text and thin lines; later models use more latent channels and better decoders.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Latent diffusion"><summary><span class="tag warn">Medium</span> U-Net versus diffusion transformer?</summary><div class="answer"><p>U-Nets use convolutions and multi-scale structure; DiTs use patch tokens, transformer blocks and adaLN conditioning, scaling more predictably with data and parameters and handling variable sizes naturally.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Latent diffusion"><summary><span class="tag bad">Advanced</span> What is MMDiT?</summary><div class="answer"><p>A multimodal diffusion transformer with separate weights for text and image tokens that attend to each other in joint attention, used in SD3.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Latent diffusion"><summary><span class="tag bad">Advanced</span> Why does attention cost grow so fast with resolution?</summary><div class="answer"><p>Self-attention is quadratic in the number of positions; doubling image side quadruples positions and multiplies attention cost by sixteen, hence latents and efficient attention kernels.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Latent diffusion"><summary><span class="tag bad">Advanced</span> Describe the inference pipeline step by step.</summary><div class="answer"><p>Encode the prompt and an unconditional or negative prompt, sample a seeded latent, run scheduler steps with the denoiser and classifier-free guidance, divide by the scale factor, decode with the VAE, post-process.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Latent diffusion"><summary><span class="tag bad">Advanced</span> How would you run Stable Diffusion on 4 GB of VRAM?</summary><div class="answer"><p>fp16 weights, attention slicing, VAE tiling, CPU offloading of idle components, memory-efficient attention (xformers or SDPA), smaller resolution, or quantised models.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Latent diffusion"><summary><span class="tag bad">Advanced</span> How does SDXL differ from SD 1.5?</summary><div class="answer"><p>A larger U-Net (about 2.6B parameters), two text encoders, 1024 px native resolution, size and crop micro-conditioning and an optional refiner stage.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="dx2-samplers.html"><span class="dir">Previous</span><span>DX2 Samplers and speed: DDIM, ODE solvers, distillation and flow matching</span></a>
+      <a class="next" href="dx4-control.html"><span class="dir">Next</span><span>DX4 Fine-tuning and control: LoRA, DreamBooth, ControlNet, inpainting and editing</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

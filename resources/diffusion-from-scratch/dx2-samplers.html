@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en" data-resource="diffusion-from-scratch" data-page="DX2">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Samplers and speed: DDIM, ODE solvers, distillation and flow matching | Diffusion from scratch</title>
+<meta name="description" content="Why sampling is slow, ancestral versus deterministic sampling, DDIM derived, ODE solvers, DPM-Solver, guidance, distillation, consistency models and flow matching, with a working sampler on exactly solvable data.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Diffusion from scratch</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part DX2</p>
+      <h1>Samplers and speed: DDIM, ODE solvers, distillation and flow matching</h1>
+      <p class="lede">A trained diffusion model is only half the system: the sampler decides how many network calls you pay for each image. This part shows what samplers do, why fewer steps work, and how to prove a sampler right by testing it on data whose answer is known exactly.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="slow" data-track>
+      <h2>Why sampling is slow</h2>
+<h3>The cost</h3>
+<p>Generation runs the network once per step. At 1,000 steps and about 0.05 seconds per step on a laptop GPU, one image takes about 50 seconds; classifier-free guidance doubles it. Training sees one noise level per example, but sampling must walk the whole chain, so <strong>speed is a sampler problem</strong>, not a training problem.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Approach</th><th>Idea</th><th>Typical steps</th></tr></thead>
+<tbody>
+<tr><td>Ancestral DDPM</td><td>Follow the learned reverse chain</td><td>1,000</td></tr><tr><td>DDIM</td><td>Deterministic jump to earlier timesteps</td><td>20 to 100</td></tr><tr><td>ODE solvers (DPM-Solver++, Heun, Euler)</td><td>Treat sampling as solving an ODE accurately</td><td>10 to 30</td></tr><tr><td>Distillation (progressive, guidance, LCM)</td><td>Train a student that takes fewer steps</td><td>1 to 8</td></tr><tr><td>Consistency and flow models</td><td>Learn a map or a straighter path directly</td><td>1 to 4</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Exactly solvable data: a tool for testing</h3>
+<p>To judge a sampler fairly we need a case where the network is <strong>perfect</strong>. For data that is a mixture of Gaussians the optimal noise prediction has a closed form, so we can run any sampler with the exact <code>eps</code> and check whether the result matches the target distribution. Everything below uses this toy.</p>
+<p>For data <code>x_0</code> drawn from a mixture of Gaussians with means <code>m_k</code>, standard deviation <code>s</code> and weights <code>w_k</code>, the noisy marginal at <code>alpha_bar</code> is a mixture with means <code>sqrt(alpha_bar) m_k</code> and variance <code>v = alpha_bar s^2 + 1 - alpha_bar</code>. Its score is a weighted average of the component scores, with weights from the component responsibilities at <code>x_t</code>. The optimal noise predictor is <code>eps*(x, t) = - sqrt(1 - alpha_bar) score(x)</code>.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx2-q01" data-topic="Diffusion samplers" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is generation so much slower than a training step?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Generation uses a different network <span class="q-why">Same network.</span></li>
+          <li data-key="B">Sampling runs the network once per step for many steps, in sequence <span class="q-why">Correct.</span></li>
+          <li data-key="C">It uses more data <span class="q-why">No.</span></li>
+          <li data-key="D">It needs a larger batch <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Each of the steps is a full forward pass and they cannot be parallelised across steps.</p></div>
+      </div>
+    </section>
+
+    <section id="ddpm" data-track>
+      <h2>Ancestral DDPM sampling</h2>
+<h3>The algorithm</h3>
+<p>Start at <code>x_T ~ Normal(0, 1)</code> and for <code>t = T ... 1</code> set <code>x_(t-1) = mu_theta(x_t, t) + sigma_t z</code> (<a href="dx1-math.html">DX1</a>). Each step adds fresh noise, so the process is stochastic and every run gives a different image from the same start.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx2-01.py">import math, random
+random.seed(0)
+
+def schedule(T):
+    betas = [1e-4 + (0.02 - 1e-4) * i / (T - 1) for i in range(T)]
+    alphas = [1 - b for b in betas]
+    ab, p = [], 1.0
+    for a in alphas:
+        p *= a
+        ab.append(p)
+    return betas, alphas, ab
+
+MEANS, S_STD, W = [-2.0, 2.0], 0.3, [0.3, 0.7]      # target: 30 percent near -2, 70 percent near +2
+
+def eps_star(x, ab):
+    """Exact optimal noise prediction for the mixture data at noise level ab."""
+    v = ab * S_STD ** 2 + 1 - ab
+    resp, tot = [], 0.0
+    for m, w in zip(MEANS, W):
+        r = w * math.exp(-((x - math.sqrt(ab) * m) ** 2) / (2 * v))
+        resp.append(r); tot += r
+    score = sum((r / tot) * (-(x - math.sqrt(ab) * m) / v) for r, m in zip(resp, MEANS))
+    return -math.sqrt(1 - ab) * score
+
+def ddpm_sample(n, T=1000):
+    betas, alphas, ab = schedule(T)
+    out = []
+    for _ in range(n):
+        x = random.gauss(0, 1)
+        for t in reversed(range(T)):
+            mean = (x - betas[t] / math.sqrt(1 - ab[t]) * eps_star(x, ab[t])) / math.sqrt(alphas[t])
+            x = mean + (math.sqrt(betas[t]) * random.gauss(0, 1) if t &gt; 0 else 0.0)
+        out.append(x)
+    return out
+
+xs = ddpm_sample(600)
+right = sum(1 for x in xs if x &gt; 0) / len(xs)
+m1 = sum(x for x in xs if x &gt; 0) / max(1, sum(1 for x in xs if x &gt; 0))
+print("fraction near +2: %.2f (target 0.70), mean of that mode: %.2f (target 2.00)" % (right, m1))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>fraction near +2: 0.72 (target 0.70), mean of that mode: 2.03 (target 2.00)</code></pre>
+<p>The sampler has never seen the data: it only used the exact noise predictor and the schedule, yet it reproduces the mixture proportions. If your trained model is good, the same thing happens in high dimensions.</p>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why does DDPM sampling add noise at each step?</summary><div class="answer"><p>Each reverse step is a draw from a Gaussian; skipping the noise would collapse variety and miss the target distribution.</p></div></details>
+      </div>
+    </section>
+
+    <section id="ddim" data-track>
+      <h2>DDIM: deterministic sampling and fewer steps</h2>
+<h3>Derivation in three lines</h3>
+<p>DDIM observes that the training objective only depends on the marginals <code>q(x_t | x_0)</code>, not on the chain. So there is a <strong>family of processes</strong> with the same marginals; one member is deterministic. Given a noise prediction at step <code>t</code>:</p>
+<ol><li>Estimate the clean image: <code>x0_hat = (x_t - sqrt(1 - ab_t) eps_theta) / sqrt(ab_t)</code>.</li><li>Pick a target step <code>s &lt; t</code> (it need not be <code>t - 1</code>).</li><li>Move there: <code>x_s = sqrt(ab_s) x0_hat + sqrt(1 - ab_s - sigma^2) eps_theta + sigma z</code>.</li></ol>
+<p>With <code>sigma = 0</code> (eta = 0) the update is <strong>deterministic</strong>: the same starting noise always gives the same image. With <code>sigma</code> set to the DDPM value, DDIM equals DDPM. Because <code>s</code> can skip many steps, you visit, say, 20 of the 1,000 timesteps.</p>
+<div class="formula"><div class="f-title">DDIM update (eta = 0)</div><div class="f-body">x_s = sqrt(ab_s) x0_hat + sqrt(1 - ab_s) eps_theta(x_t, t)</div><dl class="f-defs"><dt>x0_hat</dt><dd>predicted clean image</dd><dt>ab_s</dt><dd>alpha_bar at the target step</dd></dl></div>
+<h3>Deterministic means invertible</h3>
+<p>Because the map from noise to image is a deterministic ODE solution, you can also run it <strong>backwards</strong> (DDIM inversion) to find the noise that reproduces a given image. That enables editing: invert a photo, change the prompt, regenerate.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx2-02.py">import math, random
+random.seed(1)
+T = 1000
+betas = [1e-4 + (0.02 - 1e-4) * i / (T - 1) for i in range(T)]
+ab, p = [], 1.0
+for b in betas:
+    p *= 1 - b
+    ab.append(p)
+MEANS, S_STD, W = [-2.0, 2.0], 0.3, [0.3, 0.7]
+
+def eps_star(x, a):
+    v = a * S_STD ** 2 + 1 - a
+    r = [w * math.exp(-((x - math.sqrt(a) * m) ** 2) / (2 * v)) for m, w in zip(MEANS, W)]
+    tot = sum(r)
+    score = sum((ri / tot) * (-(x - math.sqrt(a) * m) / v) for ri, m in zip(r, MEANS))
+    return -math.sqrt(1 - a) * score
+
+def ddim(x, steps):
+    ts = [round(i * (T - 1) / (steps - 1)) for i in range(steps)][::-1]
+    for i, t in enumerate(ts):
+        a_now = ab[t]
+        a_next = ab[ts[i + 1]] if i + 1 &lt; len(ts) else 1.0
+        e = eps_star(x, a_now)
+        x0 = (x - math.sqrt(1 - a_now) * e) / math.sqrt(a_now)
+        x = math.sqrt(a_next) * x0 + math.sqrt(1 - a_next) * e
+    return x
+
+noise = [random.gauss(0, 1) for _ in range(1500)]
+for steps in (5, 10, 20, 50):
+    xs = [ddim(z, steps) for z in noise]
+    pos = [x for x in xs if x &gt; 0]
+    print("%2d steps: fraction near +2 = %.2f, mode mean %.2f, mode std %.2f" % (
+        steps, len(pos) / len(xs), sum(pos) / len(pos), math.sqrt(sum((x - sum(pos) / len(pos)) ** 2 for x in pos) / len(pos))))
+print("target:    fraction 0.70, mode mean 2.00, mode std 0.30")
+print("deterministic:", ddim(0.5, 20) == ddim(0.5, 20))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code> 5 steps: fraction near +2 = 0.74, mode mean 1.80, mode std 0.43
+10 steps: fraction near +2 = 0.71, mode mean 1.95, mode std 0.24
+20 steps: fraction near +2 = 0.71, mode mean 1.98, mode std 0.26
+50 steps: fraction near +2 = 0.70, mode mean 1.99, mode std 0.29
+target:    fraction 0.70, mode mean 2.00, mode std 0.30
+deterministic: True</code></pre>
+<p>Twenty deterministic steps already reproduce the target, and the result is exactly repeatable. Too few steps (5) give visible error: the discretisation of the underlying ODE is too coarse.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx2-q02" data-topic="Diffusion samplers" data-type="single" data-answer="B">
+        <div class="q-stem"><p>With sigma = 0, what is true of DDIM?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Each run gives a different image <span class="q-why">That is DDPM.</span></li>
+          <li data-key="B">The same starting noise gives the same image, and the map can be inverted <span class="q-why">Correct.</span></li>
+          <li data-key="C">It needs 1,000 steps <span class="q-why">No.</span></li>
+          <li data-key="D">It cannot skip steps <span class="q-why">It can.</span></li>
+        </ul>
+        <div class="q-explain"><p>The update is a deterministic ODE step.</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx2-q03" data-topic="Diffusion samplers" data-type="fill" data-answer="deterministic">
+        <div class="q-stem"><p>DDIM with sigma = 0 is also called <input class="q-input" aria-label="blank 1"> sampling because it has no added noise.</p></div>
+        <div class="q-explain"><p>No randomness is injected after the starting noise.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Write the DDIM step.</summary><div class="answer"><p>Predict x0_hat from eps, then x_s = sqrt(ab_s) x0_hat + sqrt(1 - ab_s) eps (for eta = 0).</p></div></details>
+      </div>
+    </section>
+
+    <section id="solvers" data-track>
+      <h2>ODE solvers and DPM-Solver</h2>
+<h3>Sampling as numerical integration</h3>
+<p>The probability flow ODE (<a href="dx1-math.html">DX1</a>) is <code>dx/d(sigma) = eps_theta(x, sigma)</code> in a convenient parameterisation (the Karras formulation, where <code>sigma</code> is the noise std). DDIM is <strong>Euler's method</strong> applied to it: one network call per step, first-order accurate. Better solvers use more information per step.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Solver</th><th>Order</th><th>Network calls per step</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>Euler (= DDIM)</td><td>1</td><td>1</td><td>Simple baseline</td></tr><tr><td>Heun</td><td>2</td><td>2</td><td>Averages slopes at both ends; good quality, EDM default</td></tr><tr><td>DPM-Solver / DPM-Solver++</td><td>2 to 3</td><td>1 (reuses past outputs)</td><td>Multistep, 10 to 20 steps, widely used</td></tr><tr><td>UniPC, DEIS</td><td>multistep</td><td>1</td><td>Predictor-corrector variants</td></tr><tr><td>Ancestral samplers (Euler a)</td><td>1</td><td>1</td><td>Add noise each step, never fully converge, creative variety</td></tr>
+</tbody>
+</table>
+</div>
+<p>Multistep methods reuse previous network outputs, so higher accuracy costs no extra calls. This is why 20 to 25 steps of DPM-Solver++ is a common default in image tools.</p>
+<h3>Error from step size</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx2-03.py"># Solve dx/dt = -x from t=0 to 1 (exact answer exp(-1)) with Euler and Heun.
+import math
+def euler(n):
+    x, h = 1.0, 1.0 / n
+    for _ in range(n): x += h * (-x)
+    return x
+def heun(n):
+    x, h = 1.0, 1.0 / n
+    for _ in range(n):
+        k1 = -x
+        k2 = -(x + h * k1)
+        x += h * (k1 + k2) / 2
+    return x
+exact = math.exp(-1)
+for n in (4, 8, 16):
+    print("steps %2d  euler error %.5f  heun error %.6f" % (n, abs(euler(n) - exact), abs(heun(n) - exact)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>steps  4  euler error 0.05147  heun error 0.004650
+steps  8  euler error 0.02427  heun error 0.001054
+steps 16  euler error 0.01181  heun error 0.000251</code></pre>
+<p>Halving the step size halves Euler's error (order 1) but quarters Heun's (order 2), at twice the calls per step. High-order solvers win when the trajectory is smooth.</p>
+<h3>Practical sampler choice</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Goal</th><th>Choice</th></tr></thead>
+<tbody>
+<tr><td>Fast and reliable</td><td>DPM-Solver++ 2M with 20 to 30 steps</td></tr><tr><td>Highest fidelity at moderate cost</td><td>Heun (EDM) at 30 to 50 steps</td></tr><tr><td>Deterministic edits and inversion</td><td>DDIM or Euler, no added noise</td></tr><tr><td>Variety and "painterly" look</td><td>Ancestral samplers</td></tr><tr><td>Very few steps</td><td>Distilled model with its matching scheduler</td></tr>
+</tbody>
+</table>
+</div>
+<p>Also tune the <strong>timestep spacing</strong> (uniform in <code>t</code>, in log-SNR, or the Karras schedule): spacing steps by log-SNR puts more steps where the image changes most.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx2-q04" data-topic="Diffusion samplers" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does a second-order solver like Heun gain over Euler?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Fewer network calls per step <span class="q-why">It uses more.</span></li>
+          <li data-key="B">Error that shrinks quadratically as the step size is reduced <span class="q-why">Correct.</span></li>
+          <li data-key="C">Randomness <span class="q-why">No.</span></li>
+          <li data-key="D">Smaller models <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Higher order means better accuracy per step on smooth trajectories.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why does DPM-Solver need fewer steps?</summary><div class="answer"><p>It is a high-order multistep ODE solver that reuses past network outputs for accuracy.</p></div></details>
+      </div>
+    </section>
+
+    <section id="guidance" data-track>
+      <h2>Guidance and its cost</h2>
+<p>Classifier-free guidance (<a href="d5-making-it-good.html">D5</a>) runs the network twice per step: <code>eps = eps_uncond + w (eps_cond - eps_uncond)</code>. High <code>w</code> sharpens prompt adherence but reduces diversity, and large <code>w</code> combined with high-order solvers can push <code>x0_hat</code> out of range; <strong>dynamic thresholding</strong> (clip and rescale the predicted <code>x0</code> per step) and <strong>guidance rescaling</strong> fix saturation.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx2-04.py"># Guidance on the toy: condition on "mode +2"; the unconditional prediction is approximated by the prior-weighted mix.
+import math
+def gauss(x, m, v): return math.exp(-((x - m) ** 2) / (2 * v)) / math.sqrt(2 * math.pi * v)
+ab = 0.5
+v = ab * 0.3 ** 2 + 1 - ab
+def eps_mode(x, m):                      # exact eps for a single Gaussian component
+    return math.sqrt(1 - ab) * (x - math.sqrt(ab) * m) / v
+x = 1.0
+cond, uncond = eps_mode(x, 2.0), 0.3 * eps_mode(x, -2.0) + 0.7 * eps_mode(x, 2.0)
+for w in (0.0, 1.0, 3.0, 7.0):
+    print("w=%.1f guided eps=%.3f" % (w, uncond + w * (cond - uncond)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>w=0.0 guided eps=0.563
+w=1.0 guided eps=-0.537
+w=3.0 guided eps=-2.739
+w=7.0 guided eps=-7.143</code></pre>
+<p>At <code>w = 1</code> guidance equals the conditional prediction; larger <code>w</code> extrapolates <strong>beyond</strong> it, which is why very high guidance produces oversaturated, low-diversity images.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx2-q05" data-topic="Diffusion samplers" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why does very high guidance scale hurt?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It makes the model larger <span class="q-why">No.</span></li>
+          <li data-key="B">It extrapolates far beyond the conditional prediction, causing saturation and low diversity <span class="q-why">Correct.</span></li>
+          <li data-key="C">It disables noise <span class="q-why">No.</span></li>
+          <li data-key="D">It makes sampling deterministic <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>w &gt; 1 pushes the prediction past the conditional estimate.</p></div>
+      </div>
+    </section>
+
+    <section id="distill" data-track>
+      <h2>Distillation and consistency models</h2>
+<h3>Idea</h3>
+<p>A trained model is a slow teacher. Train a <strong>student</strong> to reach the same output in fewer steps.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Method</th><th>How</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td>Progressive distillation</td><td>Student learns to do two teacher steps in one; repeat, halving the steps each round</td><td>1,000 to 4 or 8 steps</td></tr><tr><td>Guidance distillation</td><td>Student reproduces the guided output in one pass</td><td>Removes the double cost of CFG</td></tr><tr><td>Latent consistency models (LCM)</td><td>Student predicts the ODE solution endpoint from any point</td><td>2 to 4 steps</td></tr><tr><td>Consistency models</td><td>A function <code>f(x_t, t)</code> with <code>f(x_t, t) = f(x_s, s)</code> along one trajectory, mapping any point to the clean sample</td><td>One to a few steps</td></tr><tr><td>Adversarial distillation (SDXL Turbo, ADD)</td><td>Add a GAN loss to a distilled student</td><td>Single step, higher sharpness</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Consistency in one picture</h3>
+<p>All points on one ODE trajectory should map to the same clean image. A consistency model enforces <code>f(x_t, t) = f(x_(t'), t')</code> for neighbouring points on the trajectory, with the boundary condition <code>f(x_0, 0) = x_0</code>. Sampling then needs one call: <code>x_0 = f(x_T, T)</code>, optionally refined by a few more steps.</p>
+<div class="callout tip"><span class="callout-title">Trade-off</span><p>Distilled models are fast but usually less diverse and a little less detailed than their teachers, and they are often tied to a particular guidance scale. Keep the full model for quality work.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx2-q06" data-topic="Diffusion samplers" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does progressive distillation do each round?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Doubles the number of steps <span class="q-why">Opposite.</span></li>
+          <li data-key="B">Trains a student to match two teacher steps in one, halving the steps <span class="q-why">Correct.</span></li>
+          <li data-key="C">Adds layers <span class="q-why">No.</span></li>
+          <li data-key="D">Removes the text encoder <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Repeating it takes 1,000 steps down to a handful.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name three distillation approaches.</summary><div class="answer"><p>Progressive distillation, guidance distillation, consistency or latent consistency models (and adversarial distillation).</p></div></details>
+      </div>
+    </section>
+
+    <section id="flow" data-track>
+      <h2>Flow matching and rectified flow</h2>
+<h3>The idea</h3>
+<p>Instead of noising and denoising with a schedule, learn a <strong>velocity field</strong> that moves noise to data along (nearly) <strong>straight lines</strong>. Pick a data point <code>x_0</code> and noise <code>x_1</code>, interpolate <code>x_t = (1 - t) x_0 + t x_1</code>, and train <code>v_theta(x_t, t)</code> to predict <code>x_1 - x_0</code>, the constant velocity of that straight path. Sampling integrates <code>dx/dt = v_theta</code> from <code>t = 1</code> to <code>t = 0</code> with any ODE solver. Straighter paths need fewer steps; <strong>rectified flow</strong> repeats training on the model's own pairs to straighten further. Stable Diffusion 3 and Flux use this objective with a transformer backbone.</p>
+<h3>A check on exact data</h3>
+<p>For data <code>Normal(m, s^2)</code> and noise <code>Normal(0, 1)</code>, the optimal velocity (the conditional expectation of <code>x_1 - x_0</code> given <code>x_t</code>) is available in closed form, so we can integrate it and test the sampler.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx2-05.py">import math, random
+random.seed(3)
+m, s = 3.0, 0.5
+
+def v(x, t):
+    """E[x1 - x0 | x_t = x] for x0 ~ N(m, s^2), x1 ~ N(0, 1), x_t = (1 - t) x0 + t x1."""
+    var_t = (1 - t) ** 2 * s * s + t * t
+    return -m + (t - (1 - t) * s * s) / var_t * (x - (1 - t) * m)
+
+def sample(steps):
+    x = random.gauss(0, 1)           # start from noise at t = 1
+    dt = 1.0 / steps
+    for i in range(steps):
+        t = 1 - i * dt
+        x -= v(x, t) * dt            # integrate backwards in t with Euler
+    return x
+
+for steps in (2, 4, 8, 32):
+    xs = [sample(steps) for _ in range(4000)]
+    mean = sum(xs) / len(xs)
+    std = math.sqrt(sum((x - mean) ** 2 for x in xs) / len(xs))
+    print("%2d Euler steps: mean %.2f (target %.2f), std %.2f (target %.2f)" % (steps, mean, m, std, s))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code> 2 Euler steps: mean 3.00 (target 3.00), std 0.20 (target 0.50)
+ 4 Euler steps: mean 3.00 (target 3.00), std 0.35 (target 0.50)
+ 8 Euler steps: mean 3.00 (target 3.00), std 0.42 (target 0.50)
+32 Euler steps: mean 2.98 (target 3.00), std 0.48 (target 0.50)</code></pre>
+<p>The mean is right from two steps on, and the spread improves quickly with more steps (0.20, 0.35, 0.42, 0.48 against a target of 0.50). Coarse Euler steps under-estimate the spread, which is why higher-order solvers and straightened paths help; compare how slowly a curved diffusion path converges. In the real setting <code>v_theta</code> is a neural network trained with the loss <code>|| v_theta(x_t, t) - (x_1 - x_0) ||^2</code>.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>Diffusion (DDPM)</th><th>Flow matching</th></tr></thead>
+<tbody>
+<tr><td>Path</td><td>Curved, set by the noise schedule</td><td>Straight interpolation</td></tr><tr><td>Target</td><td>eps (or x_0, v)</td><td>x_1 - x_0</td></tr><tr><td>Sampler</td><td>SDE or ODE</td><td>ODE</td></tr><tr><td>Typical steps</td><td>20 to 50</td><td>8 to 30</td></tr><tr><td>Used by</td><td>Stable Diffusion 1 and 2, DALL-E 2, Imagen</td><td>Stable Diffusion 3, Flux, many video models</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx2-q07" data-topic="Diffusion samplers" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In rectified flow with x_t = (1 - t) x_0 + t x_1, what is the training target?</p></div>
+        <ul class="q-options">
+          <li data-key="A">x_0 <span class="q-why">No.</span></li>
+          <li data-key="B">x_1 - x_0, the constant velocity of the straight path <span class="q-why">Correct.</span></li>
+          <li data-key="C">eps only <span class="q-why">No.</span></li>
+          <li data-key="D">beta_t <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The network predicts the velocity that moves noise to data.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why do flow models need fewer steps?</summary><div class="answer"><p>Their paths are close to straight lines, which numerical solvers integrate accurately with big steps.</p></div></details>
+      </div>
+    </section>
+
+    <section id="practice" data-track>
+      <h2>Choosing steps in practice</h2>
+<ol><li>Start with <strong>25 steps of DPM-Solver++ 2M</strong> and the model's recommended guidance.</li><li>If images look noisy or under-detailed, raise steps or switch to Heun; if too slow, try a distilled model.</li><li>For deterministic edits and inversion use a deterministic sampler and keep the <strong>seed</strong> fixed.</li><li>Always compare samplers at <strong>equal number of network evaluations</strong>, not equal steps (Heun uses two per step, CFG doubles everything).</li><li>Measure with a fixed prompt set and metrics (<a href="dx5-evaluation.html">DX5</a>), not one lucky image.</li></ol>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx2-q08" data-topic="Diffusion samplers" data-type="numeric" data-answer="80" data-tol="0">
+        <div class="q-stem"><p>A sampler uses Heun (2 evaluations per step) with CFG (2 passes) for 20 steps. How many network evaluations per image?</p></div>
+        <div class="q-explain"><p>20 steps x 2 (Heun) x 2 (CFG) = 80.</p></div>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Diffusion samplers</h2>
+      <p class="muted">12 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Diffusion samplers">
+<details class="recall iq" data-level="basic" data-topic="Diffusion samplers"><summary><span class="tag ok">Basic</span> Why is diffusion sampling slow?</summary><div class="answer"><p>It runs the network once per step for tens to thousands of sequential steps, and guidance doubles the cost.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Diffusion samplers"><summary><span class="tag ok">Basic</span> What is the difference between DDPM and DDIM sampling?</summary><div class="answer"><p>DDPM adds fresh noise each step (stochastic, 1,000 steps). DDIM with eta = 0 is deterministic and can skip timesteps, giving good images in 20 to 50 steps from the same trained model.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Diffusion samplers"><summary><span class="tag warn">Medium</span> Write the DDIM update.</summary><div class="answer"><p>x0_hat = (x_t - sqrt(1 - ab_t) eps) / sqrt(ab_t); x_s = sqrt(ab_s) x0_hat + sqrt(1 - ab_s - sigma^2) eps + sigma z, with sigma = 0 for the deterministic version.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Diffusion samplers"><summary><span class="tag warn">Medium</span> What is DDIM inversion used for?</summary><div class="answer"><p>Because the map from noise to image is deterministic and invertible, running it backwards from a real image finds a noise code that regenerates it, enabling editing by changing the prompt.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Diffusion samplers"><summary><span class="tag warn">Medium</span> Why do higher-order solvers need fewer steps?</summary><div class="answer"><p>The sampling trajectory is a smooth ODE; second or third order methods such as Heun and DPM-Solver have much lower error per step than Euler.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Diffusion samplers"><summary><span class="tag warn">Medium</span> What are ancestral samplers?</summary><div class="answer"><p>Samplers that inject fresh noise each step. They never converge to a single image as steps increase, which gives variety but makes results less repeatable.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Diffusion samplers"><summary><span class="tag warn">Medium</span> What does classifier-free guidance cost and what are its failure modes?</summary><div class="answer"><p>Two network evaluations per step. Large scales oversaturate and reduce diversity; thresholding and guidance rescaling mitigate it.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Diffusion samplers"><summary><span class="tag bad">Advanced</span> Explain progressive distillation.</summary><div class="answer"><p>A student is trained to match two teacher steps with one; the student becomes the next teacher and the number of steps halves each round, down to 4 or 8 steps.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Diffusion samplers"><summary><span class="tag bad">Advanced</span> What is a consistency model?</summary><div class="answer"><p>A function that maps any point on a probability flow ODE trajectory to the same clean sample. It enables one-step generation, trained by distillation or directly with consistency losses.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Diffusion samplers"><summary><span class="tag bad">Advanced</span> What is flow matching and why does it sample efficiently?</summary><div class="answer"><p>Learn a velocity field that transports noise to data along straight interpolation paths. Straight paths are integrated accurately with few ODE steps; rectified flow straightens paths further.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Diffusion samplers"><summary><span class="tag bad">Advanced</span> How do you compare samplers fairly?</summary><div class="answer"><p>At equal number of network evaluations, not steps, with a fixed prompt set and seeds, using distribution metrics and human preference with confidence intervals.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Diffusion samplers"><summary><span class="tag bad">Advanced</span> How does timestep spacing affect results?</summary><div class="answer"><p>Spacing in log-SNR (or the Karras schedule) places more steps where the image changes most; uniform spacing wastes steps at very high noise.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="dx1-math.html"><span class="dir">Previous</span><span>DX1 The mathematics of diffusion: DDPM derived step by step</span></a>
+      <a class="next" href="dx3-latent.html"><span class="dir">Next</span><span>DX3 Latent diffusion and how Stable Diffusion is built</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

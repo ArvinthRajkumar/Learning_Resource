@@ -1,0 +1,579 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="M04">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>M4 Strings | DSA Master Guide</title>
+<meta name="description" content="Strings are read-only sequences of characters. Most string problems reduce to array techniques.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<link rel="stylesheet" href="viz.css">
+<script src="viz.js" defer></script>
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Module 4</p>
+      <h1>Strings</h1>
+      <p class="lede">Strings are read-only sequences of characters. Most string problems reduce to array techniques. Topics in this module: String basics: indexing, slicing, immutability and palindromes; character frequencies, anagrams and duplicates; pattern matching and basic string hashing.</p>
+      <div class="meta"><span class="tag ok">Essential</span><span class="tag">3 topics</span><span class="tag">24 problems</span><span class="tag">55 interview questions</span></div>
+    </div>
+
+    <section id="why-this-module" data-track>
+      <h2>Start from scratch: why this module exists</h2>
+      <p>Text is data: names, messages, logs, DNA. A string is an ordered row of characters, so most string problems are array problems with letters. What is special is immutability (Python strings cannot be edited in place) and the rich built-in toolbox (split, join, find, count).</p>
+      <p>String questions train you to think in frequencies (anagrams), two ends (palindromes), windows (substrings) and hashing (matching), which appear again across the whole course.</p>
+      <p><strong>Who needs it:</strong> Web developers (parsing input), search engineers, bioinformatics researchers, security analysts, and interviewers screening for attention to detail.</p>
+      <p><strong>Before you start:</strong> Modules 1-3.</p>
+      <h3>After this module you can</h3>
+      <ul><li>Slice, reverse, compare and transform strings confidently.</li><li>Solve anagram, palindrome, vowel-count and frequency problems.</li><li>Know when to use built-ins and when to write the loop.</li><li>Explain naive, rolling-hash and KMP matching.</li></ul>
+      <p><strong>Common pitfalls:</strong> Case and punctuation, off-by-one in slices, building strings with += in loops, assuming strings can be modified.</p>
+      <p><strong>Typical interview questions here:</strong> Palindrome, anagram, first unique character, reverse words, longest common prefix, string compression, longest palindromic substring, atoi.</p>
+    </section>
+
+    <section id="c4_1" data-track>
+      <h2>String basics: indexing, slicing, immutability and palindromes</h2>
+      <p><span class="tag ok">Essential</span> <span class="tag">Topic 4.1</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>A string is an immutable (cannot be changed in place) sequence of characters. You can read characters by index and take pieces by slicing.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Strings appear in a big share of beginner questions: reversing, palindromes, counting vowels, formatting.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>A string is like a printed ticket: you can read any character, but to change it you must print a whole new ticket.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Text is everywhere: names, messages, DNA, logs, code. A computer must store text as numbers, so each character gets a code (ASCII, later Unicode). A string is therefore a sequence of character codes, and almost every string problem is an array problem with characters instead of numbers.</p>
+      <p>Why are Python strings immutable? Immutability lets Python safely share strings, use them as dictionary keys and cache their hash. Sharing and hashing are major performance wins for a language where strings are used constantly. The cost is that you cannot edit one in place.</p>
+      <p>Why do we care about palindromes and reversal? They are the simplest tests of two ends moving toward each other, which is the seed of the two-pointer technique. Once you can check a palindrome, you can solve harder problems: longest palindromic substring, palindrome partitioning, rotation checks.</p>
+      <p>Slicing is a shorthand for 'take positions a up to (not including) b'. The 'not including' rule makes lengths easy: s[a:b] has b - a characters, and s[:k] + s[k:] always rebuilds s.</p>
+      <p>Strings in real systems: validation (is this an email?), searching logs, parsing commands, compression, DNA matching. The techniques in this module scale from a homework exercise to a search engine.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="str_pal"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>s[0] is the first character, s[-1] the last, s[a:b] the characters from a up to (not including) b, s[::-1] the reversed string.</li><li>s[0] = "x" raises TypeError: strings are immutable. Build a new string or convert to a list, change it, and join it back.</li><li>Concatenating in a loop (s += ch) can be O(n^2); collect pieces in a list and "".join(parts).</li><li>Palindrome check with two pointers: compare s[lo] and s[hi], then move inwards. Watch it in the animation.</li><li>Useful methods: lower(), upper(), isalpha(), isdigit(), isalnum(), split(), strip(), replace(), find(), count().</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>A string is a read-only list of characters. You can look at any character with s[i], cut a piece with s[a:b], and loop over it, but you cannot change a character in place. When you 'change' a string you really make a new one. This is why building a big string with += in a loop is slow, and why we collect pieces and join them.</p>
+      <p>Useful checks: s.isdigit(), s.isalpha(), s.isalnum(), s.islower(), s.isupper(), s.isspace(). Useful changes (they return new strings): s.lower(), s.upper(), s.strip(), s.replace('a', 'b'), s.split(), ' '.join(list). Use s.find(x) to get the first index (or -1) and s.count(x) to count non-overlapping matches.</p>
+      <p>Palindrome means 'reads the same both ways'. Easiest: s == s[::-1]. With two pointers you compare s[lo] and s[hi] and move inward, using O(1) extra space. For a 'clean' palindrome (ignore spaces, punctuation and case), skip non-alphanumeric characters or build a cleaned string first.</p>
+      <p>ASCII and characters: ord('a') = 97 and chr(97) = 'a'. The letter's position in the alphabet is ord(ch) - ord('a'). This is how you turn letters into list indexes for counting.</p>
+      <p>Common beginner traps: off-by-one in slices (s[1:3] has 2 characters), confusing 'abc' &lt; 'abd' alphabetical comparison with length, forgetting to handle upper and lower case, and forgetting that split() with no argument removes extra spaces but split(' ') does not.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>A Python str stores characters as Unicode code points in a compact internal form (1, 2 or 4 bytes per character depending on the widest character). len(s) is O(1); s[i] is O(1); s + t creates a new string O(len(s)+len(t)).</li><li>CPython sometimes optimises s += x when s has no other references, but you must not rely on it. ''.join(parts) computes the final size once and copies each piece once: O(total).</li><li>Strings are interned for small identifiers, which is why 'is' can sometimes seem to work on strings. Never use 'is' to compare text; use ==.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Web developers</td><td>Parsing URLs, validating forms and cleaning user input.</td></tr><tr><td>Bioinformatics researchers</td><td>DNA is a string over A, C, G, T; searching, matching and comparing sequences is string processing.</td></tr><tr><td>Search and NLP engineers</td><td>Tokenising, normalising case and counting words power search engines and language models.</td></tr><tr><td>Interviewers</td><td>String questions check pointer discipline, edge cases (empty, single char, case) and knowledge of built-ins.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>str vs list of characters</td><td>Convert to a list when you need to modify characters in place, then ''.join(list). Keep as str for reading, slicing and hashing.</td></tr><tr><td>Slicing vs two pointers</td><td>Slicing is concise but copies (O(n) each). Two pointers/indexes avoid copies and keep O(1) extra space.</td></tr><tr><td>Built-ins vs manual loops</td><td>Built-ins (split, join, count, find) are implemented in C and are fast. Use them unless the problem forbids it; write the manual loop when asked to implement the idea.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>Reverse words: ' '.join(s.split()[::-1]).</li><li>Count vowels: sum(ch in 'aeiou' for ch in s.lower()).</li><li>Check anagram: sorted(a) == sorted(b) or Counter(a) == Counter(b).</li><li>Character to index: idx = ord(ch) - ord('a').</li><li>Format numbers: f'{x:05d}' pads with zeros, f'{x:.2f}' keeps 2 decimals.</li><li>str.translate and str.maketrans remove or replace many characters at once.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c4_1.py">def is_palindrome(s):
+    lo, hi = 0, len(s) - 1
+    while lo &lt; hi:
+        if s[lo] != s[hi]:      # mismatch -&gt; not a palindrome
+            return False
+        lo += 1
+        hi -= 1
+    return True</code></pre>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - reverse and compare</h4>
+      <p>Shortest code: s == s[::-1]. Uses O(n) extra space for the reversed copy.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c4_1_stage1.py">def is_palindrome(s):
+    return s == s[::-1]</code></pre>
+      <p class="muted small">Check: <code>is_palindrome('level')</code> returns <code>True</code></p>
+      <h4>Stage 2 - two pointers</h4>
+      <p>Compare from both ends and move inwards. Same O(n) time but O(1) extra space, and it stops at the first mismatch.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c4_1_stage2.py">def is_palindrome(s):
+    lo, hi = 0, len(s) - 1
+    while lo &lt; hi:
+        if s[lo] != s[hi]:
+            return False
+        lo += 1
+        hi -= 1
+    return True</code></pre>
+      <p class="muted small">Check: <code>is_palindrome('level')</code> returns <code>True</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>is_palindrome("level")</code>, returns <code>True</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>lo (after)</th><th>hi (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>lo, hi = 0, len(s) - 1</code></td><td><strong><code>0</code></strong></td><td><strong><code>4</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>while lo &lt; hi:</code></td><td><code>0</code></td><td><code>4</code></td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>if s[lo] != s[hi]:      # mismatch -&gt; not a palindrome</code></td><td><code>0</code></td><td><code>4</code></td></tr>
+<tr><td class="num">4</td><td class="num">6</td><td><code>lo += 1</code></td><td><strong><code>1</code></strong></td><td><code>4</code></td></tr>
+<tr><td class="num">5</td><td class="num">7</td><td><code>hi -= 1</code></td><td><code>1</code></td><td><strong><code>3</code></strong></td></tr>
+<tr><td class="num">6</td><td class="num">3</td><td><code>while lo &lt; hi:</code></td><td><code>1</code></td><td><code>3</code></td></tr>
+<tr><td class="num">7</td><td class="num">4</td><td><code>if s[lo] != s[hi]:      # mismatch -&gt; not a palindrome</code></td><td><code>1</code></td><td><code>3</code></td></tr>
+<tr><td class="num">8</td><td class="num">6</td><td><code>lo += 1</code></td><td><strong><code>2</code></strong></td><td><code>3</code></td></tr>
+<tr><td class="num">9</td><td class="num">7</td><td><code>hi -= 1</code></td><td><code>2</code></td><td><strong><code>2</code></strong></td></tr>
+<tr><td class="num">10</td><td class="num">3</td><td><code>while lo &lt; hi:</code></td><td><code>2</code></td><td><code>2</code></td></tr>
+<tr><td class="num">11</td><td class="num">8</td><td><code>return True</code></td><td><code>2</code></td><td><code>2</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>At most n/2 comparisons: O(n) time, O(1) space (s[::-1] == s is O(n) space).</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Trying to assign to a character.</li><li>Forgetting case (compare s.lower()).</li><li>Slicing in a loop creating many copies.</li><li>Off-by-one in slices: s[1:3] has 2 characters.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>Compare from both ends -&gt; two pointers.</li><li>"Ignore case/punctuation" -&gt; clean first or skip with isalnum().</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m04-problems.html#prob-count_vowels">Count Vowels and Consonants</a></td><td><span class="tag ok">Easy</span></td><td>Strings, traversal</td></tr><tr><td><a href="m04-problems.html#prob-valid_palindrome">Valid Palindrome (ignore punctuation)</a> <span class="tag">LC 125</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Strings, two pointers</td></tr><tr><td><a href="m04-problems.html#prob-compress_string">Run-Length Encoding</a></td><td><span class="tag ok">Easy</span></td><td>Strings, grouping</td></tr><tr><td><a href="m04-problems.html#prob-longest_common_prefix">Longest Common Prefix</a> <span class="tag">LC 14</span></td><td><span class="tag ok">Easy</span></td><td>Strings, comparison</td></tr><tr><td><a href="m04-problems.html#prob-valid_palindrome_ii">Valid Palindrome II</a> <span class="tag">LC 680</span></td><td><span class="tag ok">Easy</span></td><td>Two pointers</td></tr><tr><td><a href="m04-problems.html#prob-add_binary">Add Binary</a> <span class="tag">LC 67</span></td><td><span class="tag ok">Easy</span></td><td>Strings with carry</td></tr><tr><td><a href="m04-problems.html#prob-roman_to_int">Roman to Integer</a> <span class="tag">LC 13</span></td><td><span class="tag ok">Easy</span></td><td>Hash map + one pass</td></tr><tr><td><a href="m04-problems.html#prob-excel_column_number">Excel Sheet Column Number</a> <span class="tag">LC 171</span></td><td><span class="tag ok">Easy</span></td><td>Base conversion</td></tr><tr><td><a href="m04-problems.html#prob-remove_vowels">Remove Vowels</a></td><td><span class="tag ok">Easy</span></td><td>String building</td></tr><tr><td><a href="m04-problems.html#prob-is_subsequence">Is Subsequence</a> <span class="tag">LC 392</span></td><td><span class="tag ok">Easy</span></td><td>Two pointers on strings</td></tr><tr><td><a href="m04-problems.html#prob-reverse_words">Reverse Words in a Sentence</a> <span class="tag">LC 151</span></td><td><span class="tag warn">Medium</span></td><td>Strings, split/join</td></tr><tr><td><a href="m04-problems.html#prob-multiply_strings">Multiply Strings</a> <span class="tag">LC 43</span></td><td><span class="tag warn">Medium</span></td><td>Digit arithmetic</td></tr><tr><td><a href="m04-problems.html#prob-int_to_roman">Integer to Roman</a> <span class="tag">LC 12</span></td><td><span class="tag warn">Medium</span></td><td>Greedy with a table</td></tr><tr><td><a href="m04-problems.html#prob-palindromic_substrings">Palindromic Substrings</a> <span class="tag">LC 647</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Expand around centre</td></tr><tr><td><a href="m04-problems.html#prob-my_atoi">String to Integer (atoi)</a> <span class="tag">LC 8</span></td><td><span class="tag warn">Medium</span></td><td>Careful parsing</td></tr><tr><td><a href="m04-problems.html#prob-longest_palindrome_substring">Longest Palindromic Substring</a> <span class="tag">LC 5</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Expand around the centre</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why are Python strings immutable?</summary><div class="answer"><p>Immutability lets Python share strings safely, cache their hashes and use them as dictionary keys, which makes common operations fast.</p></div></details>
+        <details class="recall"><summary>Why not build strings with += in a loop?</summary><div class="answer"><p>Each += can copy the whole string, making n appends O(n^2). Append to a list and ''.join() once.</p></div></details>
+        <details class="recall"><summary>Why is slicing end-exclusive?</summary><div class="answer"><p>It makes lengths simple (s[a:b] has b - a characters) and lets s[:k] + s[k:] rebuild s with no overlap.</p></div></details>
+        <details class="recall"><summary>Why use two pointers for palindromes?</summary><div class="answer"><p>It uses O(1) extra space and can stop at the first mismatch, instead of building a reversed copy.</p></div></details>
+        <details class="recall"><summary>Why lower-case before comparing?</summary><div class="answer"><p>'A' and 'a' are different characters. Normalising case makes comparisons match what humans mean.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c4_1-q1" data-topic="Strings" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is "infosys"[1:4]?</p></div>
+        <ul class="q-options">
+          <li data-key="A">inf</li>
+          <li data-key="B">nfo</li>
+          <li data-key="C">nfos</li>
+          <li data-key="D">fos</li>
+        </ul>
+        <div class="q-explain"><p>Indices 1, 2, 3 -&gt; n, f, o.</p></div>
+      </div>
+      <div class="quiz" data-qid="c4_1-q2" data-topic="Strings" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which statement is true for Python strings?</p></div>
+        <ul class="q-options">
+          <li data-key="A">They are mutable</li>
+          <li data-key="B">They are immutable</li>
+          <li data-key="C">They cannot be sliced</li>
+          <li data-key="D">Indices start at 1</li>
+        </ul>
+        <div class="q-explain"><p>Strings cannot be modified in place.</p></div>
+      </div>
+    </section>
+
+    <section id="c4_2" data-track>
+      <h2>Character frequencies, anagrams and duplicates</h2>
+      <p><span class="tag ok">Essential</span> <span class="tag">Topic 4.2</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>A character frequency map counts how many times each character appears. Two strings are anagrams if they have identical frequency maps.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Anagrams, first non-repeating character, duplicate detection and "most common character" are all one idea: count, then inspect.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Scrabble tiles: two words are anagrams if they use exactly the same tiles.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Two words are anagrams when you can rearrange the letters of one to make the other. How would a person check 'listen' and 'silent'? They would lay out letter tiles for both and see if the piles match. The computer equivalent of 'piles' is a frequency count, and 'the piles match' is dictionary equality.</p>
+      <p>Sorting both words also works because sorting puts the tiles in a canonical order: if two words are anagrams their sorted forms are identical. This idea, a canonical form, is the root of grouping problems: map every member of a group to one representative.</p>
+      <p>Why the 26-slot list? When the alphabet is small and known, a direct-address table (index = letter number) beats a hash table: no hashing, no collisions, constant memory. It is the same principle as counting sort.</p>
+      <p>First-unique-character shows a general technique: two passes. Pass one gathers global information (counts). Pass two uses it to decide in the original order. Many problems need 'know everything first, then decide'.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="freq"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Build counts: counts[ch] = counts.get(ch, 0) + 1.</li><li>Anagram check: counts from s are decremented by t; any missing or negative count means not an anagram.</li><li>For lowercase letters you can use a list of 26 ints: counts[ord(ch) - ord("a")] += 1.</li><li>collections.Counter(s) does the counting in one call and supports == comparison.</li><li>Run the visualiser with your own text to see the map fill up character by character.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Two strings are anagrams when they use the exact same letters the same number of times, just in a different order. 'listen' and 'silent' are anagrams. The two tests: sort both and compare (O(n log n)), or count letters in both and compare the counts (O(n)). Counting is better for long strings.</p>
+      <p>The same counting idea answers many questions: 'first letter that appears once' (count first, then scan the string again in order), 'most frequent letter' (find the key with the biggest count), 'are two words made of the same letters' and 'can word A be built from the letters of B' (ransom note).</p>
+      <p>A 26-slot list is the classic counter for lowercase letters. counts[ord(ch) - ord('a')] += 1. Comparing two such lists with == is a tiny O(26) step, and it helps with sliding windows over strings, where you add one letter and remove one letter at a time.</p>
+      <p>Group anagrams: all anagrams share one 'signature', for example the letters in sorted order. 'eat', 'tea' and 'ate' all become 'aet'. Use the signature as a dictionary key and collect words under it.</p>
+      <p>Be careful with the details: are uppercase and lowercase the same? Do spaces count? Are only letters allowed? Ask or check the statement and handle it at the start with s.lower() or filtering.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Counter is a dict subclass: Counter(s) loops over s once, incrementing counts in a hash table. Comparing two Counters compares their dictionaries.</li><li>ord('a') = 97. Subtracting ord('a') maps letters a-z to 0-25, so counts[ord(ch) - 97] indexes a 26-slot list.</li><li>Sorting a string makes a list of characters: sorted('eat') = ['a', 'e', 't']. ''.join(...) turns it back to a string, which is hashable and can be a dict key.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Spell-checkers and word-game apps</td><td>Finding words from a set of letters (Scrabble, Wordle helpers) uses letter frequency.</td></tr><tr><td>Plagiarism and similarity tools</td><td>Comparing documents often starts with word and character frequency vectors.</td></tr><tr><td>Cryptanalysis</td><td>Frequency analysis of letters is the classic way to break simple substitution ciphers.</td></tr><tr><td>Interviewers</td><td>A warm-up for hashing: do you reach for a Counter, and do you check lengths and case first?</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Counter vs 26-list vs sorted</td><td>26-list: fastest, lowercase only. Counter: works for any characters. sorted: simplest but O(n log n).</td></tr><tr><td>Anagram check vs group anagrams</td><td>Check compares two words. Grouping uses a canonical key (sorted letters or a tuple of 26 counts) so you can bucket all words in one pass.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>from collections import Counter; Counter('banana') gives {'a': 3, 'n': 2, 'b': 1}.</li><li>Counter subtraction: Counter(a) - Counter(b) keeps only positive differences. An empty result means a is covered by b.</li><li>''.join(sorted(word)) gives a signature; tuple(sorted(word)) also works as a key.</li><li>string.ascii_lowercase is 'abcdefghijklmnopqrstuvwxyz'.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c4_2.py">def is_anagram(s, t):
+    if len(s) != len(t):
+        return False
+    counts = {}
+    for ch in s:
+        counts[ch] = counts.get(ch, 0) + 1
+    for ch in t:
+        if counts.get(ch, 0) == 0:     # t has an extra / missing letter
+            return False
+        counts[ch] -= 1
+    return True</code></pre>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - sort both</h4>
+      <p>Anagrams have identical sorted letters. Simple, O(n log n).</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c4_2_stage1.py">def is_anagram(a, b):
+    return sorted(a) == sorted(b)</code></pre>
+      <p class="muted small">Check: <code>is_anagram('listen', 'silent')</code> returns <code>True</code></p>
+      <h4>Stage 2 - count letters with a dict</h4>
+      <p>Counting needs only one pass: O(n) time, O(k) space.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c4_2_stage2.py">def is_anagram(a, b):
+    if len(a) != len(b):
+        return False
+    counts = {}
+    for ch in a:
+        counts[ch] = counts.get(ch, 0) + 1
+    for ch in b:
+        if counts.get(ch, 0) == 0:
+            return False
+        counts[ch] -= 1
+    return True</code></pre>
+      <p class="muted small">Check: <code>is_anagram('listen', 'silent')</code> returns <code>True</code></p>
+      <h4>Stage 3 - a fixed 26-slot list</h4>
+      <p>For lowercase letters a list index replaces hashing: fastest and constant memory.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c4_2_stage3.py">def is_anagram(a, b):
+    if len(a) != len(b):
+        return False
+    c = [0] * 26
+    for x, y in zip(a, b):
+        c[ord(x) - 97] += 1
+        c[ord(y) - 97] -= 1
+    return not any(c)</code></pre>
+      <p class="muted small">Check: <code>is_anagram('listen', 'silent')</code> returns <code>True</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>is_anagram("listen", "silent")</code>, returns <code>True</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>ch (after)</th><th>counts (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>if len(s) != len(t):</code></td><td>-</td><td>-</td></tr>
+<tr><td class="num">2</td><td class="num">4</td><td><code>counts = {}</code></td><td>-</td><td><strong><code>{}</code></strong></td></tr>
+<tr><td class="num">3</td><td class="num">5</td><td><code>for ch in s:</code></td><td><strong><code>'l'</code></strong></td><td><code>{}</code></td></tr>
+<tr><td class="num">4</td><td class="num">6</td><td><code>counts[ch] = counts.get(ch, 0) + 1</code></td><td><code>'l'</code></td><td><strong><code>{'l': 1}</code></strong></td></tr>
+<tr><td class="num">5</td><td class="num">5</td><td><code>for ch in s:</code></td><td><strong><code>'i'</code></strong></td><td><code>{'l': 1}</code></td></tr>
+<tr><td class="num">6</td><td class="num">6</td><td><code>counts[ch] = counts.get(ch, 0) + 1</code></td><td><code>'i'</code></td><td><strong><code>{'l': 1, 'i': 1}</code></strong></td></tr>
+<tr><td class="num">7</td><td class="num">5</td><td><code>for ch in s:</code></td><td><strong><code>'s'</code></strong></td><td><code>{'l': 1, 'i': 1}</code></td></tr>
+<tr><td class="num">8</td><td class="num">6</td><td><code>counts[ch] = counts.get(ch, 0) + 1</code></td><td><code>'s'</code></td><td><strong><code>{'l': 1, 'i': 1, 's': 1}</code></strong></td></tr>
+<tr><td class="num">9</td><td class="num">5</td><td><code>for ch in s:</code></td><td><strong><code>'t'</code></strong></td><td><code>{'l': 1, 'i': 1, 's': 1}</code></td></tr>
+<tr><td class="num">10</td><td class="num">6</td><td><code>counts[ch] = counts.get(ch, 0) + 1</code></td><td><code>'t'</code></td><td><strong><code>{'l': 1, 'i': 1, 's': 1, 't': 1}</code></strong></td></tr>
+<tr><td class="num">11</td><td class="num">5</td><td><code>for ch in s:</code></td><td><strong><code>'e'</code></strong></td><td><code>{'l': 1, 'i': 1, 's': 1, 't': 1}</code></td></tr>
+<tr><td class="num">12</td><td class="num">6</td><td><code>counts[ch] = counts.get(ch, 0) + 1</code></td><td><code>'e'</code></td><td><strong><code>{'l': 1, 'i': 1, 's': 1, 't': 1, 'e': 1}</code></strong></td></tr>
+<tr><td class="num">13</td><td class="num">5</td><td><code>for ch in s:</code></td><td><strong><code>'n'</code></strong></td><td><code>{'l': 1, 'i': 1, 's': 1, 't': 1, 'e': 1}</code></td></tr>
+<tr><td class="num">14</td><td class="num">6</td><td><code>counts[ch] = counts.get(ch, 0) + 1</code></td><td><code>'n'</code></td><td><strong><code>{'l': 1, 'i': 1, 's': 1, 't': 1, 'e': 1, 'n': 1}</code></strong></td></tr>
+<tr><td class="num">15</td><td class="num">5</td><td><code>for ch in s:</code></td><td><code>'n'</code></td><td><code>{'l': 1, 'i': 1, 's': 1, 't': 1, 'e': 1, 'n': 1}</code></td></tr>
+<tr><td class="num">16</td><td class="num">7</td><td><code>for ch in t:</code></td><td><strong><code>'s'</code></strong></td><td><code>{'l': 1, 'i': 1, 's': 1, 't': 1, 'e': 1, 'n': 1}</code></td></tr>
+<tr><td class="num">17</td><td class="num">8</td><td><code>if counts.get(ch, 0) == 0:     # t has an extra / missing letter</code></td><td><code>'s'</code></td><td><code>{'l': 1, 'i': 1, 's': 1, 't': 1, 'e': 1, 'n': 1}</code></td></tr>
+<tr><td class="num">18</td><td class="num">10</td><td><code>counts[ch] -= 1</code></td><td><code>'s'</code></td><td><strong><code>{'l': 1, 'i': 1, 's': 0, 't': 1, 'e': 1, 'n': 1}</code></strong></td></tr>
+<tr><td class="num">19</td><td class="num">7</td><td><code>for ch in t:</code></td><td><strong><code>'i'</code></strong></td><td><code>{'l': 1, 'i': 1, 's': 0, 't': 1, 'e': 1, 'n': 1}</code></td></tr>
+<tr><td class="num">20</td><td class="num">8</td><td><code>if counts.get(ch, 0) == 0:     # t has an extra / missing letter</code></td><td><code>'i'</code></td><td><code>{'l': 1, 'i': 1, 's': 0, 't': 1, 'e': 1, 'n': 1}</code></td></tr>
+<tr><td class="num">21</td><td class="num">10</td><td><code>counts[ch] -= 1</code></td><td><code>'i'</code></td><td><strong><code>{'l': 1, 'i': 0, 's': 0, 't': 1, 'e': 1, 'n': 1}</code></strong></td></tr>
+<tr><td class="num">22</td><td class="num">7</td><td><code>for ch in t:</code></td><td><strong><code>'l'</code></strong></td><td><code>{'l': 1, 'i': 0, 's': 0, 't': 1, 'e': 1, 'n': 1}</code></td></tr>
+<tr><td class="num">23</td><td class="num">8</td><td><code>if counts.get(ch, 0) == 0:     # t has an extra / missing letter</code></td><td><code>'l'</code></td><td><code>{'l': 1, 'i': 0, 's': 0, 't': 1, 'e': 1, 'n': 1}</code></td></tr>
+<tr><td class="num">24</td><td class="num">10</td><td><code>counts[ch] -= 1</code></td><td><code>'l'</code></td><td><strong><code>{'l': 0, 'i': 0, 's': 0, 't': 1, 'e': 1, 'n': 1}</code></strong></td></tr>
+<tr><td class="num">25</td><td class="num">7</td><td><code>for ch in t:</code></td><td><strong><code>'e'</code></strong></td><td><code>{'l': 0, 'i': 0, 's': 0, 't': 1, 'e': 1, 'n': 1}</code></td></tr>
+<tr><td class="num">26</td><td class="num">8</td><td><code>if counts.get(ch, 0) == 0:     # t has an extra / missing letter</code></td><td><code>'e'</code></td><td><code>{'l': 0, 'i': 0, 's': 0, 't': 1, 'e': 1, 'n': 1}</code></td></tr>
+<tr><td class="num">27</td><td class="num">10</td><td><code>counts[ch] -= 1</code></td><td><code>'e'</code></td><td><strong><code>{'l': 0, 'i': 0, 's': 0, 't': 1, 'e': 0, 'n': 1}</code></strong></td></tr>
+<tr><td class="num">28</td><td class="num">7</td><td><code>for ch in t:</code></td><td><strong><code>'n'</code></strong></td><td><code>{'l': 0, 'i': 0, 's': 0, 't': 1, 'e': 0, 'n': 1}</code></td></tr>
+<tr><td class="num">29</td><td class="num">8</td><td><code>if counts.get(ch, 0) == 0:     # t has an extra / missing letter</code></td><td><code>'n'</code></td><td><code>{'l': 0, 'i': 0, 's': 0, 't': 1, 'e': 0, 'n': 1}</code></td></tr>
+<tr><td class="num">30</td><td class="num">10</td><td><code>counts[ch] -= 1</code></td><td><code>'n'</code></td><td><strong><code>{'l': 0, 'i': 0, 's': 0, 't': 1, 'e': 0, 'n': 0}</code></strong></td></tr>
+<tr><td class="num">31</td><td class="num">7</td><td><code>for ch in t:</code></td><td><strong><code>'t'</code></strong></td><td><code>{'l': 0, 'i': 0, 's': 0, 't': 1, 'e': 0, 'n': 0}</code></td></tr>
+<tr><td class="num">32</td><td class="num">8</td><td><code>if counts.get(ch, 0) == 0:     # t has an extra / missing letter</code></td><td><code>'t'</code></td><td><code>{'l': 0, 'i': 0, 's': 0, 't': 1, 'e': 0, 'n': 0}</code></td></tr>
+<tr><td class="num">33</td><td class="num">10</td><td><code>counts[ch] -= 1</code></td><td><code>'t'</code></td><td><strong><code>{'l': 0, 'i': 0, 's': 0, 't': 0, 'e': 0, 'n': 0}</code></strong></td></tr>
+<tr><td class="num">34</td><td class="num">7</td><td><code>for ch in t:</code></td><td><code>'t'</code></td><td><code>{'l': 0, 'i': 0, 's': 0, 't': 0, 'e': 0, 'n': 0}</code></td></tr>
+<tr><td class="num">35</td><td class="num">11</td><td><code>return True</code></td><td><code>'t'</code></td><td><code>{'l': 0, 'i': 0, 's': 0, 't': 0, 'e': 0, 'n': 0}</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>Two passes: O(n) time, O(k) space (k = number of distinct characters, at most 26 for lowercase).</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Not checking lengths first.</li><li>Comparing sorted(s) == sorted(t) is fine but O(n log n).</li><li>Forgetting uppercase vs lowercase.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"rearrange", "permutation of", "same letters" -&gt; frequency map.</li><li>"first unique" -&gt; count, then scan in original order.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m04-problems.html#prob-is_anagram">Valid Anagram</a> <span class="tag">LC 242</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Strings, frequency counting</td></tr><tr><td><a href="m04-problems.html#prob-first_unique_char">First Non-Repeating Character</a> <span class="tag">LC 387</span></td><td><span class="tag ok">Easy</span></td><td>Hashing / frequency map</td></tr><tr><td><a href="m07-problems.html#prob-ransom_note">Ransom Note</a> <span class="tag">LC 383</span></td><td><span class="tag ok">Easy</span></td><td>Counting letters</td></tr><tr><td><a href="m07-problems.html#prob-isomorphic">Isomorphic Strings</a> <span class="tag">LC 205</span></td><td><span class="tag ok">Easy</span></td><td>Two-way mapping with dicts</td></tr><tr><td><a href="m07-problems.html#prob-group_anagrams">Group Anagrams</a> <span class="tag">LC 49</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Hash map with canonical key</td></tr><tr><td><a href="m04-problems.html#prob-find_all_anagrams">Find All Anagrams in a String</a> <span class="tag">LC 438</span></td><td><span class="tag warn">Medium</span></td><td>Fixed sliding window + counters</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why check lengths first for anagrams?</summary><div class="answer"><p>Different lengths can never be anagrams, so you can answer instantly without counting.</p></div></details>
+        <details class="recall"><summary>Why does a 26-slot list beat a dictionary here?</summary><div class="answer"><p>It needs no hashing and has a fixed small size, so it is faster, but it only works for known small alphabets.</p></div></details>
+        <details class="recall"><summary>Why count first and scan second for the first unique character?</summary><div class="answer"><p>You need the global counts before you can decide, but you need the original order to find the first. Two passes handle both.</p></div></details>
+        <details class="recall"><summary>Why not compare sorted strings for huge inputs?</summary><div class="answer"><p>Sorting costs O(n log n); counting is O(n).</p></div></details>
+        <details class="recall"><summary>Why use Counter subtraction for ransom note?</summary><div class="answer"><p>It removes the magazine's letters from the note's letters; an empty result means nothing is missing.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c4_2-q1" data-topic="Strings" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which structure best stores character counts?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Stack</li>
+          <li data-key="B">Dictionary / Counter</li>
+          <li data-key="C">Linked list</li>
+          <li data-key="D">Queue</li>
+        </ul>
+        <div class="q-explain"><p>Key = character, value = count.</p></div>
+      </div>
+      <div class="quiz" data-qid="c4_2-q2" data-topic="Strings" data-type="single" data-answer="B">
+        <div class="q-stem"><p>"abc" and "abd" - anagrams?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Yes</li>
+          <li data-key="B">No</li>
+        </ul>
+        <div class="q-explain"><p>The multisets of letters differ (c vs d).</p></div>
+      </div>
+    </section>
+
+    <section id="c4_3" data-track>
+      <h2>Pattern matching and basic string hashing</h2>
+      <p><span class="tag warn">Important</span> <span class="tag">Topic 4.3</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>Pattern matching finds every place a short pattern occurs inside a longer text. String hashing turns a string into a number so two strings can be compared in O(1).</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Naive search can be slow (O(n*m)). Rolling hashes and KMP bring it down to about O(n + m).</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Rolling hash is a sliding fingerprint: when the window moves one letter, you update the fingerprint instead of re-reading the whole window.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>You press Ctrl+F and your editor finds a word in a million-character document in a blink. How? The simplest idea is to try every starting position and compare letter by letter. For most real text this is fast because mismatches happen early, but for adversarial text (aaaa...a vs aaa...b) it re-reads the same letters again and again: O(n x m).</p>
+      <p>Two famous ideas fix the waste. KMP notices that when a mismatch happens after matching several letters, those matched letters are information: the pattern itself tells you how far you can safely resume. Precompute that information once (the LPS table), and the text pointer never moves back.</p>
+      <p>Rabin-Karp takes a different road: convert strings to numbers (hashes) so comparing a window to the pattern is one number comparison. The trick that makes it fast is the rolling hash: sliding the window changes the number by removing one letter's contribution and adding another's in O(1). Because two different strings can share a hash, you verify candidates.</p>
+      <p>Why learn both? KMP gives a guaranteed O(n + m) with no randomness. Rabin-Karp generalises to searching many patterns at once and to 2D patterns, and its hashing idea shows up in duplicate detection and plagiarism tools.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="kmp"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Naive: for every start i compare text[i:i+m] with the pattern. Worst case O(n*m).</li><li>Rolling hash (Rabin-Karp): hash(window) = sum(code(ch) * base^k) mod M. Sliding by one removes the leftmost character and adds the next one in O(1).</li><li>If hashes match, verify by direct comparison (hashes can collide).</li><li>KMP avoids rechecking by remembering the longest prefix that is also a suffix - see the KMP visualiser in Module 18.</li><li>Python shortcuts: text.find(pat), pat in text, text.count(pat) (non-overlapping).</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Pattern matching asks: 'where does the small string appear inside the big string?'. The naive way slides the pattern along the text one place at a time and compares letter by letter. In the worst case (text 'aaaaaaaa', pattern 'aaab') it re-reads a lot, costing O(n x m).</p>
+      <p>Hashing trick (Rabin-Karp): turn a window of the text into a single number (a 'fingerprint'). Comparing two numbers is one step. When the window slides by one letter, you update the number in O(1): remove the left letter's contribution, shift, and add the new letter. If the fingerprints match you double-check the real letters, because two different strings can sometimes have the same number (a collision).</p>
+      <p>KMP (Knuth-Morris-Pratt) avoids re-reading by remembering how much of the pattern already matched. It prepares a small table (LPS) that says: 'if I fail here, I can restart from this position of the pattern instead of from zero'. The text pointer never moves backwards, so the total work is O(n + m).</p>
+      <p>In interviews and tests, for plain 'does it contain', just use Python: pat in text, text.find(pat) and text.count(pat). Write KMP only when the question explicitly asks for an algorithm or needs all overlapping matches efficiently.</p>
+      <p>Related simple tricks: a string is a rotation of another if it appears inside s + s; a string has a repeated pattern if s in (s + s)[1:-1].</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Rolling hash formula: h = (c0 x B^(m-1) + c1 x B^(m-2) + ... + c(m-1)) mod M. To slide: h = ((h - c_out x B^(m-1)) x B + c_in) mod M. The modulus keeps numbers small; a large prime reduces collisions.</li><li>KMP's table fills in O(m) because k only increases by one per character and every fallback decreases it, so total fallbacks cannot exceed total increases (amortised).</li><li>Python's str.find uses a tuned two-way/Boyer-Moore-Horspool style algorithm in C, so it is usually the fastest option in real code.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Text editors, grep and databases</td><td>Searching text is one of the most frequent operations on a computer.</td></tr><tr><td>Antivirus and intrusion detection</td><td>Scanning files and network packets for known byte patterns (Aho-Corasick, a KMP generalisation).</td></tr><tr><td>Plagiarism detectors</td><td>Rabin-Karp style rolling hashes compare many text fragments quickly.</td></tr><tr><td>Bioinformatics</td><td>Locating gene motifs in huge DNA strings.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Naive vs KMP vs Rabin-Karp vs built-in</td><td>Naive: simple, O(nm) worst. KMP: O(n+m) guaranteed. Rabin-Karp: O(n+m) average, good for many patterns. Built-in find: use it in practice.</td></tr><tr><td>Regex vs plain search</td><td>Regular expressions describe patterns (digits, optional parts) but are slower and harder to reason about; use plain search when the pattern is a fixed string.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>text.find(pat, start) returns the next match index or -1.</li><li>Overlapping matches: loop with find and start = idx + 1 (count() would skip overlaps).</li><li>re.finditer(pattern, text) is the tool for regular expressions.</li><li>pow(base, m - 1, mod) is handy when rolling hashes need a big power modulo a number.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c4_3.py">def rabin_karp(text, pat, base=256, mod=1_000_003):
+    n, m = len(text), len(pat)
+    if m &gt; n:
+        return []
+    high = pow(base, m - 1, mod)           # weight of the leftmost char
+    hp = ht = 0
+    for i in range(m):
+        hp = (hp * base + ord(pat[i])) % mod
+        ht = (ht * base + ord(text[i])) % mod
+    res = []
+    for i in range(n - m + 1):
+        if hp == ht and text[i:i + m] == pat:   # verify to rule out collisions
+            res.append(i)
+        if i &lt; n - m:                           # roll the window one step
+            ht = ((ht - ord(text[i]) * high) * base + ord(text[i + m])) % mod
+    return res</code></pre>
+      <h3>Dry run (variable values at every step)</h3>
+      <p>Trace the code by hand on a tiny input and write down every variable after each line.</p>
+      <h3>Time and space complexity</h3>
+      <p>Average O(n + m); worst case O(n*m) if many collisions. Space O(1).</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Not verifying after a hash match.</li><li>Negative modulo results in other languages (Python % is safe).</li><li>Assuming <code>count()</code> finds overlapping matches (it does not).</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"find all occurrences", "substring search", "repeated pattern" -&gt; KMP / hashing.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m04-problems.html#prob-find_all">Find All Pattern Occurrences</a></td><td><span class="tag warn">Medium</span></td><td>String matching (naive and KMP)</td></tr><tr><td><a href="m04-problems.html#prob-is_rotation">String Rotation Check</a></td><td><span class="tag warn">Medium</span></td><td>Strings, clever trick</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why not always use KMP?</summary><div class="answer"><p>Python's built-in find is highly tuned and simpler. KMP matters when asked to implement it, or when you need guaranteed linear time or the LPS table.</p></div></details>
+        <details class="recall"><summary>Why verify after a hash match in Rabin-Karp?</summary><div class="answer"><p>Different strings can have the same hash (a collision). Verification keeps the answer correct.</p></div></details>
+        <details class="recall"><summary>Why does KMP never move the text pointer backwards?</summary><div class="answer"><p>The LPS table already tells how much of the pattern is still matched, so no text needs to be re-read.</p></div></details>
+        <details class="recall"><summary>Why use a large prime modulus in rolling hashes?</summary><div class="answer"><p>Large primes spread hash values evenly and make collisions rare.</p></div></details>
+        <details class="recall"><summary>Why is naive search usually fine in practice?</summary><div class="answer"><p>Mismatches typically occur early, so the average cost is near O(n). Only adversarial inputs make it quadratic.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c4_3-q1" data-topic="Strings" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why must you verify a substring after a hash match?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Hashes are slow</li>
+          <li data-key="B">Different strings can share a hash (collision)</li>
+          <li data-key="C">Python requires it</li>
+          <li data-key="D">To avoid overflow</li>
+        </ul>
+        <div class="q-explain"><p>Collisions are possible, so a match is only a candidate.</p></div>
+      </div>
+      <div class="quiz" data-qid="c4_3-q2" data-topic="Strings" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Worst-case time of naive substring search?</p></div>
+        <ul class="q-options">
+          <li data-key="A">O(n)</li>
+          <li data-key="B">O(n log n)</li>
+          <li data-key="C">O(n*m)</li>
+          <li data-key="D">O(m)</li>
+        </ul>
+        <div class="q-explain"><p>You may compare up to m characters at each of n start positions.</p></div>
+      </div>
+    </section>
+
+    <h2 id="practice-problems">Practice problems for this module</h2>
+
+    <p>24 problems with hints, approach, dry run and tested solutions on the <a href="m04-problems.html">problem set for this module</a>.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m04-problems.html#prob-count_vowels">Count Vowels and Consonants</a></td><td><span class="tag ok">Easy</span></td><td>Strings, traversal</td></tr><tr><td><a href="m04-problems.html#prob-valid_palindrome">Valid Palindrome (ignore punctuation)</a> <span class="tag">LC 125</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Strings, two pointers</td></tr><tr><td><a href="m04-problems.html#prob-is_anagram">Valid Anagram</a> <span class="tag">LC 242</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Strings, frequency counting</td></tr><tr><td><a href="m04-problems.html#prob-first_unique_char">First Non-Repeating Character</a> <span class="tag">LC 387</span></td><td><span class="tag ok">Easy</span></td><td>Hashing / frequency map</td></tr><tr><td><a href="m04-problems.html#prob-compress_string">Run-Length Encoding</a></td><td><span class="tag ok">Easy</span></td><td>Strings, grouping</td></tr><tr><td><a href="m04-problems.html#prob-longest_common_prefix">Longest Common Prefix</a> <span class="tag">LC 14</span></td><td><span class="tag ok">Easy</span></td><td>Strings, comparison</td></tr><tr><td><a href="m04-problems.html#prob-is_subsequence">Is Subsequence</a> <span class="tag">LC 392</span></td><td><span class="tag ok">Easy</span></td><td>Two pointers on strings</td></tr><tr><td><a href="m04-problems.html#prob-remove_vowels">Remove Vowels</a></td><td><span class="tag ok">Easy</span></td><td>String building</td></tr><tr><td><a href="m04-problems.html#prob-valid_palindrome_ii">Valid Palindrome II</a> <span class="tag">LC 680</span></td><td><span class="tag ok">Easy</span></td><td>Two pointers</td></tr><tr><td><a href="m04-problems.html#prob-add_binary">Add Binary</a> <span class="tag">LC 67</span></td><td><span class="tag ok">Easy</span></td><td>Strings with carry</td></tr><tr><td><a href="m04-problems.html#prob-roman_to_int">Roman to Integer</a> <span class="tag">LC 13</span></td><td><span class="tag ok">Easy</span></td><td>Hash map + one pass</td></tr><tr><td><a href="m04-problems.html#prob-gcd_of_strings">Greatest Common Divisor of Strings</a> <span class="tag">LC 1071</span></td><td><span class="tag ok">Easy</span></td><td>Strings + gcd</td></tr><tr><td><a href="m04-problems.html#prob-excel_column_number">Excel Sheet Column Number</a> <span class="tag">LC 171</span></td><td><span class="tag ok">Easy</span></td><td>Base conversion</td></tr><tr><td><a href="m04-problems.html#prob-reverse_words">Reverse Words in a Sentence</a> <span class="tag">LC 151</span></td><td><span class="tag warn">Medium</span></td><td>Strings, split/join</td></tr><tr><td><a href="m04-problems.html#prob-is_rotation">String Rotation Check</a></td><td><span class="tag warn">Medium</span></td><td>Strings, clever trick</td></tr><tr><td><a href="m04-problems.html#prob-find_all">Find All Pattern Occurrences</a></td><td><span class="tag warn">Medium</span></td><td>String matching (naive and KMP)</td></tr><tr><td><a href="m04-problems.html#prob-longest_palindrome_substring">Longest Palindromic Substring</a> <span class="tag">LC 5</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Expand around the centre</td></tr><tr><td><a href="m04-problems.html#prob-my_atoi">String to Integer (atoi)</a> <span class="tag">LC 8</span></td><td><span class="tag warn">Medium</span></td><td>Careful parsing</td></tr><tr><td><a href="m04-problems.html#prob-find_all_anagrams">Find All Anagrams in a String</a> <span class="tag">LC 438</span></td><td><span class="tag warn">Medium</span></td><td>Fixed sliding window + counters</td></tr><tr><td><a href="m04-problems.html#prob-longest_repeating_replace">Longest Repeating Character Replacement</a> <span class="tag">LC 424</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Variable window</td></tr><tr><td><a href="m04-problems.html#prob-multiply_strings">Multiply Strings</a> <span class="tag">LC 43</span></td><td><span class="tag warn">Medium</span></td><td>Digit arithmetic</td></tr><tr><td><a href="m04-problems.html#prob-int_to_roman">Integer to Roman</a> <span class="tag">LC 12</span></td><td><span class="tag warn">Medium</span></td><td>Greedy with a table</td></tr><tr><td><a href="m04-problems.html#prob-palindromic_substrings">Palindromic Substrings</a> <span class="tag">LC 647</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Expand around centre</td></tr><tr><td><a href="m04-problems.html#prob-min_window">Minimum Window Substring</a> <span class="tag">LC 76</span> <span class="tag accent">must-do</span></td><td><span class="tag bad">Hard</span></td><td>Variable sliding window + counters</td></tr>
+</tbody>
+</table>
+</div>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Strings</h2>
+      <p class="muted">55 questions: try to answer aloud in under a minute, then reveal. All questions from every module are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Strings">
+<details class="recall iq" data-level="basic" data-topic="Strings"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Are strings mutable in Python? What does that mean for your code?</summary><div class="answer"><p>No, they are immutable. You cannot write s[0] = &#x27;x&#x27;. To change text, build a new string, or convert to a list (list(s)), edit it and join it back with &#x27;&#x27;.join(list).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Strings"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you check if a string is a palindrome ignoring case and punctuation?</summary><div class="answer"><p>Use two pointers. Skip characters where not ch.isalnum(), compare lower-case versions, and move inward. O(n) time, O(1) space.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Strings"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the difference between split() and split(&#x27; &#x27;)?</summary><div class="answer"><p>split() splits on any amount of whitespace and drops empty pieces. split(&#x27; &#x27;) splits on every single space, so &#x27;a  b&#x27; (two spaces) gives [&#x27;a&#x27;, &#x27;&#x27;, &#x27;b&#x27;].</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Strings"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you count vowels in a string?</summary><div class="answer"><pre><code class="lang-py">def count_vowels(s):
+    return sum(1 for ch in s.lower() if ch in 'aeiou')</code></pre></div></details>
+<details class="recall iq" data-level="basic" data-topic="Strings"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How would you reverse the words in a sentence?</summary><div class="answer"><pre><code class="lang-py">' '.join(reversed(s.split()))</code></pre><p>split() handles extra spaces, reversed() flips the list, join glues it back.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Strings"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the complexity of s[::-1]?</summary><div class="answer"><p>O(n) time and O(n) space because it creates a new reversed string.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Strings"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why is building a string with += in a loop discouraged?</summary><div class="answer"><p>Strings are immutable, so each += may copy the whole string, giving O(n^2) total. Append to a list and join once.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Strings"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you check if two strings are anagrams?</summary><div class="answer"><p>Check lengths first. Then compare Counter(s) == Counter(t) (O(n)) or sorted(s) == sorted(t) (O(n log n)).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Strings"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you find the first non-repeating character?</summary><div class="answer"><p>Count all characters with a Counter in one pass, then scan the string again from the left and return the index of the first character with count 1. If none, return -1.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Strings"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you group anagrams together?</summary><div class="answer"><p>Use a dictionary with the sorted letters of each word as the key and a list of words as the value. Return list(d.values()).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Strings"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why use a 26-element list instead of a dictionary for lowercase letters?</summary><div class="answer"><p>It uses fixed small memory and is a little faster since indexing a list is quicker than hashing. Both are O(n) overall.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Strings"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the time complexity of checking anagrams with sorting vs counting?</summary><div class="answer"><p>Sorting: O(n log n). Counting: O(n) time and O(k) space where k is the alphabet size.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Strings"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is a canonical form and why is it useful?</summary><div class="answer"><p>A single standard representation for all equivalent items (sorted letters for anagrams). It lets you test equality by one comparison or use it as a hash key.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Strings"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the naive pattern-matching time complexity and when is it bad?</summary><div class="answer"><p>O(n x m). It is bad on inputs with many partial matches, like text &#x27;aaaa...a&#x27; and pattern &#x27;aaa...ab&#x27;.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Strings"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the idea behind KMP?</summary><div class="answer"><p>Precompute the LPS table: for each prefix of the pattern, the length of the longest proper prefix that is also a suffix. After a mismatch you use it to jump the pattern pointer back to the right place without moving the text pointer back. O(n + m) total.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Strings"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is a hash collision in Rabin-Karp and how do you handle it?</summary><div class="answer"><p>Two different strings can have the same hash number. When hashes match, compare the real characters to confirm.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Strings"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How can you check if one string is a rotation of another?</summary><div class="answer"><p>Same length and s2 in s1 + s1. For example &#x27;erbottlewat&#x27; is inside &#x27;waterbottlewaterbottle&#x27;.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Strings"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What does the LPS array of &#x27;abab&#x27; look like?</summary><div class="answer"><p>[0, 0, 1, 2]. At index 3 the prefix &#x27;ab&#x27; equals the suffix &#x27;ab&#x27;, so the value is 2.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Strings"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is a hash collision and why does Rabin-Karp still work?</summary><div class="answer"><p>Two different strings share a hash. Rabin-Karp verifies equal-hash candidates with a direct comparison, so correctness is kept; collisions only cost time.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Strings"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is a proper prefix?</summary><div class="answer"><p>A prefix that is not the whole string. The LPS table only considers proper prefixes.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What is printed?</summary><div class="answer"><pre><code class="lang-py">s = 'hello'
+print(s[1:4], s[-3:], s[::2])</code></pre><p>ell llo hlo. s[1:4] = indexes 1,2,3; s[-3:] = last three; s[::2] = every second character.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Check if a string is a palindrome ignoring case and non-alphanumerics, in O(1) extra space.</summary><div class="answer"><pre><code class="lang-py">def is_pal(s):
+    lo, hi = 0, len(s) - 1
+    while lo &lt; hi:
+        if not s[lo].isalnum():
+            lo += 1
+        elif not s[hi].isalnum():
+            hi -= 1
+        elif s[lo].lower() != s[hi].lower():
+            return False
+        else:
+            lo += 1
+            hi -= 1
+    return True</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> Why do systems normalise text to lowercase before comparing?</summary><div class="answer"><p>Users type &#x27;Email&#x27; and &#x27;email&#x27; expecting the same result. Normalising (case, whitespace, Unicode form) makes comparisons consistent.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why are Python strings immutable?</summary><div class="answer"><p>Immutability lets Python share strings safely, cache their hashes and use them as dictionary keys, which makes common operations fast.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not build strings with += in a loop?</summary><div class="answer"><p>Each += can copy the whole string, making n appends O(n^2). Append to a list and &#x27;&#x27;.join() once.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is slicing end-exclusive?</summary><div class="answer"><p>It makes lengths simple (s[a:b] has b - a characters) and lets s[:k] + s[k:] rebuild s with no overlap.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use two pointers for palindromes?</summary><div class="answer"><p>It uses O(1) extra space and can stop at the first mismatch, instead of building a reversed copy.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why lower-case before comparing?</summary><div class="answer"><p>&#x27;A&#x27; and &#x27;a&#x27; are different characters. Normalising case makes comparisons match what humans mean.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use == to test that two strings are the same object?</summary><div class="answer"><p>== compares values; &#x27;is&#x27; compares identity. Equal strings may or may not be the same object, so &#x27;is&#x27; on text gives unreliable results.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Count words in a sentence without using split().</summary><div class="answer"><pre><code class="lang-py">def count_words(s):
+    count, in_word = 0, False
+    for ch in s:
+        if ch != ' ' and not in_word:
+            count += 1
+        in_word = ch != ' '
+    return count</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What does &#x27;abc&#x27;.find(&#x27;d&#x27;) return, and what does &#x27;abc&#x27;.index(&#x27;d&#x27;) do?</summary><div class="answer"><p>find returns -1; index raises ValueError.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Group anagrams using a count signature instead of sorting.</summary><div class="answer"><pre><code class="lang-py">from collections import defaultdict
+def group(words):
+    g = defaultdict(list)
+    for w in words:
+        key = [0] * 26
+        for ch in w:
+            key[ord(ch) - 97] += 1
+        g[tuple(key)].append(w)
+    return list(g.values())</code></pre><p>O(n k) instead of O(n k log k).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> Is &#x27;Listen&#x27; an anagram of &#x27;Silent&#x27; in a case-sensitive check?</summary><div class="answer"><p>No: &#x27;L&#x27; differs from &#x27;l&#x27;. Normalise with .lower() when the problem says case does not matter.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How might a word-game helper find all words from a rack of tiles?</summary><div class="answer"><p>Precompute each dictionary word&#x27;s letter-count signature; a word fits if its counts are all &lt;= the rack&#x27;s counts.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why check lengths first for anagrams?</summary><div class="answer"><p>Different lengths can never be anagrams, so you can answer instantly without counting.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does a 26-slot list beat a dictionary here?</summary><div class="answer"><p>It needs no hashing and has a fixed small size, so it is faster, but it only works for known small alphabets.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why count first and scan second for the first unique character?</summary><div class="answer"><p>You need the global counts before you can decide, but you need the original order to find the first. Two passes handle both.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not compare sorted strings for huge inputs?</summary><div class="answer"><p>Sorting costs O(n log n); counting is O(n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use Counter subtraction for ransom note?</summary><div class="answer"><p>It removes the magazine&#x27;s letters from the note&#x27;s letters; an empty result means nothing is missing.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why can&#x27;t a list be used as a dictionary key for a letter-count signature?</summary><div class="answer"><p>Lists are mutable and unhashable. Convert it to a tuple.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Find all start indices of anagrams of p in s.</summary><div class="answer"><p>Slide a window of len(p) over s keeping letter counts; record the start when the window counts equal p&#x27;s counts. O(n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> Why do spell-check suggestions use letter frequencies?</summary><div class="answer"><p>Words made of similar letters are likely typos of each other, and frequency vectors are cheap to compare.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Return the index of the first occurrence of pattern in text, or -1, without using find.</summary><div class="answer"><pre><code class="lang-py">def str_str(text, pat):
+    n, m = len(text), len(pat)
+    for i in range(n - m + 1):
+        if text[i:i + m] == pat:
+            return i
+    return -1</code></pre><p>O(nm) worst case; mention KMP for O(n + m).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What does &#x27;aaaa&#x27;.count(&#x27;aa&#x27;) return?</summary><div class="answer"><p>2. count() counts non-overlapping occurrences; overlapping matches would be 3.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How can an app search millions of documents quickly for a word?</summary><div class="answer"><p>Build an inverted index (word -&gt; list of documents) so searches are lookups, not scans. Scanning algorithms handle the within-document step.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not always use KMP?</summary><div class="answer"><p>Python&#x27;s built-in find is highly tuned and simpler. KMP matters when asked to implement it, or when you need guaranteed linear time or the LPS table.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why verify after a hash match in Rabin-Karp?</summary><div class="answer"><p>Different strings can have the same hash (a collision). Verification keeps the answer correct.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does KMP never move the text pointer backwards?</summary><div class="answer"><p>The LPS table already tells how much of the pattern is still matched, so no text needs to be re-read.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use a large prime modulus in rolling hashes?</summary><div class="answer"><p>Large primes spread hash values evenly and make collisions rare.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is naive search usually fine in practice?</summary><div class="answer"><p>Mismatches typically occur early, so the average cost is near O(n). Only adversarial inputs make it quadratic.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is str.count not enough for overlapping matches?</summary><div class="answer"><p>count() skips past each match, so &#x27;aaaa&#x27;.count(&#x27;aa&#x27;) is 2, not 3. Use find in a loop with start = idx + 1.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Strings"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Check whether a string is made by repeating a smaller substring.</summary><div class="answer"><pre><code class="lang-py">def repeated(s):
+    return s in (s + s)[1:-1]</code></pre></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Strings"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Find the longest palindromic substring.</summary><div class="answer"><p>Expand around each centre (odd and even) and keep the longest: O(n^2) time, O(1) space. Manacher&#x27;s algorithm achieves O(n) but is rarely required.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Strings"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> How do you check if one string contains a permutation of another?</summary><div class="answer"><p>Fixed sliding window of length len(s1) over s2 with counts updated incrementally.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Strings"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> How would you find the longest prefix that is also a suffix?</summary><div class="answer"><p>Build the LPS table of the string; the last value lps[-1] is the answer.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="m03-problems.html"><span class="dir">Previous</span><span>Problems 3: Arrays and Lists</span></a>
+      <a class="next" href="m04-problems.html"><span class="dir">Next</span><span>Problems 4: Strings</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

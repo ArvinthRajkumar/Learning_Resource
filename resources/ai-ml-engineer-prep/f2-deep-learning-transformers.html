@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="F2">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>F2 Deep learning and transformers | AI/ML Engineer Prep</title>
+<meta name="description" content="Neural networks, activations, embeddings, attention with a worked example, multi-head attention, residuals and normalization, positional encodings and RoPE, encoder vs decoder, mixture of experts, parameter counting.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Foundations F2</p>
+      <h1>Deep learning and transformers</h1>
+      <p class="lede">Every LLM question rests on one architecture. This page builds it piece by piece: a neuron, a layer, embeddings, attention computed by hand, the transformer block, positions, and how to count its parameters exactly.</p>
+      <div class="meta"><span class="tag ok">Basic</span><span class="tag warn">Medium</span><span class="tag">~2.5 hours</span></div>
+    </div>
+
+    <!-- ============================================================ 1 -->
+    <section id="neural-networks" data-track>
+      <h2>Neural networks and activations</h2>
+
+      <h3>Intuition</h3>
+      <p>A neuron computes a weighted sum of its inputs plus a bias, then applies a non-linear "squash". A layer is many neurons side by side, which is a matrix multiply. Stacking layers lets the network build features of features. Without the non-linearity, any stack of layers collapses into one linear map, so the activation function is what gives depth its power.</p>
+
+      <h3>The mechanism</h3>
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 220" role="img" aria-label="A two-layer MLP: 3 inputs, 4 hidden units with activation, 2 outputs; each connection is a weight">
+          <g>
+            <circle cx="80" cy="60" r="16" class="d-a"/><circle cx="80" cy="110" r="16" class="d-a"/><circle cx="80" cy="160" r="16" class="d-a"/>
+            <circle cx="300" cy="40" r="16" class="d-c"/><circle cx="300" cy="90" r="16" class="d-c"/><circle cx="300" cy="140" r="16" class="d-c"/><circle cx="300" cy="190" r="16" class="d-c"/>
+            <circle cx="520" cy="85" r="16" class="d-b"/><circle cx="520" cy="145" r="16" class="d-b"/>
+          </g>
+          <g class="d-line">
+            <line x1="96" y1="60" x2="284" y2="40" class="d-line"/><line x1="96" y1="60" x2="284" y2="90" class="d-line"/><line x1="96" y1="60" x2="284" y2="140" class="d-line"/><line x1="96" y1="60" x2="284" y2="190" class="d-line"/>
+            <line x1="96" y1="110" x2="284" y2="40" class="d-line"/><line x1="96" y1="110" x2="284" y2="90" class="d-line"/><line x1="96" y1="110" x2="284" y2="140" class="d-line"/><line x1="96" y1="110" x2="284" y2="190" class="d-line"/>
+            <line x1="96" y1="160" x2="284" y2="40" class="d-line"/><line x1="96" y1="160" x2="284" y2="90" class="d-line"/><line x1="96" y1="160" x2="284" y2="140" class="d-line"/><line x1="96" y1="160" x2="284" y2="190" class="d-line"/>
+            <line x1="316" y1="40" x2="504" y2="85" class="d-line"/><line x1="316" y1="90" x2="504" y2="85" class="d-line"/><line x1="316" y1="140" x2="504" y2="85" class="d-line"/><line x1="316" y1="190" x2="504" y2="85" class="d-line"/>
+            <line x1="316" y1="40" x2="504" y2="145" class="d-line"/><line x1="316" y1="90" x2="504" y2="145" class="d-line"/><line x1="316" y1="140" x2="504" y2="145" class="d-line"/><line x1="316" y1="190" x2="504" y2="145" class="d-line"/>
+          </g>
+          <text x="80" y="205" text-anchor="middle" class="d-sm">input x (3)</text>
+          <text x="300" y="215" text-anchor="middle" class="d-sm">h = act(W1 x + b1) (4)</text>
+          <text x="520" y="185" text-anchor="middle" class="d-sm">y = W2 h + b2 (2)</text>
+          <text x="590" y="60" class="d-sm">params:</text>
+          <text x="590" y="78" class="d-sm">3x4 + 4 = 16</text>
+          <text x="590" y="96" class="d-sm">4x2 + 2 = 10</text>
+          <text x="590" y="114" class="d-sm d-bold">total 26</text>
+        </svg>
+        </div>
+        <figcaption>A multilayer perceptron. Each layer is a matrix multiply plus bias, then an activation. Parameters = weights + biases.</figcaption>
+      </figure>
+
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Activation</th><th>Formula</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>Sigmoid</td><td>1 / (1 + e^-z)</td><td>squashes to (0, 1). Saturates, so gradients vanish. Used for probabilities and gates.</td></tr>
+          <tr><td>Tanh</td><td>(e^z - e^-z)/(e^z + e^-z)</td><td>(-1, 1), zero-centered, still saturates</td></tr>
+          <tr><td>ReLU</td><td>max(0, z)</td><td>cheap, no saturation for z &gt; 0. Can leave "dead" units.</td></tr>
+          <tr><td>GELU</td><td>z x Phi(z)</td><td>smooth ReLU. Used in BERT and GPT-2.</td></tr>
+          <tr><td>SwiGLU</td><td>(Swish(x W) * (x V)) W2</td><td>gated MLP used in Llama-family models. Three weight matrices.</td></tr>
+          <tr><td>Softmax</td><td>e^z_i / sum e^z_j</td><td>turns a vector of scores into a probability distribution (output layer, attention)</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>Common traps</h3>
+      <div class="callout trap"><ul class="mb-0">
+        <li>"More layers without activations add expressiveness." Composed linear maps are still linear.</li>
+        <li>Forgetting biases when counting parameters (transformer LLMs like Llama often have no biases, but classic MLPs do).</li>
+        <li>Sigmoid hidden layers in deep nets cause vanishing gradients. ReLU-family activations plus residuals fixed this.</li>
+      </ul></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="f2-nn-1" data-topic="Foundations" data-type="numeric" data-answer="26" data-tol="0">
+        <div class="q-stem"><p>An MLP maps 3 inputs to 4 hidden units to 2 outputs, with biases. How many parameters?</p></div>
+        <div class="q-explain"><p>(3 x 4 + 4) + (4 x 2 + 2) = 16 + 10 = 26.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why are non-linear activations necessary?</summary><div class="answer"><p>Without them, stacked layers collapse to a single linear transformation.</p></div></details>
+        <details class="recall"><summary>What is a vanishing gradient?</summary><div class="answer"><p>Gradients shrink as they backpropagate through many saturating layers, so early layers barely learn.</p></div></details>
+        <details class="recall"><summary>Which activation and MLP style do Llama models use?</summary><div class="answer"><p>SwiGLU: a gated MLP with gate, up and down projections.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 2 -->
+    <section id="embeddings" data-track>
+      <h2>Embeddings: turning tokens into vectors</h2>
+
+      <h3>Intuition</h3>
+      <p>A neural network needs numbers, so each token ID indexes a row in a big learned table, its embedding vector (for example 4,096 numbers). Training arranges these vectors so related meanings sit close together. The famous word2vec picture: king - man + woman lands near queen. Distance in this space approximates similarity in meaning, which is exactly what semantic search (part 03) exploits.</p>
+
+      <h3>The mechanism</h3>
+      <ul>
+        <li><strong>Token embedding table</strong>: vocab x d. Llama 3 has 128,256 x 4,096, about 525M numbers, 1.05 GB in bf16. Lookup is just row indexing.</li>
+        <li><strong>LM head</strong>: the final d x vocab matrix maps the last hidden state to logits over the vocabulary. Some models <em>tie</em> it to the embedding table to save parameters.</li>
+        <li><strong>Contextual embeddings</strong>: after attention layers, a token's vector depends on its context ("bank" by a river vs a bank account). Static word2vec vectors could not do that.</li>
+        <li><strong>Sentence or document embeddings</strong> (for retrieval): pool token vectors (mean or a special token) from an encoder trained with a contrastive loss, so that matching query and passage pairs score high.</li>
+      </ul>
+      <div class="formula">
+        <div class="f-title">Contrastive (InfoNCE) loss for embedding models, with in-batch negatives</div>
+        <div class="f-body">L = -log( exp(sim(q, p+)/tau) / sum_j exp(sim(q, p_j)/tau) )</div>
+        <dl class="f-defs"><dt>p+</dt><dd>the positive (matching) passage</dd><dt>p_j</dt><dd>all passages in the batch, used as negatives</dd><dt>tau</dt><dd>temperature (for example 0.05)</dd></dl>
+      </div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="f2-emb-1" data-topic="Foundations" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How are sentence-embedding models for retrieval typically trained?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Next-token prediction only <span class="q-why">That gives a language model, not well-separated sentence vectors.</span></li>
+          <li data-key="B">Contrastive learning on (query, relevant passage) pairs with other passages as negatives <span class="q-why">Correct.</span></li>
+          <li data-key="C">k-means on word counts <span class="q-why">That is clustering.</span></li>
+          <li data-key="D">PCA on one-hot vectors <span class="q-why">Not how modern models are trained.</span></li>
+        </ul>
+        <div class="q-explain"><p>Pull matching pairs together and push others apart (InfoNCE with in-batch and hard negatives).</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Size of a 128k x 4096 embedding table in bf16?</summary><div class="answer"><p>About 1.05 GB.</p></div></details>
+        <details class="recall"><summary>Static vs contextual embeddings?</summary><div class="answer"><p>Static: one vector per word (word2vec). Contextual: the vector depends on the surrounding words (transformer outputs).</p></div></details>
+        <details class="recall"><summary>What are weight-tied embeddings?</summary><div class="answer"><p>Using the same matrix for the input embedding and the output LM head.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 3 -->
+    <section id="attention" data-track>
+      <h2>Attention, computed by hand</h2>
+
+      <h3>Intuition</h3>
+      <p>Each token asks a question (its <strong>query</strong>), every token advertises what it contains (its <strong>key</strong>), and every token carries information to hand over (its <strong>value</strong>). A token's output is a weighted average of all values, weighted by how well its query matches each key. "It" in "The animal didn't cross the street because it was tired" learns to put high weight on "animal".</p>
+
+      <h3>The formula</h3>
+      <div class="formula">
+        <div class="f-title">Scaled dot-product attention (Vaswani et al., 2017)</div>
+        <div class="f-body">Attention(Q, K, V) = softmax( Q K^T / sqrt(d_k) + M ) V
+Q = X W_Q,  K = X W_K,  V = X W_V</div>
+        <dl class="f-defs">
+          <dt>X</dt><dd>n x d token representations</dd>
+          <dt>d_k</dt><dd>key/query dimension per head</dd>
+          <dt>M</dt><dd>mask: 0 where allowed, -inf where blocked (causal: future positions)</dd>
+          <dt>sqrt(d_k)</dt><dd>keeps dot products at unit scale. For random unit-variance vectors, q.k has variance d_k (std 11.3 at d_k = 128), which would saturate the softmax.</dd>
+        </dl>
+      </div>
+
+      <h3>Worked example</h3>
+      <div class="worked">
+        <span class="w-title">d_k = 2. Query q = [1, 0]. Keys k1 = [1, 0], k2 = [0, 1], k3 = [1, 1]. Values v1 = [1, 0], v2 = [0, 1], v3 = [1, 1]</span>
+        <ol class="steps">
+          <li>Dot products: q.k1 = 1, q.k2 = 0, q.k3 = 1. Divide by sqrt(2): [0.7071, 0, 0.7071].</li>
+          <li>Softmax: exp gives [2.028, 1, 2.028], sum 5.056, so weights [0.4011, 0.1978, 0.4011].</li>
+          <li>Output: 0.4011 x [1, 0] + 0.1978 x [0, 1] + 0.4011 x [1, 1] = [0.8022, 0.5989].</li>
+        </ol>
+        <span class="result">output [0.8022, 0.5989]</span>
+      </div>
+
+      <figure class="diagram narrow">
+        <div class="scroll-x">
+        <svg viewBox="0 0 520 260" role="img" aria-label="Causal attention matrix for 5 tokens: each row is a query, each column a key; the upper triangle above the diagonal is masked">
+          <text x="260" y="18" text-anchor="middle" class="d-bold">causal mask: query i sees keys 0..i</text>
+          <g>
+            <rect x="140" y="30" width="40" height="40" class="d-a"/><rect x="180" y="30" width="40" height="40" class="d-box"/><rect x="220" y="30" width="40" height="40" class="d-box"/><rect x="260" y="30" width="40" height="40" class="d-box"/><rect x="300" y="30" width="40" height="40" class="d-box"/>
+            <rect x="140" y="70" width="40" height="40" class="d-a"/><rect x="180" y="70" width="40" height="40" class="d-a"/><rect x="220" y="70" width="40" height="40" class="d-box"/><rect x="260" y="70" width="40" height="40" class="d-box"/><rect x="300" y="70" width="40" height="40" class="d-box"/>
+            <rect x="140" y="110" width="40" height="40" class="d-a"/><rect x="180" y="110" width="40" height="40" class="d-a"/><rect x="220" y="110" width="40" height="40" class="d-a"/><rect x="260" y="110" width="40" height="40" class="d-box"/><rect x="300" y="110" width="40" height="40" class="d-box"/>
+            <rect x="140" y="150" width="40" height="40" class="d-a"/><rect x="180" y="150" width="40" height="40" class="d-a"/><rect x="220" y="150" width="40" height="40" class="d-a"/><rect x="260" y="150" width="40" height="40" class="d-a"/><rect x="300" y="150" width="40" height="40" class="d-box"/>
+            <rect x="140" y="190" width="40" height="40" class="d-a"/><rect x="180" y="190" width="40" height="40" class="d-a"/><rect x="220" y="190" width="40" height="40" class="d-a"/><rect x="260" y="190" width="40" height="40" class="d-a"/><rect x="300" y="190" width="40" height="40" class="d-a"/>
+          </g>
+          <text x="130" y="55" text-anchor="end" class="d-sm">The</text><text x="130" y="95" text-anchor="end" class="d-sm">cat</text><text x="130" y="135" text-anchor="end" class="d-sm">sat</text><text x="130" y="175" text-anchor="end" class="d-sm">on</text><text x="130" y="215" text-anchor="end" class="d-sm">it</text>
+          <text x="360" y="115" class="d-sm">grey = -inf (masked)</text>
+          <text x="360" y="135" class="d-sm">n x n scores: O(n^2)</text>
+          <text x="360" y="155" class="d-sm">8192 tokens: 128 MiB</text>
+          <text x="360" y="173" class="d-sm">per head in fp16</text>
+          <text x="240" y="252" text-anchor="middle" class="d-sm">keys</text>
+        </svg>
+        </div>
+        <figcaption>Decoder (GPT-style) attention is causal. The score matrix is n x n, which is why attention is quadratic in sequence length. FlashAttention computes it in tiles without storing the whole matrix.</figcaption>
+      </figure>
+
+      <h3>Common traps</h3>
+      <div class="callout trap"><ul class="mb-0">
+        <li>"Attention is linear in sequence length." Standard attention is O(n^2 d) in compute. KV caching makes each <em>decode step</em> O(n), not the whole thing.</li>
+        <li>Mask applied after the softmax. It must be added before, so the allowed weights renormalize to 1.</li>
+        <li>Forgetting the 1/sqrt(d_k) scale.</li>
+      </ul></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="f2-att-1" data-topic="Foundations" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Why does scaled dot-product attention divide by sqrt(d_k)?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To make attention linear time <span class="q-why">It does not change complexity.</span></li>
+          <li data-key="B">To normalize the values <span class="q-why">It scales the scores, not V.</span></li>
+          <li data-key="C">Dot products grow in magnitude with d_k, which pushes the softmax into saturated regions with tiny gradients <span class="q-why">Correct.</span></li>
+          <li data-key="D">To implement the causal mask <span class="q-why">The mask is separate.</span></li>
+        </ul>
+        <div class="q-explain"><p>For random unit-variance vectors, Var(q.k) = d_k. Dividing by sqrt(d_k) restores unit variance.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Write the attention formula.</summary><div class="answer"><p>softmax(Q K^T / sqrt(d_k) + mask) V.</p></div></details>
+        <details class="recall"><summary>What does the causal mask do?</summary><div class="answer"><p>It stops position i from attending to positions after i, by adding -inf before the softmax.</p></div></details>
+        <details class="recall"><summary>Self-attention vs cross-attention?</summary><div class="answer"><p>Self: Q, K, V come from the same sequence. Cross: Q from one sequence (decoder), K and V from another (encoder outputs).</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 4 -->
+    <section id="transformer-block" data-track>
+      <h2>Multi-head attention and the transformer block</h2>
+
+      <h3>Intuition</h3>
+      <p>One attention pattern cannot capture everything (syntax, coreference, position). Multi-head attention runs several smaller attentions in parallel, each with its own projections, and concatenates the results. A transformer block is: attention (tokens exchange information), then an MLP (each token processes what it gathered), each wrapped in a residual connection and normalization. Stack dozens of these blocks.</p>
+
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 300" role="img" aria-label="Pre-norm decoder block: input, RMSNorm, multi-head causal self-attention, residual add, RMSNorm, SwiGLU MLP, residual add, output; repeated L times">
+          <defs><marker id="t2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker></defs>
+          <rect x="250" y="262" width="220" height="30" rx="6" class="d-box"/><text x="360" y="282" text-anchor="middle" class="d-sm">token embeddings (+ positions)</text>
+          <line x1="360" y1="262" x2="360" y2="240" class="d-line" marker-end="url(#t2)"/>
+          <rect x="270" y="210" width="180" height="28" rx="6" class="d-c"/><text x="360" y="229" text-anchor="middle" class="d-sm">RMSNorm</text>
+          <rect x="250" y="164" width="220" height="34" rx="6" class="d-a"/><text x="360" y="186" text-anchor="middle" class="d-sm">multi-head causal self-attention</text>
+          <line x1="360" y1="210" x2="360" y2="200" class="d-line" marker-end="url(#t2)"/>
+          <circle cx="360" cy="146" r="10" class="d-box"/><text x="360" y="151" text-anchor="middle">+</text>
+          <line x1="360" y1="164" x2="360" y2="158" class="d-line"/>
+          <path d="M470 250 L520 250 L520 146 L372 146" class="d-line d-dash" marker-end="url(#t2)"/><text x="528" y="200" class="d-sm d-muted">residual</text>
+          <rect x="270" y="104" width="180" height="28" rx="6" class="d-c"/><text x="360" y="123" text-anchor="middle" class="d-sm">RMSNorm</text>
+          <line x1="360" y1="136" x2="360" y2="134" class="d-line"/>
+          <rect x="250" y="58" width="220" height="34" rx="6" class="d-b"/><text x="360" y="80" text-anchor="middle" class="d-sm">MLP (SwiGLU: gate, up, down)</text>
+          <circle cx="360" cy="40" r="10" class="d-box"/><text x="360" y="45" text-anchor="middle">+</text>
+          <path d="M470 146 L560 146 L560 40 L372 40" class="d-line d-dash" marker-end="url(#t2)"/>
+          <text x="360" y="18" text-anchor="middle" class="d-sm">to next block (x L), then final norm + LM head</text>
+          <text x="20" y="80" class="d-sm">MLP: each token</text><text x="20" y="96" class="d-sm">transforms its own vector</text>
+          <text x="20" y="186" class="d-sm">attention: tokens</text><text x="20" y="202" class="d-sm">exchange information</text>
+        </svg>
+        </div>
+        <figcaption>A pre-norm decoder block as in Llama-style models. Residual paths let gradients flow straight through dozens of layers.</figcaption>
+      </figure>
+
+      <ul>
+        <li><strong>Multi-head</strong>: d = n_heads x head_dim (4096 = 32 x 128). Each head attends in its own subspace. The concatenated output goes through W_O (d x d).</li>
+        <li><strong>Residual connections</strong>: output = x + f(x). This gives a "highway" for gradients and lets layers learn refinements.</li>
+        <li><strong>LayerNorm vs RMSNorm</strong>: LayerNorm subtracts the mean and divides by the std, with a learned scale and shift. RMSNorm only divides by the root mean square, which is cheaper and works as well (used in Llama).</li>
+        <li><strong>Pre-norm</strong> (normalize before each sub-layer) trains more stably at depth than the original post-norm.</li>
+        <li><strong>MLP width</strong>: classic 4d (GELU). SwiGLU uses about (8/3)d per matrix, but three matrices (Llama 2 7B: 11,008).</li>
+        <li><strong>Dropout</strong> is often 0 in modern LLM pretraining, since one epoch over huge data rarely overfits.</li>
+      </ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="f2-blk-1" data-topic="Foundations" data-type="multi" data-answer="A,C">
+        <div class="q-stem"><p>Select all true statements about transformer blocks.</p></div>
+        <ul class="q-options">
+          <li data-key="A">Residual connections help gradients flow through deep stacks <span class="q-why">True.</span></li>
+          <li data-key="B">The MLP mixes information across token positions <span class="q-why">False: the MLP is applied per token. Attention mixes across positions.</span></li>
+          <li data-key="C">RMSNorm skips mean-centering compared with LayerNorm <span class="q-why">True.</span></li>
+          <li data-key="D">Multi-head attention multiplies the parameter count by the number of heads <span class="q-why">False: heads split d. W_Q, W_K, W_V, W_O stay d x d in total for MHA.</span></li>
+        </ul>
+        <div class="q-explain"><p>Attention mixes across positions, the MLP works within each position, and residuals plus normalization keep it trainable.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Pre-norm vs post-norm?</summary><div class="answer"><p>Pre-norm normalizes the input of each sub-layer (x + f(norm(x))), which is more stable for deep models. Post-norm normalizes after the residual add (the original Transformer).</p></div></details>
+        <details class="recall"><summary>head_dim for d = 4096 with 32 heads?</summary><div class="answer"><p>128.</p></div></details>
+        <details class="recall"><summary>Which sub-layer moves information between tokens?</summary><div class="answer"><p>Self-attention.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 5 -->
+    <section id="positional-encoding" data-track>
+      <h2>Positional encodings: sinusoidal, learned, RoPE, ALiBi</h2>
+
+      <h3>Intuition</h3>
+      <p>Attention by itself is order-blind: shuffle the tokens and each token sees the same set of keys. Positional information must be injected. Early transformers added a position vector to each embedding. Modern LLMs rotate queries and keys by an angle that depends on position (RoPE), so the attention score depends on the <em>relative</em> distance between tokens.</p>
+
+      <div class="formula">
+        <div class="f-title">Sinusoidal (original Transformer) and RoPE</div>
+        <div class="f-body">PE(pos, 2i)   = sin(pos / 10000^(2i/d))
+PE(pos, 2i+1) = cos(pos / 10000^(2i/d))
+
+RoPE: rotate each 2-D pair of q and k by angle pos * theta_i,  theta_i = base^(-2i/d)
+      then q_m . k_n depends only on (m - n)</div>
+        <dl class="f-defs"><dt>pos</dt><dd>token position</dd><dt>i</dt><dd>dimension pair index</dd><dt>base</dt><dd>10,000 in the original papers. Long-context models raise it (Llama 3 uses 500,000).</dd></dl>
+      </div>
+      <p>Example: position 1, the first dimension pair (i = 0): PE = [sin 1, cos 1] = [0.8415, 0.5403]. Low dimensions rotate fast (fine position), high dimensions rotate slowly (coarse position). With base 10,000 and d = 128, the slowest pair has a wavelength of about 54,000 positions.</p>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Method</th><th>How</th><th>Used in</th><th>Length extrapolation</th></tr></thead>
+        <tbody>
+          <tr><td>Sinusoidal</td><td>fixed vectors added to embeddings</td><td>original Transformer</td><td>limited</td></tr>
+          <tr><td>Learned absolute</td><td>trainable position table</td><td>BERT, GPT-2</td><td>none beyond the trained length</td></tr>
+          <tr><td>RoPE</td><td>rotate q, k by position</td><td>Llama, Mistral, Qwen and most modern LLMs</td><td>extendable with scaling tricks (position interpolation, NTK-aware scaling, YaRN) plus fine-tuning</td></tr>
+          <tr><td>ALiBi</td><td>linear distance penalty added to the scores</td><td>BLOOM, MPT</td><td>good extrapolation</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="f2-pos-1" data-topic="Foundations" data-type="single" data-answer="D">
+        <div class="q-stem"><p>What property makes RoPE attractive for LLMs?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It removes the need for attention <span class="q-why">No.</span></li>
+          <li data-key="B">It adds no computation at all <span class="q-why">It adds a cheap rotation.</span></li>
+          <li data-key="C">It gives every position the same vector <span class="q-why">Then there would be no position information.</span></li>
+          <li data-key="D">The q.k score depends on relative position, and the context can be extended by rescaling the rotation frequencies <span class="q-why">Correct.</span></li>
+        </ul>
+        <div class="q-explain"><p>Relative-position behavior comes from rotations: R(m)^T R(n) = R(n - m).</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why does a transformer need positional information?</summary><div class="answer"><p>Self-attention is permutation-invariant. Without positions, word order is lost.</p></div></details>
+        <details class="recall"><summary>RoPE in one sentence?</summary><div class="answer"><p>Rotate each pair of query and key dimensions by a position-dependent angle, so their dot product encodes relative distance.</p></div></details>
+        <details class="recall"><summary>Name one context-extension method for RoPE models.</summary><div class="answer"><p>Position interpolation, NTK-aware scaling or YaRN, usually followed by some long-context fine-tuning.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 6 -->
+    <section id="architectures" data-track>
+      <h2>Encoder, decoder, encoder-decoder, and mixture of experts</h2>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Family</th><th>Attention</th><th>Pretraining objective</th><th>Examples</th><th>Best for</th></tr></thead>
+        <tbody>
+          <tr><td>Encoder-only</td><td>bidirectional</td><td>masked language modeling</td><td>BERT, RoBERTa, embedding models</td><td>classification, retrieval embeddings, rerankers</td></tr>
+          <tr><td>Decoder-only</td><td>causal</td><td>next-token prediction</td><td>GPT, Llama, Mistral, Claude-class chat models</td><td>generation, chat, general-purpose LLMs</td></tr>
+          <tr><td>Encoder-decoder</td><td>bidirectional encoder + causal decoder with cross-attention</td><td>span corruption / seq2seq</td><td>T5, BART, original Transformer</td><td>translation, summarization</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <h3>Mixture of experts (MoE)</h3>
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 200" role="img" aria-label="MoE layer: router sends each token to top-2 of 8 expert MLPs; outputs are weighted and summed">
+          <defs><marker id="m2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker></defs>
+          <rect x="20" y="80" width="100" height="40" rx="6" class="d-a"/><text x="70" y="104" text-anchor="middle" class="d-sm">token h</text>
+          <rect x="160" y="80" width="100" height="40" rx="6" class="d-c"/><text x="210" y="104" text-anchor="middle" class="d-sm">router</text>
+          <line x1="120" y1="100" x2="158" y2="100" class="d-line" marker-end="url(#m2)"/>
+          <g>
+            <rect x="320" y="14" width="80" height="22" rx="4" class="d-b"/><text x="360" y="30" text-anchor="middle" class="d-sm">expert 1</text>
+            <rect x="320" y="40" width="80" height="22" rx="4" class="d-box"/><text x="360" y="56" text-anchor="middle" class="d-sm d-muted">expert 2</text>
+            <rect x="320" y="66" width="80" height="22" rx="4" class="d-box"/><text x="360" y="82" text-anchor="middle" class="d-sm d-muted">expert 3</text>
+            <rect x="320" y="92" width="80" height="22" rx="4" class="d-b"/><text x="360" y="108" text-anchor="middle" class="d-sm">expert 4</text>
+            <rect x="320" y="118" width="80" height="22" rx="4" class="d-box"/><text x="360" y="134" text-anchor="middle" class="d-sm d-muted">expert 5</text>
+            <rect x="320" y="144" width="80" height="22" rx="4" class="d-box"/><text x="360" y="160" text-anchor="middle" class="d-sm d-muted">...</text>
+            <rect x="320" y="170" width="80" height="22" rx="4" class="d-box"/><text x="360" y="186" text-anchor="middle" class="d-sm d-muted">expert 8</text>
+          </g>
+          <line x1="260" y1="95" x2="318" y2="25" class="d-line-b" marker-end="url(#m2)"/><line x1="260" y1="102" x2="318" y2="103" class="d-line-b" marker-end="url(#m2)"/>
+          <rect x="460" y="80" width="140" height="40" rx="6" class="d-a"/><text x="530" y="104" text-anchor="middle" class="d-sm">w1 E1(h) + w4 E4(h)</text>
+          <line x1="400" y1="25" x2="458" y2="92" class="d-line"/><line x1="400" y1="103" x2="458" y2="103" class="d-line"/>
+          <text x="20" y="160" class="d-sm">all experts stored (memory),</text><text x="20" y="178" class="d-sm">only top-k computed (FLOPs)</text>
+        </svg>
+        </div>
+        <figcaption>MoE replaces the dense MLP with many expert MLPs and a learned router that picks the top-k per token.</figcaption>
+      </figure>
+      <ul>
+        <li>Total parameters are large, but active parameters per token are small. Mixtral 8x7B, per Mistral: about 46.7B total, about 12.9B active (top-2 of 8 experts), so about 28% of the weights are used per token.</li>
+        <li>Compute per token scales with <em>active</em> parameters. Memory scales with <em>total</em> parameters: all experts must be loaded.</li>
+        <li>Challenges: load balancing (auxiliary loss so experts get used evenly), communication when experts are spread over GPUs (expert parallelism), and batching efficiency.</li>
+      </ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="f2-arch-1" data-topic="Foundations" data-type="single" data-answer="B">
+        <div class="q-stem"><p>For an MoE model with 47B total and 13B active parameters, which is true at inference?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It needs memory for only 13B parameters <span class="q-why">All experts must be resident (or offloaded with a speed penalty).</span></li>
+          <li data-key="B">FLOPs per token are roughly those of a 13B dense model, but memory is roughly that of a 47B model <span class="q-why">Correct.</span></li>
+          <li data-key="C">It is always faster than a 7B dense model <span class="q-why">More active parameters and routing overhead.</span></li>
+          <li data-key="D">The router picks experts per document <span class="q-why">Usually per token, per layer.</span></li>
+        </ul>
+        <div class="q-explain"><p>MoE decouples compute (active) from capacity (total).</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why are encoder models used for embeddings and rerankers?</summary><div class="answer"><p>Bidirectional attention sees the whole input at once, which suits understanding and scoring tasks.</p></div></details>
+        <details class="recall"><summary>What does an MoE router do?</summary><div class="answer"><p>It scores the experts for each token and sends the token to the top-k, weighting their outputs.</p></div></details>
+        <details class="recall"><summary>MoE memory vs compute?</summary><div class="answer"><p>Memory ~ total parameters. Compute ~ active parameters.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ 7 -->
+    <section id="parameter-count" data-track>
+      <h2>Counting a transformer's parameters exactly</h2>
+
+      <h3>Intuition</h3>
+      <p>Almost all the weights live in a few big matrices per layer: four attention projections and the MLP matrices. Count those per layer, multiply by the number of layers, and add the embedding table and LM head. You can then reproduce a model's published size, which is a great interview flex.</p>
+
+      <div class="formula">
+        <div class="f-title">Llama-style decoder (no biases)</div>
+        <div class="f-body">per layer  = attention + MLP + norms
+attention  = d*d (Q) + d*d (O) + 2 * d * (n_kv * head_dim)   (K, V)
+MLP        = 3 * d * ffn                                     (SwiGLU: gate, up, down)
+norms      = 2 * d
+total      = L * per_layer + vocab * d (embed) + vocab * d (LM head, if untied) + d
+rule of thumb (MHA, ffn = 4d, 2 MLP matrices):  ~ 12 * L * d^2</div>
+      </div>
+
+      <div class="worked">
+        <span class="w-title">Llama 2 7B: vocab 32,000, d 4,096, L 32, ffn 11,008, MHA (32 KV heads), untied</span>
+        <ol class="steps">
+          <li>Attention per layer: 4 x 4096^2 = 67,108,864.</li>
+          <li>MLP per layer: 3 x 4096 x 11,008 = 135,266,304.</li>
+          <li>Norms per layer: 8,192. Layer total: 202,383,360. Times 32: 6,476,267,520.</li>
+          <li>Embedding + LM head: 2 x 32,000 x 4,096 = 262,144,000. Final norm: 4,096.</li>
+          <li>Total: 6,738,415,616. That is the "6.74B" on the model card. The 12Ld^2 rule gives 6.44B, close.</li>
+        </ol>
+        <span class="result">6,738,415,616 parameters (exact)</span>
+      </div>
+      <p>Llama 3 8B (vocab 128,256, ffn 14,336, 8 KV heads): the same formula gives 8,030,261,248. GQA shrinks K and V to 4096 x 1024 each, and the bigger vocabulary adds about 0.8B in embeddings alone. Code: <a href="08-extra-coding-patterns.html#transformer-params">part 08</a>.</p>
+      <pre><code class="lang-py">V, d, L, ff = 32000, 4096, 32, 11008
+print(L * (4*d*d + 3*d*ff + 2*d) + 2*V*d + d)   # 6738415616</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="f2-par-1" data-topic="Foundations" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Roughly how many parameters does one MHA transformer layer with d = 4096 and a 4d two-matrix MLP have?</p></div>
+        <ul class="q-options">
+          <li data-key="A">~16M <span class="q-why">That is one d x d matrix.</span></li>
+          <li data-key="B">~67M <span class="q-why">That is attention only (4d^2).</span></li>
+          <li data-key="C">~201M <span class="q-why">12 d^2 = 12 x 16.8M = 201M.</span></li>
+          <li data-key="D">~1B <span class="q-why">Too large.</span></li>
+        </ul>
+        <div class="q-explain"><p>4d^2 for attention + 8d^2 for an MLP with hidden size 4d = 12d^2.</p></div>
+      </div>
+
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Where do most parameters of a 7B model live?</summary><div class="answer"><p>The MLPs (about two thirds), then the attention projections. Embeddings are a few percent (more with large vocabularies).</p></div></details>
+        <details class="recall"><summary>How does GQA change the parameter count?</summary><div class="answer"><p>K and V projections become d x (n_kv x head_dim) instead of d x d.</p></div></details>
+        <details class="recall"><summary>12 L d^2 for L = 32, d = 4096?</summary><div class="answer"><p>About 6.44B.</p></div></details>
+      </div>
+    </section>
+
+    <!-- ============================================================ interview -->
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: deep learning and transformers</h2>
+      <p class="muted">Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Transformers">
+<details class="recall iq" data-level="basic" data-topic="Transformers"><summary><span class="tag ok">Basic</span> What problem does self-attention solve compared with RNNs?</summary><div class="answer"><p>Every token can directly attend to every other token in one step (no long sequential chain), which captures long-range dependencies better and parallelizes across the sequence during training.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Transformers"><summary><span class="tag ok">Basic</span> What are Q, K and V in attention?</summary><div class="answer"><p>Learned projections of each token: the query says what a token is looking for, the key what it offers, the value what it passes along. Weights come from softmax(QK^T / sqrt(d_k)), and the output is the weighted sum of V.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Transformers"><summary><span class="tag ok">Basic</span> Why do transformers need positional encodings?</summary><div class="answer"><p>Self-attention is permutation-invariant, so without position information word order is lost. Positions are added (sinusoidal or learned) or injected into attention (RoPE, ALiBi).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Transformers"><summary><span class="tag ok">Basic</span> What is an embedding?</summary><div class="answer"><p>A learned dense vector representing a token (or item) such that similar meanings are close in vector space. Token embeddings are rows of a vocab x d table.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Transformers"><summary><span class="tag ok">Basic</span> Encoder-only vs decoder-only vs encoder-decoder: when do you use each?</summary><div class="answer"><p>Encoder-only (BERT) for understanding tasks, embeddings and rerankers. Decoder-only (GPT, Llama) for generation and chat. Encoder-decoder (T5) for sequence-to-sequence tasks like translation.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Transformers"><summary><span class="tag warn">Medium</span> Why divide by sqrt(d_k) in attention?</summary><div class="answer"><p>Dot products of random unit-variance vectors have variance d_k. Large scores saturate the softmax and kill gradients. Scaling restores unit variance.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Transformers"><summary><span class="tag warn">Medium</span> What is multi-head attention and why use it?</summary><div class="answer"><p>Several attention operations in parallel on lower-dimensional projections (d split across heads), concatenated and projected by W_O. Different heads can capture different relations (syntax, coreference, position).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Transformers"><summary><span class="tag warn">Medium</span> What is the role of residual connections and layer normalization?</summary><div class="answer"><p>Residuals (x + f(x)) give gradients a direct path and let layers learn refinements. Normalization keeps activations well scaled. Pre-norm placement stabilizes deep training.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Transformers"><summary><span class="tag warn">Medium</span> What is the causal mask?</summary><div class="answer"><p>A mask adding -inf to attention scores for future positions before the softmax, so token i only attends to tokens up to i. It makes next-token training valid and enables parallel teacher forcing.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Transformers"><summary><span class="tag warn">Medium</span> What is the computational complexity of self-attention?</summary><div class="answer"><p>O(n^2 d) compute and O(n^2) memory for the score matrix per head, for sequence length n. FlashAttention keeps compute exact but avoids materializing the n x n matrix in HBM.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Transformers"><summary><span class="tag warn">Medium</span> Explain RoPE.</summary><div class="answer"><p>Rotary position embedding rotates each 2-D pair of query and key dimensions by an angle proportional to position, so q_m . k_n depends on m - n (relative position). Context can be extended by rescaling frequencies (position interpolation, NTK, YaRN).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Transformers"><summary><span class="tag warn">Medium</span> What is the difference between LayerNorm and RMSNorm?</summary><div class="answer"><p>LayerNorm subtracts the mean and divides by the standard deviation, with a learned scale and bias. RMSNorm divides by the root mean square only (no centering), which is cheaper and works as well. Llama uses RMSNorm.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Transformers"><summary><span class="tag warn">Medium</span> How many parameters are in a transformer layer, roughly?</summary><div class="answer"><p>For MHA with a 4d MLP: about 4d^2 attention + 8d^2 MLP = 12d^2. For Llama 2 7B (d = 4096, SwiGLU 11,008) it is 202M per layer, and 32 layers plus embeddings gives 6.74B.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Transformers"><summary><span class="tag bad">Advanced</span> What is mixture of experts and what are its tradeoffs?</summary><div class="answer"><p>MLP layers are replaced by many experts, with a router sending each token to the top-k. Compute scales with active parameters, memory with total parameters. Tradeoffs: load balancing, communication (expert parallelism), and higher memory per unit of compute.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Transformers"><summary><span class="tag bad">Advanced</span> MQA vs GQA vs MHA: what changes and why does it matter?</summary><div class="answer"><p>They differ in the number of K/V heads: MHA has one per query head, GQA groups query heads to share K/V heads, MQA has a single K/V head. Fewer KV heads shrink the KV cache and memory bandwidth at decode, with usually small quality loss for GQA.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Transformers"><summary><span class="tag bad">Advanced</span> How does FlashAttention speed up attention without approximation?</summary><div class="answer"><p>It tiles Q, K, V into on-chip SRAM blocks and computes softmax incrementally (online softmax with running max and sum), never writing the n x n matrix to HBM. Fewer memory reads and writes give faster, exact attention.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Transformers"><summary><span class="tag bad">Advanced</span> How would you extend a model&#x27;s context window from 8k to 128k?</summary><div class="answer"><p>Rescale RoPE frequencies (position interpolation, NTK-aware scaling, or YaRN), then continue training on long documents. Ensure efficient attention kernels, and evaluate with long-context benchmarks (needle-in-a-haystack, multi-doc QA). Watch KV cache memory.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="f1-ml-foundations.html"><span class="dir">Previous</span><span>F1 ML foundations</span></a>
+      <a class="next" href="f3-llm-training-scaling.html"><span class="dir">Next</span><span>F3 LLM training and scaling</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

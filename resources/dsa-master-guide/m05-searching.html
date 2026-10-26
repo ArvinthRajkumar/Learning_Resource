@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="M05">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>M5 Searching Algorithms | DSA Master Guide</title>
+<meta name="description" content="Linear search, binary search and its many variations - a favourite in assessments.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<link rel="stylesheet" href="viz.css">
+<script src="viz.js" defer></script>
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Module 5</p>
+      <h1>Searching Algorithms</h1>
+      <p class="lede">Linear search, binary search and its many variations - a favourite in assessments. Topics in this module: Linear search and binary search; binary search variants: first/last occurrence, insertion point, rotated arrays; binary search on the answer.</p>
+      <div class="meta"><span class="tag ok">Essential</span><span class="tag">3 topics</span><span class="tag">11 problems</span><span class="tag">55 interview questions</span></div>
+    </div>
+
+    <section id="why-this-module" data-track>
+      <h2>Start from scratch: why this module exists</h2>
+      <p>Searching is the most frequent operation in computing. Scanning item by item is O(n). If data is sorted, you can discard half the possibilities with each comparison, which is binary search. The idea is older than computers (phone books, dictionaries).</p>
+      <p>Binary search is also a way of thinking: whenever a yes/no question changes only once along an ordered range, you can find the switch point in logarithmic time. That extension, searching on the answer, solves many hard-looking problems.</p>
+      <p><strong>Who needs it:</strong> Database and file-system engineers, version-control tools (git bisect), search features in apps, and every interviewer.</p>
+      <p><strong>Before you start:</strong> Modules 1-3.</p>
+      <h3>After this module you can</h3>
+      <ul><li>Write bug-free iterative binary search.</li><li>Find first/last positions and insertion points.</li><li>Search rotated arrays and use peak finding.</li><li>Apply binary search on the answer to optimisation problems.</li></ul>
+      <p><strong>Common pitfalls:</strong> Using it on unsorted data, off-by-one in bounds, infinite loops from lo = mid, wrong direction when maximising.</p>
+      <p><strong>Typical interview questions here:</strong> Implement binary search, first/last occurrence, search in rotated array, square root, koko eating bananas, ship packages in D days.</p>
+    </section>
+
+    <section id="c5_1" data-track>
+      <h2>Linear search and binary search</h2>
+      <p><span class="tag ok">Essential</span> <span class="tag">Topic 5.1</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>Linear search checks items one by one. Binary search repeatedly checks the middle of a SORTED list and throws away the half that cannot contain the target.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Binary search turns a million-item search into about 20 steps. It requires sorted data (or a monotonic condition).</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Guessing a number between 1 and 100: you guess 50, hear "higher", then 75, and so on. Each guess halves the possibilities.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Look up a name in a printed phone book. You never start at page 1. You open near the middle, see whether your name comes before or after, and repeat on the correct half. This works only because the book is sorted. That is binary search, a technique people used long before computers.</p>
+      <p>Why is it so powerful? Every step discards half the possibilities. Starting with a million names, after 20 halvings one is left. Growth in data costs only one extra step per doubling. That is what O(log n) means in practice.</p>
+      <p>The sorted requirement is the price: sorting costs O(n log n) once, then every search costs O(log n). If you search many times the investment pays off; if you search once in unsorted data, a linear scan is cheaper.</p>
+      <p>Why is binary search famous for bugs? It looks trivial but has small details: inclusive vs exclusive bounds, the loop condition, the mid formula and the update rules must all fit together. A famous bug existed in standard libraries for years (integer overflow in (lo + hi) / 2 for huge arrays). Choose one consistent template and test with arrays of length 0, 1 and 2.</p>
+      <p>Binary search generalises: whenever you can ask a yes/no question that flips from No to Yes exactly once along an ordered range, you can find the flip point in O(log n).</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="bsearch:classic"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Window [lo, hi] = all indices that could still hold the target.</li><li>mid = (lo + hi) // 2. If nums[mid] == target return mid.</li><li>If nums[mid] &lt; target the target must be to the right: lo = mid + 1. Otherwise hi = mid - 1.</li><li>Stop when lo &gt; hi: the window is empty, target not found.</li><li>Dry run for [-1,0,3,5,9,12] and target 9: (0,5,mid 2:3) -&gt; (3,5,mid 4:9) found at 4.</li><li>Play the animation: the shaded region shows the surviving window.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Linear search is checking every item one by one. It works on any list, sorted or not, and costs O(n). Binary search needs a SORTED list. It opens the middle item and asks 'is my target smaller or bigger?'. Then it throws away the half that cannot contain the target. Repeat on the remaining half.</p>
+      <p>A good mental picture is a window [lo, hi] that always contains every position where the target could still be. At the start it is the whole list. Each step shrinks it by half. When the window becomes empty (lo &gt; hi) the target is not there.</p>
+      <p>Three bug sources: (1) the loop condition (use lo &lt;= hi when hi starts at n - 1), (2) the updates (lo = mid + 1 and hi = mid - 1, never lo = mid), (3) the middle formula (lo + (hi - lo) // 2 avoids overflow in other languages; Python is safe with (lo + hi) // 2).</p>
+      <p>Binary search is not only for numbers in lists. Whenever a question can be answered by a monotonic yes/no (first no-then-yes, like 'is speed x fast enough?'), you can binary search over the answer. Keep this idea for the 'binary search on the answer' topic.</p>
+      <p>Use the built-in bisect module in real code: bisect_left(a, x) gives the first index where x could be inserted, bisect_right gives the last. But in exams you may be asked to write the loop yourself.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Each iteration compares one element and halves the window: lo and hi move toward each other until lo &gt; hi. The invariant is 'if the target exists, it is inside [lo, hi]'. Proving the invariant is how you prove the algorithm correct.</li><li>Python's bisect module implements it in C with the same logic. bisect_left returns the leftmost insertion point; bisect_right the rightmost.</li><li>Binary search on a Python list is O(log n) because indexing is O(1). On a linked list it would be O(n) because reaching the middle takes a walk.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Databases and file systems</td><td>B-trees (the index inside almost every database) are the disk-friendly cousin of binary search.</td></tr><tr><td>Version control (git bisect)</td><td>Finds the commit that introduced a bug in O(log n) steps by halving the commit range.</td></tr><tr><td>Software tools</td><td>Autocomplete, dictionary lookup, rank queries, and number formatting libraries use binary search.</td></tr><tr><td>Interviewers</td><td>It is the single most common algorithm to implement from scratch; correctness and edge cases are scored.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Binary vs linear search</td><td>Linear: any data, O(n). Binary: sorted random-access data, O(log n). For under about 20-50 elements the difference is tiny.</td></tr><tr><td>Binary search vs hash lookup</td><td>Hashing is O(1) average for exact matches but cannot answer 'nearest value' or 'first element &gt;= x'. Binary search on sorted data can.</td></tr><tr><td>Binary search vs binary search tree</td><td>A sorted array supports fast search but slow insertion. A balanced BST supports both in O(log n).</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>mid = (lo + hi) // 2  # integer division</li><li>from bisect import bisect_left, bisect_right, insort</li><li>i = bisect_left(a, x); found = i &lt; len(a) and a[i] == x</li><li>Count of x in a sorted list: bisect_right(a, x) - bisect_left(a, x).</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c5_1.py">def binary_search(nums, target):
+    lo, hi = 0, len(nums) - 1
+    while lo &lt;= hi:
+        mid = (lo + hi) // 2
+        if nums[mid] == target:
+            return mid
+        if nums[mid] &lt; target:
+            lo = mid + 1         # discard left half
+        else:
+            hi = mid - 1         # discard right half
+    return -1</code></pre>
+      <details class="box"><summary>Recursive version and Python's bisect module</summary><div class="d-body">
+<pre><code class="lang-py" data-embed="solutions/concepts/c5_1_extra1.py">def binary_search_rec(nums, target, lo, hi):
+    if lo &gt; hi:
+        return -1
+    mid = (lo + hi) // 2
+    if nums[mid] == target:
+        return mid
+    if nums[mid] &lt; target:
+        return binary_search_rec(nums, target, mid + 1, hi)
+    return binary_search_rec(nums, target, lo, mid - 1)
+
+from bisect import bisect_left, bisect_right
+a = [1, 2, 2, 2, 5]
+print(bisect_left(a, 2), bisect_right(a, 2))   # 1 4  -&gt; first index, one past last index</code></pre>
+</div></details>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - linear search</h4>
+      <p>Check every element. Works on any list, O(n).</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c5_1_stage1.py">def search(nums, target):
+    for i, x in enumerate(nums):
+        if x == target:
+            return i
+    return -1</code></pre>
+      <p class="muted small">Check: <code>search([1, 3, 5, 7, 9], 7)</code> returns <code>3</code></p>
+      <h4>Stage 2 - binary search</h4>
+      <p>If the list is sorted, discard half each step: O(log n).</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c5_1_stage2.py">def search(nums, target):
+    lo, hi = 0, len(nums) - 1
+    while lo &lt;= hi:
+        mid = (lo + hi) // 2
+        if nums[mid] == target:
+            return mid
+        if nums[mid] &lt; target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return -1</code></pre>
+      <p class="muted small">Check: <code>search([1, 3, 5, 7, 9], 7)</code> returns <code>3</code></p>
+      <h4>Stage 3 - use bisect</h4>
+      <p>The standard library already contains a tested binary search. Use it in real code.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c5_1_stage3.py">from bisect import bisect_left
+
+def search(nums, target):
+    i = bisect_left(nums, target)
+    return i if i &lt; len(nums) and nums[i] == target else -1</code></pre>
+      <p class="muted small">Check: <code>search([1, 3, 5, 7, 9], 7)</code> returns <code>3</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>binary_search([-1, 0, 3, 5, 9, 12], 9)</code>, returns <code>4</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>lo (after)</th><th>hi (after)</th><th>mid (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>lo, hi = 0, len(nums) - 1</code></td><td><strong><code>0</code></strong></td><td><strong><code>5</code></strong></td><td>-</td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>while lo &lt;= hi:</code></td><td><code>0</code></td><td><code>5</code></td><td>-</td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>mid = (lo + hi) // 2</code></td><td><code>0</code></td><td><code>5</code></td><td><strong><code>2</code></strong></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>if nums[mid] == target:</code></td><td><code>0</code></td><td><code>5</code></td><td><code>2</code></td></tr>
+<tr><td class="num">5</td><td class="num">7</td><td><code>if nums[mid] &lt; target:</code></td><td><code>0</code></td><td><code>5</code></td><td><code>2</code></td></tr>
+<tr><td class="num">6</td><td class="num">8</td><td><code>lo = mid + 1         # discard left half</code></td><td><strong><code>3</code></strong></td><td><code>5</code></td><td><code>2</code></td></tr>
+<tr><td class="num">7</td><td class="num">3</td><td><code>while lo &lt;= hi:</code></td><td><code>3</code></td><td><code>5</code></td><td><code>2</code></td></tr>
+<tr><td class="num">8</td><td class="num">4</td><td><code>mid = (lo + hi) // 2</code></td><td><code>3</code></td><td><code>5</code></td><td><strong><code>4</code></strong></td></tr>
+<tr><td class="num">9</td><td class="num">5</td><td><code>if nums[mid] == target:</code></td><td><code>3</code></td><td><code>5</code></td><td><code>4</code></td></tr>
+<tr><td class="num">10</td><td class="num">6</td><td><code>return mid</code></td><td><code>3</code></td><td><code>5</code></td><td><code>4</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>Each step halves the window: O(log n) time, O(1) space (recursive version uses O(log n) stack).</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Using binary search on unsorted data.</li><li>Infinite loop from lo = mid instead of mid + 1.</li><li>Using &lt; instead of &lt;= in the loop condition and missing the last element.</li><li>Overflow of (lo + hi) in other languages - use lo + (hi - lo) // 2.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"Sorted array" + "find" -&gt; binary search.</li><li>Requirement of O(log n) -&gt; binary search.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m05-problems.html#prob-binary_search">Binary Search</a></td><td><span class="tag ok">Easy</span></td><td>Binary search</td></tr><tr><td><a href="m05-problems.html#prob-search_insert">Search Insert Position</a></td><td><span class="tag ok">Easy</span></td><td>Binary search (lower bound)</td></tr><tr><td><a href="m05-problems.html#prob-my_sqrt">Integer Square Root</a> <span class="tag">LC 69</span></td><td><span class="tag ok">Easy</span></td><td>Binary search on the answer</td></tr><tr><td><a href="m05-problems.html#prob-find_peak">Find a Peak Element</a> <span class="tag">LC 162</span></td><td><span class="tag warn">Medium</span></td><td>Binary search without sorted data</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why must the list be sorted for binary search?</summary><div class="answer"><p>The comparison with the middle element tells you which half to discard only if the data is ordered.</p></div></details>
+        <details class="recall"><summary>Why not always sort and binary search?</summary><div class="answer"><p>Sorting costs O(n log n). For a single search a linear scan (O(n)) is cheaper.</p></div></details>
+        <details class="recall"><summary>Why is lo &lt;= hi the loop condition?</summary><div class="answer"><p>When lo equals hi there is still one candidate left to check. Using &lt; would skip it.</p></div></details>
+        <details class="recall"><summary>Why mid + 1 and mid - 1 instead of mid?</summary><div class="answer"><p>mid has already been checked. Excluding it guarantees the window shrinks and the loop ends.</p></div></details>
+        <details class="recall"><summary>Why can (lo + hi) // 2 overflow in other languages?</summary><div class="answer"><p>lo + hi may exceed the integer limit. lo + (hi - lo) // 2 is safe. Python has no overflow.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c5_1-q1" data-topic="Searching Algorithms" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Binary search requires the data to be...</p></div>
+        <ul class="q-options">
+          <li data-key="A">Unique</li>
+          <li data-key="B">Sorted</li>
+          <li data-key="C">Positive</li>
+          <li data-key="D">Stored in a set</li>
+        </ul>
+        <div class="q-explain"><p>The comparison tells you which half to discard only if order is guaranteed.</p></div>
+      </div>
+      <div class="quiz" data-qid="c5_1-q2" data-topic="Searching Algorithms" data-type="single" data-answer="A">
+        <div class="q-stem"><p>How many comparisons (approximately) for 1,000,000 sorted items?</p></div>
+        <ul class="q-options">
+          <li data-key="A">20</li>
+          <li data-key="B">1000</li>
+          <li data-key="C">500,000</li>
+          <li data-key="D">1,000,000</li>
+        </ul>
+        <div class="q-explain"><p>log2(10^6) is about 20.</p></div>
+      </div>
+    </section>
+
+    <section id="c5_2" data-track>
+      <h2>Binary search variants: first/last occurrence, insertion point, rotated arrays</h2>
+      <p><span class="tag ok">Essential</span> <span class="tag">Topic 5.2</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>Variants keep searching after a match (to find the first or last position) or decide which half is sorted (rotated arrays).</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Real problems rarely ask for "any index of x". They ask for boundaries, counts, or work on twisted arrays.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Finding the first page of a chapter: when you land on a page of the chapter you keep flipping left to check if an earlier page also belongs.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Plain search answers 'is it there?'. Real questions are sharper: 'what is the first time this happened?', 'where would this new value go to keep the list sorted?', 'how many records have this value?'. All of these are really questions about boundaries in a sorted list.</p>
+      <p>The cleanest way to think: for a target x, mark every element as 'less than x' (L) or 'not less than x' (N). In a sorted list the pattern is LLLLNNNN. The lower bound is the position of the first N. Binary search can find a boundary in an ordered pattern of two kinds. Upper bound is the same idea with 'less than or equal'.</p>
+      <p>Rotated sorted arrays are the interviewer's favourite twist: the order is broken in exactly one place. After cutting at mid, one half is still sorted. A sorted half is a half where plain reasoning about ranges works, so you can decide if the target belongs there; if not, it must be in the other half.</p>
+      <p>Seeing patterns this way converts a family of problems (first/last position, insert position, count, floor/ceiling, peak, minimum in a rotated list) into the same loop with slightly different conditions.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="bsearch:first"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>First occurrence: when nums[mid] == target save ans = mid and continue with hi = mid - 1.</li><li>Last occurrence: save ans and continue with lo = mid + 1.</li><li>Count of target = last - first + 1.</li><li>Insertion position (lower bound): first index with value &gt;= target.</li><li>Rotated sorted array: one half around mid is always sorted. Check whether the target lies in the sorted half; if yes search it, else search the other half.</li><li>The animation mode "first occurrence" shows ans being recorded while the window keeps shrinking.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Plain binary search stops at ANY match. In real problems the same value may appear many times. To get the FIRST position, when you find the target remember the index and keep searching on the LEFT side. For the LAST position, keep searching on the RIGHT side. These two searches give you the count of the value too: last - first + 1.</p>
+      <p>Lower bound and upper bound are the cleanest tools. lower_bound(x) is the first index with value &gt;= x. upper_bound(x) is the first index with value &gt; x. Insert position, count, first and last occurrence all come from these two.</p>
+      <p>Rotated sorted array (like [4,5,6,7,0,1,2]) looks broken but has a trick: whenever you cut it at mid, at least one side is perfectly sorted. Find out which side is sorted by comparing nums[lo] with nums[mid]. Check if the target lies inside that sorted side; if yes, search there; if not, search the other side.</p>
+      <p>Finding the minimum of a rotated array works by comparing nums[mid] with nums[hi]: if mid is bigger than the right end the drop (the minimum) is on the right; otherwise the minimum is at mid or to the left.</p>
+      <p>A 'peak' problem shows you can binary search even without sorted data. If nums[mid] &lt; nums[mid+1] you are walking uphill, so a peak must be to the right. Otherwise a peak is at mid or to the left.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Using half-open range [lo, hi) with hi = len(a) and the update hi = mid keeps lower_bound simple and avoids off-by-one errors. The invariant: answer is in [lo, hi].</li><li>bisect_left(a, x) is exactly lower_bound; bisect_right(a, x) is upper_bound. count = right - left; last index = right - 1.</li><li>In a rotated array without duplicates, comparing a[mid] with a[hi] tells which side holds the pivot (minimum). With duplicates, a[mid] == a[hi] gives no information and you must shrink hi by one, so the worst case degrades to O(n).</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Time-series databases</td><td>Finding the first event at or after a timestamp is a lower-bound search.</td></tr><tr><td>Leaderboards and ranking systems</td><td>Counting how many scores are below x is bisect on sorted scores.</td></tr><tr><td>Interviewers</td><td>Variants test whether you understand the invariant rather than memorising one template.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Two searches vs one</td><td>First and last occurrence take two O(log n) searches. A single linear scan would be O(n), so use binary search when the list is large.</td></tr><tr><td>Find the pivot then search vs one pass</td><td>You can first find the rotation pivot then binary search the correct half (two passes), or do a single pass by checking which half is sorted; both are O(log n).</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>bisect_left(a, x) = lower bound; bisect_right(a, x) = upper bound.</li><li>first and last: lo = bisect_left(a, x); hi = bisect_right(a, x) - 1.</li><li>Check the answer exists: lo &lt; len(a) and a[lo] == x.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c5_2.py">def lower_bound(nums, target):
+    lo, hi = 0, len(nums)            # hi = len, answer may be len
+    while lo &lt; hi:
+        mid = (lo + hi) // 2
+        if nums[mid] &lt; target:
+            lo = mid + 1
+        else:
+            hi = mid                 # nums[mid] &gt;= target could be the answer
+    return lo</code></pre>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>lower_bound([1, 3, 3, 5], 3)</code>, returns <code>1</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>lo (after)</th><th>hi (after)</th><th>mid (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>lo, hi = 0, len(nums)            # hi = len, answer may be len</code></td><td><strong><code>0</code></strong></td><td><strong><code>4</code></strong></td><td>-</td></tr>
+<tr><td class="num">2</td><td class="num">3</td><td><code>while lo &lt; hi:</code></td><td><code>0</code></td><td><code>4</code></td><td>-</td></tr>
+<tr><td class="num">3</td><td class="num">4</td><td><code>mid = (lo + hi) // 2</code></td><td><code>0</code></td><td><code>4</code></td><td><strong><code>2</code></strong></td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>if nums[mid] &lt; target:</code></td><td><code>0</code></td><td><code>4</code></td><td><code>2</code></td></tr>
+<tr><td class="num">5</td><td class="num">8</td><td><code>hi = mid                 # nums[mid] &gt;= target could be the answer</code></td><td><code>0</code></td><td><strong><code>2</code></strong></td><td><code>2</code></td></tr>
+<tr><td class="num">6</td><td class="num">3</td><td><code>while lo &lt; hi:</code></td><td><code>0</code></td><td><code>2</code></td><td><code>2</code></td></tr>
+<tr><td class="num">7</td><td class="num">4</td><td><code>mid = (lo + hi) // 2</code></td><td><code>0</code></td><td><code>2</code></td><td><strong><code>1</code></strong></td></tr>
+<tr><td class="num">8</td><td class="num">5</td><td><code>if nums[mid] &lt; target:</code></td><td><code>0</code></td><td><code>2</code></td><td><code>1</code></td></tr>
+<tr><td class="num">9</td><td class="num">8</td><td><code>hi = mid                 # nums[mid] &gt;= target could be the answer</code></td><td><code>0</code></td><td><strong><code>1</code></strong></td><td><code>1</code></td></tr>
+<tr><td class="num">10</td><td class="num">3</td><td><code>while lo &lt; hi:</code></td><td><code>0</code></td><td><code>1</code></td><td><code>1</code></td></tr>
+<tr><td class="num">11</td><td class="num">4</td><td><code>mid = (lo + hi) // 2</code></td><td><code>0</code></td><td><code>1</code></td><td><strong><code>0</code></strong></td></tr>
+<tr><td class="num">12</td><td class="num">5</td><td><code>if nums[mid] &lt; target:</code></td><td><code>0</code></td><td><code>1</code></td><td><code>0</code></td></tr>
+<tr><td class="num">13</td><td class="num">6</td><td><code>lo = mid + 1</code></td><td><strong><code>1</code></strong></td><td><code>1</code></td><td><code>0</code></td></tr>
+<tr><td class="num">14</td><td class="num">3</td><td><code>while lo &lt; hi:</code></td><td><code>1</code></td><td><code>1</code></td><td><code>0</code></td></tr>
+<tr><td class="num">15</td><td class="num">9</td><td><code>return lo</code></td><td><code>1</code></td><td><code>1</code></td><td><code>0</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>O(log n) time, O(1) space.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Stopping at the first match when a boundary is needed.</li><li>Mixing the lo &lt;= hi and lo &lt; hi styles in the same function.</li><li>Forgetting the answer can be n (insert at end).</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"first/last position", "insert position", "count occurrences" -&gt; lower/upper bound.</li><li>Sorted array rotated at an unknown pivot -&gt; decide the sorted half.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m05-problems.html#prob-search_insert">Search Insert Position</a></td><td><span class="tag ok">Easy</span></td><td>Binary search (lower bound)</td></tr><tr><td><a href="m05-problems.html#prob-first_last">First and Last Occurrence</a> <span class="tag">LC 34</span></td><td><span class="tag warn">Medium</span></td><td>Binary search variants</td></tr><tr><td><a href="m05-problems.html#prob-search_rotated">Search in Rotated Sorted Array</a> <span class="tag">LC 33</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Binary search on a twisted array</td></tr><tr><td><a href="m05-problems.html#prob-k_closest_elements">Find K Closest Elements</a> <span class="tag">LC 658</span></td><td><span class="tag warn">Medium</span></td><td>Binary search for the window start</td></tr><tr><td><a href="m05-problems.html#prob-find_min_rotated">Minimum in Rotated Sorted Array</a> <span class="tag">LC 153</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Binary search</td></tr><tr><td><a href="m05-problems.html#prob-search_matrix">Search a Sorted Matrix</a> <span class="tag">LC 74</span></td><td><span class="tag warn">Medium</span></td><td>Binary search in 2D</td></tr><tr><td><a href="m05-problems.html#prob-median_two_sorted">Median of Two Sorted Arrays</a> <span class="tag">LC 4</span></td><td><span class="tag bad">Hard</span></td><td>Binary search on a partition</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why keep searching after finding the target for first/last occurrence?</summary><div class="answer"><p>The target may appear many times. Continuing left finds the first copy; continuing right finds the last.</p></div></details>
+        <details class="recall"><summary>Why does the rotated array search work?</summary><div class="answer"><p>After cutting at mid one side is always sorted, so you can check whether the target lies inside that sorted range.</p></div></details>
+        <details class="recall"><summary>Why use hi = len(a) for lower_bound?</summary><div class="answer"><p>The answer can be len(a) (insert at the end), so the search range must include that position.</p></div></details>
+        <details class="recall"><summary>Why not scan linearly from the match to find the first occurrence?</summary><div class="answer"><p>With many duplicates that costs O(n). A second binary search keeps O(log n).</p></div></details>
+        <details class="recall"><summary>Why compare with a[hi] when finding the rotated minimum?</summary><div class="answer"><p>a[hi] tells which side of mid contains the drop. If a[mid] &gt; a[hi] the minimum is to the right.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c5_2-q1" data-topic="Searching Algorithms" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In "first occurrence" search, after finding target at mid you should...</p></div>
+        <ul class="q-options">
+          <li data-key="A">Return immediately</li>
+          <li data-key="B">Set hi = mid - 1 and remember mid</li>
+          <li data-key="C">Set lo = mid + 1</li>
+          <li data-key="D">Restart the search</li>
+        </ul>
+        <div class="q-explain"><p>There may be an earlier copy to the left.</p></div>
+      </div>
+      <div class="quiz" data-qid="c5_2-q2" data-topic="Searching Algorithms" data-type="single" data-answer="B">
+        <div class="q-stem"><p>lower_bound([1,3,5,6], 7) returns?</p></div>
+        <ul class="q-options">
+          <li data-key="A">3</li>
+          <li data-key="B">4</li>
+          <li data-key="C">-1</li>
+          <li data-key="D">0</li>
+        </ul>
+        <div class="q-explain"><p>7 is larger than all elements, so it would be inserted at index 4 (n).</p></div>
+      </div>
+    </section>
+
+    <section id="c5_3" data-track>
+      <h2>Binary search on the answer</h2>
+      <p><span class="tag warn">Important</span> <span class="tag">Topic 5.3</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>Instead of searching an array, you search over the range of POSSIBLE ANSWERS. If a yes/no check ("can we do it with value x?") flips from False to True exactly once as x grows, you can binary search x.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Minimise-the-maximum, capacity, speed and "kth smallest" problems become O(n log range) instead of exponential.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Finding the minimum oven temperature that bakes bread in under 30 minutes: you do not try every temperature, you halve the range after each trial.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>A baker wants the lowest oven temperature that cooks the bread in 30 minutes. The baker tests 200 degrees: too slow. Tries 250: fast enough. Tries 225: too slow... The baker is binary searching the answer. The key fact is monotonicity: a hotter oven never makes baking slower. That single fact makes halving the range valid.</p>
+      <p>In algorithm problems the 'oven' is a simulation: given a candidate answer x (speed, capacity, distance), can the task be done? If the function can_do(x) is False for small x and True for large x (or the reverse), the best x is the boundary. Searching x costs log(range) simulations, each O(n).</p>
+      <p>Why not search the original array? Because the answer is not an index in it. The real search space is the set of possible answers, which can be huge (up to 10^9) but is ordered, so binary search still takes about 30 steps.</p>
+      <p>The skill is learning to spot it: phrases like 'minimise the maximum', 'maximise the minimum', 'smallest x such that', 'largest x such that' signal this technique.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="bs_answer"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Define the answer range [lo, hi] (for example 1 .. max(piles)).</li><li>Write feasible(x): is the goal achievable with value x?</li><li>If feasible(mid): the answer is mid or smaller -&gt; hi = mid. Otherwise lo = mid + 1.</li><li>Example (Koko eating bananas): piles [3,6,7,11] in h = 8 hours. Speed 4: hours = 1+2+2+3 = 8 OK. Speed 3: 1+2+3+4 = 10 too slow. Answer 4.</li><li>Use the visualiser: each step tests a candidate speed and shows whether it is feasible.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Sometimes the thing you are looking for is not in a list. It is a NUMBER you have to choose: a speed, a capacity, a time, a distance. If you can write a function can_do(x) that answers yes/no, and the answers look like No No No Yes Yes Yes (or the reverse), you can binary search x instead of trying everything.</p>
+      <p>Recipe: (1) decide the smallest and largest possible answer, (2) write can_do(mid) by simulating the situation with mid, (3) if can_do(mid) is true, the answer is mid or smaller (hi = mid) for a minimum, otherwise lo = mid + 1, (4) when lo == hi that is the answer.</p>
+      <p>Example: Koko eats bananas. For a speed s, hours needed = sum of ceil(pile / s). Faster speed means fewer hours, so the check is monotonic. The slowest speed that finishes in h hours is the answer. Instead of trying every speed (up to max pile), binary search the speed in log(max) steps.</p>
+      <p>Same pattern appears in: shipping packages in D days, splitting an array into k parts with the smallest largest sum, placing cows/routers as far apart as possible (maximise the minimum), integer square root, and finding the k-th smallest in a multiplication table.</p>
+      <p>Always double check the direction. Minimising a value usually means 'hi = mid' on success; maximising a value usually means 'lo = mid' on success (use mid = (lo + hi + 1) // 2 to avoid an infinite loop).</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Each loop evaluates can_do(mid) in O(n) (or whatever the simulation costs) and halves the range, so total is O(n log R) where R is the range size.</li><li>To avoid infinite loops: for minimising use lo &lt; hi with hi = mid on success and lo = mid + 1 on failure. For maximising use lo = mid on success with mid = (lo + hi + 1) // 2.</li><li>The predicate must be monotonic. If your yes/no function is not monotonic (yes, no, yes...), binary search gives wrong answers.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Logistics and scheduling engineers</td><td>Finding the minimum truck capacity or the smallest number of workers that meets a deadline.</td></tr><tr><td>Network engineers</td><td>Finding maximum packet size or minimum bandwidth that satisfies a requirement.</td></tr><tr><td>Competitive programmers and interviewers</td><td>It is a standard 'medium-hard' pattern that separates candidates who only know array search from those who understand monotonic predicates.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Binary search on answer vs greedy only</td><td>Greedy solves the check (can we load in D days with capacity c?) in O(n) but cannot find the best c alone. Combining greedy check + binary search finds the optimum.</td></tr><tr><td>vs DP</td><td>DP can solve some of these exactly but with higher complexity. Binary search on the answer is simpler when the check is easy.</td></tr><tr><td>vs linear scan of answers</td><td>Trying every candidate answer would be O(n x R); binary search makes it O(n log R).</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>math.ceil(a / b) can be written with integers as (a + b - 1) // b, which avoids floating point mistakes.</li><li>sum(generator) is a compact way to build the feasibility check.</li><li>Use float('inf') only when the answer might not exist.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c5_3.py">def min_eating_speed(piles, h):
+    def hours(speed):
+        return sum((p + speed - 1) // speed for p in piles)   # ceil(p / speed)
+    lo, hi = 1, max(piles)
+    while lo &lt; hi:
+        mid = (lo + hi) // 2
+        if hours(mid) &lt;= h:
+            hi = mid          # fast enough, try slower
+        else:
+            lo = mid + 1      # too slow
+    return lo</code></pre>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>min_eating_speed([3, 6, 7, 11], 8)</code>, returns <code>4</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>lo (after)</th><th>hi (after)</th><th>mid (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">2</td><td><code>def hours(speed):</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">2</td><td class="num">4</td><td><code>lo, hi = 1, max(piles)</code></td><td><strong><code>1</code></strong></td><td><strong><code>11</code></strong></td><td>-</td></tr>
+<tr><td class="num">3</td><td class="num">5</td><td><code>while lo &lt; hi:</code></td><td><code>1</code></td><td><code>11</code></td><td>-</td></tr>
+<tr><td class="num">4</td><td class="num">6</td><td><code>mid = (lo + hi) // 2</code></td><td><code>1</code></td><td><code>11</code></td><td><strong><code>6</code></strong></td></tr>
+<tr><td class="num">5</td><td class="num">7</td><td><code>if hours(mid) &lt;= h:</code></td><td><code>1</code></td><td><code>11</code></td><td><code>6</code></td></tr>
+<tr><td class="num">6</td><td class="num">8</td><td><code>hi = mid          # fast enough, try slower</code></td><td><code>1</code></td><td><strong><code>6</code></strong></td><td><code>6</code></td></tr>
+<tr><td class="num">7</td><td class="num">5</td><td><code>while lo &lt; hi:</code></td><td><code>1</code></td><td><code>6</code></td><td><code>6</code></td></tr>
+<tr><td class="num">8</td><td class="num">6</td><td><code>mid = (lo + hi) // 2</code></td><td><code>1</code></td><td><code>6</code></td><td><strong><code>3</code></strong></td></tr>
+<tr><td class="num">9</td><td class="num">7</td><td><code>if hours(mid) &lt;= h:</code></td><td><code>1</code></td><td><code>6</code></td><td><code>3</code></td></tr>
+<tr><td class="num">10</td><td class="num">10</td><td><code>lo = mid + 1      # too slow</code></td><td><strong><code>4</code></strong></td><td><code>6</code></td><td><code>3</code></td></tr>
+<tr><td class="num">11</td><td class="num">5</td><td><code>while lo &lt; hi:</code></td><td><code>4</code></td><td><code>6</code></td><td><code>3</code></td></tr>
+<tr><td class="num">12</td><td class="num">6</td><td><code>mid = (lo + hi) // 2</code></td><td><code>4</code></td><td><code>6</code></td><td><strong><code>5</code></strong></td></tr>
+<tr><td class="num">13</td><td class="num">7</td><td><code>if hours(mid) &lt;= h:</code></td><td><code>4</code></td><td><code>6</code></td><td><code>5</code></td></tr>
+<tr><td class="num">14</td><td class="num">8</td><td><code>hi = mid          # fast enough, try slower</code></td><td><code>4</code></td><td><strong><code>5</code></strong></td><td><code>5</code></td></tr>
+<tr><td class="num">15</td><td class="num">5</td><td><code>while lo &lt; hi:</code></td><td><code>4</code></td><td><code>5</code></td><td><code>5</code></td></tr>
+<tr><td class="num">16</td><td class="num">6</td><td><code>mid = (lo + hi) // 2</code></td><td><code>4</code></td><td><code>5</code></td><td><strong><code>4</code></strong></td></tr>
+<tr><td class="num">17</td><td class="num">7</td><td><code>if hours(mid) &lt;= h:</code></td><td><code>4</code></td><td><code>5</code></td><td><code>4</code></td></tr>
+<tr><td class="num">18</td><td class="num">8</td><td><code>hi = mid          # fast enough, try slower</code></td><td><code>4</code></td><td><strong><code>4</code></strong></td><td><code>4</code></td></tr>
+<tr><td class="num">19</td><td class="num">5</td><td><code>while lo &lt; hi:</code></td><td><code>4</code></td><td><code>4</code></td><td><code>4</code></td></tr>
+<tr><td class="num">20</td><td class="num">11</td><td><code>return lo</code></td><td><code>4</code></td><td><code>4</code></td><td><code>4</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>O(n log(max)) time (n per feasibility check, log of the range steps); O(1) space.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Search range that excludes the true answer.</li><li>Non-monotonic feasibility function.</li><li>Mixing up hi = mid vs hi = mid - 1 (infinite loops).</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"Minimum possible maximum", "least capacity", "smallest speed such that..." -&gt; binary search on the answer.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m05-problems.html#prob-my_sqrt">Integer Square Root</a> <span class="tag">LC 69</span></td><td><span class="tag ok">Easy</span></td><td>Binary search on the answer</td></tr><tr><td><a href="m05-problems.html#prob-ship_capacity">Minimum Capacity to Ship in D Days</a> <span class="tag">LC 1011</span></td><td><span class="tag bad">Hard</span></td><td>Binary search on the answer</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why can you binary search something that is not an array?</summary><div class="answer"><p>You search the range of possible answers using a yes/no check that is monotonic.</p></div></details>
+        <details class="recall"><summary>Why must the check be monotonic?</summary><div class="answer"><p>Otherwise the result at mid does not tell you which half to discard.</p></div></details>
+        <details class="recall"><summary>Why not try every possible answer?</summary><div class="answer"><p>The range can be 10^9 wide. Binary search needs only about 30 checks.</p></div></details>
+        <details class="recall"><summary>Why is the lower bound often max(weights)?</summary><div class="answer"><p>Capacity below the heaviest item can never work.</p></div></details>
+        <details class="recall"><summary>Why use ceil division in the feasibility check?</summary><div class="answer"><p>A pile of 7 at speed 3 takes 3 hours (not 2.33) because partial hours count as full.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c5_3-q1" data-topic="Searching Algorithms" data-type="single" data-answer="A">
+        <div class="q-stem"><p>What property must the feasibility check have?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is monotonic</li>
+          <li data-key="B">It is random</li>
+          <li data-key="C">It returns an integer</li>
+          <li data-key="D">It is recursive</li>
+        </ul>
+        <div class="q-explain"><p>It must change from False to True once, otherwise halving is invalid.</p></div>
+      </div>
+      <div class="quiz" data-qid="c5_3-q2" data-topic="Searching Algorithms" data-type="single" data-answer="B">
+        <div class="q-stem"><p>For ceil(p / speed) using integers, which expression is right?</p></div>
+        <ul class="q-options">
+          <li data-key="A">p // speed</li>
+          <li data-key="B">(p + speed - 1) // speed</li>
+          <li data-key="C">p / speed</li>
+          <li data-key="D">p % speed</li>
+        </ul>
+        <div class="q-explain"><p>Adding speed - 1 before floor division rounds up.</p></div>
+      </div>
+    </section>
+
+    <h2 id="practice-problems">Practice problems for this module</h2>
+
+    <p>11 problems with hints, approach, dry run and tested solutions on the <a href="m05-problems.html">problem set for this module</a>.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m05-problems.html#prob-binary_search">Binary Search</a></td><td><span class="tag ok">Easy</span></td><td>Binary search</td></tr><tr><td><a href="m05-problems.html#prob-search_insert">Search Insert Position</a></td><td><span class="tag ok">Easy</span></td><td>Binary search (lower bound)</td></tr><tr><td><a href="m05-problems.html#prob-my_sqrt">Integer Square Root</a> <span class="tag">LC 69</span></td><td><span class="tag ok">Easy</span></td><td>Binary search on the answer</td></tr><tr><td><a href="m05-problems.html#prob-first_last">First and Last Occurrence</a> <span class="tag">LC 34</span></td><td><span class="tag warn">Medium</span></td><td>Binary search variants</td></tr><tr><td><a href="m05-problems.html#prob-search_rotated">Search in Rotated Sorted Array</a> <span class="tag">LC 33</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Binary search on a twisted array</td></tr><tr><td><a href="m05-problems.html#prob-find_min_rotated">Minimum in Rotated Sorted Array</a> <span class="tag">LC 153</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Binary search</td></tr><tr><td><a href="m05-problems.html#prob-find_peak">Find a Peak Element</a> <span class="tag">LC 162</span></td><td><span class="tag warn">Medium</span></td><td>Binary search without sorted data</td></tr><tr><td><a href="m05-problems.html#prob-search_matrix">Search a Sorted Matrix</a> <span class="tag">LC 74</span></td><td><span class="tag warn">Medium</span></td><td>Binary search in 2D</td></tr><tr><td><a href="m05-problems.html#prob-k_closest_elements">Find K Closest Elements</a> <span class="tag">LC 658</span></td><td><span class="tag warn">Medium</span></td><td>Binary search for the window start</td></tr><tr><td><a href="m05-problems.html#prob-ship_capacity">Minimum Capacity to Ship in D Days</a> <span class="tag">LC 1011</span></td><td><span class="tag bad">Hard</span></td><td>Binary search on the answer</td></tr><tr><td><a href="m05-problems.html#prob-median_two_sorted">Median of Two Sorted Arrays</a> <span class="tag">LC 4</span></td><td><span class="tag bad">Hard</span></td><td>Binary search on a partition</td></tr>
+</tbody>
+</table>
+</div>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Searching Algorithms</h2>
+      <p class="muted">55 questions: try to answer aloud in under a minute, then reveal. All questions from every module are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Searching Algorithms">
+<details class="recall iq" data-level="basic" data-topic="Searching Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why is binary search O(log n)?</summary><div class="answer"><p>Each comparison halves the search window. After k steps the window has n / 2^k items; it becomes 1 when k = log2(n).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Searching Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Can you use binary search on an unsorted array?</summary><div class="answer"><p>No. The decision &#x27;go left or right&#x27; only works because the data is ordered. You would first have to sort it (O(n log n)), which only pays off for many searches.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Searching Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the difference between lo &lt;= hi and lo &lt; hi loops?</summary><div class="answer"><p>With lo &lt;= hi and both ends inclusive you check every position including the last one; you use mid + 1 / mid - 1. With lo &lt; hi and hi = len(nums) (half-open) you use hi = mid to keep a candidate. Pick one style and stick with it.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Searching Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Write iterative binary search.</summary><div class="answer"><pre><code class="lang-py">def binary_search(nums, target):
+    lo, hi = 0, len(nums) - 1
+    while lo &lt;= hi:
+        mid = (lo + hi) // 2
+        if nums[mid] == target:
+            return mid
+        if nums[mid] &lt; target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return -1</code></pre></div></details>
+<details class="recall iq" data-level="basic" data-topic="Searching Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> When is linear search better than binary search?</summary><div class="answer"><p>For tiny lists, for unsorted data you only search once, or when the list is a linked list (no random access).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Searching Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why must the array be sorted?</summary><div class="answer"><p>The comparison with the middle element must tell you which half can contain the target; without order the discarded half might contain it.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Searching Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Behavioral</span> Describe a time you used a divide-and-narrow approach to debug.</summary><div class="answer"><p>Strong answers describe cutting the search space in half repeatedly: comment out half the code, check logs at the midpoint of a pipeline, or bisect commits until the faulty change is isolated.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Searching Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you find the first and last position of a target in a sorted array?</summary><div class="answer"><p>Run binary search twice. When nums[mid] == target save mid and continue left (hi = mid - 1) for the first position, or right (lo = mid + 1) for the last. O(log n) each.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Searching Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you search in a rotated sorted array?</summary><div class="answer"><p>At each step one half is sorted. If nums[lo] &lt;= nums[mid] the left half is sorted; check if the target is in [nums[lo], nums[mid]) and go there, else go right. The other case is symmetric. O(log n).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Searching Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you find the insertion position of a value?</summary><div class="answer"><p>It is the lower bound: the first index whose value is &gt;= target. In Python: bisect.bisect_left(nums, target).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Searching Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you count how many times x appears in a sorted array?</summary><div class="answer"><p>bisect_right(a, x) - bisect_left(a, x), or last - first + 1 using two binary searches. O(log n).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Searching Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What if the rotated array contains duplicates?</summary><div class="answer"><p>Sometimes nums[lo] == nums[mid] == nums[hi] and you cannot tell which half is sorted. You then shrink lo and hi by one. Worst case becomes O(n).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Searching Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why does the rotated search always find one sorted half?</summary><div class="answer"><p>Rotation splits the sorted list into two sorted runs. Any cut at mid leaves at least one side fully inside one run.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Searching Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is &#x27;binary search on the answer&#x27;?</summary><div class="answer"><p>Instead of searching in an array, you search the range of possible answers. You need a yes/no function that switches from No to Yes exactly once as the candidate grows. Then you halve the range each step.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Searching Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Explain how to find the minimum capacity to ship packages in D days.</summary><div class="answer"><p>Capacity is between max(weights) and sum(weights). For a capacity c, simulate loading days greedily and count days. If days &lt;= D then c works (try smaller), else try bigger. O(n log(sum)).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Searching Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you compute the integer square root without sqrt?</summary><div class="answer"><p>Binary search x in [0, n]: if mid * mid &lt;= n it could be the answer (lo = mid + 1 and remember mid), else hi = mid - 1.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Searching Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why do you need the monotonic property?</summary><div class="answer"><p>Because the decision at mid must tell you which half to discard. If the yes/no answers were mixed randomly you could not safely throw half away.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Searching Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you avoid an infinite loop when maximising?</summary><div class="answer"><p>Use mid = (lo + hi + 1) // 2 with lo = mid on success so the range always shrinks.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Searching Algorithms"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What does &#x27;monotonic predicate&#x27; mean?</summary><div class="answer"><p>A yes/no function whose answers switch at most once as the input increases (all No then all Yes, or the reverse).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What does bisect_left([1, 2, 2, 3], 2) return?</summary><div class="answer"><p>1: the first index where 2 could be inserted (before the existing 2s). bisect_right returns 3.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Find the index of the first element &gt;= x in a sorted list.</summary><div class="answer"><pre><code class="lang-py">def lower_bound(a, x):
+    lo, hi = 0, len(a)
+    while lo &lt; hi:
+        mid = (lo + hi) // 2
+        if a[mid] &lt; x:
+            lo = mid + 1
+        else:
+            hi = mid
+    return lo</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How does git bisect find a faulty commit?</summary><div class="answer"><p>It marks one good and one bad commit, tests the middle commit, and halves the range each time, finding the first bad commit in O(log n) tests.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why must the list be sorted for binary search?</summary><div class="answer"><p>The comparison with the middle element tells you which half to discard only if the data is ordered.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not always sort and binary search?</summary><div class="answer"><p>Sorting costs O(n log n). For a single search a linear scan (O(n)) is cheaper.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is lo &lt;= hi the loop condition?</summary><div class="answer"><p>When lo equals hi there is still one candidate left to check. Using &lt; would skip it.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why mid + 1 and mid - 1 instead of mid?</summary><div class="answer"><p>mid has already been checked. Excluding it guarantees the window shrinks and the loop ends.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why can (lo + hi) // 2 overflow in other languages?</summary><div class="answer"><p>lo + hi may exceed the integer limit. lo + (hi - lo) // 2 is safe. Python has no overflow.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use binary search on a linked list?</summary><div class="answer"><p>Reaching the middle of a linked list takes O(n), so the O(log n) benefit disappears.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Search for a target in a sorted list using recursion.</summary><div class="answer"><pre><code class="lang-py">def bs(a, t, lo, hi):
+    if lo &gt; hi:
+        return -1
+    mid = (lo + hi) // 2
+    if a[mid] == t:
+        return mid
+    if a[mid] &lt; t:
+        return bs(a, t, mid + 1, hi)
+    return bs(a, t, lo, mid - 1)</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> How many steps does binary search take on 8 items in the worst case?</summary><div class="answer"><p>4 comparisons at most (3 halvings plus the final check), about log2(8) + 1.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Count occurrences of x in a sorted list in O(log n).</summary><div class="answer"><pre><code class="lang-py">from bisect import bisect_left, bisect_right
+def count(a, x):
+    return bisect_right(a, x) - bisect_left(a, x)</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> For [1, 3, 5, 7], what does bisect_left give for 4 and for 8?</summary><div class="answer"><p>2 and 4. 4 would be inserted before 5 (index 2); 8 goes at the end (index 4 = len).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> Where would you use lower_bound in a real system?</summary><div class="answer"><p>Finding the first log entry after a timestamp, the first free time slot, the insertion index for a sorted playlist or pagination cursors.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why keep searching after finding the target for first/last occurrence?</summary><div class="answer"><p>The target may appear many times. Continuing left finds the first copy; continuing right finds the last.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does the rotated array search work?</summary><div class="answer"><p>After cutting at mid one side is always sorted, so you can check whether the target lies inside that sorted range.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use hi = len(a) for lower_bound?</summary><div class="answer"><p>The answer can be len(a) (insert at the end), so the search range must include that position.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not scan linearly from the match to find the first occurrence?</summary><div class="answer"><p>With many duplicates that costs O(n). A second binary search keeps O(log n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why compare with a[hi] when finding the rotated minimum?</summary><div class="answer"><p>a[hi] tells which side of mid contains the drop. If a[mid] &gt; a[hi] the minimum is to the right.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does duplicate data hurt the rotated search?</summary><div class="answer"><p>When a[lo] == a[mid] == a[hi] you cannot tell which half is sorted, so you must shrink by one and the worst case becomes O(n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Find the ceiling (smallest value &gt;= x) in a sorted list.</summary><div class="answer"><p>i = bisect_left(a, x); return a[i] if i &lt; len(a) else None.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> bisect_right([1, 2, 2, 3], 2) - bisect_left([1, 2, 2, 3], 2) equals?</summary><div class="answer"><p>2, the number of 2s.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Find the smallest divisor such that the sum of ceil(a_i / d) is &lt;= threshold.</summary><div class="answer"><pre><code class="lang-py">def smallest_divisor(a, threshold):
+    lo, hi = 1, max(a)
+    while lo &lt; hi:
+        mid = (lo + hi) // 2
+        if sum((x + mid - 1) // mid for x in a) &lt;= threshold:
+            hi = mid
+        else:
+            lo = mid + 1
+    return lo</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> Why can lo = mid cause an infinite loop?</summary><div class="answer"><p>With mid = (lo + hi) // 2 and lo = mid, when hi = lo + 1 then mid = lo and nothing changes. Use mid = (lo + hi + 1) // 2 for that style.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How does an autoscaler pick the smallest number of servers that handles peak traffic?</summary><div class="answer"><p>It can binary search the server count, simulating load for each candidate; fewer servers means more overload, which is monotonic.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why can you binary search something that is not an array?</summary><div class="answer"><p>You search the range of possible answers using a yes/no check that is monotonic.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why must the check be monotonic?</summary><div class="answer"><p>Otherwise the result at mid does not tell you which half to discard.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not try every possible answer?</summary><div class="answer"><p>The range can be 10^9 wide. Binary search needs only about 30 checks.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is the lower bound often max(weights)?</summary><div class="answer"><p>Capacity below the heaviest item can never work.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use ceil division in the feasibility check?</summary><div class="answer"><p>A pile of 7 at speed 3 takes 3 hours (not 2.33) because partial hours count as full.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does the answer-search use hi = mid on success when minimising?</summary><div class="answer"><p>mid might itself be the smallest working value, so it must stay in the range.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Find the integer cube root of n by binary search.</summary><div class="answer"><pre><code class="lang-py">def cbrt(n):
+    lo, hi, ans = 0, n, 0
+    while lo &lt;= hi:
+        mid = (lo + hi) // 2
+        if mid ** 3 &lt;= n:
+            ans, lo = mid, mid + 1
+        else:
+            hi = mid - 1
+    return ans</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Searching Algorithms"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How could you use this idea to size a server pool?</summary><div class="answer"><p>Binary search the number of servers; simulate the load for each candidate and pick the smallest count that meets the target latency.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Searching Algorithms"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> How many comparisons for n = 10^9?</summary><div class="answer"><p>About 30, since log2(10^9) is roughly 30.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Searching Algorithms"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Find the floor (largest value &lt;= x) in a sorted list.</summary><div class="answer"><p>i = bisect_right(a, x) - 1; return a[i] if i &gt;= 0 else None.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Searching Algorithms"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> How do you handle &#x27;maximise the minimum distance&#x27; (placing routers)?</summary><div class="answer"><p>Binary search the distance d; check greedily whether you can place k routers at least d apart. On success try a larger d (lo = mid), else a smaller one.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="m04-problems.html"><span class="dir">Previous</span><span>Problems 4: Strings</span></a>
+      <a class="next" href="m05-problems.html"><span class="dir">Next</span><span>Problems 5: Searching Algorithms</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

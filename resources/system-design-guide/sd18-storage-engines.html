@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD18">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Storage engine internals: B-trees, LSM trees, WAL, bloom filters and indexes | System Design</title>
+<meta name="description" content="How databases store and find data on disk: pages, B-trees, write-ahead logs, LSM trees with memtables, SSTables and compaction, bloom filters, read, write and space amplification, and column stores.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD18</p>
+      <h1>Storage engine internals: B-trees, LSM trees, WAL, bloom filters and indexes</h1>
+      <p class="lede">Choosing a database is choosing a storage engine. This part opens the box: how a B-tree page is found, why an LSM tree writes fast, what a write-ahead log guarantees and why bloom filters save disk reads, with small working models you can run.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~4 hours</span></div>
+    </div>
+
+    <section id="why" data-track>
+      <h2>Why storage engines matter</h2>
+<p>Every database answers two questions: <strong>how are bytes laid out on disk</strong> and <strong>how is a key found quickly</strong>. Disks (even SSDs) reward sequential access and large blocks, and punish small random writes. The two dominant designs trade differently:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>B-tree (PostgreSQL, MySQL InnoDB, SQLite)</th><th>LSM tree (RocksDB, Cassandra, LevelDB, HBase)</th></tr></thead>
+<tbody>
+<tr><td>Write path</td><td>Find the page, modify <strong>in place</strong></td><td>Append to memory and a log, flush sorted files later</td></tr><tr><td>Reads</td><td>One tree walk, <code>O(log n)</code> page reads</td><td>Check memtable and several files, helped by bloom filters</td></tr><tr><td>Strength</td><td>Predictable reads, range scans, transactions</td><td>Very high write throughput, compression</td></tr><tr><td>Weakness</td><td>Random writes, page splits, fragmentation</td><td>Read and space amplification, compaction work</td></tr><tr><td>Write amplification</td><td>Page rewritten plus log</td><td>Data rewritten at each level during compaction</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd18-q01" data-topic="Storage engines" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why are LSM trees good for write-heavy workloads?</p></div>
+        <ul class="q-options">
+          <li data-key="A">They avoid logging <span class="q-why">They log to a WAL.</span></li>
+          <li data-key="B">They turn random writes into sequential appends and batched flushes <span class="q-why">Correct.</span></li>
+          <li data-key="C">They keep everything in RAM <span class="q-why">No.</span></li>
+          <li data-key="D">They never compact <span class="q-why">They compact.</span></li>
+        </ul>
+        <div class="q-explain"><p>Sequential I/O is far cheaper than random page updates.</p></div>
+      </div>
+    </section>
+
+    <section id="btree" data-track>
+      <h2>Pages and B-trees</h2>
+<p>Data is stored in fixed-size <strong>pages</strong> (4 to 16 KB). A <strong>B+tree</strong> keeps keys sorted in a high fan-out tree: internal nodes hold separator keys and child pointers; leaves hold records (or pointers) and are linked for range scans.</p>
+<p>With a fan-out of about 500, a tree of height 3 addresses <code>500^3 = 125 million</code> keys, so a lookup needs at most 3 to 4 page reads, and the top levels stay cached in memory.</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 98" role="img" aria-label="Path of a lookup through a B+tree. Each level is one page read, and the top levels stay cached." style="min-width:760px"><defs><marker id="ah43" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah43a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah43b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah43d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah43)"/><text x="212.0" y="44.0" text-anchor="middle" class="d-sm d-muted">separator keys</text><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah43)"/><text x="426.0" y="44.0" text-anchor="middle" class="d-sm d-muted">child pointer</text><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah43)"/><text x="640.0" y="44.0" text-anchor="middle" class="d-sm d-muted">page read</text><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-b"/><text x="105.0" y="53.5" text-anchor="middle">Root page</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-c"/><text x="319.0" y="53.5" text-anchor="middle">Internal pages</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-d"/><text x="533.0" y="53.5" text-anchor="middle">Leaf pages (linked)</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="747.0" y="53.5" text-anchor="middle">Disk, 8 KB pages</text></svg>
+</div>
+<figcaption>Path of a lookup through a B+tree. Each level is one page read, and the top levels stay cached.</figcaption></figure>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd18-01.py">import bisect, random
+random.seed(0)
+class BPlusTree:
+    """Tiny B+tree with insert and range scan (order = max keys per node)."""
+    def __init__(self, order=4):
+        self.order, self.root = order, {"leaf": True, "keys": [], "vals": [], "next": None}
+        self.splits = 0
+    def _find_leaf(self, node, k):
+        while not node["leaf"]:
+            node = node["kids"][bisect.bisect_right(node["keys"], k)]
+        return node
+    def insert(self, k, v):
+        split = self._insert(self.root, k, v)
+        if split:
+            sep, right = split
+            self.root = {"leaf": False, "keys": [sep], "kids": [self.root, right]}
+    def _insert(self, node, k, v):
+        if node["leaf"]:
+            i = bisect.bisect_left(node["keys"], k)
+            if i &lt; len(node["keys"]) and node["keys"][i] == k: node["vals"][i] = v; return None
+            node["keys"].insert(i, k); node["vals"].insert(i, v)
+            if len(node["keys"]) &lt;= self.order: return None
+            mid = len(node["keys"]) // 2
+            right = {"leaf": True, "keys": node["keys"][mid:], "vals": node["vals"][mid:], "next": node["next"]}
+            node["keys"], node["vals"], node["next"] = node["keys"][:mid], node["vals"][:mid], right
+            self.splits += 1
+            return right["keys"][0], right
+        i = bisect.bisect_right(node["keys"], k)
+        res = self._insert(node["kids"][i], k, v)
+        if not res: return None
+        sep, right = res
+        node["keys"].insert(i, sep); node["kids"].insert(i + 1, right)
+        if len(node["keys"]) &lt;= self.order: return None
+        mid = len(node["keys"]) // 2
+        up = node["keys"][mid]
+        right = {"leaf": False, "keys": node["keys"][mid + 1:], "kids": node["kids"][mid + 1:]}
+        node["keys"], node["kids"] = node["keys"][:mid], node["kids"][:mid + 1]
+        self.splits += 1
+        return up, right
+    def get(self, k):
+        leaf = self._find_leaf(self.root, k)
+        i = bisect.bisect_left(leaf["keys"], k)
+        return leaf["vals"][i] if i &lt; len(leaf["keys"]) and leaf["keys"][i] == k else None
+    def scan(self, lo, hi):
+        leaf, out = self._find_leaf(self.root, lo), []
+        while leaf:
+            for k, v in zip(leaf["keys"], leaf["vals"]):
+                if k &gt; hi: return out
+                if k &gt;= lo: out.append(k)
+            leaf = leaf["next"]
+        return out
+    def height(self):
+        h, n = 1, self.root
+        while not n["leaf"]: n = n["kids"][0]; h += 1
+        return h
+keys = random.sample(range(100000), 5000)
+t = BPlusTree(order=8)
+for k in keys: t.insert(k, k * 2)
+assert all(t.get(k) == k * 2 for k in keys[:500]) and t.get(-5) is None
+assert t.scan(1000, 2000) == sorted(k for k in keys if 1000 &lt;= k &lt;= 2000)
+print("5000 keys, order 8: height", t.height(), "| node splits", t.splits, "| point lookups and range scan verified")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>5000 keys, order 8: height 5 | node splits 1018 | point lookups and range scan verified</code></pre>
+<h3>What to remember</h3>
+<ul><li>Inserts may <strong>split</strong> a full page into two and push a separator key up; the tree grows at the root, so all leaves stay at the same depth.</li><li>Range scans follow leaf links. That is why B-tree indexes are great for <code>BETWEEN</code> and <code>ORDER BY</code>.</li><li><strong>Clustered</strong> index: table rows are stored in the leaf (InnoDB primary key). <strong>Secondary</strong> index: leaves hold the primary key, requiring a second lookup.</li><li>Key size matters: smaller keys, larger fan-out, shallower tree. Random UUID primary keys cause scattered inserts and page splits; time-ordered ids append at the right edge.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd18-q02" data-topic="Storage engines" data-type="numeric" data-answer="1000" data-tol="0">
+        <div class="q-stem"><p>A B-tree with fan-out 100 and height 3 can address roughly how many keys (in thousands)? (100^3 / 1000)</p></div>
+        <div class="q-explain"><p>100^3 = 1,000,000 keys, i.e. 1000 thousand.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd18-q03" data-topic="Storage engines" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What happens when a B-tree leaf is full and a key is inserted?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The insert fails <span class="q-why">No.</span></li>
+          <li data-key="B">The page splits and a separator is pushed up to the parent <span class="q-why">Correct.</span></li>
+          <li data-key="C">All pages are rewritten <span class="q-why">No.</span></li>
+          <li data-key="D">The tree is rebuilt <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Splits keep all leaves at the same depth.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why do B-trees have such high fan-out?</summary><div class="answer"><p>Nodes are sized to a disk page, so each reads hundreds of keys, making the tree very shallow.</p></div></details>
+      </div>
+    </section>
+
+    <section id="wal" data-track>
+      <h2>The write-ahead log</h2>
+<p>Updating a page in place is not atomic: a crash mid-write leaves a torn page. The <strong>write-ahead log (WAL)</strong> records each change sequentially <strong>before</strong> the page is modified, and the commit is acknowledged once the log record is flushed (<code>fsync</code>). After a crash the database replays the log to redo committed changes (and undoes uncommitted ones).</p>
+<p>Why it works: sequential log appends are fast, and the log is the single source of truth for recovery. WALs also enable <strong>replication</strong> (ship the log), <strong>point-in-time recovery</strong> and change data capture.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd18-02.py">import json
+class TinyDB:
+    """Key-value store with a write-ahead log; the 'disk page' may be lost in a crash."""
+    def __init__(self): self.log, self.pages = [], {}
+    def put(self, k, v):
+        self.log.append(json.dumps({"op": "put", "k": k, "v": v}))   # 1. log first (fsync)
+        self.pages[k] = v                                                # 2. page later (may be lost)
+    def crash(self): self.pages = {}                                     # in-memory state vanishes
+    def recover(self):
+        for line in self.log:
+            r = json.loads(line)
+            if r["op"] == "put": self.pages[r["k"]] = r["v"]
+db = TinyDB()
+db.put("a", 1); db.put("b", 2); db.put("a", 3)
+db.crash()
+print("after crash:", db.pages)
+db.recover()
+print("after replaying the log:", db.pages)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>after crash: {}
+after replaying the log: {'a': 3, 'b': 2}</code></pre>
+<p>Related ideas: <strong>checkpoints</strong> (flush dirty pages so replay starts later), <strong>group commit</strong> (batch many commits into one fsync), <strong>fsync cost</strong> (about 0.1 to 1 ms on SSD, several ms on a network disk), and <code>synchronous_commit = off</code> trading a few ms of durability for throughput.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd18-q04" data-topic="Storage engines" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does the write-ahead rule require?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Write data pages before the log <span class="q-why">Reverse.</span></li>
+          <li data-key="B">Log the change durably before modifying or flushing data pages <span class="q-why">Correct.</span></li>
+          <li data-key="C">Never fsync <span class="q-why">No.</span></li>
+          <li data-key="D">Log only deletes <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>That ordering is what makes crash recovery possible.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why can the commit be acknowledged after the log fsync only?</summary><div class="answer"><p>The log has the full change, so recovery can redo it even if the data pages never reached disk.</p></div></details>
+      </div>
+    </section>
+
+    <section id="lsm" data-track>
+      <h2>LSM trees</h2>
+<p>A <strong>log-structured merge tree</strong> turns random writes into sequential ones:</p>
+<ol><li>A write goes to the <strong>WAL</strong> (durability) and into an in-memory sorted <strong>memtable</strong>.</li><li>When the memtable is full it is flushed as an immutable sorted file, an <strong>SSTable</strong>.</li><li>Reads check the memtable, then SSTables from newest to oldest.</li><li>Background <strong>compaction</strong> merges SSTables, dropping overwritten values and deleted keys (<strong>tombstones</strong>).</li></ol>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 98" role="img" aria-label="The LSM lifecycle of a write and a read." style="min-width:760px"><defs><marker id="ah44" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah44a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah44b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah44d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah44)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah44)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah44)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle" class="d-sm">Write: WAL append and memtable</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle" class="d-sm">Flush: memtable to an SSTable</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle" class="d-sm">Compact: merge sorted files into larger levels</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle" class="d-sm">Read: memtable, then newest to oldest files</text></svg>
+</div>
+<figcaption>The LSM lifecycle of a write and a read.</figcaption></figure>
+<p>Deletes write a tombstone marker; the data physically disappears only when compaction merges it with the older value.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd18-03.py">import bisect
+class LSM:
+    def __init__(self, memtable_limit=4):
+        self.mem, self.limit, self.tables, self.reads_touched = {}, memtable_limit, [], 0
+    def put(self, k, v):
+        self.mem[k] = v
+        if len(self.mem) &gt;= self.limit: self.flush()
+    def delete(self, k): self.put(k, None)             # tombstone
+    def flush(self):
+        self.tables.insert(0, sorted(self.mem.items()))  # newest first
+        self.mem = {}
+    def get(self, k):
+        if k in self.mem: return self.mem[k]
+        for t in self.tables:
+            self.reads_touched += 1
+            i = bisect.bisect_left(t, (k,))
+            if i &lt; len(t) and t[i][0] == k: return t[i][1]
+        return None
+    def compact(self):
+        merged = {}
+        for t in reversed(self.tables):                  # oldest first, newer overwrites
+            merged.update(dict(t))
+        self.tables = [sorted((k, v) for k, v in merged.items() if v is not None)]
+db = LSM()
+for i in range(10): db.put(f"k{i}", i)
+db.put("k3", 333); db.delete("k5")
+for i in range(10, 14): db.put(f"k{i}", i)
+print("sstables before compaction:", len(db.tables))
+print("k3 =", db.get("k3"), "| k5 (deleted) =", db.get("k5"), "| k0 =", db.get("k0"), "| sstables touched so far:", db.reads_touched)
+db.compact()
+print("sstables after compaction:", len(db.tables), "| entries:", len(db.tables[0]), "| k3 =", db.get("k3"), "| k5 =", db.get("k5"))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>sstables before compaction: 4
+k3 = 333 | k5 (deleted) = None | k0 = 0 | sstables touched so far: 8
+sstables after compaction: 1 | entries: 13 | k3 = 333 | k5 = None</code></pre>
+<h3>Compaction strategies</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Strategy</th><th>Idea</th><th>Good for</th></tr></thead>
+<tbody>
+<tr><td>Size-tiered</td><td>Merge similar-size files</td><td>Write-heavy, higher space use</td></tr><tr><td>Leveled</td><td>Each level is 10x larger with non-overlapping files</td><td>Read-heavy, lower space, more write amplification</td></tr><tr><td>Time-window</td><td>Compact by time buckets, drop whole windows</td><td>Time series with TTL</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd18-q05" data-topic="Storage engines" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is a tombstone?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A corrupted page <span class="q-why">No.</span></li>
+          <li data-key="B">A marker recording a delete until compaction removes the old values <span class="q-why">Correct.</span></li>
+          <li data-key="C">A backup <span class="q-why">No.</span></li>
+          <li data-key="D">An index <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Immutable files cannot be edited, so deletes are writes.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does compaction do?</summary><div class="answer"><p>Merges sorted files, discards overwritten values and tombstoned keys, and bounds the number of files a read must check.</p></div></details>
+      </div>
+    </section>
+
+    <section id="bloom" data-track>
+      <h2>Bloom filters</h2>
+<p>A <strong>bloom filter</strong> says "definitely not present" or "maybe present". LSM engines keep one per SSTable so most lookups for missing keys skip the file without touching disk.</p>
+<p>With <code>m</code> bits, <code>k</code> hash functions and <code>n</code> items, the false-positive rate is about <code>(1 - e^(-kn/m))^k</code>. About <strong>10 bits per key and 7 hash functions give roughly 1%</strong>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd18-04.py">import hashlib, math
+class Bloom:
+    def __init__(self, m, k): self.m, self.k, self.bits = m, k, bytearray(m)
+    def _hashes(self, x):
+        for i in range(self.k):
+            yield int(hashlib.sha256(f"{i}:{x}".encode()).hexdigest(), 16) % self.m
+    def add(self, x):
+        for h in self._hashes(x): self.bits[h] = 1
+    def __contains__(self, x): return all(self.bits[h] for h in self._hashes(x))
+n, m, k = 5000, 50000, 7
+b = Bloom(m, k)
+for i in range(n): b.add(f"user{i}")
+assert all(f"user{i}" in b for i in range(n))                     # no false negatives
+fp = sum(f"other{i}" in b for i in range(20000)) / 20000
+theory = (1 - math.exp(-k * n / m)) ** k
+print(f"false positive rate: measured {fp:.4f}, formula {theory:.4f} (10 bits per key, k = 7)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>false positive rate: measured 0.0078, formula 0.0082 (10 bits per key, k = 7)</code></pre>
+<p>Variants: <strong>counting bloom</strong> (supports delete), <strong>cuckoo filter</strong>, <strong>quotient filter</strong>. Used in LSM files, CDNs (skip one-hit wonders), spell checkers and "have I seen this URL?" crawlers.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd18-q06" data-topic="Storage engines" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A bloom filter reports a key as absent. What does that mean?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It might still exist <span class="q-why">No, that applies to 'present'.</span></li>
+          <li data-key="B">It definitely does not exist <span class="q-why">Correct, there are no false negatives.</span></li>
+          <li data-key="C">The filter is full <span class="q-why">No.</span></li>
+          <li data-key="D">Nothing <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>False positives are possible; false negatives are not.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How does a bloom filter save disk reads?</summary><div class="answer"><p>It cheaply proves a key is absent from an SSTable so that file need not be read.</p></div></details>
+      </div>
+    </section>
+
+    <section id="amplification" data-track>
+      <h2>Amplification: the cost model</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><strong>Write amplification</strong></td><td>Bytes physically written per byte logically written</td></tr><tr><td><strong>Read amplification</strong></td><td>Disk reads per query</td></tr><tr><td><strong>Space amplification</strong></td><td>Bytes on disk per byte of live data</td></tr>
+</tbody>
+</table>
+</div>
+<p>The RUM conjecture: you cannot minimise <strong>R</strong>eads, <strong>U</strong>pdates and <strong>M</strong>emory/space together. B-trees favour reads; leveled LSM favours space and reads over writes; size-tiered LSM favours writes.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd18-q07" data-topic="Storage engines" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which statement about the RUM conjecture is right?</p></div>
+        <ul class="q-options">
+          <li data-key="A">You can have all of fast reads, fast updates and low space <span class="q-why">No.</span></li>
+          <li data-key="B">Optimising two of read, update and memory costs the third <span class="q-why">Correct.</span></li>
+          <li data-key="C">It only applies to RAM <span class="q-why">No.</span></li>
+          <li data-key="D">It only applies to SQL <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Every design chooses what to sacrifice.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Define write amplification.</summary><div class="answer"><p>Physical bytes written to storage divided by logical bytes written by the application.</p></div></details>
+      </div>
+    </section>
+
+    <section id="columns" data-track>
+      <h2>Row stores versus column stores</h2>
+<ul><li><strong>Row store</strong> (PostgreSQL, MySQL): all columns of a row are adjacent. Best for transactional access to whole records.</li><li><strong>Column store</strong> (Parquet, ClickHouse, BigQuery, Redshift, Snowflake): each column is stored separately. Analytical queries read only the needed columns, and similar values compress extremely well (run-length, dictionary, delta encoding), and vectorised execution processes many values per CPU instruction.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd18-05.py">import random, zlib, json
+random.seed(1)
+rows = [{"id": i, "country": random.choice(["IN", "US", "DE"]), "amount": random.randint(1, 5) * 10} for i in range(20000)]
+row_bytes = zlib.compress(json.dumps(rows).encode(), 6)
+cols = {c: [r[c] for r in rows] for c in rows[0]}
+col_bytes = sum(len(zlib.compress(json.dumps(v).encode(), 6)) for v in cols.values())
+print(f"row layout: {len(row_bytes):,} bytes | column layout: {col_bytes:,} bytes (compressed) | ratio {len(row_bytes) / col_bytes:.2f}x")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>row layout: 75,278 bytes | column layout: 60,820 bytes (compressed) | ratio 1.24x</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd18-q08" data-topic="Storage engines" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why do column stores compress well?</p></div>
+        <ul class="q-options">
+          <li data-key="A">They use encryption <span class="q-why">No.</span></li>
+          <li data-key="B">Values in one column are similar and can use run-length, dictionary or delta encoding <span class="q-why">Correct.</span></li>
+          <li data-key="C">They delete data <span class="q-why">No.</span></li>
+          <li data-key="D">They store fewer rows <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Homogeneous data is compressible.</p></div>
+      </div>
+    </section>
+
+    <section id="choose" data-track>
+      <h2>Putting it together: choosing an engine</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Workload</th><th>Prefer</th></tr></thead>
+<tbody>
+<tr><td>OLTP with transactions and range queries</td><td>B-tree relational (PostgreSQL, MySQL)</td></tr><tr><td>Heavy ingestion, time series, logs</td><td>LSM (Cassandra, RocksDB, ClickHouse MergeTree)</td></tr><tr><td>Mostly point lookups of a huge key space</td><td>LSM or hash-partitioned KV</td></tr><tr><td>Analytics over many rows, few columns</td><td>Column store</td></tr><tr><td>Embedded, single file</td><td>SQLite (B-tree), RocksDB (LSM)</td></tr><tr><td>Search</td><td>Inverted index (Lucene), see <a href="sd12-data-systems.html">SD12</a></td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout key"><span class="callout-title">Key idea</span><p>B-trees update pages in place and read in <code>O(log n)</code> pages; LSM trees append, sort and merge, trading read and space amplification for write throughput. Every durable engine has a WAL. Bloom filters rescue LSM reads. Say which amplification you are optimising when you pick an engine.</p></div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Storage engines</h2>
+      <p class="muted">15 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Storage engines">
+<details class="recall iq" data-level="basic" data-topic="Storage engines"><summary><span class="tag ok">Basic</span> Why do databases store data in pages?</summary><div class="answer"><p>Disks and SSDs read and write in blocks. Fixed-size pages (4 to 16 KB) match that unit, so each I/O fetches many records and the buffer pool can cache them.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Storage engines"><summary><span class="tag ok">Basic</span> What is a write-ahead log and why does every durable database have one?</summary><div class="answer"><p>An append-only record of changes written and flushed before the data pages are modified. After a crash the database replays it, so committed changes are not lost and half-written changes can be undone.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Storage engines"><summary><span class="tag ok">Basic</span> How deep is a B-tree for a billion keys?</summary><div class="answer"><p>With a fan-out of several hundred, three to four levels; the upper levels stay cached, so a lookup costs about one or two disk reads.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Storage engines"><summary><span class="tag warn">Medium</span> B-tree versus LSM tree: when do you choose each?</summary><div class="answer"><p>B-trees for read-heavy and transactional workloads with range queries and predictable latency; LSM trees for write-heavy or ingestion workloads, accepting read and space amplification and background compaction.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Storage engines"><summary><span class="tag warn">Medium</span> How does an LSM tree handle a write and a read?</summary><div class="answer"><p>A write goes to the WAL and the in-memory memtable; full memtables flush to immutable sorted SSTables. A read checks the memtable then SSTables from newest to oldest, using bloom filters to skip files.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Storage engines"><summary><span class="tag warn">Medium</span> What is a tombstone and why are deletes slow to reclaim space in LSM engines?</summary><div class="answer"><p>A delete writes a marker because SSTables are immutable. The old value and the marker are physically removed only when compaction merges the files that contain them.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Storage engines"><summary><span class="tag warn">Medium</span> What is write amplification?</summary><div class="answer"><p>The ratio of bytes physically written to storage to bytes the application wrote. LSM compaction and B-tree page rewrites both cause it; it affects SSD lifetime and throughput.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Storage engines"><summary><span class="tag warn">Medium</span> How does a bloom filter reduce reads in an LSM tree?</summary><div class="answer"><p>Each SSTable has a filter that can say a key is definitely absent, so most lookups for missing keys skip that file with no disk access.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Storage engines"><summary><span class="tag warn">Medium</span> Why can random UUID primary keys hurt a B-tree?</summary><div class="answer"><p>Inserts land on random leaf pages, causing cache misses and page splits and fragmentation. Time-ordered ids append at the right edge and keep locality.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Storage engines"><summary><span class="tag bad">Advanced</span> Explain compaction strategies.</summary><div class="answer"><p>Size-tiered merges similar-sized files (cheap writes, more space and read amplification); leveled keeps non-overlapping files per level (better reads and space, higher write amplification); time-window compaction suits TTL time series.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Storage engines"><summary><span class="tag bad">Advanced</span> What is the RUM conjecture?</summary><div class="answer"><p>A storage design cannot minimise read cost, update cost and memory/space at the same time; optimising two worsens the third.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Storage engines"><summary><span class="tag bad">Advanced</span> Why are column stores faster for analytics?</summary><div class="answer"><p>They read only the needed columns, compress similar values well (run-length, dictionary, delta) and use vectorised execution. They are slower for single-row transactional access.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Storage engines"><summary><span class="tag bad">Advanced</span> What does group commit do?</summary><div class="answer"><p>Batches the log flushes of many concurrent transactions into one fsync, greatly improving throughput at a small latency cost.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Storage engines"><summary><span class="tag bad">Advanced</span> How does MVCC let readers avoid blocking writers?</summary><div class="answer"><p>Each write creates a new row version tagged with transaction ids; a reader sees a snapshot of versions committed before it began. Old versions are cleaned later (vacuum or purge).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Storage engines"><summary><span class="tag bad">Advanced</span> What is a checkpoint?</summary><div class="answer"><p>A point where dirty pages are flushed so recovery needs to replay the log only from that point forward, bounding recovery time and allowing old log segments to be removed.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd17-lld.html"><span class="dir">Previous</span><span>SD17 Low-level design and design patterns</span></a>
+      <a class="next" href="sd19-event-driven.html"><span class="dir">Next</span><span>SD19 Event-driven architecture: CQRS, event sourcing, sagas and the outbox</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="A7">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MLOps: shipping and running machine learning in production | AI/ML Prep</title>
+<meta name="description" content="The ML lifecycle, data validation, training and serving skew, feature stores, experiment tracking, deployment strategies, monitoring and drift detection with PSI and KS tests, A/B testing, retraining and governance.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part A7</p>
+      <h1>MLOps: shipping and running machine learning in production</h1>
+      <p class="lede">A model in a notebook is a prototype; a model in production is a system that must be reproducible, observable and safe to change. This part covers the lifecycle and the practical checks that keep a model healthy after launch.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="lifecycle" data-track>
+      <h2>The ML lifecycle</h2>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="The loop never ends: monitoring feeds back into data and retraining." style="min-width:760px"><defs><marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah2a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah2b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah2d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah2)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah2)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah2)"/><line x1="747.0" y1="78.0" x2="747.0" y2="118.0" class="d-line" marker-end="url(#ah2)"/><line x1="662.0" y1="147.0" x2="618.0" y2="147.0" class="d-line" marker-end="url(#ah2)"/><line x1="448.0" y1="147.0" x2="404.0" y2="147.0" class="d-line" marker-end="url(#ah2)"/><line x1="234.0" y1="147.0" x2="190.0" y2="147.0" class="d-line" marker-end="url(#ah2)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">Problem framing</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle" class="d-sm">Data collection and validation</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle">Features</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle" class="d-sm">Training and experiments</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="151.5" text-anchor="middle">Evaluation</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="151.5" text-anchor="middle">Deployment</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="151.5" text-anchor="middle">Monitoring</text><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="105.0" y="151.5" text-anchor="middle">Retraining</text></svg>
+</div>
+<figcaption>The loop never ends: monitoring feeds back into data and retraining.</figcaption></figure>
+<h3>Why ML systems differ from ordinary software</h3>
+<p>Code is only one input. <strong>Data</strong> and <strong>model</strong> change too, and <strong>behaviour is learned</strong>, so failures are often silent: the service returns 200 with a worse prediction. Hidden technical debt appears as entangled features, unstable data dependencies, undeclared consumers of predictions, feedback loops and glue code.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Level</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>Manual: notebooks, hand-copied model files</td></tr><tr><td>1</td><td>Automated training pipeline, continuous delivery of models</td></tr><tr><td>2</td><td>Automated CI/CD for pipeline code, tests on data and models, automatic retraining and rollout</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Framing first</h3>
+<p>Before modelling: what decision will the prediction change? Is ML needed (a rule may work)? What is the <strong>baseline</strong> and the <strong>success metric</strong> that matters to the business? What are the <strong>latency, cost and fairness</strong> constraints? What does a wrong prediction cost?</p>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why are ML failures often silent?</summary><div class="answer"><p>The service still returns valid predictions; quality degrades through data or concept drift and only outcome monitoring reveals it.</p></div></details>
+      </div>
+    </section>
+
+    <section id="data" data-track>
+      <h2>Data quality and pipelines</h2>
+<h3>Validate data like code</h3>
+<p>Most production incidents are data problems. Add automated checks at ingestion and before training:</p>
+<ul><li><strong>Schema</strong>: columns, types, allowed values.</li><li><strong>Completeness</strong>: missing-value rates, row counts against yesterday's.</li><li><strong>Distribution</strong>: means, ranges, category frequencies against a reference (see drift below).</li><li><strong>Integrity</strong>: duplicates, key relationships, impossible values (negative ages).</li><li><strong>Freshness</strong>: the newest timestamp is recent.</li></ul>
+<p>Tools: Great Expectations, TFX Data Validation, Pandera, dbt tests, Deequ.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a7-01.py">rows = [{"age": 34, "country": "US", "amount": 120.0}, {"age": -5, "country": "US", "amount": 80.0},
+        {"age": 41, "country": "ZZ", "amount": None}, {"age": 29, "country": "FR", "amount": 55.5}]
+allowed = {"US", "FR", "DE"}
+errors = []
+for i, r in enumerate(rows):
+    if not (0 &lt;= r["age"] &lt;= 120): errors.append((i, "age out of range"))
+    if r["country"] not in allowed: errors.append((i, "unknown country"))
+    if r["amount"] is None: errors.append((i, "missing amount"))
+print(errors)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[(1, 'age out of range'), (2, 'unknown country'), (2, 'missing amount')]</code></pre>
+<p>Fail the pipeline (or quarantine rows) when checks fail rather than training on bad data.</p>
+<h3>Leakage and splitting</h3>
+<p>Leakage inflates offline metrics and kills production performance. Common forms: features computed with <strong>future information</strong>, the <strong>label</strong> hidden in a feature, <strong>duplicates</strong> across train and test, preprocessing fit on all data, and random splits of <strong>time series</strong> or grouped data. Split by <strong>time</strong> for temporal problems and by <strong>entity</strong> (user, patient) when rows are correlated.</p>
+<h3>Reproducibility</h3>
+<p>Version <strong>code, data, configuration and environment</strong> together: git for code, DVC or lakeFS or table snapshots for data, pinned dependencies and containers, seeds for randomness, and a recorded run for every model. Anyone should be able to rebuild a given model bit-for-bit (or nearly).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a7-q01" data-topic="MLOps" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which is a leakage example?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Using a time-based split <span class="q-why">That avoids leakage.</span></li>
+          <li data-key="B">Using a feature computed from information available only after the prediction time <span class="q-why">Correct.</span></li>
+          <li data-key="C">Standardising inside cross-validation folds <span class="q-why">Correct practice.</span></li>
+          <li data-key="D">Holding out a test set <span class="q-why">Correct practice.</span></li>
+        </ul>
+        <div class="q-explain"><p>The model sees the future in training but not in production.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name common sources of leakage.</summary><div class="answer"><p>Future-derived features, label-derived features, duplicates across splits, preprocessing fit on all data, random splits of time series.</p></div></details>
+      </div>
+    </section>
+
+    <section id="features" data-track>
+      <h2>Features, training and serving</h2>
+<h3>Training-serving skew</h3>
+<p>The same feature must be computed identically in training and in production. Typical sources of <strong>skew</strong>: different code paths (SQL in training, Java in serving), different data freshness, missing values handled differently, and features unavailable at prediction time.</p>
+<h3>Feature stores</h3>
+<p>A <strong>feature store</strong> (Feast, Tecton, Vertex, SageMaker) provides: one definition of each feature, an <strong>offline store</strong> for historical training data with <strong>point-in-time correct</strong> joins (no future leakage), an <strong>online store</strong> (low-latency key-value) for serving, and reuse across teams.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a7-02.py"># Point-in-time correctness: the feature value used for a label must be the latest value BEFORE the label time.
+feature_history = [("u1", 10, 5), ("u1", 20, 9), ("u1", 30, 20)]       # (user, timestamp, purchases_30d)
+labels = [("u1", 25, 1)]                                                 # (user, label_time, label)
+def as_of(user, t):
+    vals = [v for u, ts, v in feature_history if u == user and ts &lt;= t]
+    return vals[-1] if vals else None
+for user, t, y in labels:
+    print("label at t=%d uses feature value %s (not the later 20)" % (t, as_of(user, t)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>label at t=25 uses feature value 9 (not the later 20)</code></pre>
+<h3>Training pipelines</h3>
+<p>Orchestrate steps (extract, validate, featurise, train, evaluate, register) as a DAG with <strong>Airflow</strong>, <strong>Kubeflow</strong>, <strong>Dagster</strong>, <strong>Metaflow</strong>, <strong>Vertex Pipelines</strong> or <strong>SageMaker Pipelines</strong>. Track experiments (parameters, metrics, artifacts) with <strong>MLflow</strong> or <strong>Weights and Biases</strong>. Store promoted models in a <strong>model registry</strong> with versions, lineage and stage (staging, production).</p>
+<h3>Evaluation before release</h3>
+<ul><li>Compare against the <strong>current production model</strong> and a simple baseline on a <strong>frozen, representative</strong> test set.</li><li>Evaluate <strong>slices</strong> (segments, regions, rare classes): an average hides regressions.</li><li>Check <strong>calibration</strong>, latency, memory, and <strong>fairness</strong> metrics.</li><li>Run <strong>unit tests for the model</strong>: invariance (a name change should not change a loan decision), directional expectations (more income, higher approval), and known-hard examples.</li><li>Gate release on thresholds in CI.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a7-q02" data-topic="MLOps" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is training-serving skew?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Training is slower than serving <span class="q-why">No.</span></li>
+          <li data-key="B">Features are computed differently in training and in production <span class="q-why">Correct.</span></li>
+          <li data-key="C">The GPU differs <span class="q-why">No.</span></li>
+          <li data-key="D">Batch size differs <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>A feature store with one definition prevents it.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is a point-in-time join?</summary><div class="answer"><p>A join that attaches to each label the latest feature value known before the label time.</p></div></details>
+      </div>
+    </section>
+
+    <section id="deploy" data-track>
+      <h2>Deployment patterns</h2>
+<h3>Serving modes</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Mode</th><th>When</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><strong>Batch</strong></td><td>Predictions needed daily or hourly (recommendations, scoring)</td><td>Cheap, simple, high throughput; stale</td></tr><tr><td><strong>Online (real-time API)</strong></td><td>Per-request decisions</td><td>Latency budgets; autoscaling</td></tr><tr><td><strong>Streaming</strong></td><td>Event-driven features and decisions (fraud)</td><td>Flink or Kafka-based</td></tr><tr><td><strong>Edge or on-device</strong></td><td>Privacy, offline, low latency</td><td>Quantised, small models</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Release strategies</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Strategy</th><th>How</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td><strong>Shadow</strong></td><td>New model receives live traffic, its predictions are logged but not used</td><td>Safe comparison on real inputs</td></tr><tr><td><strong>Canary</strong></td><td>A small share of traffic uses the new model; expand if metrics hold</td><td>Limits blast radius</td></tr><tr><td><strong>A/B test</strong></td><td>Randomise users between models and compare business metrics</td><td>Measures causal impact</td></tr><tr><td><strong>Blue/green</strong></td><td>Switch all traffic between two environments</td><td>Instant rollback</td></tr><tr><td><strong>Multi-armed bandit</strong></td><td>Shift traffic adaptively to the better model</td><td>Less regret, less clean inference</td></tr>
+</tbody>
+</table>
+</div>
+<p>Package models in containers behind an API (FastAPI, TorchServe, Triton, vLLM, BentoML, KServe), keep a <strong>fallback</strong> (previous model or rules) and a kill switch, and test the <strong>whole</strong> path including feature retrieval under load. Reduce latency with batching, quantisation, caching, and model distillation.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a7-q03" data-topic="MLOps" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A new model receives live traffic but its outputs are only logged. This is:</p></div>
+        <ul class="q-options">
+          <li data-key="A">A/B testing <span class="q-why">Users see the outputs there.</span></li>
+          <li data-key="B">Shadow deployment <span class="q-why">Correct.</span></li>
+          <li data-key="C">Blue/green <span class="q-why">Switches traffic.</span></li>
+          <li data-key="D">Canary <span class="q-why">Serves a share of users.</span></li>
+        </ul>
+        <div class="q-explain"><p>Shadow mode compares predictions safely on real inputs.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Shadow, canary and A/B?</summary><div class="answer"><p>Shadow logs without serving; canary serves a small share with monitoring; A/B randomises users to measure causal effect.</p></div></details>
+      </div>
+    </section>
+
+    <section id="monitoring" data-track>
+      <h2>Monitoring and drift</h2>
+<h3>What to monitor</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Layer</th><th>Signals</th></tr></thead>
+<tbody>
+<tr><td>System</td><td>Latency percentiles, errors, throughput, CPU, GPU, memory, cost</td></tr><tr><td>Data</td><td>Missing rates, schema changes, feature distributions, volume</td></tr><tr><td>Model</td><td>Prediction distribution, confidence, score drift</td></tr><tr><td>Outcome</td><td>Real accuracy, business KPIs, <strong>delayed labels</strong> joined back when they arrive</td></tr><tr><td>Fairness and safety</td><td>Metrics per segment, complaint rates</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Types of drift</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Drift</th><th>Meaning</th><th>Detect with</th></tr></thead>
+<tbody>
+<tr><td><strong>Data (covariate) drift</strong></td><td>The input distribution <code>P(x)</code> changes</td><td>Feature distribution tests</td></tr><tr><td><strong>Label drift</strong></td><td><code>P(y)</code> changes</td><td>Label rates</td></tr><tr><td><strong>Concept drift</strong></td><td>The relationship <code>P(y given x)</code> changes (fraud tactics, seasons)</td><td>Performance on fresh labels</td></tr><tr><td><strong>Upstream change</strong></td><td>A pipeline or unit changes (price now in cents)</td><td>Schema and range checks</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Population stability index (PSI)</h3>
+<p>Bin a feature using the reference (training) data, compare the share of production data in each bin: <code>PSI = sum (p_prod - p_ref) x ln(p_prod / p_ref)</code>. Rule of thumb: below 0.1 stable, 0.1 to 0.25 moderate shift, above 0.25 major shift.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a7-03.py">import math
+def psi(ref, cur):
+    return sum((c - r) * math.log(c / r) for r, c in zip(ref, cur))
+ref = [0.25, 0.25, 0.25, 0.25]            # share of training data in 4 quartile bins
+stable = [0.24, 0.26, 0.26, 0.24]
+shifted = [0.10, 0.20, 0.30, 0.40]
+print("PSI stable  :", round(psi(ref, stable), 4))
+print("PSI shifted :", round(psi(ref, shifted), 4))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>PSI stable  : 0.0016
+PSI shifted : 0.2282</code></pre>
+<h3>Kolmogorov-Smirnov and other tests</h3>
+<p>The <strong>KS statistic</strong> is the maximum gap between two empirical cumulative distributions; use a p-value cautiously because large samples flag trivial differences. Alternatives: Jensen-Shannon divergence, Wasserstein distance, chi-square for categories, <strong>classifier two-sample tests</strong> (train a model to tell reference from current data).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a7-04.py">import random
+random.seed(0)
+def ks(a, b):
+    a, b = sorted(a), sorted(b)
+    pts = sorted(set(a + b))
+    def cdf(s, x):
+        lo, hi = 0, len(s)
+        while lo &lt; hi:
+            mid = (lo + hi) // 2
+            if s[mid] &lt;= x: lo = mid + 1
+            else: hi = mid
+        return lo / len(s)
+    return max(abs(cdf(a, x) - cdf(b, x)) for x in pts)
+ref = [random.gauss(0, 1) for _ in range(2000)]
+same = [random.gauss(0, 1) for _ in range(2000)]
+moved = [random.gauss(0.5, 1) for _ in range(2000)]
+print("KS same distribution : %.3f" % ks(ref, same))
+print("KS shifted by 0.5    : %.3f" % ks(ref, moved))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>KS same distribution : 0.016
+KS shifted by 0.5    : 0.216</code></pre>
+<h3>Alerts and actions</h3>
+<p>Alert on drift <strong>and</strong> on outcome metrics; drift without a performance drop may be harmless. Define actions: investigate, fall back, retrain, or rollback. Retrain on a <strong>schedule</strong>, on a <strong>drift trigger</strong>, or <strong>continuously</strong>; always evaluate the retrained model before promoting.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a7-q04" data-topic="MLOps" data-type="numeric" data-answer="0.17" data-tol="0.005">
+        <div class="q-stem"><p>Training share per bin [0.5, 0.5] and production [0.3, 0.7]. PSI? (2 decimals, natural log)</p></div>
+        <div class="q-explain"><p>(0.3 - 0.5) ln(0.3/0.5) + (0.7 - 0.5) ln(0.7/0.5) = 0.1022 + 0.0673 = 0.1695, about 0.17.</p></div>
+      </div>
+      <div class="quiz" data-qid="ai-a7-q05" data-topic="MLOps" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Concept drift means:</p></div>
+        <ul class="q-options">
+          <li data-key="A">The input distribution changes <span class="q-why">That is covariate drift.</span></li>
+          <li data-key="B">The relationship between inputs and the label changes <span class="q-why">Correct.</span></li>
+          <li data-key="C">The model file changes <span class="q-why">No.</span></li>
+          <li data-key="D">Latency changes <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>P(y given x) shifts, for example when fraudsters adapt.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Data drift versus concept drift?</summary><div class="answer"><p>Data drift changes P(x); concept drift changes P(y given x), and needs labels or outcome metrics to detect.</p></div></details>
+      </div>
+    </section>
+
+    <section id="abtest" data-track>
+      <h2>Experimentation and A/B testing</h2>
+<p>Offline metrics predict but do not prove business impact. Run an <strong>online A/B test</strong>: randomise units (users) into control and treatment, measure the metric, test the difference.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/a7-05.py">import math
+def ab_test(conv_a, n_a, conv_b, n_b):
+    pa, pb = conv_a / n_a, conv_b / n_b
+    p = (conv_a + conv_b) / (n_a + n_b)
+    se = math.sqrt(p * (1 - p) * (1 / n_a + 1 / n_b))
+    z = (pb - pa) / se
+    return pa, pb, z
+pa, pb, z = ab_test(480, 10000, 540, 10000)
+print("rate A %.2f%%, rate B %.2f%%, z = %.2f (|z| &gt; 1.96 means p &lt; 0.05)" % (pa * 100, pb * 100, z))
+def sample_size(p, mde, z_a=1.96, z_b=0.84):          # per group, two-sided alpha 0.05, power 80%
+    return int(2 * ((z_a + z_b) ** 2) * p * (1 - p) / mde ** 2) + 1
+print("users per group to detect a 0.5 point lift on a 5%% base: %d" % sample_size(0.05, 0.005))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>rate A 4.80%, rate B 5.40%, z = 1.93 (|z| &gt; 1.96 means p &lt; 0.05)
+users per group to detect a 0.5 point lift on a 5% base: 29792</code></pre>
+<p>Details matter: pre-register the metric and <strong>sample size</strong>, do not peek and stop early on a good p-value (or use sequential methods), guard against <strong>sample ratio mismatch</strong>, watch <strong>guardrail metrics</strong> (latency, complaints), beware <strong>novelty effects</strong>, <strong>network interference</strong> and multiple comparisons (<a href="a11-stats-experiments.html">A11</a>).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a7-q06" data-topic="MLOps" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why not stop an A/B test as soon as p &lt; 0.05?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It saves money <span class="q-why">That is a reason to stop.</span></li>
+          <li data-key="B">Repeated peeking inflates false positives; fix the sample size in advance or use sequential methods <span class="q-why">Correct.</span></li>
+          <li data-key="C">p-values are illegal <span class="q-why">No.</span></li>
+          <li data-key="D">It needs more features <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Optional stopping breaks the error guarantees.</p></div>
+      </div>
+    </section>
+
+    <section id="governance" data-track>
+      <h2>Governance and cost</h2>
+<ul><li><strong>Documentation</strong>: model cards (intended use, data, metrics, limits), datasheets for datasets, decision logs.</li><li><strong>Compliance and privacy</strong>: consent, minimisation, retention, the right to explanation or deletion, audit trails, regional rules.</li><li><strong>Security</strong>: protect models and endpoints, rate limit, defend against extraction and adversarial inputs, scan dependencies, control access to data and features.</li><li><strong>Fairness</strong>: measure per group, set thresholds, review regularly.</li><li><strong>Cost</strong>: GPU hours, storage, feature computation and serving. Right-size, use spot instances for training, cache predictions, batch where possible, distil or quantise models.</li><li><strong>Ownership</strong>: on-call rotation, runbooks, SLOs for the prediction service, deprecation of unused models.</li></ul>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Treat the model as one artefact in a pipeline of data, features, code and monitoring. Most value comes from reliable data checks, identical features in training and serving, safe rollouts, and monitoring that detects silent decay.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ai-a7-q07" data-topic="MLOps" data-type="single" data-answer="A">
+        <div class="q-stem"><p>Which document describes a model's intended use, data and limits?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A model card <span class="q-why">Correct.</span></li>
+          <li data-key="B">A pull request <span class="q-why">No.</span></li>
+          <li data-key="C">A Dockerfile <span class="q-why">No.</span></li>
+          <li data-key="D">A log line <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Model cards support transparency and review.</p></div>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: MLOps</h2>
+      <p class="muted">12 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="MLOps">
+<details class="recall iq" data-level="basic" data-topic="MLOps"><summary><span class="tag ok">Basic</span> What is training-serving skew?</summary><div class="answer"><p>Features computed differently in training and production, causing the model to see different data online; prevented by sharing feature definitions in a feature store.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="MLOps"><summary><span class="tag ok">Basic</span> What is data leakage?</summary><div class="answer"><p>Information unavailable at prediction time reaching the training set, such as future-derived features or duplicates across splits, inflating offline metrics.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="MLOps"><summary><span class="tag ok">Basic</span> What do you monitor for a deployed model?</summary><div class="answer"><p>System health (latency, errors), data quality and drift, prediction distributions, outcome metrics when labels arrive, and fairness slices.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="MLOps"><summary><span class="tag warn">Medium</span> Data drift versus concept drift?</summary><div class="answer"><p>Data drift changes the input distribution; concept drift changes the relationship between inputs and the target. Concept drift needs labels or outcome metrics to detect.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="MLOps"><summary><span class="tag warn">Medium</span> What is PSI and how do you read it?</summary><div class="answer"><p>The population stability index compares binned distributions: below 0.1 stable, 0.1 to 0.25 moderate shift, above 0.25 major shift.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="MLOps"><summary><span class="tag warn">Medium</span> Shadow, canary and A/B deployment?</summary><div class="answer"><p>Shadow logs predictions without using them; canary serves a small share with monitoring; A/B randomises users to measure the causal impact of the new model.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="MLOps"><summary><span class="tag warn">Medium</span> What does a feature store provide?</summary><div class="answer"><p>Single feature definitions, an offline store with point-in-time correct joins for training, an online store for low-latency serving, and reuse.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="MLOps"><summary><span class="tag warn">Medium</span> How do you make ML experiments reproducible?</summary><div class="answer"><p>Version code, data, config and environment, fix seeds, record runs in a tracker such as MLflow, and store models in a registry with lineage.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="MLOps"><summary><span class="tag bad">Advanced</span> How do you decide when to retrain?</summary><div class="answer"><p>On a schedule, on drift or performance triggers, or continuously; always evaluate the retrained model against production on a frozen set before promoting.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="MLOps"><summary><span class="tag bad">Advanced</span> How would you handle delayed labels in monitoring?</summary><div class="answer"><p>Monitor proxy signals (drift, prediction distributions) immediately, join labels when they arrive to compute true metrics, and use holdout or randomised exploration traffic for unbiased evaluation.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="MLOps"><summary><span class="tag bad">Advanced</span> What belongs in a pre-release model evaluation?</summary><div class="answer"><p>Comparison with production and a baseline on a frozen set, slice metrics, calibration, latency and memory, fairness checks, and behavioural tests such as invariance and directional expectations.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="MLOps"><summary><span class="tag bad">Advanced</span> How do you reduce ML serving cost?</summary><div class="answer"><p>Batching, quantisation, distillation, caching predictions, right-sizing hardware, autoscaling, and routing easy requests to cheaper models.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="a6-alignment-safety.html"><span class="dir">Previous</span><span>A6 Alignment, RLHF and AI safety</span></a>
+      <a class="next" href="a8-vision.html"><span class="dir">Next</span><span>A8 Computer vision and multimodal models</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

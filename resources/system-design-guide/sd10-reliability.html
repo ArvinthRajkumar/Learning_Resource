@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD10">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Reliability, availability and resilience | System Design</title>
+<meta name="description" content="SLIs, SLOs and error budgets, redundancy, failover, timeouts, retries, circuit breakers, bulkheads, load shedding, graceful degradation, disaster recovery and multi-region designs.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD10</p>
+      <h1>Reliability, availability and resilience</h1>
+      <p class="lede">Everything fails eventually: disks, networks, deploys, data centers, people. Reliable systems are not those that never fail, but those whose failures are contained, detected and recovered from fast. This part is the toolbox of patterns for that.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~3 hours</span></div>
+    </div>
+
+    <section id="measure" data-track>
+      <h2>Measuring reliability</h2>
+<h3>SLI, SLO, SLA</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Term</th><th>Meaning</th><th>Example</th></tr></thead>
+<tbody>
+<tr><td>SLI (indicator)</td><td>A measured quantity about service health</td><td>Fraction of requests answered under 300 ms without error</td></tr><tr><td>SLO (objective)</td><td>An internal target for an SLI</td><td>99.9 percent of requests succeed over 30 days</td></tr><tr><td>SLA (agreement)</td><td>A contract with consequences</td><td>Credits if availability drops below 99.5 percent</td></tr>
+</tbody>
+</table>
+</div>
+<p>Choose SLIs the <strong>user</strong> feels: availability (success rate), latency (percentiles), correctness, freshness, durability. Set the SLO <strong>below</strong> the SLA so you act before you pay.</p>
+<h3>Error budgets</h3>
+<p>An SLO of 99.9 percent allows 0.1 percent failure, about 43 minutes per month. That allowance is the <strong>error budget</strong>. While budget remains, ship features quickly. When it is spent, freeze risky launches and invest in reliability. This turns the argument between "move fast" and "be stable" into a shared number.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd10-01.py">slo = 0.999
+minutes_month = 30 * 24 * 60
+budget = (1 - slo) * minutes_month
+print("budget:", round(budget, 1), "minutes per 30 days")
+used = 18
+print("remaining after an 18 minute outage:", round(budget - used, 1))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>budget: 43.2 minutes per 30 days
+remaining after an 18 minute outage: 25.2</code></pre>
+<h3>The golden signals</h3>
+<p>Monitor <strong>latency</strong>, <strong>traffic</strong>, <strong>errors</strong> and <strong>saturation</strong> for every service (<a href="sd11-observability-security.html">SD11</a>).</p>
+<h3>Failure vocabulary</h3>
+<p><strong>Fault</strong> (a component deviates), <strong>error</strong> (a wrong state), <strong>failure</strong> (the service stops meeting its spec). Resilience is stopping faults from becoming failures. <strong>MTBF</strong> is mean time between failures; <strong>MTTR</strong> is mean time to recover. Availability = MTBF / (MTBF + MTTR). Cutting recovery time is often cheaper than preventing every fault.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd10-q01" data-topic="Reliability" data-type="numeric" data-answer="22" data-tol="1">
+        <div class="q-stem"><p>An SLO of 99.95 percent over a 30 day month allows how many minutes of downtime? (round to the nearest minute)</p></div>
+        <div class="q-explain"><p>0.0005 x 43,200 minutes = 21.6, about 22 minutes.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd10-q02" data-topic="Reliability" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is an error budget used for?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Paying for cloud costs <span class="q-why">No.</span></li>
+          <li data-key="B">Balancing feature velocity against reliability work <span class="q-why">Correct.</span></li>
+          <li data-key="C">Counting bugs <span class="q-why">No.</span></li>
+          <li data-key="D">Limiting request size <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>While budget remains you can ship faster; when it is exhausted you prioritise reliability.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>SLI, SLO and SLA?</summary><div class="answer"><p>Indicator you measure, objective you target internally, agreement with consequences for the customer.</p></div></details>
+      </div>
+    </section>
+
+    <section id="redundancy" data-track>
+      <h2>Redundancy and failover</h2>
+<h3>Eliminate single points of failure</h3>
+<p>List every component on the request path and ask "if this dies, what happens?" Every box needs a second copy or a justified exception: load balancers, app servers, databases, caches, queues, DNS, and even people (on-call rotas) and credentials (expiring certificates).</p>
+<h3>Redundancy styles</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Style</th><th>How it works</th><th>Cost</th><th>Failover time</th></tr></thead>
+<tbody>
+<tr><td>Active-active</td><td>All copies serve traffic</td><td>Higher use of capacity but efficient</td><td>Near zero</td></tr><tr><td>Active-passive (hot standby)</td><td>Standby is running and in sync</td><td>Idle capacity</td><td>Seconds</td></tr><tr><td>Warm standby</td><td>Scaled-down copy that scales on failover</td><td>Medium</td><td>Minutes</td></tr><tr><td>Cold standby</td><td>Provision from backups on demand</td><td>Cheapest</td><td>Hours</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Failure domains</h3>
+<p>Spread copies across independent <strong>failure domains</strong>: different servers, racks, <strong>availability zones</strong> (separate data centers in one region) and <strong>regions</strong>. A zone outage should be a non-event (N+1 capacity: enough remaining capacity to carry full load when one zone is lost).</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 638 294" role="img" aria-label="Multi-AZ deployment: a load balancer spans zones; the database has a standby in another zone." style="min-width:638px"><defs><marker id="ah18" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah18a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah18b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah18d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="255.7" y1="78.0" x2="168.3" y2="118.0" class="d-line" marker-end="url(#ah18)"/><line x1="382.3" y1="78.0" x2="469.7" y2="118.0" class="d-line" marker-end="url(#ah18)"/><line x1="105.0" y1="176.0" x2="105.0" y2="216.0" class="d-line" marker-end="url(#ah18)"/><line x1="448.0" y1="166.5" x2="190.0" y2="225.5" class="d-line" marker-end="url(#ah18)"/><line x1="190.0" y1="245.0" x2="448.0" y2="245.0" class="d-line" marker-end="url(#ah18)"/><text x="319.0" y="240.0" text-anchor="middle" class="d-sm d-muted">sync replicate</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-c"/><text x="319.0" y="46.0" text-anchor="middle">Load balancer</text><text x="319.0" y="61.0" text-anchor="middle">(spans AZs)</text><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-b"/><text x="105.0" y="151.5" text-anchor="middle">AZ A: app servers</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="151.5" text-anchor="middle">AZ B: app servers</text><rect x="20.0" y="216.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="249.5" text-anchor="middle">DB primary (AZ A)</text><rect x="448.0" y="216.0" width="170" height="58" rx="8" class="d-a"/><text x="533.0" y="249.5" text-anchor="middle">DB standby (AZ B)</text></svg>
+</div>
+<figcaption>Multi-AZ deployment: a load balancer spans zones; the database has a standby in another zone.</figcaption></figure>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is N+1 capacity?</summary><div class="answer"><p>Enough spare capacity that losing one unit (such as a zone) still leaves enough to carry the full load.</p></div></details>
+      </div>
+    </section>
+
+    <section id="patterns" data-track>
+      <h2>Defensive patterns</h2>
+<h3>Timeouts</h3>
+<p>Every network call needs a timeout. Without one, a hung dependency ties up threads and connections until you run out and the caller fails too. Choose timeouts from the callee's latency distribution (a little above p99), and make each caller's timeout <strong>smaller</strong> than its own caller's, so budgets nest (a <strong>deadline</strong> passed down the chain).</p>
+<h3>Retries</h3>
+<p>Retry only <strong>transient</strong> errors on <strong>idempotent</strong> operations, with <strong>exponential backoff and jitter</strong> and a <strong>retry budget</strong> (for example, at most 10 percent extra load). Retrying at every layer multiplies: three layers with three attempts each makes 27 calls for one failure, a <strong>retry storm</strong> that finishes off a struggling service.</p>
+<h3>Circuit breaker</h3>
+<p>Like an electrical breaker: after too many failures the breaker <strong>opens</strong> and calls fail immediately without hitting the sick dependency. After a cool-down it goes <strong>half-open</strong>, lets a trial request through and <strong>closes</strong> again if it succeeds.</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 98" role="img" aria-label="Circuit breaker states. Failures trip it open; a successful probe closes it." style="min-width:760px"><defs><marker id="ah19" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah19a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah19b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah19d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah19)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah19)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah19)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">Closed (normal)</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle">Open (fail fast)</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle">Half-open (probe)</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle">Closed</text></svg>
+</div>
+<figcaption>Circuit breaker states. Failures trip it open; a successful probe closes it.</figcaption></figure>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd10-02.py">class CircuitBreaker:
+    def __init__(self, threshold=3, reset_after=10):
+        self.threshold, self.reset_after = threshold, reset_after
+        self.failures, self.state, self.opened_at = 0, "closed", 0
+    def call(self, fn, now):
+        if self.state == "open":
+            if now - self.opened_at &gt;= self.reset_after:
+                self.state = "half-open"
+            else:
+                return "rejected (fail fast)"
+        try:
+            r = fn()
+        except Exception:
+            self.failures += 1
+            if self.state == "half-open" or self.failures &gt;= self.threshold:
+                self.state, self.opened_at = "open", now
+            return "error"
+        self.failures, self.state = 0, "closed"
+        return r
+
+def bad(): raise RuntimeError("down")
+def good(): return "ok"
+
+cb = CircuitBreaker()
+out = [cb.call(bad, t) for t in range(4)]          # trips open after 3 failures
+out += [cb.call(good, 5)]                          # still open, rejected
+out += [cb.call(good, 14)]                         # half-open probe succeeds
+print(out, cb.state)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>['error', 'error', 'error', 'rejected (fail fast)', 'rejected (fail fast)', 'ok'] closed</code></pre>
+<h3>Bulkheads</h3>
+<p>Isolate resources so one failing part cannot sink the ship: separate thread pools or connection pools per dependency, separate queues per customer tier, separate clusters for critical versus best-effort traffic.</p>
+<h3>Load shedding and rate limiting</h3>
+<p>When overloaded, deliberately reject some requests quickly (<code>503</code> with <code>Retry-After</code>) rather than slow down for everyone. Shed low-priority work first (analytics before checkout). A system that does 100 percent of work for 50 percent of users beats one that times out for 100 percent.</p>
+<h3>Backpressure and queue limits</h3>
+<p>Bound every queue and thread pool. Unbounded queues turn overload into huge latency and memory exhaustion.</p>
+<h3>Graceful degradation</h3>
+<p>When a dependency fails, return something useful: serve cached or stale data, hide the recommendations widget, fall back to a default ranking, switch to read-only mode. Decide in advance which features are <strong>critical</strong> and which are <strong>optional</strong>.</p>
+<h3>Idempotency and safe retries</h3>
+<p>Make operations idempotent (<a href="sd8-messaging.html">SD8</a>) so retries and replays are safe.</p>
+<h3>Health, watchdogs and self-healing</h3>
+<p>Automatic restarts on failed liveness checks, replacement of unhealthy instances by autoscaling groups or Kubernetes, and automatic failover of databases. Be careful that automation does not amplify a problem (a crash loop that restarts every pod during an outage).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd10-q03" data-topic="Reliability" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Three layers each retry 3 times on failure. How many calls can one failing request cause at the bottom?</p></div>
+        <ul class="q-options">
+          <li data-key="A">3 <span class="q-why">That is one layer.</span></li>
+          <li data-key="B">9 <span class="q-why">That is two layers.</span></li>
+          <li data-key="C">27 <span class="q-why">Correct: 3 x 3 x 3.</span></li>
+          <li data-key="D">1 <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Retries multiply across layers, causing retry storms. Retry at one layer and use budgets.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd10-q04" data-topic="Reliability" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A circuit breaker is open. What happens to a new call?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is retried 5 times <span class="q-why">No.</span></li>
+          <li data-key="B">It fails immediately without calling the dependency <span class="q-why">Correct.</span></li>
+          <li data-key="C">It waits for the timeout <span class="q-why">That is what the breaker avoids.</span></li>
+          <li data-key="D">It is queued forever <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Fail fast gives the dependency room to recover.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd10-q05" data-topic="Reliability" data-type="multi" data-answer="A,B,D">
+        <div class="q-stem"><p>Which help prevent cascading failures? Select all.</p></div>
+        <ul class="q-options">
+          <li data-key="A">Timeouts on every call</li>
+          <li data-key="B">Bulkheads (separate pools per dependency)</li>
+          <li data-key="C">Unbounded queues</li>
+          <li data-key="D">Load shedding</li>
+        </ul>
+        <div class="q-explain"><p>Unbounded queues convert overload into memory exhaustion and huge latency.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Describe the circuit breaker states.</summary><div class="answer"><p>Closed passes calls, open fails fast, half-open lets a probe through and closes on success.</p></div></details>
+      </div>
+    </section>
+
+    <section id="cascade" data-track>
+      <h2>Cascading failure</h2>
+<h3>How it happens</h3>
+<ol><li>A dependency slows down.</li><li>Callers' threads wait on it, pools fill, callers slow down.</li><li>Their callers' resources fill. Retries add load.</li><li>The whole call graph degrades, even parts that did not use the original dependency.</li></ol>
+<h3>Defences</h3>
+<p>Timeouts, circuit breakers, bulkheads, retry budgets with jitter, load shedding, caching, <strong>capacity headroom</strong> (run at 50 to 70 percent so a node loss does not overload the rest), and gradual rollouts that limit blast radius.</p>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Fail fast and fail small. A fast error is cheaper than a slow success that blocks everything else.</p></div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do cascading failures start and spread?</summary><div class="answer"><p>A slow dependency fills callers' pools, causing slowness upstream, amplified by retries.</p></div></details>
+      </div>
+    </section>
+
+    <section id="dr" data-track>
+      <h2>Disaster recovery</h2>
+<h3>RPO and RTO</h3>
+<ul><li><strong>RPO (recovery point objective)</strong>: how much data you can afford to lose, measured in time. RPO of 5 minutes means you may lose the last 5 minutes.</li><li><strong>RTO (recovery time objective)</strong>: how long you can be down.</li></ul>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Strategy</th><th>RPO</th><th>RTO</th><th>Cost</th></tr></thead>
+<tbody>
+<tr><td>Backup and restore</td><td>Hours</td><td>Hours to a day</td><td>Lowest</td></tr><tr><td>Pilot light (data replicated, minimal compute)</td><td>Minutes</td><td>Tens of minutes</td><td>Low</td></tr><tr><td>Warm standby</td><td>Seconds to minutes</td><td>Minutes</td><td>Medium</td></tr><tr><td>Multi-region active-active</td><td>Near zero</td><td>Near zero</td><td>Highest</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Backups</h3>
+<p>Back up <strong>automatically</strong>, store copies in another region or account, <strong>encrypt</strong> them, keep versions, and <strong>test restores regularly</strong>. A backup you have never restored is a hope, not a backup. Use point-in-time recovery from the transaction log.</p>
+<h3>Multi-region</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Concern</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>Traffic routing</td><td>GeoDNS, anycast or a global load balancer, with health-based failover</td></tr><tr><td>Data replication</td><td>Asynchronous replication (risk of loss, low latency) or synchronous consensus across regions (strong but slow)</td></tr><tr><td>Conflicts</td><td>Active-active writes need conflict resolution or region ownership of data</td></tr><tr><td>Cost and complexity</td><td>Large; justify with an RTO/RPO or latency requirement</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Practising failure</h3>
+<p>Run <strong>game days</strong> and <strong>chaos engineering</strong> (kill instances, inject latency, drop a zone) in controlled ways to find weaknesses before real incidents do. Write <strong>blameless post-mortems</strong> with action items.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd10-q06" data-topic="Reliability" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A business can lose at most 5 minutes of data and be down at most 30 minutes. These are:</p></div>
+        <ul class="q-options">
+          <li data-key="A">RTO 5 minutes, RPO 30 minutes <span class="q-why">Swapped.</span></li>
+          <li data-key="B">RPO 5 minutes, RTO 30 minutes <span class="q-why">Correct.</span></li>
+          <li data-key="C">SLA 5, SLO 30 <span class="q-why">No.</span></li>
+          <li data-key="D">MTBF and MTTR <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>RPO is tolerable data loss in time; RTO is tolerable downtime.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd10-q07" data-topic="Reliability" data-type="fill" data-answer="restore|recovery">
+        <div class="q-stem"><p>A backup is only trustworthy once you have tested a <input class="q-input" aria-label="blank 1">.</p></div>
+        <div class="q-explain"><p>Regular restore tests prove the backup is usable.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>RPO versus RTO?</summary><div class="answer"><p>Recovery point objective is tolerable data loss; recovery time objective is tolerable downtime.</p></div></details>
+      </div>
+    </section>
+
+    <section id="deploy" data-track>
+      <h2>Deploying safely</h2>
+<p>Many outages come from changes. Reduce blast radius:</p>
+<ul><li><strong>Canary</strong>: send 1 percent of traffic to the new version, watch metrics, then expand.</li><li><strong>Blue/green</strong>: run two full environments and switch traffic, with instant rollback.</li><li><strong>Feature flags</strong>: decouple deploy from release and kill a bad feature without a deploy.</li><li><strong>Automatic rollback</strong> on SLO breach.</li><li>Backward-compatible database migrations in several steps (add column, backfill, switch, remove).</li></ul>
+<p>See <a href="sd11-observability-security.html">SD11</a> for pipelines and observability.</p>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Reliability</h2>
+      <p class="muted">11 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Reliability">
+<details class="recall iq" data-level="basic" data-topic="Reliability"><summary><span class="tag ok">Basic</span> What are SLI, SLO and SLA?</summary><div class="answer"><p>SLI is a measured indicator, SLO is the internal target for it, SLA is the contractual commitment with penalties.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Reliability"><summary><span class="tag ok">Basic</span> What is a single point of failure?</summary><div class="answer"><p>A component whose failure takes down the system. Remove by redundancy across independent failure domains, with automatic failover.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Reliability"><summary><span class="tag warn">Medium</span> What is an error budget?</summary><div class="answer"><p>The allowed unreliability implied by the SLO (0.1 percent for 99.9). Spend it on velocity; when exhausted, prioritise reliability work.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Reliability"><summary><span class="tag warn">Medium</span> Explain timeouts, retries and backoff.</summary><div class="answer"><p>Every call needs a timeout. Retry only transient errors on idempotent operations with exponential backoff, jitter and a retry budget, at one layer only to avoid retry storms.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Reliability"><summary><span class="tag warn">Medium</span> How does a circuit breaker work?</summary><div class="answer"><p>After enough failures it opens and fails fast, then after a cool-down goes half-open to probe, closing again if the probe succeeds.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Reliability"><summary><span class="tag warn">Medium</span> What is a bulkhead?</summary><div class="answer"><p>Isolating resources (thread pools, queues, clusters) per dependency or tenant so one failure cannot exhaust everything.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Reliability"><summary><span class="tag warn">Medium</span> What is graceful degradation?</summary><div class="answer"><p>Keeping core functionality when parts fail by serving cached or default data, disabling optional features or switching to read-only mode.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Reliability"><summary><span class="tag bad">Advanced</span> How do cascading failures happen and how do you stop them?</summary><div class="answer"><p>A slow dependency fills caller pools and retries add load, spreading the failure. Stop with timeouts, circuit breakers, bulkheads, load shedding, retry budgets and capacity headroom.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Reliability"><summary><span class="tag bad">Advanced</span> RPO and RTO and DR strategies?</summary><div class="answer"><p>RPO is tolerable data loss; RTO is tolerable downtime. Strategies range from backup and restore (hours) through pilot light and warm standby to active-active multi-region (near zero) at rising cost.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Reliability"><summary><span class="tag bad">Advanced</span> How would you design for multi-region?</summary><div class="answer"><p>Route with GeoDNS or anycast, replicate data (asynchronous for latency, consensus for strictness), decide data ownership per region to avoid write conflicts, and test failover regularly.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Reliability"><summary><span class="tag bad">Advanced</span> How do you deploy safely?</summary><div class="answer"><p>Canary and blue/green releases, feature flags, automatic rollback on SLO breach, backward-compatible migrations, and small frequent changes.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd9-apis.html"><span class="dir">Previous</span><span>SD9 APIs, microservices and service communication</span></a>
+      <a class="next" href="sd11-observability-security.html"><span class="dir">Next</span><span>SD11 Observability, security and deployment</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

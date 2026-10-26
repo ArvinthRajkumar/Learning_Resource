@@ -1,0 +1,1635 @@
+<!doctype html>
+<html lang="en" data-resource="ai-ml-engineer-prep" data-page="07">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>07 Coding problems | AI/ML Engineer Prep</title>
+<meta name="description" content="packContext, rankBm25, extractObjects, beamSearch: restatement, key insight, hand traces, tested Python solutions, complexity, pitfalls and variants.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">AI/ML Prep</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part 07</p>
+      <h1>Coding problems: the big four</h1>
+      <p class="lede">Each problem is worth 50 to 55 points, and none needs a clever algorithm. They are precise simulations. Points are lost on tokenization, tie-breaking, "skip but keep going" versus "stop", and off-by-one details. The method for each: restate, find the one insight, trace by hand, then code.</p>
+      <div class="meta"><span class="tag accent">Highest priority</span><span class="tag">~6 hours over the week</span><span class="tag">Code below is embedded from <code>solutions/</code> and tested</span></div>
+    </div>
+
+    <div class="callout key">
+      <span class="callout-title">How to practice</span>
+      <ol class="mb-0">
+        <li>Read the restatement and the key insight. Close the page.</li>
+        <li>Write the solution in a blank file with the exact signature.</li>
+        <li>Run the tests: <code>cd solutions &amp;&amp; python3 test_pack_context.py</code> (or <code>python3 run_all.py</code> for everything).</li>
+        <li>Diff your code against the reference, especially the tie-breaking and the edge cases.</li>
+      </ol>
+    </div>
+
+    <div class="callout note">
+      <span class="callout-title">Test summary (python3 solutions/run_all.py)</span>
+      <pre class="no-enhance mb-0" style="white-space:pre-wrap;margin:0;border:0;padding:0;background:none">PASS test_pack_context.py      3000 randomized cases vs an independent reference; 1000x300-word worst case ~5 s
+PASS test_bm25.py              2000 randomized cases x 3 implementations; 1000 docs x 200 tokens ~70 ms
+PASS test_extract_objects.py   every split point + 1500 randomized streams; 200,000 chars ~20 ms
+PASS test_beam_search.py       1500 randomized vs reference + brute force + Viterbi; V=50, steps=30, width=10 ~6 ms</pre>
+    </div>
+
+    <!-- ============================================================ a -->
+    <section id="pack-context" data-track>
+      <h2>(a) packContext: greedy packing with near-duplicate removal</h2>
+
+      <h3>Problem in plain words</h3>
+      <p>You have retrieved chunks, each with a relevance score and a token cost, and a token budget for the prompt. Go through the chunks from best to worst score (ties: smaller index first). For each one:</p>
+      <ul>
+        <li>if it costs more tokens than you have left, skip it <strong>but keep going</strong> (a smaller chunk later may still fit);</li>
+        <li>if it is a near-duplicate of a chunk you already picked, skip it;</li>
+        <li>otherwise pick it and subtract its tokens.</li>
+      </ul>
+      <p>Return the picked indices in <strong>ascending index order</strong> (not pick order). Near-duplicate means the word sets have Jaccard similarity of at least 0.8, tested in integers as 5 x |A ∩ B| &gt;= 4 x |A ∪ B|. A word is a maximal run of [a-z0-9] after lowercasing. Two empty sets count as near-duplicates.</p>
+      <p class="mono small">def packContext(self, chunks: List[str], scores: List[float], tokens: List[int], budget: int) -&gt; List[int]</p>
+
+      <h3>Key insight</h3>
+      <p>This is a direct simulation. There is no optimization to find: greedy is <em>the specification</em>. The difficulty is getting four details exactly right: the sort key <code>(-score, index)</code>, <code>continue</code> rather than <code>break</code> on "does not fit", the integer Jaccard test (which handles the empty-set case automatically: 0 &gt;= 0), and sorting the output.</p>
+
+      <h3>Approach, traced on example 1</h3>
+      <div class="worked">
+        <span class="w-title">scores [0.9, 0.85, 0.7, 0.6], tokens [120, 115, 300, 90], budget 450</span>
+        <ol class="steps">
+          <li>Word sets. Chunk 0: {lora, trains, low, rank, adapters, while, the, base, model, stays, frozen} (11 words; "low-rank" splits into low and rank). Chunk 1: the same minus "while" (10). Chunk 2: {quantization, to, 4, bit, cuts, memory, bandwidth, during, decoding} (9). Chunk 3: 6 words.</li>
+          <li>Visit order by (-score, index): 0, 1, 2, 3.</li>
+          <li>Chunk 0: 120 &lt;= 450, nothing picked yet. <strong>Pick</strong>. Remaining 330.</li>
+          <li>Chunk 1: 115 &lt;= 330 fits. Versus chunk 0: |A ∩ B| = 10, |A ∪ B| = 11. 5 x 10 = 50 &gt;= 4 x 11 = 44, so it is a near-duplicate. <strong>Skip</strong>.</li>
+          <li>Chunk 2: 300 &lt;= 330 fits. Versus chunk 0: intersection 0, union 20. 0 &gt;= 80 is false. <strong>Pick</strong>. Remaining 30.</li>
+          <li>Chunk 3: 90 &gt; 30. <strong>Skip</strong> (and keep going, though nothing is left).</li>
+        </ol>
+        <span class="result">[0, 2]</span>
+      </div>
+
+      <h3>Solution</h3>
+      <pre><code class="lang-py" data-embed="solutions/pack_context.py">"""Problem (a): packContext.
+
+Greedy context packing under a token budget with near-duplicate removal.
+Visit chunks by score descending (ties: smaller index first). Skip a chunk
+that does not fit the remaining budget, skip a near-duplicate of an already
+picked chunk, otherwise pick it. Return picked indices in ascending order.
+"""
+import re
+from typing import List
+
+WORD_RE = re.compile(r"[a-z0-9]+")
+
+
+def word_set(text: str) -&gt; set:
+    """Lowercase, then every maximal run of [a-z0-9] is one word."""
+    return set(WORD_RE.findall(text.lower()))
+
+
+def near_duplicate(a: set, b: set) -&gt; bool:
+    """Jaccard(a, b) &gt;= 0.8, tested in integers: 5*|A&amp;B| &gt;= 4*|A|B|.
+
+    Two empty sets give 0 &gt;= 0, so they count as near-duplicates without a
+    special case.
+    """
+    inter = len(a &amp; b)
+    union = len(a) + len(b) - inter
+    return 5 * inter &gt;= 4 * union
+
+
+class Solution:
+    def packContext(self, chunks: List[str], scores: List[float],
+                    tokens: List[int], budget: int) -&gt; List[int]:
+        n = len(chunks)
+        order = sorted(range(n), key=lambda i: (-scores[i], i))
+        sets = [word_set(c) for c in chunks]
+        remaining = budget
+        picked: List[int] = []
+        for i in order:
+            if tokens[i] &gt; remaining:
+                continue  # does not fit, but a later, smaller chunk might
+            a = sets[i]
+            dup = False
+            for j in picked:
+                b = sets[j]
+                # cheap size filter: |A&amp;B| &lt;= min and |A|B| &gt;= max, so a
+                # near-duplicate needs 5*min &gt;= 4*max
+                small, large = min(len(a), len(b)), max(len(a), len(b))
+                if 5 * small &lt; 4 * large:
+                    continue
+                if near_duplicate(a, b):
+                    dup = True
+                    break
+            if dup:
+                continue
+            picked.append(i)
+            remaining -= tokens[i]
+        return sorted(picked)</code></pre>
+
+      <h3>Complexity</h3>
+      <ul>
+        <li>Tokenizing: O(total characters). Sorting: O(n log n).</li>
+        <li>Duplicate checks: for each candidate, compare with each picked chunk. A set intersection costs O(min(|A|, |B|)). Worst case O(n x p x w) with p picked and w words per chunk. With n = 1000, w = 300 and everything fitting, that is about 500k set intersections, about 5 s in CPython (measured). In practice the budget keeps p small. The size filter (5 x min &lt; 4 x max means a pair cannot be a duplicate) skips many comparisons cheaply.</li>
+        <li>Space: O(n x w) for the word sets.</li>
+      </ul>
+
+      <h3>Edge cases</h3>
+      <ul>
+        <li>Empty input gives []. Budget 0 picks only zero-token chunks.</li>
+        <li>A chunk that exactly fits (tokens == remaining) is picked: the test is <code>tokens[i] &gt; remaining</code>, so skip only if strictly greater.</li>
+        <li>Chunks with no words: two of them are near-duplicates (0 &gt;= 0). An empty one versus a non-empty one is not (0 &gt;= 4|B| is false).</li>
+        <li>Equal scores: the smaller index is visited first.</li>
+        <li>Uppercase and punctuation: "Frozen!" and "frozen." are both the word "frozen". "4-bit" becomes "4" and "bit".</li>
+      </ul>
+
+      <h3>Common pitfalls</h3>
+      <div class="callout trap"><ul class="mb-0">
+        <li><code>break</code> instead of <code>continue</code> when a chunk does not fit (see variant 1: it changes answers).</li>
+        <li>Returning indices in pick order instead of ascending order.</li>
+        <li>Comparing <code>len(a &amp; b) / len(a | b) &gt;= 0.8</code> with floats (fine mathematically, but division by zero on two empty sets, and fragile in other languages). Use the integer form.</li>
+        <li>Checking duplicates against <em>all</em> previous chunks (including skipped ones) instead of only picked ones.</li>
+        <li><code>text.split()</code> instead of the regex, which keeps "frozen." and "frozen!" as different words.</li>
+        <li>Subtracting tokens for skipped duplicates.</li>
+      </ul></div>
+
+      <h3>Three traced test cases</h3>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Input</th><th>Trace</th><th>Output</th></tr></thead>
+        <tbody>
+          <tr><td>Example 1 above</td><td>pick 0 (330 left), 1 is a duplicate (50 &gt;= 44), pick 2 (30 left), 3 does not fit</td><td>[0, 2]</td></tr>
+          <tr><td>["a b c d e", "x y z", "a b c d"], scores [0.5, 0.5, 0.4], tokens [10, 10, 5], budget 20</td><td>tie: 0 before 1. Pick 0 (10 left), pick 1 (0 left). Chunk 2: 5 &gt; 0, does not fit (it is also a duplicate of 0: 5 x 4 = 20 &gt;= 4 x 5 = 20)</td><td>[0, 1]</td></tr>
+          <tr><td>["a", "b", "c"], scores [0.9, 0.8, 0.7], tokens [5, 10, 3], budget 9</td><td>pick 0 (4 left). 1: 10 &gt; 4, skip <em>and continue</em>. 2: 3 &lt;= 4, pick</td><td>[0, 2]</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>Variants</h3>
+      <ol>
+        <li><strong>Stop at the first chunk that does not fit</strong> (<code>break</code>): on the third test above this returns [0] instead of [0, 2].</li>
+        <li><strong>Per-source cap</strong>: at most m chunks per source document. One more skip condition.</li>
+        <li><strong>Maximize total score</strong> under the budget: that is 0/1 knapsack, solved with DP in O(n x budget). Greedy by score can lose: one 0.9 chunk of 400 tokens blocks two 0.8 chunks of 200 each.</li>
+        <li><strong>Scaling up</strong>: prefix filtering, the standard similarity-join trick. If J &gt;= 0.8 then |A ∩ B| &gt;= ceil(0.8|A|). Sort each set's words rarest first. Two sets that share at least o words must share one within each set's first |X| - o + 1 words. Index only those prefix words and run the exact check on candidates that share one. It gives identical output (tested). It is about 7x faster on Zipf-like text, and gives no gain on uniformly random words, where every word is equally rare.</li>
+      </ol>
+      <pre><code class="lang-py" data-embed="solutions/pack_context_variants.py">"""Variants of problem (a) packContext."""
+from typing import List
+
+from pack_context import near_duplicate, word_set
+
+
+class Variants:
+    def packStopAtFirstMiss(self, chunks: List[str], scores: List[float],
+                            tokens: List[int], budget: int) -&gt; List[int]:
+        """Variant 1: stop the scan at the first chunk that does not fit.
+
+        One word changes (continue becomes break) and the answer changes:
+        a small, lower-scored chunk that would still fit is never considered.
+        """
+        order = sorted(range(len(chunks)), key=lambda i: (-scores[i], i))
+        sets = [word_set(c) for c in chunks]
+        remaining, picked = budget, []
+        for i in order:
+            if tokens[i] &gt; remaining:
+                break
+            if any(near_duplicate(sets[i], sets[j]) for j in picked):
+                continue
+            picked.append(i)
+            remaining -= tokens[i]
+        return sorted(picked)
+
+    def packPerSourceCap(self, chunks: List[str], scores: List[float],
+                         tokens: List[int], budget: int,
+                         sources: List[str], cap: int) -&gt; List[int]:
+        """Variant 2: same greedy, plus at most `cap` chunks per source doc.
+
+        Common in production: stops one long document from filling the
+        whole context. The cap check is just one more skip condition.
+        """
+        order = sorted(range(len(chunks)), key=lambda i: (-scores[i], i))
+        sets = [word_set(c) for c in chunks]
+        used = {}
+        remaining, picked = budget, []
+        for i in order:
+            if tokens[i] &gt; remaining:
+                continue
+            if used.get(sources[i], 0) &gt;= cap:
+                continue
+            if any(near_duplicate(sets[i], sets[j]) for j in picked):
+                continue
+            picked.append(i)
+            used[sources[i]] = used.get(sources[i], 0) + 1
+            remaining -= tokens[i]
+        return sorted(picked)
+
+    def packOptimalScore(self, scores: List[float], tokens: List[int],
+                         budget: int) -&gt; List[int]:
+        """Variant 3: maximize total score under the budget (0/1 knapsack).
+
+        Greedy by score is not optimal: one 0.9 chunk of 400 tokens can
+        block two 0.8 chunks of 200. DP over budget fixes that in
+        O(n * budget). (With the near-duplicate rule added the exact problem
+        becomes much harder, which is why production systems use greedy.)
+        Ties in total score: the DP keeps the first solution found, which
+        prefers not taking later items.
+        """
+        n = len(scores)
+        best = [0.0] * (budget + 1)
+        take = [[False] * (budget + 1) for _ in range(n)]
+        for i in range(n):
+            w, v = tokens[i], scores[i]
+            for cap in range(budget, w - 1, -1):
+                if best[cap - w] + v &gt; best[cap]:
+                    best[cap] = best[cap - w] + v
+                    take[i][cap] = True
+        cap, picked = budget, []
+        for i in range(n - 1, -1, -1):
+            if take[i][cap]:
+                picked.append(i)
+                cap -= tokens[i]
+        return sorted(picked)
+
+
+def pack_prefix_filter(chunks: List[str], scores: List[float],
+                       tokens: List[int], budget: int) -&gt; List[int]:
+    """Variant 4: same output as packContext, faster when many chunks get picked.
+
+    Prefix filtering (a standard similarity-join trick). If J(A, B) &gt;= 0.8
+    then |A&amp;B| &gt;= ceil(0.8 * |A|). Sort each set's words by a global order
+    (rarest first). Any two sets sharing at least o words must share a word
+    inside each set's first |X| - o + 1 words. So index only those prefix
+    words of picked chunks and run the exact Jaccard test only on chunks
+    that share a prefix word. Empty sets are tracked separately.
+    """
+    sets = [word_set(c) for c in chunks]
+    df = {}
+    for s in sets:
+        for w in s:
+            df[w] = df.get(w, 0) + 1
+    rank = {w: (df[w], w) for w in df}           # rare words first, ties by text
+
+    def prefix(s):
+        if not s:
+            return []
+        need = -(-4 * len(s) // 5)               # ceil(4|S|/5)
+        return sorted(s, key=rank.__getitem__)[:len(s) - need + 1]
+
+    order = sorted(range(len(chunks)), key=lambda i: (-scores[i], i))
+    index = {}                                    # prefix word -&gt; picked chunk ids
+    picked_empty = False
+    remaining, picked = budget, []
+    for i in order:
+        if tokens[i] &gt; remaining:
+            continue
+        a = sets[i]
+        if not a:
+            if picked_empty:
+                continue
+            dup = False
+        else:
+            pa = prefix(a)
+            cands = set()
+            for w in pa:
+                cands.update(index.get(w, ()))
+            dup = any(near_duplicate(a, sets[j]) for j in cands)
+        if dup:
+            continue
+        picked.append(i)
+        remaining -= tokens[i]
+        if not a:
+            picked_empty = True
+        else:
+            for w in pa:
+                index.setdefault(w, []).append(i)
+    return sorted(picked)</code></pre>
+
+      <details class="box">
+        <summary>Tests: test_pack_context.py (reference implementation + randomized)</summary>
+        <div class="d-body"><pre><code class="lang-py" data-embed="solutions/test_pack_context.py">"""Tests for packContext: examples, edge cases, an independent reference
+implementation (Fraction-based Jaccard, different control flow), randomized
+comparison, a timing check, and the variants."""
+import itertools
+import random
+import re
+import time
+from fractions import Fraction
+
+from pack_context import Solution, near_duplicate, word_set
+from pack_context_variants import Variants, pack_prefix_filter
+
+
+def reference(chunks, scores, tokens, budget):
+    """Independent re-implementation: exact Fraction Jaccard, explicit loops."""
+    def words(t):
+        out, cur = set(), ""
+        for ch in t.lower():
+            if ("a" &lt;= ch &lt;= "z") or ("0" &lt;= ch &lt;= "9"):
+                cur += ch
+            else:
+                if cur:
+                    out.add(cur)
+                cur = ""
+        if cur:
+            out.add(cur)
+        return out
+
+    def jacc_ok(a, b):
+        if not a and not b:
+            return True
+        return Fraction(len(a &amp; b), len(a | b)) &gt;= Fraction(4, 5)
+
+    idx = list(range(len(chunks)))
+    # stable sort by index first, then by score descending
+    idx.sort()
+    idx.sort(key=lambda i: scores[i], reverse=True)
+    picked, left = [], budget
+    for i in idx:
+        wi = words(chunks[i])
+        if tokens[i] &lt;= left and all(not jacc_ok(wi, words(chunks[j])) for j in picked):
+            picked.append(i)
+            left -= tokens[i]
+    return sorted(picked)
+
+
+def test_examples():
+    s = Solution()
+    chunks = [
+        "LoRA trains low-rank adapters while the base model stays frozen.",
+        "LoRA trains low rank adapters; the base model stays frozen!",
+        "Quantization to 4-bit cuts memory bandwidth during decoding.",
+        "Rerankers reorder retrieved passages by relevance.",
+    ]
+    assert s.packContext(chunks, [0.9, 0.85, 0.7, 0.6], [120, 115, 300, 90], 450) == [0, 2]
+    a, b = word_set(chunks[0]), word_set(chunks[1])
+    assert (len(a &amp; b), len(a | b)) == (10, 11)  # 5*10 = 50 &gt;= 44 = 4*11
+    assert s.packContext(["a b c d e", "x y z", "a b c d"], [0.5, 0.5, 0.4], [10, 10, 5], 20) == [0, 1]
+
+
+def test_edge_cases():
+    s = Solution()
+    assert s.packContext([], [], [], 100) == []
+    assert s.packContext(["abc"], [1.0], [5], 4) == []          # does not fit
+    assert s.packContext(["abc"], [1.0], [5], 5) == [0]         # exactly fits
+    assert s.packContext(["!!!", "???"], [1.0, 0.9], [1, 1], 10) == [0]  # two empty sets are near-duplicates
+    assert s.packContext(["", "a"], [1.0, 0.9], [1, 1], 10) == [0, 1]    # empty vs non-empty: 0 &gt;= 4 is false
+    assert s.packContext(["x", "y"], [0.5, 0.5], [3, 3], 3) == [0]       # tie broken by smaller index
+    # skip-but-continue: chunk 1 does not fit, chunk 2 still does
+    assert s.packContext(["a", "b", "c"], [0.9, 0.8, 0.7], [5, 10, 3], 9) == [0, 2]
+    # zero-token chunks are always affordable
+    assert s.packContext(["a", "b"], [0.9, 0.8], [0, 0], 0) == [0, 1]
+    # uppercase and punctuation fold into the same words
+    assert word_set("Hello, WORLD-42!") == {"hello", "world", "42"}
+    # exactly 0.8 counts (4 shared of 5 total)
+    assert near_duplicate({"a", "b", "c", "d"}, {"a", "b", "c", "d", "e"})
+    assert not near_duplicate({"a", "b", "c"}, {"a", "b", "c", "d"})  # 3/4 = 0.75 &lt; 0.8
+
+
+def test_randomized_against_reference():
+    rng = random.Random(7)
+    s = Solution()
+    vocab = ["lora", "rank", "kv", "cache", "bm25", "rrf", "Gpu", "token", "beam", "x1", "y2", "z3"]
+    for _ in range(3000):
+        n = rng.randint(0, 12)
+        chunks = []
+        for _ in range(n):
+            if chunks and rng.random() &lt; 0.35:
+                base = rng.choice(chunks).split()   # make near-duplicates likely
+                if base and rng.random() &lt; 0.5:
+                    base.pop(rng.randrange(len(base)))
+                chunks.append(" ".join(base) + rng.choice(["", "!", ";", " ."]))
+            else:
+                k = rng.randint(0, 7)
+                chunks.append(rng.choice([" ", ",", "-", "  "]).join(rng.choice(vocab) for _ in range(k)))
+        scores = [rng.choice([0.1, 0.5, 0.5, 0.9, 0.3]) for _ in range(n)]
+        tokens = [rng.randint(0, 60) for _ in range(n)]
+        budget = rng.randint(0, 150)
+        expected = reference(chunks, scores, tokens, budget)
+        assert s.packContext(chunks, scores, tokens, budget) == expected
+        assert pack_prefix_filter(chunks, scores, tokens, budget) == expected
+
+
+def test_performance():
+    rng = random.Random(1)
+    vocab = [f"w{i}" for i in range(5000)]
+    chunks = [" ".join(rng.choice(vocab) for _ in range(300)) for _ in range(1000)]
+    scores = [rng.random() for _ in range(1000)]
+    tokens = [1] * 1000                     # worst case: everything fits, so every chunk is compared
+    t0 = time.perf_counter()
+    out = Solution().packContext(chunks, scores, tokens, 10**9)
+    dt = time.perf_counter() - t0
+    assert len(out) == 1000
+    assert dt &lt; 10, dt
+    return dt
+
+
+def test_variants():
+    v = Variants()
+    # stop-at-first-miss differs from skip-and-continue
+    assert v.packStopAtFirstMiss(["a", "b", "c"], [0.9, 0.8, 0.7], [5, 10, 3], 9) == [0]
+    assert Solution().packContext(["a", "b", "c"], [0.9, 0.8, 0.7], [5, 10, 3], 9) == [0, 2]
+    # per-source cap
+    out = v.packPerSourceCap(["a", "b", "c", "d"], [0.9, 0.8, 0.7, 0.6], [1, 1, 1, 1], 10,
+                             ["doc1", "doc1", "doc1", "doc2"], 2)
+    assert out == [0, 1, 3]
+    # knapsack beats greedy and matches brute force
+    assert v.packOptimalScore([0.9, 0.8, 0.8], [400, 200, 200], 400) == [1, 2]
+    rng = random.Random(3)
+    for _ in range(300):
+        n = rng.randint(0, 8)
+        sc = [rng.randint(1, 20) / 4 for _ in range(n)]
+        tk = [rng.randint(1, 15) for _ in range(n)]
+        bud = rng.randint(0, 40)
+        got = v.packOptimalScore(sc, tk, bud)
+        assert sum(tk[i] for i in got) &lt;= bud
+        best = max(sum(sc[i] for i in sub)
+                   for r in range(n + 1) for sub in itertools.combinations(range(n), r)
+                   if sum(tk[i] for i in sub) &lt;= bud)
+        assert abs(sum(sc[i] for i in got) - best) &lt; 1e-9
+
+
+if __name__ == "__main__":
+    test_examples()
+    test_edge_cases()
+    test_randomized_against_reference()
+    dt = test_performance()
+    test_variants()
+    print(f"pack_context: all tests passed (3000 randomized cases vs reference; worst case 1000x300 words in {dt:.2f}s)")</code></pre></div>
+      </details>
+    </section>
+
+    <!-- ============================================================ b -->
+    <section id="bm25" data-track>
+      <h2>(b) rankBm25: BM25 ranking with exact tie handling</h2>
+
+      <h3>Problem in plain words</h3>
+      <p>Score every document against the query with BM25 (k1 = 1.2, b = 0.75, idf = ln(1 + (N - n + 0.5)/(n + 0.5))). Tokens are lowercase runs of [a-z0-9], with no stemming. Each <strong>distinct</strong> query term counts once. Return up to k indices with score &gt; 0, sorted by score descending, then index ascending. Return [] if the query has no tokens or nothing matches.</p>
+      <p class="mono small">def rankBm25(self, docs: List[str], query: str, k: int) -&gt; List[int]</p>
+
+      <h3>Key insight</h3>
+      <p>Precompute per-document term counts (a Counter) and lengths once. Then a score is a short loop over the distinct query terms. For ties: a document's score depends only on (its count for each query term, its length), and if you sum the terms <strong>in the same fixed order for every document</strong>, two documents with the same counts and length get <em>bit-identical</em> floats. Then sorting by <code>(-score, index)</code> breaks ties exactly. No epsilon comparisons needed. The theory is in <a href="03-rag-and-retrieval.html#bm25">part 03</a>.</p>
+
+      <h3>Approach, traced on example 1</h3>
+      <div class="worked">
+        <span class="w-title">query "BM25 retrieval embeddings", k = 3</span>
+        <ol class="steps">
+          <li>Token counts: doc0 = 6, doc1 = 8 ("cross-encoder" is two tokens), doc2 = 6, doc3 = 11. avgdl = 31/4 = 7.75. N = 4.</li>
+          <li>Distinct query terms (sorted): bm25, embeddings, retrieval. Doc frequencies: bm25 in doc3 only (n = 1). embeddings in doc0 and doc3 (n = 2). retrieval in doc0 and doc3 (n = 2). Doc1 has "retrieved", which does not match without stemming.</li>
+          <li>idf: bm25 = ln(1 + 3.5/1.5) = 1.2040. embeddings = retrieval = ln(1 + 2.5/2.5) = ln 2 = 0.6931.</li>
+          <li>Length factor K = 1.2 x (0.25 + 0.75 x |D|/7.75). doc0: 0.9968. doc3: 1.5774.</li>
+          <li>doc0: embeddings f = 1: 2.2/(1 + 0.9968) = 1.1018, times 0.6931 = 0.7637. retrieval gives the same. Total <strong>1.5274</strong>.</li>
+          <li>doc3: bm25 f = 2: 4.4/(2 + 1.5774) = 1.2299, times 1.2040 = 1.4808. embeddings and retrieval (f = 1): 2.2/2.5774 = 0.8536, times 0.6931 = 0.5916 each. Total <strong>2.6641</strong>.</li>
+          <li>doc1 and doc2 score 0 and are excluded. Sorted: doc3, doc0. Only 2 results even though k = 3.</li>
+        </ol>
+        <span class="result">[3, 0]</span>
+      </div>
+
+      <h3>Solution</h3>
+      <pre><code class="lang-py" data-embed="solutions/bm25.py">"""Problem (b): rankBm25.
+
+Okapi BM25 with k1 = 1.2, b = 0.75 and the "plus one" idf
+idf(t) = ln(1 + (N - n(t) + 0.5) / (n(t) + 0.5)), which is always &gt; 0.
+Return indices with score &gt; 0, sorted by score desc then index asc, at most k.
+"""
+import math
+import re
+from collections import Counter
+from typing import List
+
+WORD_RE = re.compile(r"[a-z0-9]+")
+
+
+def tokenize(text: str) -&gt; List[str]:
+    return WORD_RE.findall(text.lower())
+
+
+class Solution:
+    def rankBm25(self, docs: List[str], query: str, k: int) -&gt; List[int]:
+        k1, b = 1.2, 0.75
+        terms = sorted(set(tokenize(query)))      # distinct terms, fixed order
+        if not terms or not docs or k &lt;= 0:
+            return []
+        N = len(docs)
+        tfs = [Counter(tokenize(d)) for d in docs]
+        lens = [sum(tf.values()) for tf in tfs]
+        avgdl = sum(lens) / N
+        if avgdl == 0:
+            return []                             # every doc is empty: nothing can match
+        idf = {}
+        for t in terms:
+            n_t = sum(1 for tf in tfs if t in tf)
+            idf[t] = math.log(1 + (N - n_t + 0.5) / (n_t + 0.5))
+        scored = []
+        for i in range(N):
+            tf, dl = tfs[i], lens[i]
+            norm = k1 * (1 - b + b * dl / avgdl)
+            s = 0.0
+            # The score depends only on (f(t,D) for each query term, |D|) and is
+            # summed in the same term order for every doc, so two docs with the
+            # same counts and length get bit-identical floats and the index
+            # tie-break is exact. No epsilon comparison needed.
+            for t in terms:
+                f = tf.get(t, 0)
+                if f:
+                    s += idf[t] * f * (k1 + 1) / (f + norm)
+            if s &gt; 0:
+                scored.append((-s, i))
+        scored.sort()
+        return [i for _, i in scored[:k]]</code></pre>
+
+      <h3>Complexity</h3>
+      <ul>
+        <li>Build: O(total tokens) to tokenize and count.</li>
+        <li>idf: O(q x N) for q distinct query terms (membership checks in Counters are O(1)).</li>
+        <li>Scoring: O(N x q). Sorting: O(m log m) for m matches. For 1000 docs of 200 tokens: about 70 ms measured, dominated by tokenization.</li>
+        <li>For many queries over the same corpus, build an inverted index once (variant 1).</li>
+      </ul>
+
+      <h3>Float ties, discussed</h3>
+      <ul>
+        <li>Identical documents (or permutations of the same words) produce the same Counter and the same length. With the summation order fixed by the sorted query terms, they get the same float bit for bit, so the <code>(-score, i)</code> sort is exact.</li>
+        <li>What would break it: iterating over each document's own tokens (whose order differs between permuted docs), or summing in set-iteration order that could differ between runs. Floating-point addition is not associative, so a different order can change the last bit.</li>
+        <li>Do not "fix" ties with <code>abs(a - b) &lt; 1e-9</code> comparisons inside a sort. Tolerance-based equality is not transitive and can make the ordering inconsistent. Rounding scores (for example to 12 decimals) is a pragmatic fallback, but two values can sit on either side of a rounding boundary. Deterministic computation is the clean fix.</li>
+      </ul>
+
+      <h3>Edge cases</h3>
+      <ul>
+        <li>The query has no tokens ("!!!") or is empty: [].</li>
+        <li>Every doc is empty: avgdl = 0. Return [] before dividing by zero.</li>
+        <li>Repeated query words ("cat cat"): count once.</li>
+        <li>A term in every doc: idf = ln(1 + 0.5/(N + 0.5)) &gt; 0, so it still contributes.</li>
+        <li>k larger than the number of matches: return all matches. k = 0: [].</li>
+      </ul>
+
+      <h3>Common pitfalls</h3>
+      <div class="callout trap"><ul class="mb-0">
+        <li>avgdl computed only over matching docs, or over non-empty docs. It is over ALL docs.</li>
+        <li>n(t) counted as total occurrences instead of the number of documents containing t.</li>
+        <li>Including zero-score docs to pad up to k.</li>
+        <li>Using <code>math.log</code> without the +1 (the classic idf goes negative).</li>
+        <li>Splitting on whitespace: "embeddings;" and "embeddings" would differ.</li>
+      </ul></div>
+
+      <h3>Three traced test cases</h3>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Input</th><th>Trace</th><th>Output</th></tr></thead>
+        <tbody>
+          <tr><td>Example 1</td><td>doc3 2.6641, doc0 1.5274, others 0</td><td>[3, 0]</td></tr>
+          <tr><td>["the cat", "the cat", "a dog"], "cat", k = 5</td><td>avgdl 2, n = 2, idf = ln 1.6 = 0.47, K = 1.2. Each "the cat" scores 0.47 x 2.2/2.2 = 0.47. Identical floats, so index order.</td><td>[0, 1]</td></tr>
+          <tr><td>["a b", "a"], "a a A", k = 5</td><td>one distinct term. Shorter doc1 (|D| = 1) has the smaller K, so it scores higher.</td><td>[1, 0]</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>Variants</h3>
+      <ol>
+        <li><strong>Inverted index, query many times</strong>: postings term to [(doc, tf)]. Only touch matching docs. <code>heapq.nsmallest(k, ...)</code> for the top k.</li>
+        <li><strong>Count repeated query terms</strong> with Robertson's k3 weight qtf(k3 + 1)/(qtf + k3). With no repeats it equals the base ranking (tested).</li>
+        <li><strong>Classic idf without +1</strong>, to see why it goes negative for common terms.</li>
+      </ol>
+      <pre><code class="lang-py" data-embed="solutions/bm25_variants.py">"""Variants of problem (b) rankBm25."""
+import heapq
+import math
+from collections import Counter, defaultdict
+from typing import Dict, List
+
+from bm25 import tokenize
+
+
+class Bm25Index:
+    """Variant 1: build once, query many times (inverted index).
+
+    Postings map term -&gt; list of (doc id, term frequency). A query only
+    touches docs that contain at least one query term, and heapq picks the
+    top k in O(m log k) instead of sorting all m matches.
+    Same ranking as Solution.rankBm25.
+    """
+
+    def __init__(self, docs: List[str], k1: float = 1.2, b: float = 0.75):
+        self.k1, self.b = k1, b
+        self.N = len(docs)
+        self.postings: Dict[str, List[tuple]] = defaultdict(list)
+        self.lens = []
+        for i, d in enumerate(docs):
+            tf = Counter(tokenize(d))
+            self.lens.append(sum(tf.values()))
+            for t, f in tf.items():
+                self.postings[t].append((i, f))
+        self.avgdl = (sum(self.lens) / self.N) if self.N else 0.0
+
+    def idf(self, t: str) -&gt; float:
+        n_t = len(self.postings.get(t, ()))
+        return math.log(1 + (self.N - n_t + 0.5) / (n_t + 0.5))
+
+    def search(self, query: str, k: int) -&gt; List[int]:
+        terms = sorted(set(tokenize(query)))
+        if not terms or self.avgdl == 0 or k &lt;= 0:
+            return []
+        # accumulate per doc in the same term order as the reference solution
+        partial: Dict[int, Dict[str, int]] = defaultdict(dict)
+        for t in terms:
+            for i, f in self.postings.get(t, ()):
+                partial[i][t] = f
+        scored = []
+        for i, fmap in partial.items():
+            norm = self.k1 * (1 - self.b + self.b * self.lens[i] / self.avgdl)
+            s = 0.0
+            for t in terms:
+                f = fmap.get(t, 0)
+                if f:
+                    s += self.idf(t) * f * (self.k1 + 1) / (f + norm)
+            if s &gt; 0:
+                scored.append((-s, i))
+        return [i for _, i in heapq.nsmallest(k, scored)]
+
+
+def rank_bm25_qtf(docs: List[str], query: str, k: int,
+                  k1: float = 1.2, b: float = 0.75, k3: float = 8.0) -&gt; List[int]:
+    """Variant 2: query terms that repeat count more (Robertson's k3 factor).
+
+    weight(t) = qtf * (k3 + 1) / (qtf + k3). With qtf = 1 the factor is 1,
+    so a query without repeats ranks exactly like the base problem.
+    """
+    qtf = Counter(tokenize(query))
+    if not qtf or not docs:
+        return []
+    terms = sorted(qtf)
+    tfs = [Counter(tokenize(d)) for d in docs]
+    lens = [sum(tf.values()) for tf in tfs]
+    N, avgdl = len(docs), sum(lens) / len(docs)
+    if avgdl == 0:
+        return []
+    out = []
+    for i, tf in enumerate(tfs):
+        norm = k1 * (1 - b + b * lens[i] / avgdl)
+        s = 0.0
+        for t in terms:
+            f = tf.get(t, 0)
+            if f:
+                n_t = sum(1 for x in tfs if t in x)
+                idf = math.log(1 + (N - n_t + 0.5) / (n_t + 0.5))
+                s += idf * f * (k1 + 1) / (f + norm) * qtf[t] * (k3 + 1) / (qtf[t] + k3)
+        if s &gt; 0:
+            out.append((-s, i))
+    out.sort()
+    return [i for _, i in out[:k]]
+
+
+def idf_classic(N: int, n_t: int) -&gt; float:
+    """Variant 3 (for comparison): Robertson-Sparck Jones idf without the +1.
+
+    ln((N - n + 0.5) / (n + 0.5)) goes negative when a term is in more than
+    half the docs, so matching a very common word would LOWER the score.
+    The +1 inside the log (Lucene's choice, used in this problem) keeps it &gt; 0.
+    """
+    return math.log((N - n_t + 0.5) / (n_t + 0.5))</code></pre>
+
+      <details class="box">
+        <summary>Tests: test_bm25.py (hand-computed scores, reference, ties, timing)</summary>
+        <div class="d-body"><pre><code class="lang-py" data-embed="solutions/test_bm25.py">"""Tests for rankBm25: examples, hand-computed scores, edge cases, ties,
+an independent reference, randomized comparison, timing, and variants."""
+import math
+import random
+import time
+
+from bm25 import Solution, tokenize
+from bm25_variants import Bm25Index, idf_classic, rank_bm25_qtf
+
+EX1 = [
+    "Vector databases store embeddings for retrieval.",
+    "Rerank the retrieved chunks with a cross-encoder.",
+    "Kubernetes rollout with a canary deploy.",
+    "Hybrid retrieval mixes BM25 with dense embeddings; BM25 helps exact terms.",
+]
+
+
+def reference_scores(docs, query, k1=1.2, b=0.75):
+    """Literal formula, doc by doc, using list.count (no Counter)."""
+    toks = [tokenize(d) for d in docs]
+    terms = sorted(set(tokenize(query)))
+    N = len(docs)
+    avgdl = sum(len(t) for t in toks) / N
+    out = []
+    for D in toks:
+        s = 0.0
+        for t in terms:
+            n = sum(1 for x in toks if t in x)
+            idf = math.log(1 + (N - n + 0.5) / (n + 0.5))
+            f = D.count(t)
+            if f:
+                s += idf * f * (k1 + 1) / (f + k1 * (1 - b + b * len(D) / avgdl))
+        out.append(s)
+    return out
+
+
+def reference_rank(docs, query, k):
+    if not tokenize(query) or not docs or sum(len(tokenize(d)) for d in docs) == 0:
+        return []
+    sc = reference_scores(docs, query)
+    idx = [i for i in range(len(docs)) if sc[i] &gt; 0]
+    idx.sort(key=lambda i: (-sc[i], i))
+    return idx[:k]
+
+
+def test_examples():
+    s = Solution()
+    assert s.rankBm25(EX1, "BM25 retrieval embeddings", 3) == [3, 0]
+    assert s.rankBm25(["the cat", "the cat", "a dog"], "cat", 5) == [0, 1]
+
+
+def test_hand_numbers():
+    # doc lengths 6, 8, 6, 11 -&gt; avgdl 7.75 ("cross-encoder" is two tokens)
+    assert [len(tokenize(d)) for d in EX1] == [6, 8, 6, 11]
+    sc = reference_scores(EX1, "BM25 retrieval embeddings")
+    idf1 = math.log(1 + (4 - 1 + 0.5) / (1 + 0.5))   # bm25: in 1 doc
+    idf2 = math.log(1 + (4 - 2 + 0.5) / (2 + 0.5))   # retrieval, embeddings: in 2 docs
+    assert abs(idf1 - 1.2039728043259361) &lt; 1e-12
+    assert abs(idf2 - math.log(2)) &lt; 1e-12
+    # doc 0: retrieval f=1, embeddings f=1, |D|=6
+    norm0 = 1.2 * (1 - 0.75 + 0.75 * 6 / 7.75)
+    assert abs(sc[0] - 2 * idf2 * 2.2 / (1 + norm0)) &lt; 1e-12
+    assert sc[1] == 0.0 and sc[2] == 0.0   # "retrieved" is not "retrieval"
+    assert sc[3] &gt; sc[0] &gt; 0
+
+
+def test_edge_cases():
+    s = Solution()
+    assert s.rankBm25([], "x", 3) == []
+    assert s.rankBm25(["a b"], "", 3) == []
+    assert s.rankBm25(["a b"], "!!! ???", 3) == []           # no query tokens
+    assert s.rankBm25(["", ""], "a", 3) == []                 # all docs empty
+    assert s.rankBm25(["a b", "c"], "zzz", 3) == []           # nothing matches
+    assert s.rankBm25(["a b", "a"], "a", 0) == []
+    assert s.rankBm25(["a b", "a"], "a a A", 5) == [1, 0]     # distinct terms only; shorter doc wins
+    assert s.rankBm25(["x", "a", "a", "a"], "a", 2) == [1, 2]  # k truncation keeps ties in index order
+    # term in every doc still has positive idf, so it still counts
+    assert s.rankBm25(["a", "a b"], "a", 5) == [0, 1]
+
+
+def test_float_ties_identical_docs():
+    s = Solution()
+    # same words in different order -&gt; same counts and length -&gt; identical floats
+    docs = ["retrieval beam kv cache"] * 3 + ["cache kv beam retrieval", "kv", "retrieval kv kv"]
+    out = s.rankBm25(docs, "kv retrieval cache beam", 10)
+    top = out[:4]
+    assert top == [0, 1, 2, 3], out
+
+
+def test_randomized_against_reference():
+    rng = random.Random(11)
+    s = Solution()
+    vocab = ["bm25", "rrf", "kv", "Cache", "beam", "lora", "x", "y", "retrieval", "retrieved"]
+    for _ in range(2000):
+        n = rng.randint(0, 8)
+        docs = []
+        for _ in range(n):
+            if docs and rng.random() &lt; 0.3:
+                w = docs[rng.randrange(len(docs))].split()
+                rng.shuffle(w)
+                docs.append(" ".join(w))                     # permuted copy -&gt; exact tie
+            else:
+                docs.append(" ".join(rng.choice(vocab) for _ in range(rng.randint(0, 8))))
+        q = " ".join(rng.choice(vocab + ["??"]) for _ in range(rng.randint(0, 4)))
+        k = rng.randint(0, 6)
+        assert s.rankBm25(docs, q, k) == reference_rank(docs, q, k), (docs, q, k)
+        assert Bm25Index(docs).search(q, k) == reference_rank(docs, q, k)
+        assert rank_bm25_qtf(docs, " ".join(sorted(set(tokenize(q)))), k) == reference_rank(docs, q, k)
+
+
+def test_performance():
+    rng = random.Random(2)
+    vocab = [f"t{i}" for i in range(3000)]
+    docs = [" ".join(rng.choice(vocab) for _ in range(200)) for _ in range(1000)]
+    t0 = time.perf_counter()
+    for _ in range(5):
+        Solution().rankBm25(docs, "t1 t2 t3 t4 t5 t6 t7 t8 t9 t10", 10)
+    dt = (time.perf_counter() - t0) / 5
+    assert dt &lt; 1.0, dt
+    return dt
+
+
+def test_variants():
+    # repeated query term changes the ranking under qtf weighting
+    docs = ["kv kv kv", "beam beam beam"]
+    assert Solution().rankBm25(docs, "kv beam beam", 2) == [0, 1]        # tie -&gt; index order
+    assert rank_bm25_qtf(docs, "kv beam beam", 2) == [1, 0]             # beam counted twice
+    assert idf_classic(10, 8) &lt; 0                                         # common term goes negative
+    assert math.log(1 + (10 - 8 + 0.5) / (8 + 0.5)) &gt; 0
+
+
+if __name__ == "__main__":
+    test_examples()
+    test_hand_numbers()
+    test_edge_cases()
+    test_float_ties_identical_docs()
+    test_randomized_against_reference()
+    dt = test_performance()
+    test_variants()
+    print(f"bm25: all tests passed (2000 randomized cases x 3 implementations; 1000 docs x 200 tokens in {dt*1000:.0f} ms)")</code></pre></div>
+      </details>
+    </section>
+
+    <!-- ============================================================ c -->
+    <section id="extract-objects" data-track>
+      <h2>(c) extractObjects: JSON objects from a chunked stream</h2>
+
+      <h3>Problem in plain words</h3>
+      <p>A model streams text in chunks. Somewhere in it are JSON objects, for example tool calls. Join the chunks and scan left to right. Outside an object, ignore everything except "{". Inside, track brace depth, whether you are inside a string, and whether the previous character was an escaping backslash. Braces inside strings do not count. When depth returns to 0, emit the exact text from "{" to "}". Do not return unfinished objects. Emit in completion order, with no validation, in O(n) for up to 200,000 characters. Chunks can split anywhere, even between a backslash and the character it escapes.</p>
+      <p class="mono small">def extractObjects(self, chunks: List[str]) -&gt; List[str]</p>
+
+      <h3>Key insight</h3>
+      <p>Three pieces of state are enough: <code>depth</code>, <code>in_str</code>, <code>esc</code>. Order the checks so that <strong>escape handling comes first</strong> inside a string. If the previous char was a backslash, the current char is consumed literally, whatever it is (a quote, a backslash or a brace). That one rule makes <code>\"</code> not end the string and <code>\\"</code> end it. Since you join first, chunk boundaries are irrelevant. For the streaming version, the same three variables live on the object between calls.</p>
+
+      <h3>The state machine</h3>
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 260" role="img" aria-label="States: outside, in object (depth d), in string, escape. Transitions: open brace from outside enters object at depth 1; quote enters string; backslash enters escape; any char returns from escape to string; quote leaves string; braces change depth; depth 0 emits">
+          <defs><marker id="c1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker></defs>
+          <rect x="20" y="100" width="120" height="50" rx="25" class="d-box"/><text x="80" y="130" text-anchor="middle">OUTSIDE</text>
+          <rect x="230" y="100" width="150" height="50" rx="25" class="d-a"/><text x="305" y="122" text-anchor="middle">IN OBJECT</text><text x="305" y="139" text-anchor="middle" class="d-sm">depth d &gt;= 1</text>
+          <rect x="470" y="40" width="120" height="50" rx="25" class="d-c"/><text x="530" y="70" text-anchor="middle">IN STRING</text>
+          <rect x="470" y="170" width="120" height="50" rx="25" class="d-e"/><text x="530" y="200" text-anchor="middle">ESCAPE</text>
+          <path d="M140 118 L228 118" class="d-line" marker-end="url(#c1)"/><text x="184" y="110" text-anchor="middle" class="d-sm">"{": d=1</text>
+          <path d="M228 140 L142 140" class="d-line" marker-end="url(#c1)"/><text x="184" y="160" text-anchor="middle" class="d-sm">"}" to d=0: EMIT</text>
+          <path d="M370 102 L470 72" class="d-line" marker-end="url(#c1)"/><text x="405" y="78" class="d-sm">'"'</text>
+          <path d="M470 58 L380 112" class="d-line" marker-end="url(#c1)"/><text x="430" y="104" class="d-sm">'"'</text>
+          <path d="M520 90 L520 168" class="d-line" marker-end="url(#c1)"/><text x="490" y="134" class="d-sm">"\"</text>
+          <path d="M545 168 L545 92" class="d-line" marker-end="url(#c1)"/><text x="552" y="134" class="d-sm">any char</text>
+          <path d="M305 100 C 270 40, 340 40, 318 98" class="d-line" marker-end="url(#c1)"/><text x="305" y="34" text-anchor="middle" class="d-sm">"{" d+1, "}" d-1</text>
+          <path d="M80 100 C 50 50, 110 50, 92 98" class="d-line" marker-end="url(#c1)"/><text x="80" y="44" text-anchor="middle" class="d-sm">anything else</text>
+          <path d="M590 58 C 650 30, 660 90, 592 72" class="d-line" marker-end="url(#c1)"/><text x="640" y="40" class="d-sm">other chars,</text><text x="640" y="54" class="d-sm">incl. { }</text>
+          <text x="20" y="250" class="d-sm d-muted">Braces only change depth in IN OBJECT (not in a string). Quotes outside any object are ignored.</text>
+        </svg>
+        </div>
+        <figcaption>Four logical states, encoded with three variables: depth (0 means outside), in_str, esc.</figcaption>
+      </figure>
+
+      <h3>Approach, traced</h3>
+      <div class="worked">
+        <span class="w-title">Chunks: ['Calling tools now {"tool": "get_weather", "args": {"city": "Chen', 'nai", "unit": "C"}} then {"tool": "search", "args": {"q": "a } b"', '}} done']</span>
+        <ol class="steps">
+          <li>Joined length 136. Chunk boundaries at 64 (inside the string "Chen|nai") and 129 (right before the final "}}"). Neither matters after joining.</li>
+          <li>Index 18 "{": outside to depth 1, start = 18.</li>
+          <li>Quotes open and close strings for "tool", "get_weather", "args". Index 50 "{": depth 2.</li>
+          <li>Index 81 "}": depth 1. Index 82 "}": depth 0, so emit text[18:83].</li>
+          <li>" then ": outside, ignored. Index 89 "{": depth 1, start = 89. Index 116 "{": depth 2.</li>
+          <li>Inside the string "a } b", the "}" at index 125 is ignored because in_str is true.</li>
+          <li>Index 129 "}": depth 1. Index 130 "}": depth 0, so emit text[89:131]. " done" is ignored.</li>
+        </ol>
+        <span class="result">['{"tool": "get_weather", "args": {"city": "Chennai", "unit": "C"}}', '{"tool": "search", "args": {"q": "a } b"}}']</span>
+      </div>
+      <p class="small muted">This example stream is a reconstruction of the one in the assessment (same structure: get_weather for Chennai, then a search whose query string contains "a } b"). The exact original text may have differed.</p>
+
+      <h3>Solution (batch + streaming)</h3>
+      <pre><code class="lang-py" data-embed="solutions/extract_objects.py">"""Problem (c): extractObjects.
+
+Pull complete top-level JSON objects out of a chunked text stream with a
+single left-to-right state machine. Braces inside strings do not count.
+A backslash inside a string escapes the next character. Objects are returned
+exactly as they appear, in completion order. Unfinished objects are dropped.
+"""
+from typing import List
+
+
+class Solution:
+    def extractObjects(self, chunks: List[str]) -&gt; List[str]:
+        text = "".join(chunks)
+        out: List[str] = []
+        depth = 0           # 0 means "outside any object"
+        start = -1          # index of the current top-level "{"
+        in_str = False
+        esc = False
+        for i, ch in enumerate(text):
+            if depth == 0:
+                if ch == "{":
+                    depth, start = 1, i
+                continue                      # outside: ignore everything else
+            if in_str:
+                if esc:
+                    esc = False               # this char is escaped, whatever it is
+                elif ch == "\\":
+                    esc = True
+                elif ch == '"':
+                    in_str = False
+                continue
+            if ch == '"':
+                in_str = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    out.append(text[start:i + 1])
+        return out
+
+
+class StreamingExtractor:
+    """Incremental version: call feed() with each chunk as it arrives.
+
+    State (depth, in-string, pending escape, partial object) survives between
+    calls, so a chunk may end anywhere, even right after a backslash.
+    Memory is O(current object), not O(whole stream), and each object is
+    returned the moment its closing brace arrives.
+    """
+
+    def __init__(self) -&gt; None:
+        self.depth = 0
+        self.in_str = False
+        self.esc = False
+        self.buf: List[str] = []      # characters of the object in progress
+
+    def feed(self, chunk: str) -&gt; List[str]:
+        done: List[str] = []
+        for ch in chunk:
+            if self.depth == 0:
+                if ch == "{":
+                    self.depth = 1
+                    self.buf = ["{"]
+                continue
+            self.buf.append(ch)
+            if self.in_str:
+                if self.esc:
+                    self.esc = False
+                elif ch == "\\":
+                    self.esc = True
+                elif ch == '"':
+                    self.in_str = False
+                continue
+            if ch == '"':
+                self.in_str = True
+            elif ch == "{":
+                self.depth += 1
+            elif ch == "}":
+                self.depth -= 1
+                if self.depth == 0:
+                    done.append("".join(self.buf))
+                    self.buf = []
+        return done
+
+    def pending(self) -&gt; bool:
+        """True if an object has started but not finished."""
+        return self.depth &gt; 0</code></pre>
+
+      <h3>Batch vs streaming</h3>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th></th><th>Join first (extractObjects)</th><th>Incremental (StreamingExtractor.feed)</th></tr></thead>
+        <tbody>
+          <tr><td>When objects are available</td><td>only after the whole stream ends</td><td>the moment the closing brace arrives (act on a tool call while the model still streams)</td></tr>
+          <tr><td>Memory</td><td>O(stream length)</td><td>O(current object)</td></tr>
+          <tr><td>Chunk boundaries</td><td>irrelevant after the join</td><td>handled because depth, in_str and esc persist on the object. A chunk ending in a backslash leaves esc = True for the next call.</td></tr>
+          <tr><td>Result</td><td>identical (tested on every split point)</td><td>identical</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>Complexity</h3>
+      <p>O(n) time, a single pass with O(1) work per character. Slicing out each emitted object costs its length, and objects do not overlap, so the total is still O(n). Space: O(n) for the joined string (batch) or O(longest object) (streaming). Measured: 200,000 characters in about 20 ms.</p>
+
+      <h3>Edge cases</h3>
+      <ul>
+        <li><code>{"a": "x\"}"}</code>: the escaped quote does not end the string, so the inner } is string content and one object is emitted.</li>
+        <li><code>{"a": "x\\"}</code>: the backslash is escaped, so the next " ends the string and the } closes the object.</li>
+        <li>A split between "\" and the next character: same result (tested).</li>
+        <li><code>}} "{" }</code>: the leading }} are ignored outside. The { opens an object, the next " opens a string, which swallows the final }. It is unfinished, so the result is [].</li>
+        <li><code>{}{}</code> gives two objects. <code>{{}}</code> gives one.</li>
+        <li>Empty chunks, or no chunks: [].</li>
+      </ul>
+
+      <h3>Common pitfalls</h3>
+      <div class="callout trap"><ul class="mb-0">
+        <li>Treating <code>\"</code> by looking at the previous character only. That breaks on <code>\\"</code>. Track the escape state instead.</li>
+        <li>Counting braces inside strings.</li>
+        <li>Handling quotes or backslashes while outside an object (the spec says to ignore everything but "{").</li>
+        <li>Using <code>json.loads</code> on growing prefixes: O(n^2), and it validates, which the spec says not to do.</li>
+        <li>Searching for "{" with <code>str.find</code> in a loop and re-scanning: easy to make quadratic.</li>
+        <li>Emitting unfinished objects at end of stream.</li>
+      </ul></div>
+
+      <h3>Three traced test cases</h3>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Input</th><th>Trace</th><th>Output</th></tr></thead>
+        <tbody>
+          <tr><td>The weather/search stream</td><td>see the trace above</td><td>2 objects</td></tr>
+          <tr><td><code>['{"note": "unfinished"']</code></td><td>depth 1, the string closes, the stream ends at depth 1</td><td>[]</td></tr>
+          <tr><td><code>['{"a": "q\\', '"}', '"}']</code> (a backslash at the end of chunk 1)</td><td>after the join: q, \ (esc), " (escaped, still in string), } (string content), " (close string), } (depth 0)</td><td><code>['{"a": "q\\"}"}']</code></td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>Variants</h3>
+      <ol>
+        <li><strong>Return parsed, valid objects only</strong>: run <code>json.loads</code> on each span and skip failures.</li>
+        <li><strong>Objects and arrays</strong>: use a stack of expected closers instead of a counter, and abandon a value on a mismatched closer.</li>
+        <li><strong>Return offsets</strong> (start, end) instead of text, to strip the JSON out of the prose.</li>
+      </ol>
+      <pre><code class="lang-py" data-embed="solutions/extract_objects_variants.py">"""Variants of problem (c) extractObjects."""
+import json
+from typing import Any, List, Tuple
+
+from extract_objects import Solution
+
+
+def extract_valid(chunks: List[str]) -&gt; List[Any]:
+    """Variant 1: return parsed objects, skipping spans that are not valid JSON.
+
+    The scanner only balances braces; it does not check commas, colons or
+    literals. json.loads on each span is the cheap way to add validation.
+    """
+    out = []
+    for span in Solution().extractObjects(chunks):
+        try:
+            out.append(json.loads(span))
+        except json.JSONDecodeError:
+            pass
+    return out
+
+
+def extract_values(chunks: List[str]) -&gt; List[str]:
+    """Variant 2: top-level objects AND arrays.
+
+    Keep a stack of expected closers instead of a counter, so "{]" style
+    mismatches can be detected. Here a mismatch abandons the current value
+    and the scan goes back to "outside".
+    """
+    text = "".join(chunks)
+    pair = {"{": "}", "[": "]"}
+    out, stack, start = [], [], -1
+    in_str = esc = False
+    for i, ch in enumerate(text):
+        if not stack:
+            if ch in pair:
+                stack, start = [pair[ch]], i
+            continue
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch in pair:
+            stack.append(pair[ch])
+        elif ch in "}]":
+            if ch != stack[-1]:
+                stack = []                 # mismatched closer: drop this value
+                continue
+            stack.pop()
+            if not stack:
+                out.append(text[start:i + 1])
+    return out
+
+
+def extract_spans(chunks: List[str]) -&gt; List[Tuple[int, int]]:
+    """Variant 3: (start, end_exclusive) offsets into the joined text.
+
+    Useful when the caller wants to strip the JSON out of the surrounding
+    prose, or to report positions. Same scanner, different output.
+    """
+    text = "".join(chunks)
+    spans, depth, start = [], 0, -1
+    in_str = esc = False
+    for i, ch in enumerate(text):
+        if depth == 0:
+            if ch == "{":
+                depth, start = 1, i
+            continue
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                spans.append((start, i + 1))
+    return spans</code></pre>
+
+      <details class="box">
+        <summary>Tests: test_extract_objects.py (all split points, randomized generated streams)</summary>
+        <div class="d-body"><pre><code class="lang-py" data-embed="solutions/test_extract_objects.py">"""Tests for extractObjects and StreamingExtractor: examples, escape edge
+cases, every possible split point, randomized generated streams with known
+answers, a 200,000-char timing check, and the variants."""
+import json
+import random
+import time
+
+from extract_objects import Solution, StreamingExtractor
+from extract_objects_variants import extract_spans, extract_valid, extract_values
+
+WEATHER = [
+    'Calling tools now {"tool": "get_weather", "args": {"city": "Chen',
+    'nai", "unit": "C"}} then {"tool": "search", "args": {"q": "a } b"',
+    '}} done',
+]
+WEATHER_OUT = [
+    '{"tool": "get_weather", "args": {"city": "Chennai", "unit": "C"}}',
+    '{"tool": "search", "args": {"q": "a } b"}}',
+]
+
+
+def stream_all(chunks):
+    ex = StreamingExtractor()
+    out = []
+    for c in chunks:
+        out.extend(ex.feed(c))
+    return out
+
+
+def test_examples():
+    s = Solution()
+    assert s.extractObjects(WEATHER) == WEATHER_OUT
+    assert stream_all(WEATHER) == WEATHER_OUT
+    assert s.extractObjects(['{"note": "unfinished"']) == []
+    assert stream_all(['{"note": "unfinished"']) == []
+
+
+def test_escapes():
+    s = Solution()
+    # \" does not end the string, so the } inside is still string content
+    assert s.extractObjects(['{"a": "x\\"}"}']) == ['{"a": "x\\"}"}']
+    # \\ is an escaped backslash; the next " DOES end the string
+    assert s.extractObjects(['{"a": "x\\\\"}']) == ['{"a": "x\\\\"}']
+    # split between the backslash and the char it escapes
+    chunks = ['{"a": "q\\', '"}', '"}']
+    assert s.extractObjects(chunks) == ['{"a": "q\\"}"}']
+    assert stream_all(chunks) == ['{"a": "q\\"}"}']
+    # braces and quotes outside any object are ignored
+    # the { starts an object, the next " opens a string that swallows the }, never closed
+    assert s.extractObjects(['}} "{" }']) == []
+    assert s.extractObjects(['} ] "x" {}']) == ['{}']
+    assert s.extractObjects(['{}{}', '{{}}']) == ['{}', '{}', '{{}}']
+    assert s.extractObjects([]) == []
+    assert s.extractObjects(['', '', '']) == []
+
+
+def test_every_split_point():
+    text = "".join(WEATHER) + ' {"k": "\\\\\\"}{"} tail {"open": '
+    expected = Solution().extractObjects([text])
+    assert expected == WEATHER_OUT + ['{"k": "\\\\\\"}{"}']
+    for i in range(len(text) + 1):
+        for j in range(i, len(text) + 1, 7):
+            parts = [text[:i], text[i:j], text[j:]]
+            assert Solution().extractObjects(parts) == expected
+            assert stream_all(parts) == expected
+
+
+def random_value(rng, depth=0):
+    r = rng.random()
+    if depth &gt; 3 or r &lt; 0.3:
+        return "".join(rng.choice('ab{}[]"\\:, \n\t') for _ in range(rng.randint(0, 6)))
+    if r &lt; 0.45:
+        return rng.randint(-5, 500)
+    if r &lt; 0.55:
+        return [random_value(rng, depth + 1) for _ in range(rng.randint(0, 3))]
+    return {random_value(rng, 9): random_value(rng, depth + 1) for _ in range(rng.randint(0, 3))}
+
+
+def test_randomized_streams():
+    rng = random.Random(42)
+    s = Solution()
+    for _ in range(1500):
+        objs, pieces = [], []
+        for _ in range(rng.randint(0, 5)):
+            noise = "".join(rng.choice('xyz ]"\\:\n') for _ in range(rng.randint(0, 8)))  # no { or } in noise
+            pieces.append(noise)
+            obj = {str(random_value(rng, 9)): random_value(rng) for _ in range(rng.randint(0, 4))}
+            text = json.dumps(obj, ensure_ascii=rng.random() &lt; 0.5)
+            objs.append(text)
+            pieces.append(text)
+        if rng.random() &lt; 0.5:
+            pieces.append('{"tail": "never closed ' + rng.choice(["", "\\", "}", '\\"}']))
+        stream = "".join(pieces)
+        cuts = sorted(rng.sample(range(len(stream) + 1), min(len(stream) + 1, rng.randint(0, 12))))
+        chunks, prev = [], 0
+        for c in cuts:
+            chunks.append(stream[prev:c])
+            prev = c
+        chunks.append(stream[prev:])
+        assert s.extractObjects(chunks) == objs
+        assert stream_all(chunks) == objs
+        assert [json.loads(o) for o in objs] == extract_valid(chunks)
+
+
+def test_performance():
+    obj = json.dumps({"tool": "search", "args": {"q": "a } b \\\" {", "n": [1, 2, {"x": "}"}]}})
+    stream = ("noise " + obj) * (200_000 // (len(obj) + 6))
+    chunks = [stream[i:i + 37] for i in range(0, len(stream), 37)]
+    t0 = time.perf_counter()
+    out = Solution().extractObjects(chunks)
+    dt = time.perf_counter() - t0
+    assert len(stream) &lt;= 200_000 and len(out) == stream.count("noise ")
+    t1 = time.perf_counter()
+    assert stream_all(chunks) == out
+    dt2 = time.perf_counter() - t1
+    assert dt &lt; 1.0 and dt2 &lt; 1.0
+    return len(stream), dt, dt2
+
+
+def test_variants():
+    assert extract_valid(['{"a": 1} {"b": } {"c": [1, 2]}']) == [{"a": 1}, {"c": [1, 2]}]
+    assert extract_values(['x [1, {"a": "]"}] y {"b": [2]} [}] z']) == ['[1, {"a": "]"}]', '{"b": [2]}']
+    text = 'pre {"a": 1} mid {"b": "}"} post'
+    spans = extract_spans([text])
+    assert [text[a:b] for a, b in spans] == ['{"a": 1}', '{"b": "}"}']
+
+
+if __name__ == "__main__":
+    test_examples()
+    test_escapes()
+    test_every_split_point()
+    test_randomized_streams()
+    n, dt, dt2 = test_performance()
+    test_variants()
+    print(f"extract_objects: all tests passed (every split point, 1500 randomized streams; {n} chars in {dt*1000:.0f} ms joined, {dt2*1000:.0f} ms streaming)")</code></pre></div>
+      </details>
+    </section>
+
+    <!-- ============================================================ d -->
+    <section id="beam-search" data-track>
+      <h2>(d) beamSearch: fixed-width beam with lexicographic ties</h2>
+
+      <h3>Problem in plain words</h3>
+      <p>Tokens are 0..V-1. A sequence's score is start[first] plus transition[prev][next] for each step. Begin with one sequence per token and keep the best beamWidth. Then, steps - 1 times, extend <strong>every</strong> kept sequence by <strong>every</strong> token and keep the best beamWidth. Return the best final sequence. Higher score wins. Exactly equal scores: the lexicographically smaller token list wins. Scores are multiples of 0.125, so float sums are exact.</p>
+      <p class="mono small">def beamSearch(self, start: List[float], transition: List[List[float]], steps: int, beamWidth: int) -&gt; List[int]</p>
+
+      <h3>Key insight</h3>
+      <p>Represent each candidate as <code>(-score, sequence)</code>. Python compares tuples element by element and lists lexicographically, so <code>sorted(candidates)[:beamWidth]</code> applies both rules at once: higher score first, then the smaller sequence on ties. Exact 0.125 arithmetic makes equality meaningful. Apply the same rule both when pruning and when picking the final answer.</p>
+
+      <h3>Approach, traced (beamWidth = 2)</h3>
+      <div class="worked">
+        <span class="w-title">start = [-0.5, -1.0, -6.0]; transition = [[-2, -2, -2], [-0.25, -0.125, -6], [-6, -6, -6]]; steps = 3</span>
+        <ol class="steps">
+          <li>Step 1 candidates: [0] -0.5, [1] -1.0, [2] -6.0. Keep [0], [1].</li>
+          <li>Step 2: from [0]: [0,0], [0,1], [0,2] all -2.5. From [1]: [1,0] -1.25, [1,1] -1.125, [1,2] -7.0. Sorted: [1,1] -1.125, [1,0] -1.25, then the -2.5s. Keep [1,1], [1,0].</li>
+          <li>Step 3: [1,1,1] -1.25, [1,1,0] -1.375, [1,0,*] -3.25, [1,1,2] -7.125.</li>
+          <li>Best: [1,1,1] with -1.25.</li>
+        </ol>
+        <span class="result">[1, 1, 1] (score -1.25)</span>
+      </div>
+      <div class="worked">
+        <span class="w-title">Same input, beamWidth = 1 (greedy)</span>
+        <ol class="steps">
+          <li>Step 1: keep [0] (-0.5 beats -1.0).</li>
+          <li>Step 2: [0,0], [0,1], [0,2] all -2.5. The tie goes to the lexicographically smallest, [0,0].</li>
+          <li>Step 3: [0,0,0], [0,0,1], [0,0,2] all -4.5, so [0,0,0].</li>
+        </ol>
+        <span class="result">[0, 0, 0] (score -4.5)</span>
+      </div>
+
+      <figure class="diagram">
+        <div class="scroll-x">
+        <svg viewBox="0 0 720 330" role="img" aria-label="Beam tree for width 2: step 1 keeps [0] and [1]; step 2 keeps [1,1] and [1,0] while the [0,x] branches at -2.5 are pruned; step 3 best is [1,1,1] at -1.25. Greedy width 1 path [0,0,0] at -4.5 is shown dashed.">
+          <defs><marker id="d1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker></defs>
+          <text x="20" y="18" class="d-sm d-muted">step 1</text><text x="240" y="18" class="d-sm d-muted">step 2 (6 candidates, keep 2)</text><text x="500" y="18" class="d-sm d-muted">step 3</text>
+          <rect x="20" y="40" width="110" height="30" rx="5" class="d-b"/><text x="75" y="60" text-anchor="middle" class="d-sm">[0] -0.5</text>
+          <rect x="20" y="170" width="110" height="30" rx="5" class="d-b"/><text x="75" y="190" text-anchor="middle" class="d-sm">[1] -1.0</text>
+          <rect x="20" y="280" width="110" height="30" rx="5" class="d-box"/><text x="75" y="300" text-anchor="middle" class="d-sm d-muted">[2] -6.0</text>
+          <rect x="240" y="30" width="130" height="26" rx="5" class="d-box"/><text x="305" y="48" text-anchor="middle" class="d-sm d-muted">[0,0] -2.5</text>
+          <rect x="240" y="62" width="130" height="26" rx="5" class="d-box"/><text x="305" y="80" text-anchor="middle" class="d-sm d-muted">[0,1] -2.5</text>
+          <rect x="240" y="94" width="130" height="26" rx="5" class="d-box"/><text x="305" y="112" text-anchor="middle" class="d-sm d-muted">[0,2] -2.5</text>
+          <rect x="240" y="150" width="130" height="26" rx="5" class="d-b"/><text x="305" y="168" text-anchor="middle" class="d-sm">[1,0] -1.25</text>
+          <rect x="240" y="182" width="130" height="26" rx="5" class="d-b"/><text x="305" y="200" text-anchor="middle" class="d-sm">[1,1] -1.125</text>
+          <rect x="240" y="214" width="130" height="26" rx="5" class="d-box"/><text x="305" y="232" text-anchor="middle" class="d-sm d-muted">[1,2] -7.0</text>
+          <line x1="130" y1="55" x2="238" y2="43" class="d-line d-dash"/><line x1="130" y1="55" x2="238" y2="75" class="d-line"/><line x1="130" y1="55" x2="238" y2="107" class="d-line"/>
+          <line x1="130" y1="185" x2="238" y2="163" class="d-line-b"/><line x1="130" y1="185" x2="238" y2="195" class="d-line-b"/><line x1="130" y1="185" x2="238" y2="227" class="d-line"/>
+          <rect x="500" y="120" width="190" height="28" rx="5" class="d-a"/><text x="595" y="139" text-anchor="middle" class="d-sm">[1,1,1] -1.25 BEST</text>
+          <rect x="500" y="156" width="190" height="26" rx="5" class="d-box"/><text x="595" y="174" text-anchor="middle" class="d-sm d-muted">[1,1,0] -1.375</text>
+          <rect x="500" y="190" width="190" height="26" rx="5" class="d-box"/><text x="595" y="208" text-anchor="middle" class="d-sm d-muted">[1,0,x] -3.25 (x3)</text>
+          <rect x="500" y="34" width="190" height="26" rx="5" class="d-d"/><text x="595" y="52" text-anchor="middle" class="d-sm">greedy: [0,0,0] -4.5</text>
+          <line x1="370" y1="195" x2="498" y2="134" class="d-line-b" marker-end="url(#d1)"/>
+          <line x1="370" y1="195" x2="498" y2="169" class="d-line"/>
+          <line x1="370" y1="163" x2="498" y2="203" class="d-line"/>
+          <line x1="370" y1="43" x2="498" y2="47" class="d-line-d d-dash" marker-end="url(#d1)"/>
+          <text x="20" y="326" class="d-sm">Green = kept by width 2. The dashed red path is what width 1 (greedy) follows: [0] looks best at step 1, but every continuation of 0 costs -2.</text>
+        </svg>
+        </div>
+        <figcaption>Width 2 survives the trap because it keeps [1] at step 1. Width 1 commits to [0] and can never recover. Here width 2 happens to find the global optimum (checked by brute force). <a href="06-decoding-and-sampling.html#beam-search">Part 06</a> shows a case where width 2 also misses it.</figcaption>
+      </figure>
+
+      <h3>Solution</h3>
+      <pre><code class="lang-py" data-embed="solutions/beam_search.py">"""Problem (d): beamSearch.
+
+score(seq) = start[seq[0]] + sum(transition[seq[i-1]][seq[i]]).
+Keep the best beamWidth sequences after every step. Higher score wins.
+Exactly equal scores: the lexicographically smaller token-id sequence wins.
+All scores are multiples of 0.125, so float sums are exact and == is safe.
+"""
+from typing import List
+
+
+class Solution:
+    def beamSearch(self, start: List[float], transition: List[List[float]],
+                   steps: int, beamWidth: int) -&gt; List[int]:
+        V = len(start)
+        # (negated score, sequence): sorting ascending puts the higher score
+        # first and, for equal scores, the lexicographically smaller list first
+        beam = sorted((-start[v], [v]) for v in range(V))[:beamWidth]
+        for _ in range(steps - 1):
+            cand = []
+            for neg, seq in beam:
+                last = seq[-1]
+                row = transition[last]
+                for v in range(V):
+                    cand.append((neg - row[v], seq + [v]))
+            cand.sort()
+            beam = cand[:beamWidth]
+        return beam[0][1]</code></pre>
+
+      <h3>Complexity</h3>
+      <ul>
+        <li>Each step: B x V candidates, each a list copy of length up to steps, plus a sort. Time O(steps x B x V x (steps + log(B x V))). At the limits (V = 50, steps = 30, B = 10): 500 candidates per step, about 6 ms measured.</li>
+        <li><code>heapq.nsmallest(B, candidates)</code> instead of a full sort gives O(B x V x log B) per step. Same results, since it uses the same ordering.</li>
+        <li>Space: O(B x V x steps) per step for the candidates.</li>
+      </ul>
+
+      <h3>Why beam search misses the global optimum, and how to verify</h3>
+      <ul>
+        <li>It prunes on prefix scores. A prefix that is worse now can have better continuations. In the randomized tests (V up to 4, steps up to 5, width up to 5), beam returned a suboptimal sequence in 104 of 1500 cases.</li>
+        <li><strong>Brute force</strong> enumerates all V^steps sequences with the same key, which is feasible for tiny inputs and gives the ground truth.</li>
+        <li>Beam with width at least V^(steps-1) prunes nothing before the last step, so it must equal brute force (asserted in the tests).</li>
+        <li>Because this scoring is first-order (it only depends on the previous token), <strong>Viterbi</strong> finds the exact optimum in O(steps x V^2). To reproduce the lexicographic tie-break, run the DP backward (best suffix score from each position and token), then walk forward choosing the smallest token that still achieves the optimum (variant 1, verified against brute force).</li>
+      </ul>
+
+      <h3>Edge cases</h3>
+      <ul>
+        <li>steps = 1: return the best single token (ties go to the smallest id).</li>
+        <li>beamWidth larger than the candidate count: slicing handles it.</li>
+        <li>V = 1: the only sequence is all zeros.</li>
+        <li>All scores equal: the answer is all zeros (lexicographic minimum).</li>
+      </ul>
+
+      <h3>Common pitfalls</h3>
+      <div class="callout trap"><ul class="mb-0">
+        <li>Breaking ties by insertion order (or with an unstable comparison) instead of lexicographically.</li>
+        <li>Sorting by <code>score</code> descending with <code>reverse=True</code> on <code>(score, seq)</code>. That reverses the sequence tie-break too, so the larger sequence wins ties. Use <code>(-score, seq)</code> ascending.</li>
+        <li>Extending only the best sequence, or only the top k tokens per sequence. The spec says every kept sequence by every token.</li>
+        <li>Running the loop <code>steps</code> times instead of <code>steps - 1</code> (the first step is the initialization).</li>
+        <li>Mutating a shared list (<code>seq.append(v)</code>) instead of building <code>seq + [v]</code>.</li>
+      </ul></div>
+
+      <h3>Three traced test cases</h3>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Input</th><th>Trace</th><th>Output</th></tr></thead>
+        <tbody>
+          <tr><td>Example, beamWidth = 1</td><td>[0] then tie at -2.5 goes to [0,0], then tie at -4.5 goes to [0,0,0]</td><td>[0, 0, 0]</td></tr>
+          <tr><td>Example, beamWidth = 2</td><td>keep [0], [1]. Then [1,1] -1.125, [1,0] -1.25. Then [1,1,1] -1.25</td><td>[1, 1, 1]</td></tr>
+          <tr><td>start [-1, -1], all transitions 0, steps 1, width 1</td><td>tie at -1, so the smaller id wins</td><td>[0]</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>Variants</h3>
+      <ol>
+        <li><strong>Exact optimum with Viterbi</strong> and the same tie-break.</li>
+        <li><strong>n-best list</strong>: return the top n (score, sequence) pairs from the final beam.</li>
+        <li><strong>LLM-style beam with EOS and length normalization</strong>: finished hypotheses are set aside and compared by score / length^alpha. Alpha = 0 favors the short answer, alpha = 1 lets a longer one win (tested).</li>
+      </ol>
+      <pre><code class="lang-py" data-embed="solutions/beam_search_variants.py">"""Variants of problem (d) beamSearch."""
+from typing import List, Optional, Tuple
+
+
+def viterbi_best(start: List[float], transition: List[List[float]], steps: int) -&gt; List[int]:
+    """Variant 1: the exact global optimum, with the same tie-break rule.
+
+    The score only depends on adjacent pairs (a first-order chain), so
+    dynamic programming finds the true best in O(steps * V^2), no beam needed.
+    To get the lexicographically smallest optimal sequence, run the DP
+    BACKWARD: best[t][v] = best score of positions t..end given token v at t.
+    Then walk forward, at each step taking the smallest token that still
+    achieves the optimum. (A forward DP with back-pointers can break ties
+    toward a lexicographically larger prefix.)
+    """
+    V = len(start)
+    best = [[0.0] * V for _ in range(steps)]
+    for t in range(steps - 2, -1, -1):
+        for a in range(V):
+            best[t][a] = max(transition[a][b] + best[t + 1][b] for b in range(V))
+    total = max(start[v] + best[0][v] for v in range(V))
+    seq = [min(v for v in range(V) if start[v] + best[0][v] == total)]
+    for t in range(1, steps):
+        a = seq[-1]
+        need = best[t - 1][a]
+        seq.append(min(b for b in range(V) if transition[a][b] + best[t][b] == need))
+    return seq
+
+
+def beam_top_n(start: List[float], transition: List[List[float]], steps: int,
+               beamWidth: int, n: int) -&gt; List[Tuple[float, List[int]]]:
+    """Variant 2: return the final beam's best n (score, sequence) pairs.
+
+    Used for n-best lists, reranking, or showing alternatives. n &lt;= beamWidth.
+    """
+    V = len(start)
+    beam = sorted((-start[v], [v]) for v in range(V))[:beamWidth]
+    for _ in range(steps - 1):
+        beam = sorted((neg - transition[s[-1]][v], s + [v])
+                      for neg, s in beam for v in range(V))[:beamWidth]
+    return [(-neg, s) for neg, s in beam[:n]]
+
+
+def beam_with_eos(logp_start: List[float], logp_next: List[List[float]], eos: int,
+                  max_len: int, beamWidth: int, alpha: float = 1.0) -&gt; Optional[List[int]]:
+    """Variant 3: beam search the way LLM decoders do it.
+
+    Scores are log-probabilities (always &lt;= 0), so longer sequences always
+    score lower. A hypothesis that emits `eos` is finished and set aside.
+    Finished hypotheses are compared by length-normalized score
+    logp / len^alpha (alpha = 0 means no normalization, which favors short
+    outputs). Returns the best finished sequence (eos included), or the best
+    unfinished one if nothing finished within max_len.
+    """
+    V = len(logp_start)
+    beam = sorted((-logp_start[v], [v]) for v in range(V))[:beamWidth]
+    finished = []
+    for _ in range(max_len):
+        alive = []
+        for neg, s in beam:
+            if s[-1] == eos:
+                finished.append((neg / (len(s) ** alpha), s))
+            else:
+                alive.append((neg, s))
+        if not alive or len(alive[0][1]) == max_len:
+            break
+        beam = sorted((neg - logp_next[s[-1]][v], s + [v])
+                      for neg, s in alive for v in range(V))[:beamWidth]
+    else:
+        alive = beam
+    if finished:
+        return min(finished)[1]
+    return min(alive)[1] if alive else None</code></pre>
+
+      <details class="box" open>
+        <summary>Tests: test_beam_search.py (brute-force verifier, independent reference, randomized)</summary>
+        <div class="d-body"><pre><code class="lang-py" data-embed="solutions/test_beam_search.py">"""Tests for beamSearch: examples, brute-force verifier, an independent
+reference implementation, randomized comparison, global-optimum checks,
+timing at the limits, and the variants."""
+import functools
+import itertools
+import random
+import time
+
+from beam_search import Solution
+from beam_search_variants import beam_top_n, beam_with_eos, viterbi_best
+
+START = [-0.5, -1.0, -6.0]
+TRANS = [[-2.0, -2.0, -2.0], [-0.25, -0.125, -6.0], [-6.0, -6.0, -6.0]]
+
+
+def seq_score(start, trans, seq):
+    s = start[seq[0]]
+    for a, b in zip(seq, seq[1:]):
+        s += trans[a][b]
+    return s
+
+
+def brute_force(start, trans, steps):
+    """Global optimum over all V^steps sequences, same tie-break."""
+    V = len(start)
+    return min(itertools.product(range(V), repeat=steps),
+               key=lambda seq: (-seq_score(start, trans, seq), seq))
+
+
+def reference_beam(start, trans, steps, width):
+    """Independent implementation: comparator function, tuples, recomputed scores."""
+    def cmp(x, y):
+        sx, sy = seq_score(start, trans, x), seq_score(start, trans, y)
+        if sx != sy:
+            return -1 if sx &gt; sy else 1
+        return -1 if x &lt; y else (1 if x &gt; y else 0)
+
+    key = functools.cmp_to_key(cmp)
+    beam = sorted([(v,) for v in range(len(start))], key=key)[:width]
+    for _ in range(steps - 1):
+        beam = sorted([s + (v,) for s in beam for v in range(len(start))], key=key)[:width]
+    return list(beam[0])
+
+
+def rand_problem(rng, V, steps):
+    q = lambda: rng.randint(-48, 0) * 0.125   # multiples of 0.125, ties are common
+    return [q() for _ in range(V)], [[q() for _ in range(V)] for _ in range(V)]
+
+
+def test_examples():
+    s = Solution()
+    assert s.beamSearch(START, TRANS, 3, 1) == [0, 0, 0]
+    assert seq_score(START, TRANS, [0, 0, 0]) == -4.5
+    assert s.beamSearch(START, TRANS, 3, 2) == [1, 1, 1]
+    assert seq_score(START, TRANS, [1, 1, 1]) == -1.25
+    assert list(brute_force(START, TRANS, 3)) == [1, 1, 1]   # width 2 happens to find the optimum
+
+
+def test_edge_cases():
+    s = Solution()
+    assert s.beamSearch([0.0], [[0.0]], 1, 1) == [0]
+    assert s.beamSearch([0.0], [[-1.0]], 5, 3) == [0, 0, 0, 0, 0]
+    assert s.beamSearch([-1.0, -1.0], [[0.0, 0.0], [0.0, 0.0]], 1, 1) == [0]   # tie -&gt; smaller id
+    assert s.beamSearch([-1.0, -0.5], [[0.0, 0.0], [0.0, 0.0]], 1, 10) == [1]   # steps = 1: best start
+    # all-equal scores everywhere: answer is all zeros
+    assert s.beamSearch([0.0] * 4, [[0.0] * 4] * 4, 6, 2) == [0] * 6
+    # beamWidth larger than the number of candidates is fine
+    assert s.beamSearch(START, TRANS, 2, 10) == list(brute_force(START, TRANS, 2))
+
+
+def test_beam_misses_optimum():
+    # greedy (width 1) commits to token 0 because -0.5 &gt; -1.0 and never recovers
+    assert seq_score(START, TRANS, Solution().beamSearch(START, TRANS, 3, 1)) &lt; seq_score(START, TRANS, brute_force(START, TRANS, 3))
+
+
+def test_randomized_against_reference_and_brute():
+    rng = random.Random(2024)
+    s = Solution()
+    misses = 0
+    for _ in range(1500):
+        V, steps, width = rng.randint(1, 4), rng.randint(1, 5), rng.randint(1, 5)
+        st, tr = rand_problem(rng, V, steps)
+        got = s.beamSearch(st, tr, steps, width)
+        assert got == reference_beam(st, tr, steps, width)
+        best = list(brute_force(st, tr, steps))
+        assert seq_score(st, tr, got) &lt;= seq_score(st, tr, best)
+        if width &gt;= V ** (steps - 1):            # nothing pruned before the last pick
+            assert got == best
+        if got != best:
+            misses += 1
+        assert viterbi_best(st, tr, steps) == best
+    return misses
+
+
+def test_limits_timing():
+    rng = random.Random(9)
+    st, tr = rand_problem(rng, 50, 30)
+    t0 = time.perf_counter()
+    out = Solution().beamSearch(st, tr, 30, 10)
+    dt = time.perf_counter() - t0
+    assert len(out) == 30 and out == reference_beam(st, tr, 30, 10)
+    assert dt &lt; 1.0
+    return dt
+
+
+def test_variants():
+    top = beam_top_n(START, TRANS, 3, 2, 2)
+    assert top == [(-1.25, [1, 1, 1]), (-1.375, [1, 1, 0])]
+    # eos: token 2 is EOS. Without normalization the short [2] wins; with it a longer answer can win.
+    lp_start = [-0.5, -3.0, -1.0]
+    lp_next = [[-0.1, -3.0, -0.6], [-1.0, -1.0, -1.0], [-9.0, -9.0, -9.0]]
+    assert beam_with_eos(lp_start, lp_next, eos=2, max_len=4, beamWidth=3, alpha=0.0) == [2]
+    assert beam_with_eos(lp_start, lp_next, eos=2, max_len=4, beamWidth=3, alpha=1.0) == [0, 0, 0, 2]
+
+
+if __name__ == "__main__":
+    test_examples()
+    test_edge_cases()
+    test_beam_misses_optimum()
+    misses = test_randomized_against_reference_and_brute()
+    dt = test_limits_timing()
+    test_variants()
+    print(f"beam_search: all tests passed (1500 randomized vs reference + brute force + Viterbi; beam missed the optimum in {misses} cases; V=50 steps=30 width=10 in {dt*1000:.0f} ms)")</code></pre></div>
+      </details>
+    </section>
+
+    <!-- ============================================================ interview -->
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Python and engineering</h2>
+      <p class="muted">Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="13-interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Python and engineering">
+<details class="recall iq" data-level="basic" data-topic="Python and engineering"><summary><span class="tag ok">Basic</span> What is the time complexity of lookups in a Python dict and list?</summary><div class="answer"><p>dict and set membership is O(1) average (hash table). List membership is O(n). Use sets or dicts for frequent membership tests.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Python and engineering"><summary><span class="tag ok">Basic</span> What is the difference between a list and a generator?</summary><div class="answer"><p>A list materializes all items in memory. A generator yields items lazily one at a time, which is memory-efficient for streaming large data.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Python and engineering"><summary><span class="tag ok">Basic</span> How do you sort by multiple keys with tie-breaking in Python?</summary><div class="answer"><p>Use a key tuple: sorted(items, key=lambda i: (-score[i], i)) sorts by score descending, then index ascending. Python&#x27;s sort is stable.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python and engineering"><summary><span class="tag warn">Medium</span> What is the GIL and how does it affect AI workloads?</summary><div class="answer"><p>CPython&#x27;s Global Interpreter Lock lets one thread execute Python bytecode at a time. CPU-bound Python code does not speed up with threads (use processes or native libraries). I/O-bound work (API calls) benefits from threads or asyncio, and numpy and PyTorch release the GIL in native code.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python and engineering"><summary><span class="tag warn">Medium</span> When would you use asyncio for LLM applications?</summary><div class="answer"><p>For many concurrent I/O-bound calls (LLM APIs, retrieval, tools): asyncio.gather with a semaphore for rate limits gives high concurrency with low overhead. Not for CPU-bound work.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python and engineering"><summary><span class="tag warn">Medium</span> Why can floating-point sums differ between runs, and when does it matter?</summary><div class="answer"><p>Addition is not associative, so a different summation order can change the last bits. It matters for exact tie-breaking and reproducibility. Fix the order, or use exact arithmetic where possible.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python and engineering"><summary><span class="tag warn">Medium</span> How would you implement an LRU cache?</summary><div class="answer"><p>An ordered dict (or a hash map plus a doubly linked list): move a key to the end on access, evict from the front when over capacity. O(1) get and put. In Python: collections.OrderedDict or functools.lru_cache.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python and engineering"><summary><span class="tag bad">Advanced</span> How do you test non-deterministic LLM code?</summary><div class="answer"><p>Unit-test deterministic parts (parsers, tools, retrieval) normally. Mock LLM calls for logic. Use eval suites with thresholds for model behavior, fixed seeds or temperature 0 where possible, and property-based checks (valid JSON, schema compliance).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python and engineering"><summary><span class="tag bad">Advanced</span> How would you make a streaming JSON tool-call parser robust?</summary><div class="answer"><p>Track brace depth, in-string state and escape state across chunks (a state machine), emit objects only when depth returns to 0, keep O(current object) memory, and validate with json.loads before executing anything.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="12-llm-system-design.html"><span class="dir">Previous</span><span>12 LLM system design</span></a>
+      <a class="next" href="08-extra-coding-patterns.html"><span class="dir">Next</span><span>08 Extra coding patterns</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

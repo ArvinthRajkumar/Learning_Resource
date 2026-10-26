@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD19">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Event-driven architecture: CQRS, event sourcing, sagas and the outbox | System Design</title>
+<meta name="description" content="Events versus commands, CQRS read models, event sourcing with replay, sagas for distributed transactions, the transactional outbox, idempotent consumers, schema evolution and exactly-once myths, with runnable models.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD19</p>
+      <h1>Event-driven architecture: CQRS, event sourcing, sagas and the outbox</h1>
+      <p class="lede">Large systems often communicate by recording facts and reacting to them. This part covers the patterns built on that idea, when they pay off, and the failure modes (duplicates, reordering, poison messages) that decide whether they work in production.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~4 hours</span></div>
+    </div>
+
+    <section id="kinds" data-track>
+      <h2>Events, commands and queries</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Kind</th><th>Meaning</th><th>Example</th><th>Can be rejected?</th></tr></thead>
+<tbody>
+<tr><td><strong>Command</strong></td><td>A request to do something, addressed to one handler</td><td><code>PlaceOrder</code></td><td>Yes</td></tr><tr><td><strong>Event</strong></td><td>A fact that already happened, broadcast to anyone interested</td><td><code>OrderPlaced</code></td><td>No (it is history)</td></tr><tr><td><strong>Query</strong></td><td>A request for data, no side effects</td><td><code>GetOrder</code></td><td>n/a</td></tr>
+</tbody>
+</table>
+</div>
+<p>Name events in the <strong>past tense</strong>, keep them small and immutable, and include enough data for consumers to act without calling back (but not whole entities, which couple services). Style choices:</p>
+<ul><li><strong>Event notification</strong>: tiny event, consumers fetch details (low coupling, more calls).</li><li><strong>Event-carried state transfer</strong>: the event carries the data, consumers keep local copies (autonomy, eventual consistency).</li><li><strong>Event sourcing</strong>: the events <em>are</em> the system of record (below).</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd19-q01" data-topic="Event-driven design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How does an event differ from a command?</p></div>
+        <ul class="q-options">
+          <li data-key="A">They are the same <span class="q-why">No.</span></li>
+          <li data-key="B">An event is a past fact that cannot be rejected; a command is a request that can be <span class="q-why">Correct.</span></li>
+          <li data-key="C">Events are synchronous <span class="q-why">No.</span></li>
+          <li data-key="D">Commands are broadcast <span class="q-why">Events are.</span></li>
+        </ul>
+        <div class="q-explain"><p>Events are named in the past tense.</p></div>
+      </div>
+    </section>
+
+    <section id="outbox" data-track>
+      <h2>The transactional outbox</h2>
+<p>Problem: a service must update its database <strong>and</strong> publish an event, but those are two systems; a crash between them loses the event or publishes one for a rolled-back change (the <strong>dual-write problem</strong>).</p>
+<p><strong>Outbox pattern</strong>: in the same local database transaction, write the business row and an <code>outbox</code> row. A separate relay (poller or change data capture on the WAL) reads unsent outbox rows and publishes them to the broker, marking them sent. Delivery is <strong>at least once</strong>, so consumers must be idempotent.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd19-01.py">import sqlite3, json
+db = sqlite3.connect(":memory:")
+db.executescript("""CREATE TABLE orders(id INTEGER PRIMARY KEY, item TEXT, qty INT);
+                     CREATE TABLE outbox(id INTEGER PRIMARY KEY AUTOINCREMENT, topic TEXT, payload TEXT, sent INT DEFAULT 0);""")
+def place_order(order_id, item, qty, fail=False):
+    try:
+        with db:                                   # one atomic transaction
+            db.execute("INSERT INTO orders VALUES(?,?,?)", (order_id, item, qty))
+            db.execute("INSERT INTO outbox(topic, payload) VALUES('order.placed', ?)", (json.dumps({"id": order_id, "item": item, "qty": qty}),))
+            if fail: raise RuntimeError("crash before commit")
+    except RuntimeError:
+        pass
+place_order(1, "book", 2)
+place_order(2, "pen", 5, fail=True)               # rolled back: no order AND no event
+print("orders:", db.execute("SELECT id FROM orders").fetchall(), "| outbox:", db.execute("SELECT id, topic FROM outbox").fetchall())
+broker = []
+for rid, topic, payload in db.execute("SELECT id, topic, payload FROM outbox WHERE sent = 0").fetchall():
+    broker.append((topic, payload))                # relay publishes ...
+    db.execute("UPDATE outbox SET sent = 1 WHERE id = ?", (rid,))   # ... then marks sent (crash in between = duplicate)
+db.commit()
+print("published:", broker)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>orders: [(1,)] | outbox: [(1, 'order.placed')]
+published: [('order.placed', '{"id": 1, "item": "book", "qty": 2}')]</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd19-q02" data-topic="Event-driven design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What problem does the transactional outbox solve?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Slow queries <span class="q-why">No.</span></li>
+          <li data-key="B">The dual write of a database change and a message, so neither is lost or sent for a rolled-back change <span class="q-why">Correct.</span></li>
+          <li data-key="C">Caching <span class="q-why">No.</span></li>
+          <li data-key="D">Encryption <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The event is stored atomically with the data and relayed later.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Write the outbox steps.</summary><div class="answer"><p>In one transaction write the business row and an outbox row; a relay publishes unsent rows and marks them sent; consumers dedupe.</p></div></details>
+      </div>
+    </section>
+
+    <section id="idempotent" data-track>
+      <h2>Idempotent consumers</h2>
+<p>Brokers give <strong>at-least-once</strong> delivery, so duplicates arrive (retries, rebalances, relay crashes). "Exactly-once" is achieved by combining at-least-once delivery with <strong>idempotent processing</strong>: record processed message ids in the same transaction as the effect, or make the operation naturally idempotent (set, not increment).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd19-02.py">import sqlite3
+db = sqlite3.connect(":memory:")
+db.executescript("CREATE TABLE balance(acct TEXT PRIMARY KEY, amount INT); CREATE TABLE processed(msg_id TEXT PRIMARY KEY);")
+db.execute("INSERT INTO balance VALUES('a', 100)")
+def handle(msg_id, acct, delta):
+    try:
+        with db:
+            db.execute("INSERT INTO processed VALUES(?)", (msg_id,))      # fails if seen
+            db.execute("UPDATE balance SET amount = amount + ? WHERE acct = ?", (delta, acct))
+    except sqlite3.IntegrityError:
+        return "duplicate ignored"
+    return "applied"
+stream = [("m1", "a", 50), ("m2", "a", -30), ("m1", "a", 50), ("m2", "a", -30), ("m3", "a", 10)]   # duplicates delivered
+print([handle(*m) for m in stream])
+print("balance:", db.execute("SELECT amount FROM balance").fetchone()[0], "(expected 100 + 50 - 30 + 10 = 130)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>['applied', 'applied', 'duplicate ignored', 'duplicate ignored', 'applied']
+balance: 130 (expected 100 + 50 - 30 + 10 = 130)</code></pre>
+<div class="callout warn"><span class="callout-title">Exactly-once is about effects</span><p>No network protocol delivers a message exactly once. Kafka's "exactly-once" means transactional writes within Kafka plus idempotent producers. The end-to-end guarantee always needs an idempotent consumer or a transactional sink.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd19-q03" data-topic="Event-driven design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you get effectively-once processing?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Use TCP <span class="q-why">Does not stop redelivery.</span></li>
+          <li data-key="B">At-least-once delivery plus idempotent handlers (dedupe ids) <span class="q-why">Correct.</span></li>
+          <li data-key="C">Never retry <span class="q-why">Loses messages.</span></li>
+          <li data-key="D">Use UDP <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Duplicates are inevitable; make them harmless.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Where do you store processed message ids?</summary><div class="answer"><p>In the same database transaction as the side effect, so the check and the effect are atomic.</p></div></details>
+      </div>
+    </section>
+
+    <section id="sourcing" data-track>
+      <h2>Event sourcing</h2>
+<p>Instead of storing the <em>current state</em>, store the <strong>append-only sequence of events</strong>. State is a fold over the events; any past state can be rebuilt; the log is a perfect audit trail.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Pros</th><th>Cons</th></tr></thead>
+<tbody>
+<tr><td>Full history, audit, debugging "how did we get here"</td><td>Queries need projections</td></tr><tr><td>Time travel and replay to fix bugs or build new views</td><td>Event schema evolves forever (upcasting)</td></tr><tr><td>Natural fit for event-driven integration</td><td>Higher learning curve, eventual consistency</td></tr><tr><td>Append-only writes are fast</td><td>Deleting data (GDPR) needs crypto-shredding or tombstones</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Snapshots</strong> store state every N events so replay starts from the latest snapshot. Use <strong>optimistic concurrency</strong> (expected version) when appending so two writers cannot silently overwrite each other.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd19-03.py">class Account:
+    def __init__(self): self.balance, self.version = 0, 0
+    def apply(self, e):
+        if e["type"] == "Deposited": self.balance += e["amount"]
+        elif e["type"] == "Withdrawn": self.balance -= e["amount"]
+        self.version += 1
+class EventStore:
+    def __init__(self): self.events = []
+    def append(self, event, expected_version):
+        if len(self.events) != expected_version: raise RuntimeError(f"conflict: expected v{expected_version}, store is at v{len(self.events)}")
+        self.events.append(event)
+    def rebuild(self, upto=None):
+        acc = Account()
+        for e in self.events[:upto]: acc.apply(e)
+        return acc
+store = EventStore()
+store.append({"type": "Deposited", "amount": 100}, 0)
+store.append({"type": "Withdrawn", "amount": 30}, 1)
+store.append({"type": "Deposited", "amount": 5}, 2)
+print("current balance:", store.rebuild().balance, "| balance after 2 events:", store.rebuild(2).balance)
+try:
+    store.append({"type": "Withdrawn", "amount": 999}, 1)       # stale writer
+except RuntimeError as e:
+    print("rejected:", e)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>current balance: 75 | balance after 2 events: 70
+rejected: conflict: expected v1, store is at v3</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd19-q04" data-topic="Event-driven design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In event sourcing, how is current state obtained?</p></div>
+        <ul class="q-options">
+          <li data-key="A">From a table of current rows only <span class="q-why">That is classic CRUD.</span></li>
+          <li data-key="B">By replaying (folding) the events, optionally from a snapshot <span class="q-why">Correct.</span></li>
+          <li data-key="C">From a cache only <span class="q-why">No.</span></li>
+          <li data-key="D">From logs of HTTP calls <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The event log is the source of truth.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd19-q05" data-topic="Event-driven design" data-type="numeric" data-answer="75" data-tol="0">
+        <div class="q-stem"><p>The balance after events +100, -30, +5 is?</p></div>
+        <div class="q-explain"><p>100 - 30 + 5 = 75.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why snapshots?</summary><div class="answer"><p>To avoid replaying the whole history every time; replay from the latest snapshot.</p></div></details>
+      </div>
+    </section>
+
+    <section id="cqrs" data-track>
+      <h2>CQRS</h2>
+<p><strong>Command Query Responsibility Segregation</strong> separates the <strong>write model</strong> (validates commands, enforces invariants, normalised or event-sourced) from one or more <strong>read models</strong> (denormalised views built for specific queries, updated from events). Read models can use a different store (search index, cache, column store).</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="CQRS: reads and writes scale and evolve independently, at the price of eventual consistency." style="min-width:760px"><defs><marker id="ah45" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah45a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah45b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah45d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah45)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah45)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah45)"/><line x1="747.0" y1="78.0" x2="747.0" y2="118.0" class="d-line" marker-end="url(#ah45)"/><line x1="662.0" y1="147.0" x2="618.0" y2="147.0" class="d-line" marker-end="url(#ah45)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">Command</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle" class="d-sm">Write model validates and stores events</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle">Event bus</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle">Projector</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="151.5" text-anchor="middle">Read model</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="151.5" text-anchor="middle">Query</text></svg>
+</div>
+<figcaption>CQRS: reads and writes scale and evolve independently, at the price of eventual consistency.</figcaption></figure>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd19-04.py">events = [
+    {"type": "OrderPlaced", "order": 1, "customer": "ana", "total": 40},
+    {"type": "OrderPlaced", "order": 2, "customer": "bo", "total": 15},
+    {"type": "OrderPlaced", "order": 3, "customer": "ana", "total": 25},
+    {"type": "OrderCancelled", "order": 2},
+]
+spend, status = {}, {}
+for e in events:                                   # one projector builds two read models
+    if e["type"] == "OrderPlaced":
+        spend[e["customer"]] = spend.get(e["customer"], 0) + e["total"]
+        status[e["order"]] = ("placed", e["customer"], e["total"])
+    elif e["type"] == "OrderCancelled":
+        _, cust, tot = status[e["order"]]
+        spend[cust] -= tot
+        status[e["order"]] = ("cancelled", cust, tot)
+print("spend per customer:", spend)
+print("order status:", status)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>spend per customer: {'ana': 65, 'bo': 0}
+order status: {1: ('placed', 'ana', 40), 2: ('cancelled', 'bo', 15), 3: ('placed', 'ana', 25)}</code></pre>
+<p>Use CQRS when read and write shapes differ greatly or scale differently. Do not use it for simple CRUD: it adds moving parts and lag.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd19-q06" data-topic="Event-driven design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the main cost of CQRS?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Slower writes always <span class="q-why">Not necessarily.</span></li>
+          <li data-key="B">Eventual consistency between the write side and read models, plus extra components <span class="q-why">Correct.</span></li>
+          <li data-key="C">No indexes <span class="q-why">No.</span></li>
+          <li data-key="D">Lost data <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Read models lag behind writes.</p></div>
+      </div>
+    </section>
+
+    <section id="saga" data-track>
+      <h2>Sagas: distributed transactions without 2PC</h2>
+<p>Two-phase commit locks resources across services and blocks on coordinator failure. A <strong>saga</strong> is a sequence of local transactions, each with a <strong>compensating action</strong> that semantically undoes it if a later step fails.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Style</th><th>How</th><th>Trade-off</th></tr></thead>
+<tbody>
+<tr><td><strong>Choreography</strong></td><td>Each service reacts to events and emits the next</td><td>Decoupled, but the flow is hard to see</td></tr><tr><td><strong>Orchestration</strong></td><td>A coordinator (workflow engine such as Temporal or Step Functions) calls each step</td><td>Explicit flow, one more component</td></tr>
+</tbody>
+</table>
+</div>
+<p>Compensations must be idempotent and may be non-trivial (refund, restock, cancel shipment; you cannot "unsend" an email). Sagas are <strong>eventually consistent</strong> and expose intermediate states, so design for them (for example "pending" statuses).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd19-05.py">def run_saga(steps, fail_at=None):
+    done, log = [], []
+    for i, (name, action, compensate) in enumerate(steps):
+        if i == fail_at:
+            log.append(f"{name}: FAILED")
+            for n, c in reversed(done):
+                log.append(f"compensate {n}: {c()}")
+            return False, log
+        log.append(f"{name}: {action()}")
+        done.append((name, compensate))
+    return True, log
+steps = [
+    ("reserve stock", lambda: "reserved", lambda: "released"),
+    ("charge card", lambda: "charged", lambda: "refunded"),
+    ("create shipment", lambda: "created", lambda: "cancelled"),
+]
+for fail_at in (None, 2):
+    ok, log = run_saga(steps, fail_at)
+    print("success" if ok else "rolled back", "-&gt;", " | ".join(log))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>success -&gt; reserve stock: reserved | charge card: charged | create shipment: created
+rolled back -&gt; reserve stock: reserved | charge card: charged | create shipment: FAILED | compensate charge card: refunded | compensate reserve stock: released</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd19-q07" data-topic="Event-driven design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is a compensating action?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A retry <span class="q-why">No.</span></li>
+          <li data-key="B">A step that semantically undoes a previously completed local transaction <span class="q-why">Correct.</span></li>
+          <li data-key="C">A lock <span class="q-why">No.</span></li>
+          <li data-key="D">A checkpoint <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Sagas replace distributed rollback with explicit undo steps.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Orchestration versus choreography?</summary><div class="answer"><p>Orchestration uses a central coordinator with an explicit flow; choreography has services react to each other's events.</p></div></details>
+      </div>
+    </section>
+
+    <section id="ordering" data-track>
+      <h2>Ordering, partitions and poison messages</h2>
+<ul><li>Brokers preserve order <strong>per partition</strong>. Use the entity id (<code>order_id</code>) as the partition key to keep one entity's events in order; there is no global order across partitions.</li><li>A consumer failure on one message must not block the stream forever: retry with backoff, then move it to a <strong>dead letter queue (DLQ)</strong> for inspection and replay.</li><li><strong>Backpressure</strong>: if consumers lag, scale them (up to the partition count), batch, or shed load; watch <strong>consumer lag</strong> as a key metric.</li><li><strong>Schema evolution</strong>: use a registry (Avro, Protobuf, JSON Schema) and compatibility rules: add optional fields, never reuse field numbers, version event types, and <strong>upcast</strong> old events when reading.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd19-q08" data-topic="Event-driven design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you keep one order's events in sequence in Kafka?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Use one partition per message <span class="q-why">No.</span></li>
+          <li data-key="B">Use the order id as the partition key <span class="q-why">Correct.</span></li>
+          <li data-key="C">Sort in the consumer <span class="q-why">Cannot recover lost order.</span></li>
+          <li data-key="D">Use more consumers <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Order is guaranteed only within a partition.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is a DLQ for?</summary><div class="answer"><p>To park messages that repeatedly fail so they do not block the stream, for inspection and replay.</p></div></details>
+      </div>
+    </section>
+
+    <section id="when" data-track>
+      <h2>When not to use events</h2>
+<p>Events add latency, ordering puzzles and debugging effort. Prefer a simple synchronous call when you need an immediate answer, strong consistency or a small system. Use events for fan-out, decoupling teams, absorbing bursts and building derived data.</p>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Write the fact and the event in one transaction (outbox), deliver at least once, process idempotently, partition by entity for order, compensate instead of locking across services, and monitor consumer lag and the dead-letter queue.</p></div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Event-driven design</h2>
+      <p class="muted">15 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Event-driven design">
+<details class="recall iq" data-level="basic" data-topic="Event-driven design"><summary><span class="tag ok">Basic</span> Event versus command?</summary><div class="answer"><p>A command asks one handler to do something and can be rejected. An event records something that already happened and is broadcast to any interested consumer.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Event-driven design"><summary><span class="tag ok">Basic</span> Why do message consumers need to be idempotent?</summary><div class="answer"><p>Brokers deliver at least once, so retries, rebalances and relay crashes cause duplicates. Idempotent handlers make duplicates harmless.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Event-driven design"><summary><span class="tag warn">Medium</span> What is the dual-write problem and how does the outbox pattern solve it?</summary><div class="answer"><p>Updating a database and publishing to a broker are two systems, so a crash can lose one. The outbox writes the event into a table in the same local transaction, and a relay publishes it afterwards.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Event-driven design"><summary><span class="tag warn">Medium</span> How do you achieve effectively exactly-once processing?</summary><div class="answer"><p>At-least-once delivery plus deduplication: store processed message ids in the same transaction as the effect, or make the operation naturally idempotent.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Event-driven design"><summary><span class="tag warn">Medium</span> Explain CQRS and when it is worth it.</summary><div class="answer"><p>Separate write and read models, with projections updated from events. Worth it when read and write shapes or scale differ greatly; not for simple CRUD because of eventual consistency and extra moving parts.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Event-driven design"><summary><span class="tag warn">Medium</span> What is event sourcing and what are its costs?</summary><div class="answer"><p>Storing every state change as an immutable event and deriving state by replay. Benefits: audit and time travel. Costs: projections for queries, schema evolution of old events, and handling deletion requests.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Event-driven design"><summary><span class="tag warn">Medium</span> Saga: orchestration versus choreography?</summary><div class="answer"><p>Orchestration uses a central coordinator that calls steps and triggers compensations; choreography has services react to each other&#x27;s events. Orchestration is easier to see and debug; choreography is more decoupled.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Event-driven design"><summary><span class="tag warn">Medium</span> How do you preserve ordering in a partitioned log?</summary><div class="answer"><p>Use the entity id as the partition key, so that all events for one entity go to one partition. Ordering is not guaranteed across partitions.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Event-driven design"><summary><span class="tag warn">Medium</span> What is a dead letter queue?</summary><div class="answer"><p>A place to put messages that exceed their retry limit, so a poison message does not block the stream and can be inspected and replayed.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Event-driven design"><summary><span class="tag bad">Advanced</span> How do you evolve event schemas safely?</summary><div class="answer"><p>Use a schema registry with compatibility rules: add optional fields, never reuse or retype fields, version event types, and upcast old events on read.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Event-driven design"><summary><span class="tag bad">Advanced</span> What are snapshots in event sourcing?</summary><div class="answer"><p>Periodic captures of aggregate state so rebuilding replays only the events after the latest snapshot.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Event-driven design"><summary><span class="tag bad">Advanced</span> How do you prevent two writers corrupting an event-sourced aggregate?</summary><div class="answer"><p>Optimistic concurrency: appends carry the expected version and are rejected if the stream has moved on.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Event-driven design"><summary><span class="tag bad">Advanced</span> What is consumer lag and why monitor it?</summary><div class="answer"><p>The gap between the latest offset and what a consumer group has processed. Growing lag means consumers cannot keep up, so scale them, batch, or investigate slow handlers.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Event-driven design"><summary><span class="tag bad">Advanced</span> Why is exactly-once delivery impossible over a network, and what does Kafka claim?</summary><div class="answer"><p>A sender cannot distinguish a lost message from a lost acknowledgement. Kafka offers idempotent producers and transactions within Kafka; end-to-end effects still need idempotent consumers.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Event-driven design"><summary><span class="tag bad">Advanced</span> When should you avoid an event-driven design?</summary><div class="answer"><p>When you need an immediate response and strong consistency, in small systems, or when the team cannot yet operate brokers, tracing and replays.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd18-storage-engines.html"><span class="dir">Previous</span><span>SD18 Storage engine internals: B-trees, LSM trees, WAL, bloom filters and indexes</span></a>
+      <a class="next" href="sd20-data-processing.html"><span class="dir">Next</span><span>SD20 Distributed data processing: MapReduce, Spark, streaming and lakehouses</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

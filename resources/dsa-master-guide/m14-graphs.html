@@ -1,0 +1,780 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="M14">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>M14 Graphs | DSA Master Guide</title>
+<meta name="description" content="Networks of nodes and edges. BFS/DFS are essential; Dijkstra and topological sort are important; MST is advanced.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<link rel="stylesheet" href="viz.css">
+<script src="viz.js" defer></script>
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Module 14</p>
+      <h1>Graphs</h1>
+      <p class="lede">Networks of nodes and edges. BFS/DFS are essential; Dijkstra and topological sort are important; MST is advanced. Topics in this module: Graph terminology and representations; breadth-first search and depth-first search; grid traversal, connected components and cycle detection; topological sort, dijkstra and minimum spanning trees.</p>
+      <div class="meta"><span class="tag warn">Important</span><span class="tag">4 topics</span><span class="tag">19 problems</span><span class="tag">74 interview questions</span></div>
+    </div>
+
+    <section id="why-this-module" data-track>
+      <h2>Start from scratch: why this module exists</h2>
+      <p>Graphs model anything with connections: roads, friendships, dependencies, links. Once a problem is seen as a graph, a small toolbox solves it: BFS for fewest steps, DFS for exploration and cycles, topological sort for ordering, Dijkstra for cheapest routes, Union-Find and MST for connecting things.</p>
+      <p>Grids are graphs in disguise, so grid questions (islands, mazes, flood fill) are graph questions.</p>
+      <p><strong>Who needs it:</strong> Maps and logistics, social networks, package managers, game developers and interviewers.</p>
+      <p><strong>Before you start:</strong> Modules 7, 10, 11, 13.</p>
+      <h3>After this module you can</h3>
+      <ul><li>Build adjacency lists from edges.</li><li>Write BFS and DFS and choose between them.</li><li>Solve grid problems and detect cycles.</li><li>Explain topological sort, Dijkstra and MST at a working level.</li></ul>
+      <p><strong>Common pitfalls:</strong> Forgetting visited sets, marking visited too late in BFS, recursion depth, using Dijkstra with negative weights.</p>
+      <p><strong>Typical interview questions here:</strong> Number of islands, shortest path in a maze, course schedule, clone graph, rotting oranges, network delay time, minimum spanning tree.</p>
+    </section>
+
+    <section id="c14_1" data-track>
+      <h2>Graph terminology and representations</h2>
+      <p><span class="tag warn">Important</span> <span class="tag">Topic 14.1</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>A graph is a set of vertices (nodes) connected by edges. Edges can be directed (one-way) or undirected, and weighted (with a cost) or unweighted.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Maps, social networks, dependencies and grids are graphs. Choosing a good representation makes algorithms efficient.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Cities (vertices) connected by roads (edges). One-way streets are directed edges; distance on a road is the weight.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Lists and trees cannot describe a road network: cities connect in all directions, roads form loops, and there is no 'top'. Social networks, the web, circuits, flight routes and course prerequisites share this structure: things and relationships between them. A graph is simply the model for 'things connected to things'.</p>
+      <p>Choosing a representation is the first design decision. An adjacency list stores for each thing only the things it is connected to. Most real graphs are sparse (a person knows hundreds of people, not billions), so lists use memory proportional to the actual connections: O(V + E). A matrix stores a yes/no for every possible pair, O(V^2): wasteful for sparse data but instant for 'is a connected to b?'.</p>
+      <p>Direction and weight change what algorithms apply. Undirected: friendships. Directed: followers, dependencies. Weighted: distances, costs, times. Problems say 'shortest path', 'is it connected', 'can everything be ordered', 'cheapest network', and each phrase maps to a standard algorithm.</p>
+      <p>Grids are graphs in disguise: no one stores the edges because neighbours can be computed. Recognising a grid as a graph is what lets you apply BFS/DFS to mazes, islands, flood fill and puzzle boards.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="graph:bfs"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Adjacency list: graph[u] = list of neighbours. Space O(V + E). Best for sparse graphs and most coding problems.</li><li>Adjacency matrix: matrix[u][v] = 1 (or weight). Space O(V^2); checking an edge is O(1).</li><li>Undirected edge (a, b): add b to graph[a] AND a to graph[b]. Directed: only graph[a].append(b).</li><li>Degree = number of edges at a vertex (in-degree and out-degree for directed).</li><li>A grid is an implicit graph: each cell connects to up to 4 neighbours (directions list [(1,0),(-1,0),(0,1),(0,-1)]).</li><li>Important vs advanced for coding rounds: BFS/DFS, connected components, grid traversal and cycle detection are essential; topological sort and Dijkstra important; MST (Kruskal/Prim), Bellman-Ford, Floyd-Warshall advanced.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>A graph is dots (vertices or nodes) joined by lines (edges). It models anything connected: cities and roads, people and friendships, courses and prerequisites, web pages and links. A tree is a graph with no cycles and exactly one path between nodes.</p>
+      <p>Kinds of edges: undirected (a two-way street), directed (a one-way street), weighted (the road has a length or cost). A path is a sequence of connected nodes, a cycle is a path that returns to its start, and a graph is connected if you can reach every node from any other.</p>
+      <p>How to store it: an adjacency list maps each node to a list of its neighbours. Space O(V + E) and best for most problems. An adjacency matrix is a V x V table where cell [a][b] says whether the edge exists. Space O(V^2), checking an edge is O(1). Use the matrix only for small dense graphs.</p>
+      <p>Reading input: edges often come as pairs (a, b). Build the adjacency list in one loop. For an undirected graph add b to graph[a] AND a to graph[b]. Watch out for 1-indexed nodes (use n + 1 slots).</p>
+      <p>A grid is a hidden graph: every cell is a node and its neighbours are up, down, left and right. You do not build a list; you just loop over four direction pairs and check bounds.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>In Python a defaultdict(list) maps node to neighbours; nodes can be any hashable value (strings, tuples). Lists indexed by integers are faster when nodes are 0..n-1.</li><li>Edge counts: undirected simple graph has up to V(V-1)/2 edges; directed up to V(V-1). A tree has V - 1 edges. Dense vs sparse decides list vs matrix.</li><li>Parallel edges and self loops matter for cycle detection and path counting; read the statement.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Maps and logistics companies</td><td>Road networks for routing and delivery planning.</td></tr><tr><td>Social networks</td><td>Friend suggestions, connected components and influence analysis.</td></tr><tr><td>Package managers and build tools</td><td>Dependency graphs and installation order.</td></tr><tr><td>Interviewers</td><td>Graph modelling is a major differentiator; many problems are graphs without saying so.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>List vs matrix</td><td>List: sparse graphs, iterate neighbours fast. Matrix: dense graphs, O(1) edge test, simple Floyd-Warshall.</td></tr><tr><td>Edge list</td><td>A plain list of (u, v, w) tuples is ideal for Kruskal's algorithm and sorting edges.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>graph = defaultdict(list); for a, b in edges: graph[a].append(b); graph[b].append(a).</li><li>graph = [[] for _ in range(n)] when nodes are 0..n-1.</li><li>DIRS = [(1,0),(-1,0),(0,1),(0,-1)].</li><li>Degree of a node: len(graph[node]) in an undirected graph.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c14_1.py">from collections import defaultdict
+
+def build_graph(n, edges, directed=False):
+    graph = defaultdict(list)
+    for a, b in edges:
+        graph[a].append(b)
+        if not directed:
+            graph[b].append(a)     # undirected: edge both ways
+    return graph
+
+def build_matrix(n, edges):
+    m = [[0] * n for _ in range(n)]
+    for a, b in edges:
+        m[a][b] = m[b][a] = 1
+    return m</code></pre>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Dry run of the related problem "BFS Traversal Order": Call: <code>bfs_order({0: [1, 2], 1: [3], 2: [3], 3: []}, 0)</code>, returns <code>[0, 1, 2, 3]</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>node (after)</th><th>q (after)</th><th>visited (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">4</td><td><code>visited = {start}</code></td><td>-</td><td>-</td><td><strong><code>{0}</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">5</td><td><code>order, q = [], deque([start])</code></td><td>-</td><td><strong><code>deque([0])</code></strong></td><td><code>{0}</code></td></tr>
+<tr><td class="num">3</td><td class="num">6</td><td><code>while q:</code></td><td>-</td><td><code>deque([0])</code></td><td><code>{0}</code></td></tr>
+<tr><td class="num">4</td><td class="num">7</td><td><code>node = q.popleft()</code></td><td><strong><code>0</code></strong></td><td><strong><code>deque([])</code></strong></td><td><code>{0}</code></td></tr>
+<tr><td class="num">5</td><td class="num">8</td><td><code>order.append(node)</code></td><td><code>0</code></td><td><code>deque([])</code></td><td><code>{0}</code></td></tr>
+<tr><td class="num">6</td><td class="num">9</td><td><code>for nb in graph[node]:</code></td><td><code>0</code></td><td><code>deque([])</code></td><td><code>{0}</code></td></tr>
+<tr><td class="num">7</td><td class="num">10</td><td><code>if nb not in visited:</code></td><td><code>0</code></td><td><code>deque([])</code></td><td><code>{0}</code></td></tr>
+<tr><td class="num">8</td><td class="num">11</td><td><code>visited.add(nb)</code></td><td><code>0</code></td><td><code>deque([])</code></td><td><strong><code>{0, 1}</code></strong></td></tr>
+<tr><td class="num">9</td><td class="num">12</td><td><code>q.append(nb)</code></td><td><code>0</code></td><td><strong><code>deque([1])</code></strong></td><td><code>{0, 1}</code></td></tr>
+<tr><td class="num">10</td><td class="num">9</td><td><code>for nb in graph[node]:</code></td><td><code>0</code></td><td><code>deque([1])</code></td><td><code>{0, 1}</code></td></tr>
+<tr><td class="num">11</td><td class="num">10</td><td><code>if nb not in visited:</code></td><td><code>0</code></td><td><code>deque([1])</code></td><td><code>{0, 1}</code></td></tr>
+<tr><td class="num">12</td><td class="num">11</td><td><code>visited.add(nb)</code></td><td><code>0</code></td><td><code>deque([1])</code></td><td><strong><code>{0, 1, 2}</code></strong></td></tr>
+<tr><td class="num">13</td><td class="num">12</td><td><code>q.append(nb)</code></td><td><code>0</code></td><td><strong><code>deque([1, 2])</code></strong></td><td><code>{0, 1, 2}</code></td></tr>
+<tr><td class="num">14</td><td class="num">9</td><td><code>for nb in graph[node]:</code></td><td><code>0</code></td><td><code>deque([1, 2])</code></td><td><code>{0, 1, 2}</code></td></tr>
+<tr><td class="num">15</td><td class="num">6</td><td><code>while q:</code></td><td><code>0</code></td><td><code>deque([1, 2])</code></td><td><code>{0, 1, 2}</code></td></tr>
+<tr><td class="num">16</td><td class="num">7</td><td><code>node = q.popleft()</code></td><td><strong><code>1</code></strong></td><td><strong><code>deque([2])</code></strong></td><td><code>{0, 1, 2}</code></td></tr>
+<tr><td class="num">17</td><td class="num">8</td><td><code>order.append(node)</code></td><td><code>1</code></td><td><code>deque([2])</code></td><td><code>{0, 1, 2}</code></td></tr>
+<tr><td class="num">18</td><td class="num">9</td><td><code>for nb in graph[node]:</code></td><td><code>1</code></td><td><code>deque([2])</code></td><td><code>{0, 1, 2}</code></td></tr>
+<tr><td class="num">19</td><td class="num">10</td><td><code>if nb not in visited:</code></td><td><code>1</code></td><td><code>deque([2])</code></td><td><code>{0, 1, 2}</code></td></tr>
+<tr><td class="num">20</td><td class="num">11</td><td><code>visited.add(nb)</code></td><td><code>1</code></td><td><code>deque([2])</code></td><td><strong><code>{0, 1, 2, 3}</code></strong></td></tr>
+<tr><td class="num">21</td><td class="num">12</td><td><code>q.append(nb)</code></td><td><code>1</code></td><td><strong><code>deque([2, 3])</code></strong></td><td><code>{0, 1, 2, 3}</code></td></tr>
+<tr><td class="num">22</td><td class="num">9</td><td><code>for nb in graph[node]:</code></td><td><code>1</code></td><td><code>deque([2, 3])</code></td><td><code>{0, 1, 2, 3}</code></td></tr>
+<tr><td class="num">23</td><td class="num">6</td><td><code>while q:</code></td><td><code>1</code></td><td><code>deque([2, 3])</code></td><td><code>{0, 1, 2, 3}</code></td></tr>
+<tr><td class="num">24</td><td class="num">7</td><td><code>node = q.popleft()</code></td><td><strong><code>2</code></strong></td><td><strong><code>deque([3])</code></strong></td><td><code>{0, 1, 2, 3}</code></td></tr>
+<tr><td class="num">25</td><td class="num">8</td><td><code>order.append(node)</code></td><td><code>2</code></td><td><code>deque([3])</code></td><td><code>{0, 1, 2, 3}</code></td></tr>
+<tr><td class="num">26</td><td class="num">9</td><td><code>for nb in graph[node]:</code></td><td><code>2</code></td><td><code>deque([3])</code></td><td><code>{0, 1, 2, 3}</code></td></tr>
+<tr><td class="num">27</td><td class="num">10</td><td><code>if nb not in visited:</code></td><td><code>2</code></td><td><code>deque([3])</code></td><td><code>{0, 1, 2, 3}</code></td></tr>
+<tr><td class="num">28</td><td class="num">9</td><td><code>for nb in graph[node]:</code></td><td><code>2</code></td><td><code>deque([3])</code></td><td><code>{0, 1, 2, 3}</code></td></tr>
+<tr><td class="num">29</td><td class="num">6</td><td><code>while q:</code></td><td><code>2</code></td><td><code>deque([3])</code></td><td><code>{0, 1, 2, 3}</code></td></tr>
+<tr><td class="num">30</td><td class="num">7</td><td><code>node = q.popleft()</code></td><td><strong><code>3</code></strong></td><td><strong><code>deque([])</code></strong></td><td><code>{0, 1, 2, 3}</code></td></tr>
+<tr><td class="num">31</td><td class="num">8</td><td><code>order.append(node)</code></td><td><code>3</code></td><td><code>deque([])</code></td><td><code>{0, 1, 2, 3}</code></td></tr>
+<tr><td class="num">32</td><td class="num">9</td><td><code>for nb in graph[node]:</code></td><td><code>3</code></td><td><code>deque([])</code></td><td><code>{0, 1, 2, 3}</code></td></tr>
+<tr><td class="num">33</td><td class="num">6</td><td><code>while q:</code></td><td><code>3</code></td><td><code>deque([])</code></td><td><code>{0, 1, 2, 3}</code></td></tr>
+<tr><td class="num">34</td><td class="num">13</td><td><code>return order</code></td><td><code>3</code></td><td><code>deque([])</code></td><td><code>{0, 1, 2, 3}</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>Adjacency list build: O(V + E) time and space. Matrix: O(V^2) space.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Forgetting to add both directions for an undirected graph.</li><li>Using a matrix for huge sparse graphs.</li><li>Confusing 0-indexed and 1-indexed nodes in the input.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>Relationships/connections/dependencies/grids -&gt; model as a graph first.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m14-problems.html#prob-bfs_order">BFS Traversal Order</a></td><td><span class="tag ok">Easy</span></td><td>BFS</td></tr><tr><td><a href="m14-problems.html#prob-path_exists">Is There a Path?</a> <span class="tag">LC 1971</span></td><td><span class="tag ok">Easy</span></td><td>Graph DFS</td></tr><tr><td><a href="m14-problems.html#prob-count_components">Connected Components</a> <span class="tag">LC 323</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>DFS / Union-Find</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why adjacency lists for most problems?</summary><div class="answer"><p>Real graphs are sparse; lists use O(V + E) memory and iterate neighbours quickly.</p></div></details>
+        <details class="recall"><summary>Why not always use a matrix?</summary><div class="answer"><p>It needs V^2 memory, which is huge for big sparse graphs.</p></div></details>
+        <details class="recall"><summary>Why add an edge in both directions for undirected graphs?</summary><div class="answer"><p>Either endpoint must be able to reach the other.</p></div></details>
+        <details class="recall"><summary>Why treat a grid as a graph?</summary><div class="answer"><p>Cells are nodes and neighbouring cells are edges, so graph algorithms apply without building lists.</p></div></details>
+        <details class="recall"><summary>Why does direction matter?</summary><div class="answer"><p>A directed edge a -&gt; b allows travel only one way, which changes reachability and cycles.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c14_1-q1" data-topic="Graphs" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Space used by an adjacency list?</p></div>
+        <ul class="q-options">
+          <li data-key="A">O(V^2)</li>
+          <li data-key="B">O(V + E)</li>
+          <li data-key="C">O(E^2)</li>
+          <li data-key="D">O(1)</li>
+        </ul>
+        <div class="q-explain"><p>One list per vertex plus one entry per edge.</p></div>
+      </div>
+      <div class="quiz" data-qid="c14_1-q2" data-topic="Graphs" data-type="single" data-answer="C">
+        <div class="q-stem"><p>An undirected edge (a, b) in an adjacency list is stored...</p></div>
+        <ul class="q-options">
+          <li data-key="A">Only at a</li>
+          <li data-key="B">Only at b</li>
+          <li data-key="C">At both a and b</li>
+          <li data-key="D">Nowhere</li>
+        </ul>
+        <div class="q-explain"><p>Each endpoint lists the other.</p></div>
+      </div>
+    </section>
+
+    <section id="c14_2" data-track>
+      <h2>Breadth-first search and depth-first search</h2>
+      <p><span class="tag ok">Essential</span> <span class="tag">Topic 14.2</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>BFS explores a graph level by level using a queue; DFS goes as deep as possible along one path before backtracking, using recursion or a stack.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Almost every graph, grid and tree problem starts from one of these traversals. BFS finds shortest paths in unweighted graphs.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>BFS: ripples spreading from a stone dropped in a pond. DFS: exploring a maze by following one corridor to its end before backing up.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>How do you explore a maze or a network without getting lost or looping forever? You need a systematic order and a way to remember where you have been. Two natural orders exist: ripple outwards (everything one step away, then two steps away) and dive deep (follow one corridor to its end, then back up).</p>
+      <p>Ripple outwards is BFS. The 'waiting list' of things to explore must serve the oldest discovery first: a queue. Because you explore all nodes at distance d before any at distance d + 1, the first time you reach a node you have found a shortest route, a property that makes BFS the tool for fewest steps in unweighted graphs and grids.</p>
+      <p>Dive deep is DFS. The 'waiting list' must serve the newest discovery first: a stack (or recursion). DFS naturally tracks the current path, which is why it solves cycle detection, ordering, connected components and backtracking.</p>
+      <p>The visited set is the memory. Without it, a cycle traps you forever. Marking on enqueue (BFS) guarantees each node enters the queue once.</p>
+      <p>Both are the same algorithm with a different data structure for the waiting list. This is a deep and useful insight: change the container, change the behaviour.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="graph:bfs"></div>
+      <div class="viz-slot" data-viz="graph:dfs"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>BFS: put the start in a queue and mark it visited. Repeat: pop a node, process it, add every unvisited neighbour (mark visited when you ENQUEUE).</li><li>DFS: visit a node, then recursively visit each unvisited neighbour. An explicit stack gives the iterative version.</li><li>Both run in O(V + E) because each vertex and each edge is handled a constant number of times.</li><li>BFS gives shortest distance (fewest edges) from the start; DFS gives a different traversal order and is natural for connectivity, cycle detection and backtracking.</li><li>The <code>visited</code> set prevents infinite loops in cyclic graphs.</li><li>Run both in the visualiser on the sample graph and compare the order, queue and stack.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>BFS (breadth-first search) explores a graph in waves: first the start, then everything one edge away, then two edges away, and so on. It uses a queue. Because it reaches nodes in order of distance, the first time BFS reaches a node it has found the shortest path (in number of edges).</p>
+      <p>DFS (depth-first search) follows one path as far as it can, then backs up and tries another. It uses recursion (the call stack) or an explicit stack. It is great for 'can I reach it', connected components, cycle detection, topological ordering and backtracking in graphs.</p>
+      <p>The visited set is essential. Without it a graph with a cycle makes you loop forever. In BFS mark a node visited when you ADD it to the queue, not when you remove it; otherwise the same node can be added many times.</p>
+      <p>Both run in O(V + E): every node is processed once and every edge is looked at once (twice for undirected). Space O(V) for the visited set and queue/stack.</p>
+      <p>Choosing: shortest path or fewest steps in an unweighted graph/grid: BFS. Exploring everything, detecting cycles, counting components, generating paths: DFS (or BFS, either works).</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>BFS stores at most the frontier (width) in the queue, DFS recursion stores the current path (depth). On a long thin graph BFS uses little memory and DFS a lot; on a wide shallow graph it is the opposite.</li><li>BFS parents form the shortest-path tree: record parent[v] = u when discovering v to reconstruct a path by walking back from the target.</li><li>Recursive DFS on 10^5 nodes can exceed Python's recursion limit; use an iterative version with an explicit stack.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Web crawlers</td><td>BFS from a seed page discovers pages level by level.</td></tr><tr><td>GPS and game AI</td><td>BFS for fewest moves; DFS in maze generation and puzzle solving.</td></tr><tr><td>Social platforms</td><td>Finding people within 2 connections (BFS to depth 2).</td></tr><tr><td>Interviewers</td><td>BFS/DFS on graphs, grids and trees underpin dozens of standard problems.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>BFS vs DFS</td><td>BFS: shortest unweighted path, level order. DFS: path existence, ordering, cycles, backtracking, less memory on wide graphs.</td></tr><tr><td>BFS vs Dijkstra</td><td>BFS handles unit weights; Dijkstra handles non-negative weights using a heap.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>from collections import deque; q = deque([start]); q.popleft().</li><li>visited = {start}; if nb not in visited: visited.add(nb); q.append(nb).</li><li>Iterative DFS: stack = [start]; node = stack.pop().</li><li>Distance in BFS: store (node, dist) in the queue or use a dist dictionary.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c14_2.py">from collections import deque
+
+def bfs(graph, start):
+    visited, order = {start}, []
+    q = deque([start])
+    while q:
+        node = q.popleft()
+        order.append(node)
+        for nb in graph[node]:
+            if nb not in visited:
+                visited.add(nb)        # mark on enqueue
+                q.append(nb)
+    return order
+
+def dfs(graph, node, visited=None, order=None):
+    visited = set() if visited is None else visited
+    order = [] if order is None else order
+    visited.add(node)
+    order.append(node)
+    for nb in graph[node]:
+        if nb not in visited:
+            dfs(graph, nb, visited, order)
+    return order</code></pre>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>bfs({0: [1, 2], 1: [3], 2: [3], 3: []}, 0)</code>, returns <code>[0, 1, 2, 3]</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>node (after)</th><th>q (after)</th><th>visited (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">4</td><td><code>visited, order = {start}, []</code></td><td>-</td><td>-</td><td><strong><code>{0}</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">5</td><td><code>q = deque([start])</code></td><td>-</td><td><strong><code>deque([0])</code></strong></td><td><code>{0}</code></td></tr>
+<tr><td class="num">3</td><td class="num">6</td><td><code>while q:</code></td><td>-</td><td><code>deque([0])</code></td><td><code>{0}</code></td></tr>
+<tr><td class="num">4</td><td class="num">7</td><td><code>node = q.popleft()</code></td><td><strong><code>0</code></strong></td><td><strong><code>deque([])</code></strong></td><td><code>{0}</code></td></tr>
+<tr><td class="num">5</td><td class="num">8</td><td><code>order.append(node)</code></td><td><code>0</code></td><td><code>deque([])</code></td><td><code>{0}</code></td></tr>
+<tr><td class="num">6</td><td class="num">9</td><td><code>for nb in graph[node]:</code></td><td><code>0</code></td><td><code>deque([])</code></td><td><code>{0}</code></td></tr>
+<tr><td class="num">7</td><td class="num">10</td><td><code>if nb not in visited:</code></td><td><code>0</code></td><td><code>deque([])</code></td><td><code>{0}</code></td></tr>
+<tr><td class="num">8</td><td class="num">11</td><td><code>visited.add(nb)        # mark on enqueue</code></td><td><code>0</code></td><td><code>deque([])</code></td><td><strong><code>{0, 1}</code></strong></td></tr>
+<tr><td class="num">9</td><td class="num">12</td><td><code>q.append(nb)</code></td><td><code>0</code></td><td><strong><code>deque([1])</code></strong></td><td><code>{0, 1}</code></td></tr>
+<tr><td class="num">10</td><td class="num">9</td><td><code>for nb in graph[node]:</code></td><td><code>0</code></td><td><code>deque([1])</code></td><td><code>{0, 1}</code></td></tr>
+<tr><td class="num">11</td><td class="num">10</td><td><code>if nb not in visited:</code></td><td><code>0</code></td><td><code>deque([1])</code></td><td><code>{0, 1}</code></td></tr>
+<tr><td class="num">12</td><td class="num">11</td><td><code>visited.add(nb)        # mark on enqueue</code></td><td><code>0</code></td><td><code>deque([1])</code></td><td><strong><code>{0, 1, 2}</code></strong></td></tr>
+<tr><td class="num">13</td><td class="num">12</td><td><code>q.append(nb)</code></td><td><code>0</code></td><td><strong><code>deque([1, 2])</code></strong></td><td><code>{0, 1, 2}</code></td></tr>
+<tr><td class="num">14</td><td class="num">9</td><td><code>for nb in graph[node]:</code></td><td><code>0</code></td><td><code>deque([1, 2])</code></td><td><code>{0, 1, 2}</code></td></tr>
+<tr><td class="num">15</td><td class="num">6</td><td><code>while q:</code></td><td><code>0</code></td><td><code>deque([1, 2])</code></td><td><code>{0, 1, 2}</code></td></tr>
+<tr><td class="num">16</td><td class="num">7</td><td><code>node = q.popleft()</code></td><td><strong><code>1</code></strong></td><td><strong><code>deque([2])</code></strong></td><td><code>{0, 1, 2}</code></td></tr>
+<tr><td class="num">17</td><td class="num">8</td><td><code>order.append(node)</code></td><td><code>1</code></td><td><code>deque([2])</code></td><td><code>{0, 1, 2}</code></td></tr>
+<tr><td class="num">18</td><td class="num">9</td><td><code>for nb in graph[node]:</code></td><td><code>1</code></td><td><code>deque([2])</code></td><td><code>{0, 1, 2}</code></td></tr>
+<tr><td class="num">19</td><td class="num">10</td><td><code>if nb not in visited:</code></td><td><code>1</code></td><td><code>deque([2])</code></td><td><code>{0, 1, 2}</code></td></tr>
+<tr><td class="num">20</td><td class="num">11</td><td><code>visited.add(nb)        # mark on enqueue</code></td><td><code>1</code></td><td><code>deque([2])</code></td><td><strong><code>{0, 1, 2, 3}</code></strong></td></tr>
+<tr><td class="num">21</td><td class="num">12</td><td><code>q.append(nb)</code></td><td><code>1</code></td><td><strong><code>deque([2, 3])</code></strong></td><td><code>{0, 1, 2, 3}</code></td></tr>
+<tr><td class="num">22</td><td class="num">9</td><td><code>for nb in graph[node]:</code></td><td><code>1</code></td><td><code>deque([2, 3])</code></td><td><code>{0, 1, 2, 3}</code></td></tr>
+<tr><td class="num">23</td><td class="num">6</td><td><code>while q:</code></td><td><code>1</code></td><td><code>deque([2, 3])</code></td><td><code>{0, 1, 2, 3}</code></td></tr>
+<tr><td class="num">24</td><td class="num">7</td><td><code>node = q.popleft()</code></td><td><strong><code>2</code></strong></td><td><strong><code>deque([3])</code></strong></td><td><code>{0, 1, 2, 3}</code></td></tr>
+<tr><td class="num">25</td><td class="num">8</td><td><code>order.append(node)</code></td><td><code>2</code></td><td><code>deque([3])</code></td><td><code>{0, 1, 2, 3}</code></td></tr>
+<tr><td class="num">26</td><td class="num">9</td><td><code>for nb in graph[node]:</code></td><td><code>2</code></td><td><code>deque([3])</code></td><td><code>{0, 1, 2, 3}</code></td></tr>
+<tr><td class="num">27</td><td class="num">10</td><td><code>if nb not in visited:</code></td><td><code>2</code></td><td><code>deque([3])</code></td><td><code>{0, 1, 2, 3}</code></td></tr>
+<tr><td class="num">28</td><td class="num">9</td><td><code>for nb in graph[node]:</code></td><td><code>2</code></td><td><code>deque([3])</code></td><td><code>{0, 1, 2, 3}</code></td></tr>
+<tr><td class="num">29</td><td class="num">6</td><td><code>while q:</code></td><td><code>2</code></td><td><code>deque([3])</code></td><td><code>{0, 1, 2, 3}</code></td></tr>
+<tr><td class="num">30</td><td class="num">7</td><td><code>node = q.popleft()</code></td><td><strong><code>3</code></strong></td><td><strong><code>deque([])</code></strong></td><td><code>{0, 1, 2, 3}</code></td></tr>
+<tr><td class="num">31</td><td class="num">8</td><td><code>order.append(node)</code></td><td><code>3</code></td><td><code>deque([])</code></td><td><code>{0, 1, 2, 3}</code></td></tr>
+<tr><td class="num">32</td><td class="num">9</td><td><code>for nb in graph[node]:</code></td><td><code>3</code></td><td><code>deque([])</code></td><td><code>{0, 1, 2, 3}</code></td></tr>
+<tr><td class="num">33</td><td class="num">6</td><td><code>while q:</code></td><td><code>3</code></td><td><code>deque([])</code></td><td><code>{0, 1, 2, 3}</code></td></tr>
+<tr><td class="num">34</td><td class="num">13</td><td><code>return order</code></td><td><code>3</code></td><td><code>deque([])</code></td><td><code>{0, 1, 2, 3}</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>O(V + E) time, O(V) space for both.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Not marking visited (infinite loop).</li><li>Marking visited on dequeue in BFS (nodes enqueued many times).</li><li>Recursion depth limit in DFS on huge graphs.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"Shortest path in unweighted graph / minimum moves" -&gt; BFS.</li><li>"Is there a path / count components / explore all" -&gt; DFS or BFS.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m14-problems.html#prob-bfs_order">BFS Traversal Order</a></td><td><span class="tag ok">Easy</span></td><td>BFS</td></tr><tr><td><a href="m14-problems.html#prob-path_exists">Is There a Path?</a> <span class="tag">LC 1971</span></td><td><span class="tag ok">Easy</span></td><td>Graph DFS</td></tr><tr><td><a href="m14-problems.html#prob-shortest_path_grid">Shortest Path in a Grid</a></td><td><span class="tag warn">Medium</span></td><td>BFS shortest path</td></tr><tr><td><a href="m14-problems.html#prob-count_components">Connected Components</a> <span class="tag">LC 323</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>DFS / Union-Find</td></tr><tr><td><a href="m14-problems.html#prob-word_ladder">Word Ladder</a> <span class="tag">LC 127</span></td><td><span class="tag bad">Hard</span></td><td>BFS on an implicit graph</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why does BFS find shortest paths?</summary><div class="answer"><p>It visits nodes in order of distance, so the first visit to a node uses the fewest edges.</p></div></details>
+        <details class="recall"><summary>Why mark visited when enqueuing?</summary><div class="answer"><p>Otherwise the same node can be queued many times before it is processed.</p></div></details>
+        <details class="recall"><summary>Why use DFS for cycle detection?</summary><div class="answer"><p>DFS follows a path and can notice when it returns to a node on the current path.</p></div></details>
+        <details class="recall"><summary>Why can DFS be risky in Python?</summary><div class="answer"><p>Deep recursion can exceed the recursion limit. Use an explicit stack.</p></div></details>
+        <details class="recall"><summary>Why not use BFS for weighted shortest paths?</summary><div class="answer"><p>BFS counts edges, not weights. Use Dijkstra for non-negative weights.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c14_2-q1" data-topic="Graphs" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which structure does BFS use?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Stack</li>
+          <li data-key="B">Queue</li>
+          <li data-key="C">Heap</li>
+          <li data-key="D">Set only</li>
+        </ul>
+        <div class="q-explain"><p>First discovered, first explored.</p></div>
+      </div>
+      <div class="quiz" data-qid="c14_2-q2" data-topic="Graphs" data-type="single" data-answer="B">
+        <div class="q-stem"><p>BFS finds shortest paths in...</p></div>
+        <ul class="q-options">
+          <li data-key="A">Weighted graphs with negative edges</li>
+          <li data-key="B">Unweighted graphs</li>
+          <li data-key="C">Only trees</li>
+          <li data-key="D">Never</li>
+        </ul>
+        <div class="q-explain"><p>Each edge counts as 1, and BFS explores by increasing distance.</p></div>
+      </div>
+    </section>
+
+    <section id="c14_3" data-track>
+      <h2>Grid traversal, connected components and cycle detection</h2>
+      <p><span class="tag ok">Essential</span> <span class="tag">Topic 14.3</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>A grid can be treated as a graph where each cell is a node connected to its up/down/left/right neighbours. A connected component is a maximal group of nodes reachable from each other.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Number of islands, flood fill, rotting oranges, shortest path in a maze and "is there a cycle" all reuse BFS/DFS.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Painting a region on a map: start at one square and keep painting adjacent squares of the same colour.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>A photo editor's paint-bucket tool fills a region of similar colour. A map app counts islands in a satellite image. A game finds how far an enemy is through a maze. All of these look like different applications, but all are the same question on a grid: which cells are connected to this one?</p>
+      <p>A grid is a graph whose edges are implied by position. You do not build it; you generate neighbours on demand using direction pairs and boundary checks. This removes memory overhead and makes code short.</p>
+      <p>Flood fill for regions: start at a cell and spread to neighbours satisfying a rule. Counting components: repeat for every cell not yet claimed. Shortest path: spread in waves (BFS) and record distances. Multi-source: start with several cells at once.</p>
+      <p>Cycle detection differs by graph type: in undirected graphs a cycle exists when you meet a visited node that is not your parent; in directed graphs you must detect a node that is currently on the active path (three colours), or use topological sort failing to include all nodes.</p>
+      <p>Bipartite checking (two-colouring) uses BFS and tells you whether a graph has an odd cycle, which also answers 'can these items be split into two non-conflicting groups?'.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="grid"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Neighbour directions: for dr, dc in ((1,0),(-1,0),(0,1),(0,-1)). Always check bounds 0 &lt;= r &lt; rows and 0 &lt;= c &lt; cols.</li><li>Counting islands: scan every cell; at an unvisited land cell, count++ and flood-fill (DFS/BFS) to mark the whole island.</li><li>Shortest path in a maze: BFS with (row, col, distance) in the queue.</li><li>Cycle in an undirected graph: DFS that reaches an already visited node which is not the parent, OR union-find: an edge joining two nodes with the same root closes a cycle.</li><li>Cycle in a directed graph: DFS with three states (unvisited, in progress, done) or Kahn's topological sort (not all nodes processed).</li><li>Edit the grid in the visualiser (# = wall, . = open, S = start, E = end) and see BFS find the shortest path.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Grid problems are graph problems in disguise. A cell (r, c) has neighbours (r+1, c), (r-1, c), (r, c+1), (r, c-1). Before visiting a neighbour always check it is inside the grid and not blocked or already visited.</p>
+      <p>Counting islands: scan every cell. When you find land that is not yet visited, add 1 to the answer and flood-fill (DFS or BFS) the whole island so you never count it again. The same flood fill is used for 'paint bucket', 'size of the largest region' and 'surrounded regions'.</p>
+      <p>Shortest path in a maze: BFS from the start; the first time you reach the exit, the distance is the shortest number of moves. Multi-source BFS (rotting oranges): put ALL starting cells in the queue at once; each BFS level is one time step.</p>
+      <p>Cycle detection differs: undirected graphs use 'visited neighbour that is not my parent' or Union-Find; directed graphs use DFS with three colours (not visited, in progress, done) or Kahn's algorithm (not all nodes get processed).</p>
+      <p>Bipartite check: BFS colouring with two colours; if two neighbours get the same colour there is an odd cycle and the graph is not bipartite.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Visited can be a set of coordinate tuples or the grid itself (mutate cells to a marker) to save memory. Copy the grid first if you must preserve it.</li><li>Multi-source BFS works by putting every source into the initial queue; the first wave is distance 0 for all sources simultaneously.</li><li>8-direction movement just adds four diagonal pairs to the direction list.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Image editors</td><td>Paint bucket and region selection tools.</td></tr><tr><td>Game developers</td><td>Pathfinding on tile maps and area-of-effect spreading.</td></tr><tr><td>GIS and satellite analysts</td><td>Counting lakes, islands and regions.</td></tr><tr><td>Interviewers</td><td>Number of islands, rotting oranges, flood fill and word search are top grid questions.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>BFS vs DFS on grids</td><td>BFS gives shortest distances; DFS is fine for 'how many cells in a region'. Use BFS on large grids to avoid recursion depth issues.</td></tr><tr><td>Union-Find vs DFS for islands</td><td>Union-Find is better when cells change over time (dynamic islands).</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>for dr, dc in ((1,0),(-1,0),(0,1),(0,-1)): nr, nc = r + dr, c + dc.</li><li>if 0 &lt;= nr &lt; rows and 0 &lt;= nc &lt; cols and grid[nr][nc] == '1'</li><li>Use a set of (r, c) tuples for visited, or change the grid cell to mark it.</li><li>sys.setrecursionlimit or BFS for large grids to avoid deep recursion.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c14_3.py">def region_size(grid, r, c, seen=None):
+    seen = set() if seen is None else seen
+    rows, cols = len(grid), len(grid[0])
+    if not (0 &lt;= r &lt; rows and 0 &lt;= c &lt; cols):   # out of bounds
+        return 0
+    if grid[r][c] != "1" or (r, c) in seen:
+        return 0
+    seen.add((r, c))
+    size = 1
+    for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        size += region_size(grid, r + dr, c + dc, seen)
+    return size</code></pre>
+      <h3>Dry run (variable values at every step)</h3>
+      <p>Trace the code by hand on a tiny input and write down every variable after each line.</p>
+      <h3>Time and space complexity</h3>
+      <p>O(rows * cols) time and space for a full-grid traversal.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Forgetting boundary checks.</li><li>Not marking cells visited (infinite recursion).</li><li>Diagonal moves included by mistake (or missed when allowed).</li><li>Deep recursion on large grids - use BFS or an explicit stack.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>Grid + "connected", "islands", "regions", "minimum steps" -&gt; BFS/DFS on cells.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m14-problems.html#prob-flood_fill">Flood Fill</a> <span class="tag">LC 733</span></td><td><span class="tag ok">Easy</span></td><td>Grid DFS</td></tr><tr><td><a href="m14-problems.html#prob-num_islands">Number of Islands</a> <span class="tag">LC 200</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Grid DFS / BFS, connected components</td></tr><tr><td><a href="m14-problems.html#prob-shortest_path_grid">Shortest Path in a Grid</a></td><td><span class="tag warn">Medium</span></td><td>BFS shortest path</td></tr><tr><td><a href="m14-problems.html#prob-count_components">Connected Components</a> <span class="tag">LC 323</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>DFS / Union-Find</td></tr><tr><td><a href="m14-problems.html#prob-has_cycle_undirected">Cycle in an Undirected Graph</a></td><td><span class="tag warn">Medium</span></td><td>Union-Find / DFS</td></tr><tr><td><a href="m14-problems.html#prob-pacific_atlantic">Pacific Atlantic Water Flow</a> <span class="tag">LC 417</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Multi-source DFS/BFS</td></tr><tr><td><a href="m14-problems.html#prob-surrounded_regions">Surrounded Regions</a> <span class="tag">LC 130</span></td><td><span class="tag warn">Medium</span></td><td>Border DFS</td></tr><tr><td><a href="m14-problems.html#prob-rotting_oranges">Rotting Oranges</a> <span class="tag">LC 994</span></td><td><span class="tag warn">Medium</span></td><td>Multi-source BFS</td></tr><tr><td><a href="m14-problems.html#prob-is_bipartite">Is the Graph Bipartite?</a> <span class="tag">LC 785</span></td><td><span class="tag warn">Medium</span></td><td>BFS colouring</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why mark cells visited?</summary><div class="answer"><p>Without it, the search revisits cells forever in connected regions.</p></div></details>
+        <details class="recall"><summary>Why check bounds before accessing a cell?</summary><div class="answer"><p>Negative indexes wrap around in Python and silently read the wrong cell.</p></div></details>
+        <details class="recall"><summary>Why start BFS with all rotten oranges?</summary><div class="answer"><p>They all rot neighbours simultaneously; one wave per minute models that exactly.</p></div></details>
+        <details class="recall"><summary>Why use union-find for dynamic islands?</summary><div class="answer"><p>It merges components as land is added without re-scanning the grid.</p></div></details>
+        <details class="recall"><summary>Why use BFS rather than DFS for the shortest maze path?</summary><div class="answer"><p>BFS's first arrival at the exit is guaranteed to be shortest.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c14_3-q1" data-topic="Graphs" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Number of neighbours of an interior cell in 4-directional movement?</p></div>
+        <ul class="q-options">
+          <li data-key="A">2</li>
+          <li data-key="B">4</li>
+          <li data-key="C">6</li>
+          <li data-key="D">8</li>
+        </ul>
+        <div class="q-explain"><p>Up, down, left, right.</p></div>
+      </div>
+      <div class="quiz" data-qid="c14_3-q2" data-topic="Graphs" data-type="single" data-answer="A">
+        <div class="q-stem"><p>Which technique detects a cycle when adding edges to an undirected graph?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Union-Find</li>
+          <li data-key="B">Binary search</li>
+          <li data-key="C">Sorting</li>
+          <li data-key="D">Counting</li>
+        </ul>
+        <div class="q-explain"><p>If both endpoints share a root, the edge forms a cycle.</p></div>
+      </div>
+    </section>
+
+    <section id="c14_4" data-track>
+      <h2>Topological sort, Dijkstra and minimum spanning trees</h2>
+      <p><span class="tag warn">Important</span> <span class="tag">Topic 14.4</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>Topological sort orders the tasks of a directed acyclic graph (DAG) so every dependency comes first. Dijkstra finds the shortest paths from one source in a graph with non-negative weights. A minimum spanning tree (MST) connects all nodes with the smallest total edge weight.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Course schedules, build orders, route planning and network design use these. For a beginner coding round, topological sort and Dijkstra are "important"; MST is "advanced".</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Topological sort: getting dressed - socks before shoes. Dijkstra: GPS finding the fastest route. MST: laying the cheapest cable that still connects all towns.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Three different questions arise on graphs. (1) In what order can I do tasks if some must come before others? (2) What is the cheapest route from A to everywhere? (3) How do I connect everything as cheaply as possible? Each has a classic algorithm.</p>
+      <p>Ordering: if A must come before B, draw A -&gt; B. A valid order exists only if there is no cycle (A before B before A is impossible). Kahn's idea: tasks with no prerequisites can go first; remove them and repeat. If at some point every remaining task has an unfinished prerequisite, there is a cycle.</p>
+      <p>Cheapest route: BFS counts edges, but roads have different lengths. Dijkstra's key insight: if you always settle the unsettled node with the smallest known distance, that distance is final, because any other route to it would have to pass through a node that is at least as far (when no edge is negative). A heap gives that node quickly.</p>
+      <p>Connecting everything cheaply (minimum spanning tree): Kruskal's greedy idea is to add the cheapest edge that does not create a cycle. Union-Find answers 'does this edge create a cycle?' in near O(1).</p>
+      <p>Why is this in 'Important' and not 'Essential'? Because many entry-level tests focus on BFS/DFS and grids; these three algorithms appear in stronger rounds, but the ideas (greedy choice, heaps, Union-Find) deepen skills you use elsewhere.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="topo"></div>
+      <div class="viz-slot" data-viz="graph:dijkstra"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Kahn's topological sort: compute in-degrees; queue all nodes with in-degree 0; pop one, append to the order, decrement its neighbours' in-degrees and queue those that reach 0. If the order has fewer than V nodes there is a cycle.</li><li>Dijkstra: dist[source] = 0. Use a min-heap of (distance, node). Pop the closest, skip if already finalised, relax each edge (u -&gt; v, weight w): if dist[u] + w &lt; dist[v], update and push.</li><li>Dijkstra fails with negative edges (use Bellman-Ford). Complexity O(E log V).</li><li>Kruskal MST: sort edges by weight, add an edge if it joins two different components (Union-Find). Prim grows one tree using a heap. Both O(E log V).</li><li>Which to learn first: BFS/DFS -&gt; components/cycle -&gt; topological sort -&gt; Dijkstra -&gt; MST/union-find. Floyd-Warshall, Bellman-Ford, Tarjan are rarely needed in entry-level rounds.</li><li>Step through Kahn's algorithm and Dijkstra in the visualisers.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Topological sort puts the nodes of a directed graph without cycles into a line so that every edge points forward. Example: courses with prerequisites. Kahn's algorithm: count each node's in-degree (number of incoming edges), repeatedly take nodes with in-degree 0, add them to the order and reduce their neighbours' in-degrees. If you cannot process all nodes, there is a cycle.</p>
+      <p>Dijkstra finds the cheapest path from one start node to all others when edge weights are not negative. Keep the best known distance for each node. Use a min-heap to always take the nearest unfinished node; its distance is now final. 'Relax' its edges: if going through it gives a shorter route to a neighbour, update that neighbour and push it onto the heap.</p>
+      <p>Why not negative weights? Dijkstra assumes once a node is taken its distance cannot get better. A negative edge could break that. Use Bellman-Ford for negative edges (rare in entry-level tests).</p>
+      <p>Minimum spanning tree (MST): connect all nodes using the cheapest set of edges with no cycles. Kruskal: sort the edges by weight and add an edge if it joins two different groups (Union-Find). Prim: grow one tree using a heap. These are 'advanced' for beginner rounds.</p>
+      <p>Priority guide: BFS/DFS, components and grids matter most; learn topological sort and Dijkstra next; MST, Bellman-Ford, Floyd-Warshall and strongly connected components are advanced extras.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>Dijkstra uses lazy deletion: the heap may contain outdated entries for a node; skip an entry when its distance is greater than the stored best. Complexity O((V + E) log V).</li><li>Dijkstra's correctness requires non-negative weights. With negative edges use Bellman-Ford (O(VE)); with negative cycles shortest paths are undefined.</li><li>Kruskal: sorting dominates, O(E log E). Prim: heap-based, O(E log V).</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Package managers and build systems</td><td>Topological order to install dependencies or compile modules.</td></tr><tr><td>Maps and navigation</td><td>Dijkstra and A* find fastest routes.</td></tr><tr><td>Network designers</td><td>MST for connecting cities or computers with minimum cable.</td></tr><tr><td>Interviewers</td><td>Course schedule (topological), network delay time (Dijkstra) and MST questions.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Dijkstra vs BFS vs Bellman-Ford</td><td>BFS: unit weights. Dijkstra: non-negative weights. Bellman-Ford: negative weights allowed.</td></tr><tr><td>Kruskal vs Prim</td><td>Kruskal: edge list + Union-Find, good for sparse graphs. Prim: adjacency list + heap, good for dense graphs.</td></tr><tr><td>Kahn vs DFS topological sort</td><td>Kahn is iterative and detects cycles naturally; DFS reverse post-order is shorter to write recursively.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>heapq with tuples: heappush(h, (dist, node)); d, u = heappop(h).</li><li>dist = [float('inf')] * n; dist[src] = 0.</li><li>Skip stale heap entries: if d &gt; dist[u]: continue.</li><li>indegree = [0] * n; q = deque(i for i in range(n) if indegree[i] == 0).</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c14_4.py">from collections import deque
+import heapq
+
+def topo_sort(n, edges):
+    graph = [[] for _ in range(n)]
+    indeg = [0] * n
+    for a, b in edges:                  # a must come before b
+        graph[a].append(b)
+        indeg[b] += 1
+    q = deque(i for i in range(n) if indeg[i] == 0)
+    order = []
+    while q:
+        u = q.popleft()
+        order.append(u)
+        for v in graph[u]:
+            indeg[v] -= 1
+            if indeg[v] == 0:
+                q.append(v)
+    return order if len(order) == n else []     # [] means a cycle exists
+
+def dijkstra(graph, src):
+    dist = {src: 0}
+    heap = [(0, src)]
+    while heap:
+        d, u = heapq.heappop(heap)
+        if d &gt; dist.get(u, float("inf")):
+            continue                           # stale entry
+        for v, w in graph[u]:
+            nd = d + w
+            if nd &lt; dist.get(v, float("inf")):
+                dist[v] = nd
+                heapq.heappush(heap, (nd, v))
+    return dist</code></pre>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>topo_sort(4, [(0, 1), (0, 2), (1, 3), (2, 3)])</code>, returns <code>[0, 1, 2, 3]</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>u (after)</th><th>q (after)</th><th>order (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">5</td><td><code>graph = [[] for _ in range(n)]</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">2</td><td class="num">5</td><td><code>graph = [[] for _ in range(n)]</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">3</td><td class="num">5</td><td><code>graph = [[] for _ in range(n)]</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">4</td><td class="num">5</td><td><code>graph = [[] for _ in range(n)]</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">5</td><td class="num">5</td><td><code>graph = [[] for _ in range(n)]</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">6</td><td class="num">6</td><td><code>indeg = [0] * n</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">7</td><td class="num">7</td><td><code>for a, b in edges:                  # a must come before b</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">8</td><td class="num">8</td><td><code>graph[a].append(b)</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">9</td><td class="num">9</td><td><code>indeg[b] += 1</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">10</td><td class="num">7</td><td><code>for a, b in edges:                  # a must come before b</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">11</td><td class="num">8</td><td><code>graph[a].append(b)</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">12</td><td class="num">9</td><td><code>indeg[b] += 1</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">13</td><td class="num">7</td><td><code>for a, b in edges:                  # a must come before b</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">14</td><td class="num">8</td><td><code>graph[a].append(b)</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">15</td><td class="num">9</td><td><code>indeg[b] += 1</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">16</td><td class="num">7</td><td><code>for a, b in edges:                  # a must come before b</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">17</td><td class="num">8</td><td><code>graph[a].append(b)</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">18</td><td class="num">9</td><td><code>indeg[b] += 1</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">19</td><td class="num">7</td><td><code>for a, b in edges:                  # a must come before b</code></td><td>-</td><td>-</td><td>-</td></tr>
+<tr><td class="num">20</td><td class="num">10</td><td><code>q = deque(i for i in range(n) if indeg[i] == 0)</code></td><td>-</td><td><strong><code>deque([0])</code></strong></td><td>-</td></tr>
+<tr><td class="num">21</td><td class="num">11</td><td><code>order = []</code></td><td>-</td><td><code>deque([0])</code></td><td><strong><code>[]</code></strong></td></tr>
+<tr><td class="num">22</td><td class="num">12</td><td><code>while q:</code></td><td>-</td><td><code>deque([0])</code></td><td><code>[]</code></td></tr>
+<tr><td class="num">23</td><td class="num">13</td><td><code>u = q.popleft()</code></td><td><strong><code>0</code></strong></td><td><strong><code>deque([])</code></strong></td><td><code>[]</code></td></tr>
+<tr><td class="num">24</td><td class="num">14</td><td><code>order.append(u)</code></td><td><code>0</code></td><td><code>deque([])</code></td><td><strong><code>[0]</code></strong></td></tr>
+<tr><td class="num">25</td><td class="num">15</td><td><code>for v in graph[u]:</code></td><td><code>0</code></td><td><code>deque([])</code></td><td><code>[0]</code></td></tr>
+<tr><td class="num">26</td><td class="num">16</td><td><code>indeg[v] -= 1</code></td><td><code>0</code></td><td><code>deque([])</code></td><td><code>[0]</code></td></tr>
+<tr><td class="num">27</td><td class="num">17</td><td><code>if indeg[v] == 0:</code></td><td><code>0</code></td><td><code>deque([])</code></td><td><code>[0]</code></td></tr>
+<tr><td class="num">28</td><td class="num">18</td><td><code>q.append(v)</code></td><td><code>0</code></td><td><strong><code>deque([1])</code></strong></td><td><code>[0]</code></td></tr>
+<tr><td class="num">29</td><td class="num">15</td><td><code>for v in graph[u]:</code></td><td><code>0</code></td><td><code>deque([1])</code></td><td><code>[0]</code></td></tr>
+<tr><td class="num">30</td><td class="num">16</td><td><code>indeg[v] -= 1</code></td><td><code>0</code></td><td><code>deque([1])</code></td><td><code>[0]</code></td></tr>
+<tr><td class="num">31</td><td class="num">17</td><td><code>if indeg[v] == 0:</code></td><td><code>0</code></td><td><code>deque([1])</code></td><td><code>[0]</code></td></tr>
+<tr><td class="num">32</td><td class="num">18</td><td><code>q.append(v)</code></td><td><code>0</code></td><td><strong><code>deque([1, 2])</code></strong></td><td><code>[0]</code></td></tr>
+<tr><td class="num">33</td><td class="num">15</td><td><code>for v in graph[u]:</code></td><td><code>0</code></td><td><code>deque([1, 2])</code></td><td><code>[0]</code></td></tr>
+<tr><td class="num">34</td><td class="num">12</td><td><code>while q:</code></td><td><code>0</code></td><td><code>deque([1, 2])</code></td><td><code>[0]</code></td></tr>
+<tr><td class="num">35</td><td class="num">13</td><td><code>u = q.popleft()</code></td><td><strong><code>1</code></strong></td><td><strong><code>deque([2])</code></strong></td><td><code>[0]</code></td></tr>
+<tr><td class="num">36</td><td class="num">14</td><td><code>order.append(u)</code></td><td><code>1</code></td><td><code>deque([2])</code></td><td><strong><code>[0, 1]</code></strong></td></tr>
+<tr><td class="num">37</td><td class="num">15</td><td><code>for v in graph[u]:</code></td><td><code>1</code></td><td><code>deque([2])</code></td><td><code>[0, 1]</code></td></tr>
+<tr><td class="num">38</td><td class="num">16</td><td><code>indeg[v] -= 1</code></td><td><code>1</code></td><td><code>deque([2])</code></td><td><code>[0, 1]</code></td></tr>
+<tr><td class="num">39</td><td class="num">17</td><td><code>if indeg[v] == 0:</code></td><td><code>1</code></td><td><code>deque([2])</code></td><td><code>[0, 1]</code></td></tr>
+<tr><td class="num">40</td><td class="num">15</td><td><code>for v in graph[u]:</code></td><td><code>1</code></td><td><code>deque([2])</code></td><td><code>[0, 1]</code></td></tr>
+<tr><td class="num">41</td><td class="num">12</td><td><code>while q:</code></td><td><code>1</code></td><td><code>deque([2])</code></td><td><code>[0, 1]</code></td></tr>
+<tr><td class="num">42</td><td class="num">13</td><td><code>u = q.popleft()</code></td><td><strong><code>2</code></strong></td><td><strong><code>deque([])</code></strong></td><td><code>[0, 1]</code></td></tr>
+<tr><td class="num">43</td><td class="num">14</td><td><code>order.append(u)</code></td><td><code>2</code></td><td><code>deque([])</code></td><td><strong><code>[0, 1, 2]</code></strong></td></tr>
+<tr><td class="num">44</td><td class="num">15</td><td><code>for v in graph[u]:</code></td><td><code>2</code></td><td><code>deque([])</code></td><td><code>[0, 1, 2]</code></td></tr>
+<tr><td class="num">45</td><td class="num">16</td><td><code>indeg[v] -= 1</code></td><td><code>2</code></td><td><code>deque([])</code></td><td><code>[0, 1, 2]</code></td></tr>
+<tr><td class="num">46</td><td class="num">17</td><td><code>if indeg[v] == 0:</code></td><td><code>2</code></td><td><code>deque([])</code></td><td><code>[0, 1, 2]</code></td></tr>
+<tr><td class="num">47</td><td class="num">18</td><td><code>q.append(v)</code></td><td><code>2</code></td><td><strong><code>deque([3])</code></strong></td><td><code>[0, 1, 2]</code></td></tr>
+<tr><td class="num">48</td><td class="num">15</td><td><code>for v in graph[u]:</code></td><td><code>2</code></td><td><code>deque([3])</code></td><td><code>[0, 1, 2]</code></td></tr>
+<tr><td class="num">49</td><td class="num">12</td><td><code>while q:</code></td><td><code>2</code></td><td><code>deque([3])</code></td><td><code>[0, 1, 2]</code></td></tr>
+<tr><td class="num">50</td><td class="num">13</td><td><code>u = q.popleft()</code></td><td><strong><code>3</code></strong></td><td><strong><code>deque([])</code></strong></td><td><code>[0, 1, 2]</code></td></tr>
+<tr><td class="num">51</td><td class="num">14</td><td><code>order.append(u)</code></td><td><code>3</code></td><td><code>deque([])</code></td><td><strong><code>[0, 1, 2, 3]</code></strong></td></tr>
+<tr><td class="num">52</td><td class="num">15</td><td><code>for v in graph[u]:</code></td><td><code>3</code></td><td><code>deque([])</code></td><td><code>[0, 1, 2, 3]</code></td></tr>
+<tr><td class="num">53</td><td class="num">12</td><td><code>while q:</code></td><td><code>3</code></td><td><code>deque([])</code></td><td><code>[0, 1, 2, 3]</code></td></tr>
+<tr><td class="num">54</td><td class="num">19</td><td><code>return order if len(order) == n else []     # [] means a cycle exists</code></td><td><code>3</code></td><td><code>deque([])</code></td><td><code>[0, 1, 2, 3]</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>Topological sort O(V + E). Dijkstra O((V + E) log V) with a heap.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Using Dijkstra with negative weights.</li><li>Not skipping stale heap entries.</li><li>Topological sort on a graph with a cycle (check the output length).</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>"Order tasks with prerequisites", "is it possible to finish" -&gt; topological sort.</li><li>"Shortest/cheapest path with weights" -&gt; Dijkstra.</li><li>"Connect all with minimum cost" -&gt; MST.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m14-problems.html#prob-can_finish">Course Schedule (Topological Sort)</a> <span class="tag">LC 207</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Topological sort / cycle detection</td></tr><tr><td><a href="m14-problems.html#prob-course_order">Course Schedule II</a> <span class="tag">LC 210</span></td><td><span class="tag warn">Medium</span></td><td>Topological sort (Kahn)</td></tr><tr><td><a href="m14-problems.html#prob-cheapest_flights">Cheapest Flights Within K Stops</a> <span class="tag">LC 787</span></td><td><span class="tag warn">Medium</span></td><td>Bellman-Ford (limited rounds)</td></tr><tr><td><a href="m14-problems.html#prob-network_delay">Network Delay Time (Dijkstra)</a> <span class="tag">LC 743</span></td><td><span class="tag bad">Hard</span></td><td>Dijkstra's shortest path</td></tr><tr><td><a href="m14-problems.html#prob-mst_weight">Minimum Spanning Tree (Kruskal)</a></td><td><span class="tag bad">Hard</span></td><td>Greedy + Union-Find (Advanced)</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why does a cycle make topological order impossible?</summary><div class="answer"><p>A before B before A cannot be satisfied.</p></div></details>
+        <details class="recall"><summary>Why does Dijkstra pick the smallest known distance next?</summary><div class="answer"><p>With no negative edges, no other path can reach that node more cheaply.</p></div></details>
+        <details class="recall"><summary>Why skip stale heap entries?</summary><div class="answer"><p>A node may be pushed several times with decreasing distances; the larger entries are outdated.</p></div></details>
+        <details class="recall"><summary>Why does Kruskal need Union-Find?</summary><div class="answer"><p>It must quickly check whether an edge joins two different components.</p></div></details>
+        <details class="recall"><summary>Why not use Dijkstra with negative weights?</summary><div class="answer"><p>A later negative edge could shorten an already finalised node.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c14_4-q1" data-topic="Graphs" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Dijkstra's algorithm requires edge weights to be...</p></div>
+        <ul class="q-options">
+          <li data-key="A">Negative</li>
+          <li data-key="B">Non-negative</li>
+          <li data-key="C">Equal</li>
+          <li data-key="D">Integers only</li>
+        </ul>
+        <div class="q-explain"><p>Once a node is finalised, a negative edge could later give a shorter path and break correctness.</p></div>
+      </div>
+      <div class="quiz" data-qid="c14_4-q2" data-topic="Graphs" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Kahn's algorithm detects a cycle when...</p></div>
+        <ul class="q-options">
+          <li data-key="A">The queue starts empty</li>
+          <li data-key="B">Fewer than V nodes are output</li>
+          <li data-key="C">A node has degree 0</li>
+          <li data-key="D">It always does</li>
+        </ul>
+        <div class="q-explain"><p>Nodes in a cycle never reach in-degree 0.</p></div>
+      </div>
+    </section>
+
+    <h2 id="practice-problems">Practice problems for this module</h2>
+
+    <p>19 problems with hints, approach, dry run and tested solutions on the <a href="m14-problems.html">problem set for this module</a>.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m14-problems.html#prob-bfs_order">BFS Traversal Order</a></td><td><span class="tag ok">Easy</span></td><td>BFS</td></tr><tr><td><a href="m14-problems.html#prob-flood_fill">Flood Fill</a> <span class="tag">LC 733</span></td><td><span class="tag ok">Easy</span></td><td>Grid DFS</td></tr><tr><td><a href="m14-problems.html#prob-path_exists">Is There a Path?</a> <span class="tag">LC 1971</span></td><td><span class="tag ok">Easy</span></td><td>Graph DFS</td></tr><tr><td><a href="m14-problems.html#prob-num_islands">Number of Islands</a> <span class="tag">LC 200</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Grid DFS / BFS, connected components</td></tr><tr><td><a href="m14-problems.html#prob-shortest_path_grid">Shortest Path in a Grid</a></td><td><span class="tag warn">Medium</span></td><td>BFS shortest path</td></tr><tr><td><a href="m14-problems.html#prob-can_finish">Course Schedule (Topological Sort)</a> <span class="tag">LC 207</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Topological sort / cycle detection</td></tr><tr><td><a href="m14-problems.html#prob-count_components">Connected Components</a> <span class="tag">LC 323</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>DFS / Union-Find</td></tr><tr><td><a href="m14-problems.html#prob-has_cycle_undirected">Cycle in an Undirected Graph</a></td><td><span class="tag warn">Medium</span></td><td>Union-Find / DFS</td></tr><tr><td><a href="m14-problems.html#prob-rotting_oranges">Rotting Oranges</a> <span class="tag">LC 994</span></td><td><span class="tag warn">Medium</span></td><td>Multi-source BFS</td></tr><tr><td><a href="m14-problems.html#prob-is_bipartite">Is the Graph Bipartite?</a> <span class="tag">LC 785</span></td><td><span class="tag warn">Medium</span></td><td>BFS colouring</td></tr><tr><td><a href="m14-problems.html#prob-course_order">Course Schedule II</a> <span class="tag">LC 210</span></td><td><span class="tag warn">Medium</span></td><td>Topological sort (Kahn)</td></tr><tr><td><a href="m14-problems.html#prob-pacific_atlantic">Pacific Atlantic Water Flow</a> <span class="tag">LC 417</span> <span class="tag accent">must-do</span></td><td><span class="tag warn">Medium</span></td><td>Multi-source DFS/BFS</td></tr><tr><td><a href="m14-problems.html#prob-number_of_provinces">Number of Provinces</a> <span class="tag">LC 547</span></td><td><span class="tag warn">Medium</span></td><td>Union-Find / DFS</td></tr><tr><td><a href="m14-problems.html#prob-redundant_connection">Redundant Connection</a> <span class="tag">LC 684</span></td><td><span class="tag warn">Medium</span></td><td>Union-Find</td></tr><tr><td><a href="m14-problems.html#prob-surrounded_regions">Surrounded Regions</a> <span class="tag">LC 130</span></td><td><span class="tag warn">Medium</span></td><td>Border DFS</td></tr><tr><td><a href="m14-problems.html#prob-cheapest_flights">Cheapest Flights Within K Stops</a> <span class="tag">LC 787</span></td><td><span class="tag warn">Medium</span></td><td>Bellman-Ford (limited rounds)</td></tr><tr><td><a href="m14-problems.html#prob-network_delay">Network Delay Time (Dijkstra)</a> <span class="tag">LC 743</span></td><td><span class="tag bad">Hard</span></td><td>Dijkstra's shortest path</td></tr><tr><td><a href="m14-problems.html#prob-mst_weight">Minimum Spanning Tree (Kruskal)</a></td><td><span class="tag bad">Hard</span></td><td>Greedy + Union-Find (Advanced)</td></tr><tr><td><a href="m14-problems.html#prob-word_ladder">Word Ladder</a> <span class="tag">LC 127</span></td><td><span class="tag bad">Hard</span></td><td>BFS on an implicit graph</td></tr>
+</tbody>
+</table>
+</div>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Graphs</h2>
+      <p class="muted">74 questions: try to answer aloud in under a minute, then reveal. All questions from every module are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Graphs">
+<details class="recall iq" data-level="basic" data-topic="Graphs"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Adjacency list vs adjacency matrix?</summary><div class="answer"><p>List: O(V + E) space, fast to iterate neighbours, good for sparse graphs. Matrix: O(V^2) space, O(1) edge check, good for dense graphs.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Graphs"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the difference between directed and undirected graphs?</summary><div class="answer"><p>In a directed graph edges have a direction (a -&gt; b). In an undirected graph an edge works both ways.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Graphs"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is a connected component?</summary><div class="answer"><p>A group of nodes where every node can reach every other node in the group, and no edge leaves the group.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Graphs"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you represent a grid as a graph?</summary><div class="answer"><p>Each cell is a node; its neighbours are the 4 (or 8) adjacent cells inside the bounds. No explicit adjacency list is needed.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Graphs"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the difference between a tree and a graph?</summary><div class="answer"><p>A tree is a connected graph without cycles (n nodes, n - 1 edges). A general graph can have cycles and multiple components.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Graphs"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why are most graph algorithms O(V + E)?</summary><div class="answer"><p>Each vertex is processed once and each edge is examined once or twice (once per endpoint in undirected graphs).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Graphs"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Difference between BFS and DFS?</summary><div class="answer"><p>BFS uses a queue and explores level by level (shortest path in unweighted graphs). DFS uses a stack/recursion and goes deep first. Both O(V + E).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Graphs"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why does BFS find the shortest path?</summary><div class="answer"><p>It visits nodes in increasing order of distance from the start, so the first visit to a node is via a shortest path.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Graphs"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> When do you mark nodes visited in BFS?</summary><div class="answer"><p>When adding them to the queue, so each node is queued once.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Graphs"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you detect a cycle in an undirected graph?</summary><div class="answer"><p>During DFS, if you reach a visited node that is not the parent you found a cycle. Or use Union-Find.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Graphs"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the time complexity of BFS?</summary><div class="answer"><p>O(V + E) time, O(V) space.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Graphs"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Write BFS.</summary><div class="answer"><pre><code class="lang-py">from collections import deque
+def bfs(graph, start):
+    seen, order = {start}, []
+    q = deque([start])
+    while q:
+        u = q.popleft()
+        order.append(u)
+        for v in graph[u]:
+            if v not in seen:
+                seen.add(v)
+                q.append(v)
+    return order</code></pre></div></details>
+<details class="recall iq" data-level="basic" data-topic="Graphs"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why does BFS give shortest paths but DFS does not?</summary><div class="answer"><p>BFS explores nodes in increasing distance order; DFS may reach a node first through a long path.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Graphs"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you count the islands in a grid?</summary><div class="answer"><p>Loop over cells; at each unvisited land cell increment the count and DFS/BFS to mark the whole island. O(rows x cols).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Graphs"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you find the shortest path in a maze?</summary><div class="answer"><p>BFS from the start with distances, stopping at the exit. If the queue empties, there is no path.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Graphs"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is multi-source BFS?</summary><div class="answer"><p>BFS that starts with several nodes in the queue at the same time, useful when everything spreads simultaneously (rotting oranges, fire spreading).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Graphs"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you detect a cycle in a directed graph?</summary><div class="answer"><p>DFS with states (unvisited, in recursion stack, finished). Reaching an &#x27;in stack&#x27; node means a cycle. Or run Kahn&#x27;s topological sort and check if all nodes were processed.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Graphs"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> DFS recursion fails on a huge grid. What do you do?</summary><div class="answer"><p>Use BFS or an iterative DFS with an explicit stack to avoid RecursionError.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Graphs"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How do you detect a cycle in a directed graph?</summary><div class="answer"><p>DFS with colours (white, grey, black); an edge to a grey node means a cycle. Or Kahn&#x27;s algorithm: if not all nodes are processed there is a cycle.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Graphs"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is topological sorting and when is it possible?</summary><div class="answer"><p>A linear ordering of nodes so that every directed edge u -&gt; v has u before v. Possible only for a directed acyclic graph (DAG).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Graphs"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Explain Kahn&#x27;s algorithm.</summary><div class="answer"><p>Compute in-degrees, queue all nodes with in-degree 0, repeatedly pop a node, output it and decrease the in-degree of its neighbours, queueing those that reach 0. If the output has fewer than V nodes there is a cycle.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Graphs"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How does Dijkstra&#x27;s algorithm work?</summary><div class="answer"><p>Start with dist[src] = 0 and a min-heap. Pop the nearest node, and relax its outgoing edges; push improved neighbours. O(E log V). Requires non-negative weights.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Graphs"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why does Dijkstra fail with negative edges?</summary><div class="answer"><p>A node&#x27;s distance is considered final when it is popped, but a later negative edge could create a shorter path, so results can be wrong.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Graphs"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is a minimum spanning tree and how does Kruskal find it?</summary><div class="answer"><p>A set of V - 1 edges connecting all nodes with minimum total weight. Kruskal sorts edges by weight and adds an edge if it connects two different components (Union-Find).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Graphs"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> BFS vs Dijkstra?</summary><div class="answer"><p>BFS finds shortest paths when all edges cost the same (1). Dijkstra handles different non-negative edge weights using a priority queue.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Graphs"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why does Dijkstra need non-negative weights?</summary><div class="answer"><p>It finalises a node&#x27;s distance when popped. A later negative edge could provide a cheaper path to it, breaking the assumption.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Build an adjacency list from an edge list for a weighted directed graph.</summary><div class="answer"><pre><code class="lang-py">from collections import defaultdict
+g = defaultdict(list)
+for u, v, w in edges:
+    g[u].append((v, w))</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> How many edges in a complete undirected graph on 5 nodes?</summary><div class="answer"><p>5 x 4 / 2 = 10.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How would you model course prerequisites?</summary><div class="answer"><p>A directed graph where an edge a -&gt; b means a must be taken before b; topological sort gives a valid order, a cycle means impossible.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why adjacency lists for most problems?</summary><div class="answer"><p>Real graphs are sparse; lists use O(V + E) memory and iterate neighbours quickly.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not always use a matrix?</summary><div class="answer"><p>It needs V^2 memory, which is huge for big sparse graphs.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why add an edge in both directions for undirected graphs?</summary><div class="answer"><p>Either endpoint must be able to reach the other.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why treat a grid as a graph?</summary><div class="answer"><p>Cells are nodes and neighbouring cells are edges, so graph algorithms apply without building lists.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does direction matter?</summary><div class="answer"><p>A directed edge a -&gt; b allows travel only one way, which changes reachability and cycles.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use a dict-of-lists graph when nodes are strings?</summary><div class="answer"><p>Dictionary keys can be any hashable value, so labels like city names work directly.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Count the edges of an undirected graph given an adjacency list.</summary><div class="answer"><p>sum(len(neighbours) for neighbours in graph.values()) // 2.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> How many edges can a simple directed graph with 4 nodes have at most?</summary><div class="answer"><p>12 = 4 x 3.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Find the shortest path (as a list of nodes) between two nodes in an unweighted graph.</summary><div class="answer"><pre><code class="lang-py">from collections import deque
+def shortest(graph, s, t):
+    parent, q = {s: None}, deque([s])
+    while q:
+        u = q.popleft()
+        if u == t:
+            path = []
+            while u is not None:
+                path.append(u)
+                u = parent[u]
+            return path[::-1]
+        for v in graph[u]:
+            if v not in parent:
+                parent[v] = u
+                q.append(v)
+    return []</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What is the BFS order of {0: [1, 2], 1: [3], 2: [3], 3: []} from 0?</summary><div class="answer"><p>0 1 2 3.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How would LinkedIn find your 2nd-degree connections?</summary><div class="answer"><p>BFS from you limited to depth 2.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does BFS find shortest paths?</summary><div class="answer"><p>It visits nodes in order of distance, so the first visit to a node uses the fewest edges.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why mark visited when enqueuing?</summary><div class="answer"><p>Otherwise the same node can be queued many times before it is processed.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use DFS for cycle detection?</summary><div class="answer"><p>DFS follows a path and can notice when it returns to a node on the current path.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why can DFS be risky in Python?</summary><div class="answer"><p>Deep recursion can exceed the recursion limit. Use an explicit stack.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use BFS for weighted shortest paths?</summary><div class="answer"><p>BFS counts edges, not weights. Use Dijkstra for non-negative weights.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does DFS use less memory on wide graphs?</summary><div class="answer"><p>It stores only the current path (depth), while BFS stores a whole frontier.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Iterative DFS.</summary><div class="answer"><pre><code class="lang-py">def dfs(graph, start):
+    seen, stack, order = set(), [start], []
+    while stack:
+        u = stack.pop()
+        if u in seen:
+            continue
+        seen.add(u)
+        order.append(u)
+        stack.extend(reversed(graph[u]))
+    return order</code></pre></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Find the size of the largest island in a binary grid.</summary><div class="answer"><p>Run DFS/BFS from every unvisited land cell, count cells in the component, and keep the maximum. O(rows x cols).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> Why can recursive flood fill crash on a 1000 x 1000 grid?</summary><div class="answer"><p>Recursion depth can reach a million, exceeding Python&#x27;s limit. Use iterative BFS/DFS.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How does a paint bucket tool avoid filling the whole image?</summary><div class="answer"><p>It spreads only to neighbours whose colour is within a tolerance of the start pixel, stopping at borders.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why mark cells visited?</summary><div class="answer"><p>Without it, the search revisits cells forever in connected regions.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why check bounds before accessing a cell?</summary><div class="answer"><p>Negative indexes wrap around in Python and silently read the wrong cell.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why start BFS with all rotten oranges?</summary><div class="answer"><p>They all rot neighbours simultaneously; one wave per minute models that exactly.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use union-find for dynamic islands?</summary><div class="answer"><p>It merges components as land is added without re-scanning the grid.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why use BFS rather than DFS for the shortest maze path?</summary><div class="answer"><p>BFS&#x27;s first arrival at the exit is guaranteed to be shortest.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does a negative index in Python cause a hidden grid bug?</summary><div class="answer"><p>grid[-1] is the last row, so a move &#x27;up&#x27; from row 0 silently reads the bottom row instead of raising an error.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Count enclosed regions (surrounded by walls) in a grid.</summary><div class="answer"><p>Flood fill from all border cells to mark reachable cells; remaining unvisited open cells form enclosed regions.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> How many neighbours does a corner cell have with 4-direction moves?</summary><div class="answer"><p>2.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Return a valid course order or an empty list if impossible.</summary><div class="answer"><p>Kahn&#x27;s algorithm: compute in-degrees, queue zero in-degree courses, pop and reduce neighbours; if the output length is less than the course count return [].</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> In Dijkstra, why might the same node be pushed to the heap more than once?</summary><div class="answer"><p>Each improvement pushes a new entry; stale larger entries are skipped when popped.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How does a navigation app pick the fastest route?</summary><div class="answer"><p>It models roads as a weighted graph (travel time) and runs Dijkstra or A* with heuristics, updating weights with live traffic.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does a cycle make topological order impossible?</summary><div class="answer"><p>A before B before A cannot be satisfied.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does Dijkstra pick the smallest known distance next?</summary><div class="answer"><p>With no negative edges, no other path can reach that node more cheaply.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why skip stale heap entries?</summary><div class="answer"><p>A node may be pushed several times with decreasing distances; the larger entries are outdated.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does Kruskal need Union-Find?</summary><div class="answer"><p>It must quickly check whether an edge joins two different components.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use Dijkstra with negative weights?</summary><div class="answer"><p>A later negative edge could shorten an already finalised node.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not use Floyd-Warshall for one source?</summary><div class="answer"><p>It computes all pairs in O(V^3); Dijkstra from one source is O((V + E) log V).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Find the cheapest price from city a to b with at most k stops (outline).</summary><div class="answer"><p>Modified Bellman-Ford with k + 1 rounds, or BFS/Dijkstra with state (node, stops).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Graphs"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> How do build tools use topological sort?</summary><div class="answer"><p>They order compilation steps so every file is built after the files it depends on, and report a cycle if dependencies loop.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Graphs"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> How do you compute in-degree and out-degree of each node?</summary><div class="answer"><p>Loop through the edges once; increment out[u] and in[v]. For undirected, degree = len(graph[node]).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Graphs"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> How do you find the number of connected components?</summary><div class="answer"><p>Run a traversal from each unvisited node and count the starts.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Graphs"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> How do you find all nodes within distance k of a start?</summary><div class="answer"><p>BFS with a distance counter and stop expanding at distance k.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Graphs"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> How would you do it if land cells are added one by one and you must report the island count after each?</summary><div class="answer"><p>Union-Find: when a cell becomes land, union it with land neighbours; track the component count.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Graphs"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> How do you also return the actual shortest path in Dijkstra?</summary><div class="answer"><p>Store parent[v] = u whenever you improve dist[v], then walk back from the target.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="m13-problems.html"><span class="dir">Previous</span><span>Problems 13: Heaps & Priority Queues</span></a>
+      <a class="next" href="m14-problems.html"><span class="dir">Next</span><span>Problems 14: Graphs</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

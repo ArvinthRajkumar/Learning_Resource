@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en" data-resource="diffusion-from-scratch" data-page="DX7">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Training lab: a tiny diffusion model, then training at scale | Diffusion from scratch</title>
+<meta name="description" content="A complete diffusion model small enough to train in pure Python and verify, then the engineering of real training: EMA, mixed precision with loss scaling, gradient clipping, noise offsets, min-SNR weighting, distributed training, compute budgets and debugging.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Diffusion from scratch</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part DX7</p>
+      <h1>Training lab: a tiny diffusion model, then training at scale</h1>
+      <p class="lede">The best way to trust the theory is to train something and check it against the exact answer. This part trains a real denoiser from scratch in plain Python, then covers what changes when the model has a billion parameters and the data a billion images.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~4 hours</span></div>
+    </div>
+
+    <section id="toy" data-track>
+      <h2>A diffusion model you can train and verify</h2>
+<h3>The setup</h3>
+<p>Data: one-dimensional numbers from <code>Normal(0, s^2)</code> with <code>s = 2</code>. Model: for every timestep, a single weight <code>w_t</code> with prediction <code>eps_hat = w_t x_t</code>. The training procedure is exactly the loop of the main guide: draw <code>x_0</code>, a random timestep and noise, form <code>x_t</code>, predict, take a gradient step on the squared error. Because the data is Gaussian, the <strong>optimal</strong> weight is known: <code>w_t* = sqrt(1 - ab_t) / (ab_t s^2 + 1 - ab_t)</code> (<a href="dx1-math.html">DX1</a>), so we can check what training finds.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx7-01.py">import math, random
+random.seed(0)
+T, s = 40, 2.0
+betas = [0.005 + (0.2 - 0.005) * i / (T - 1) for i in range(T)]
+alphas = [1 - b for b in betas]
+ab, p = [], 1.0
+for a in alphas:
+    p *= a
+    ab.append(p)
+
+w = [0.0] * T                              # the "network": one weight per timestep
+N = 200000
+for step in range(N):
+    lr = 0.01 * (1 - step / N) + 1e-4      # learning rate decays to nearly zero
+    t = random.randrange(T)                # random timestep, as in training
+    x0 = random.gauss(0, s)
+    e = random.gauss(0, 1)
+    xt = math.sqrt(ab[t]) * x0 + math.sqrt(1 - ab[t]) * e
+    pred = w[t] * xt
+    w[t] -= lr * 2 * (pred - e) * xt       # gradient of (pred - e)^2 with respect to w[t]
+
+best = [math.sqrt(1 - ab[t]) / (ab[t] * s * s + 1 - ab[t]) for t in range(T)]
+print("t    learned  optimal")
+for t in (0, 10, 20, 30, 39):
+    print("%2d   %.3f    %.3f" % (t, w[t], best[t]))
+
+def sample(weights):
+    x = random.gauss(0, 1)                 # start from pure noise
+    for t in reversed(range(T)):
+        eps = weights[t] * x
+        x = (x - betas[t] / math.sqrt(1 - ab[t]) * eps) / math.sqrt(alphas[t])
+        if t &gt; 0:
+            x += math.sqrt(betas[t]) * random.gauss(0, 1)
+    return x
+
+for name, weights in (("learned", w), ("optimal", best)):
+    xs = [sample(weights) for _ in range(6000)]
+    m = sum(xs) / len(xs)
+    sd = math.sqrt(sum((x - m) ** 2 for x in xs) / len(xs))
+    print("%s model: generated mean %.2f, std %.2f (data: mean 0.00, std %.2f)" % (name, m, sd, s))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>t    learned  optimal
+ 0   0.032    0.018
+10   0.190    0.170
+20   0.435    0.439
+30   0.786    0.791
+39   0.960    0.959
+learned model: generated mean -0.03, std 1.95 (data: mean 0.00, std 2.00)
+optimal model: generated mean -0.02, std 1.98 (data: mean 0.00, std 2.00)</code></pre>
+<p>After 200,000 stochastic steps the learned weights sit close to the exact optimum: gradient descent on the simple loss really does recover the noise predictor. The decaying learning rate matters: with a constant rate the weights keep jittering around the optimum because each step uses one noisy example.</p>
+<h3>Sample with the trained model</h3>
+<p>The second half of the program runs the DDPM sampler of the main guide with the <strong>learned</strong> weights. Pure noise with standard deviation 1 becomes samples with standard deviation close to 2 using forty small denoising steps, using nothing but the learned predictor and the schedule. The model using the exact optimal weights shows what a perfect predictor would give. That is the whole mechanism of diffusion, in miniature. Real models differ in having a vastly more expressive network, conditioning, and images instead of numbers.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx7-q01" data-topic="Training diffusion" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In the toy experiment, why can we check the learned weights?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The data is tiny <span class="q-why">Not the reason.</span></li>
+          <li data-key="B">For Gaussian data the optimal noise predictor is linear with a known coefficient <span class="q-why">Correct.</span></li>
+          <li data-key="C">The loss is zero <span class="q-why">It is not.</span></li>
+          <li data-key="D">The seeds are fixed <span class="q-why">Not the reason.</span></li>
+        </ul>
+        <div class="q-explain"><p>w_t* = sqrt(1 - ab) / (ab s^2 + 1 - ab) comes straight from the score of a Gaussian.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does the toy prove?</summary><div class="answer"><p>That SGD on the simple loss recovers the optimal noise predictor and that the sampler then reproduces the data distribution.</p></div></details>
+      </div>
+    </section>
+
+    <section id="techniques" data-track>
+      <h2>Techniques that make real training work</h2>
+<h3>EMA: why averaged weights sample better</h3>
+<p>The weights jump around with each noisy batch. An <strong>exponential moving average</strong> keeps a smooth copy: <code>ema = decay x ema + (1 - decay) x weights</code>. The simulation shows how averaging cancels noise.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx7-02.py">import random
+random.seed(1)
+true_w = 1.0
+w, ema, decay = 0.0, 0.0, 0.999
+errs_w, errs_ema = [], []
+for step in range(20000):
+    g = 2 * (w - true_w) + random.gauss(0, 3)      # noisy gradient of (w - true)^2
+    w -= 0.02 * g
+    ema = decay * ema + (1 - decay) * w
+    if step &gt; 5000:
+        errs_w.append(abs(w - true_w)); errs_ema.append(abs(ema - true_w))
+print("mean error of raw weight : %.3f" % (sum(errs_w) / len(errs_w)))
+print("mean error of EMA weight : %.3f" % (sum(errs_ema) / len(errs_ema)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>mean error of raw weight : 0.181
+mean error of EMA weight : 0.025</code></pre>
+<p>Typical decay values: 0.999 for small runs, 0.9999 for large ones (the effective window is about <code>1 / (1 - decay)</code> steps); warm up the decay at the start. Use EMA weights for sampling and evaluation, and keep both in checkpoints.</p>
+<h3>Mixed precision and loss scaling</h3>
+<p>Half-precision (fp16) numbers have a smaller range: values below about <code>3e-8</code> round to zero (the smallest positive fp16 number is about <code>6e-8</code>). Small gradients <strong>underflow</strong>. The fix is to multiply the loss by a large factor before the backward pass and divide the gradients afterwards. bf16 has the range of fp32 and needs no scaling, at lower precision.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx7-03.py">import struct
+def to_fp16(x):
+    return struct.unpack("e", struct.pack("e", x))[0]
+grad = 1e-8
+print("fp16 of tiny gradient     :", to_fp16(grad))
+scale = 1024.0
+scaled = to_fp16(grad * scale)
+print("fp16 of scaled gradient   :", scaled)
+print("recovered after unscaling :", scaled / scale)
+print("fp16 largest finite value :", to_fp16(65504.0), " overflow -&gt;", end=" ")
+try:
+    print(to_fp16(70000.0))
+except OverflowError:
+    print("OverflowError")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>fp16 of tiny gradient     : 0.0
+fp16 of scaled gradient   : 1.0251998901367188e-05
+recovered after unscaling : 1.0011717677116394e-08
+fp16 largest finite value : 65504.0  overflow -&gt; OverflowError</code></pre>
+<p>Dynamic loss scaling raises the factor until an overflow appears, then backs off. Keep <strong>master weights</strong> and optimiser states in fp32, and some operations (softmax, normalisation, losses) in fp32.</p>
+<h3>Gradient clipping</h3>
+<p>Clip the global gradient norm (typically 1.0): if the norm exceeds the threshold, scale all gradients down so the direction is kept and the step size is capped (<a href="d5-making-it-good.html">D5</a>). Log the gradient norm: spikes predict divergence.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx7-04.py">import math
+def clip(grads, max_norm):
+    norm = math.sqrt(sum(g * g for g in grads))
+    scale = min(1.0, max_norm / (norm + 1e-6))
+    return [g * scale for g in grads], norm
+g, n = clip([30.0, 40.0], 1.0)
+print("norm was", n, "-&gt; clipped gradient", [round(x, 3) for x in g])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>norm was 50.0 -&gt; clipped gradient [0.6, 0.8]</code></pre>
+<h3>Weighting, offset noise and schedule fixes</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Technique</th><th>Problem solved</th></tr></thead>
+<tbody>
+<tr><td><strong>Min-SNR-gamma</strong> loss weight</td><td>Conflicting gradients at different noise levels; faster convergence</td></tr><tr><td><strong>Zero terminal SNR</strong> (rescale the schedule so <code>alpha_bar_T = 0</code>) and v-prediction</td><td>The model never saw pure noise in training but starts from it in sampling; fixes washed-out and mid-grey images</td></tr><tr><td><strong>Noise offset</strong> (add a small per-channel constant to the noise)</td><td>Very dark or very bright images; a smoothed fix for the same mean-brightness problem</td></tr><tr><td><strong>Schedule shift with resolution</strong></td><td>Higher-resolution images need more noise for the same destruction of information</td></tr><tr><td><strong>Timestep sampling</strong> (logit-normal in SD3)</td><td>Spend more training on the noise levels that matter most</td></tr><tr><td><strong>Conditioning dropout</strong> (about 10 percent)</td><td>Enables classifier-free guidance</td></tr><tr><td><strong>Resolution and aspect bucketing</strong></td><td>Train on many sizes without cropping to squares</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx7-q02" data-topic="Training diffusion" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why use EMA weights for sampling?</p></div>
+        <ul class="q-options">
+          <li data-key="A">They are larger <span class="q-why">No.</span></li>
+          <li data-key="B">Averaging cancels the batch-to-batch jitter of the raw weights, giving smoother, better samples <span class="q-why">Correct.</span></li>
+          <li data-key="C">They need no GPU <span class="q-why">No.</span></li>
+          <li data-key="D">They are in fp16 <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The raw weights at any step are a noisy snapshot.</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx7-q03" data-topic="Training diffusion" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A gradient of 1e-8 becomes 0 in fp16. What fixes it?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Using a bigger batch <span class="q-why">No.</span></li>
+          <li data-key="B">Loss scaling: multiply the loss before backward and divide afterwards <span class="q-why">Correct.</span></li>
+          <li data-key="C">Using SGD <span class="q-why">No.</span></li>
+          <li data-key="D">Removing the optimiser <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Scaling moves small gradients into the representable range.</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx7-q04" data-topic="Training diffusion" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What problem does zero terminal SNR fix?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Slow training <span class="q-why">No.</span></li>
+          <li data-key="B">A train-test mismatch: sampling starts from pure noise but the schedule never fully reached it, giving washed-out images <span class="q-why">Correct.</span></li>
+          <li data-key="C">Memory use <span class="q-why">No.</span></li>
+          <li data-key="D">Tokenization <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The model must have seen true pure noise at t = T.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>EMA decay and effective window?</summary><div class="answer"><p>Decay 0.9999 averages over roughly 10,000 steps (1 / (1 - decay)).</p></div></details>
+        <details class="recall"><summary>bf16 versus fp16?</summary><div class="answer"><p>bf16 has fp32's range so it needs no loss scaling but has lower precision; fp16 needs scaling.</p></div></details>
+      </div>
+    </section>
+
+    <section id="scale" data-track>
+      <h2>Scale and systems</h2>
+<h3>Parallelism</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Strategy</th><th>What is split</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>Data parallel (DDP)</td><td>Batches across GPUs; gradients all-reduced</td><td>Default; each GPU holds a full model</td></tr><tr><td>Sharded data parallel (FSDP, ZeRO)</td><td>Parameters, gradients and optimiser states across GPUs</td><td>Fits larger models (<a href="../ai-ml-engineer-prep/f3-llm-training-scaling.html">AI/ML guide</a>)</td></tr><tr><td>Tensor and pipeline parallel</td><td>Layers or matrices across GPUs</td><td>Very large transformers</td></tr><tr><td>Activation checkpointing</td><td>Recompute activations in backward</td><td>Trades about 30 percent more compute for much less memory</td></tr><tr><td>Gradient accumulation</td><td>Several micro-batches per update</td><td>Larger effective batch</td></tr>
+</tbody>
+</table>
+</div>
+<h3>A compute estimate</h3>
+<p>Training FLOPs per image are about <code>6 x parameters x tokens</code> for transformers (the main-guide U-Net is lighter but the same idea). The estimate below uses a transformer-style rule of thumb.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/dx7-05.py">params = 2e9                  # a 2-billion-parameter denoiser
+tokens_per_image = 1024       # latent patches
+images = 1e9                  # images seen during training (e.g. many epochs over a dataset)
+flops = 6 * params * tokens_per_image * images
+a100 = 312e12 * 0.4           # about 40 percent utilisation of an A100 in bf16
+gpu_seconds = flops / a100
+print("total FLOPs: %.2e" % flops)
+print("A100 GPU-days: %.0f" % (gpu_seconds / 86400))
+print("on 512 GPUs: %.1f days" % (gpu_seconds / 86400 / 512))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>total FLOPs: 1.23e+22
+A100 GPU-days: 1140
+on 512 GPUs: 2.2 days</code></pre>
+<p>That is about a thousand GPU-days of A100 for a mid-sized model, which is why most practitioners <strong>fine-tune</strong> (<a href="dx4-control.html">DX4</a>) rather than train from scratch. The main-guide 4 GB model is millions of times smaller.</p>
+<h3>Data loading</h3>
+<p>Storing images as thousands of small files is slow. Use sharded formats (WebDataset tars, Parquet, Mosaic streaming), <strong>precompute latents and text embeddings</strong> once (the VAE and text encoder are frozen), prefetch with several workers, and monitor GPU utilisation. A starved GPU is the most common waste.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx7-q05" data-topic="Training diffusion" data-type="numeric" data-answer="128" data-tol="0">
+        <div class="q-stem"><p>Gradient accumulation with micro-batch 8 and 16 accumulation steps gives an effective batch of?</p></div>
+        <div class="q-explain"><p>8 x 16 = 128.</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx7-q06" data-topic="Training diffusion" data-type="multi" data-answer="A,B,C">
+        <div class="q-stem"><p>Which save memory during training? Select all.</p></div>
+        <ul class="q-options">
+          <li data-key="A">Activation checkpointing</li>
+          <li data-key="B">FSDP / ZeRO sharding</li>
+          <li data-key="C">Mixed precision</li>
+          <li data-key="D">Larger batch without accumulation</li>
+        </ul>
+        <div class="q-explain"><p>A larger batch uses more memory unless gradient accumulation splits it.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why precompute latents?</summary><div class="answer"><p>The VAE and text encoder are frozen, so encoding once saves compute every epoch.</p></div></details>
+      </div>
+    </section>
+
+    <section id="debug" data-track>
+      <h2>Debugging checklist</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Symptom</th><th>Likely cause and check</th></tr></thead>
+<tbody>
+<tr><td>Loss flat from the start</td><td>Learning rate too low or zero; data not normalised to [-1, 1]; noise not being added; timestep not passed to the network</td></tr><tr><td>Loss decreases, samples are noise</td><td>Sampling bug (wrong coefficient, timestep off by one, missing noise term); using raw instead of EMA weights; too few steps</td></tr><tr><td>Samples are washed-out or grey</td><td>Schedule does not reach zero SNR; noise offset missing; wrong normalisation in sampling</td></tr><tr><td>Colours shifted</td><td>VAE scaling factor wrong; BGR versus RGB; data range mismatch</td></tr><tr><td>Blurry samples</td><td>Too little training; guidance too low; wrong loss weighting; small capacity</td></tr><tr><td>Repeating images</td><td>Overfitting or duplicates in data; EMA too slow</td></tr><tr><td>Loss spikes or nan</td><td>Learning rate too high; fp16 overflow; no gradient clipping; bad batch (corrupt image)</td></tr><tr><td>Works at 32 px, fails at 256 px</td><td>Schedule needs shifting; attention memory; more capacity needed</td></tr><tr><td>Sample quality varies a lot between checkpoints</td><td>Evaluate EMA weights, fixed seeds and a fixed prompt set</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Process</strong>: overfit a tiny dataset (8 images) first. If the model cannot memorise 8 images, the pipeline is broken. Add data and capacity only after that works. Keep fixed seeds and a <strong>fixed grid of validation prompts</strong> so you can compare checkpoints visually and with metrics (<a href="dx5-evaluation.html">DX5</a>).</p>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Most diffusion bugs are in the <strong>data and sampling code</strong>, not the network. Verify the data range, the noise schedule indexing and the sampling formula with a toy case like the one in this part before blaming the architecture.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="dx-dx7-q07" data-topic="Training diffusion" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Loss goes down but samples are noise. What do you check first?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The GPU model <span class="q-why">No.</span></li>
+          <li data-key="B">The sampling code, timestep indexing, and whether you use EMA weights <span class="q-why">Correct.</span></li>
+          <li data-key="C">The monitor <span class="q-why">No.</span></li>
+          <li data-key="D">The dataset name <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>A falling loss shows the denoiser learns; the fault is usually in how it is used.</p></div>
+      </div>
+      <div class="quiz" data-qid="dx-dx7-q08" data-topic="Training diffusion" data-type="fill" data-answer="pipeline|code|setup">
+        <div class="q-stem"><p>If a model cannot memorise 8 images, the training <input class="q-input" aria-label="blank 1"> is broken.</p></div>
+        <div class="q-explain"><p>Overfit a tiny set first to validate everything.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Fastest sanity check for a new pipeline?</summary><div class="answer"><p>Overfit eight images; if that fails the bug is in data, schedule or loop.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Training diffusion</h2>
+      <p class="muted">12 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Training diffusion">
+<details class="recall iq" data-level="basic" data-topic="Training diffusion"><summary><span class="tag ok">Basic</span> What is EMA and why do diffusion models use it?</summary><div class="answer"><p>An exponential moving average of the weights smooths batch noise; sampling with EMA weights produces visibly better and more stable images.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Training diffusion"><summary><span class="tag ok">Basic</span> What does gradient clipping do?</summary><div class="answer"><p>It caps the global gradient norm so a single bad batch cannot cause a huge step, preventing loss spikes and nan.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Training diffusion"><summary><span class="tag warn">Medium</span> Why does fp16 training need loss scaling and bf16 does not?</summary><div class="answer"><p>fp16 has a small exponent range so tiny gradients underflow to zero; scaling the loss moves them into range. bf16 has fp32&#x27;s range with lower precision.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Training diffusion"><summary><span class="tag warn">Medium</span> How would you debug &#x27;loss decreases but samples are noise&#x27;?</summary><div class="answer"><p>Check sampling code (coefficients, timestep indexing, noise at the last step), use EMA weights, verify data normalisation matches between train and sample, and run a toy overfit test.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Training diffusion"><summary><span class="tag warn">Medium</span> What is the quickest sanity test for a new diffusion pipeline?</summary><div class="answer"><p>Overfit eight images. If the model cannot memorise them, the data, schedule or training loop is broken.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Training diffusion"><summary><span class="tag warn">Medium</span> What is min-SNR weighting?</summary><div class="answer"><p>A loss weighting that caps the weight at high SNR (min(SNR, gamma)), reducing conflicting gradient directions across timesteps and speeding convergence.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Training diffusion"><summary><span class="tag warn">Medium</span> What is noise offset?</summary><div class="answer"><p>Adding a small per-channel constant to the noise so the model learns to change the mean brightness, fixing the difficulty with very dark or very bright images.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Training diffusion"><summary><span class="tag bad">Advanced</span> How does resolution change the best noise schedule?</summary><div class="answer"><p>Higher resolution images keep recognisable structure at the same noise level for longer, so the schedule is shifted toward more noise (or the timestep distribution is shifted) at higher resolutions.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Training diffusion"><summary><span class="tag bad">Advanced</span> What parallelism strategies exist for big diffusion models?</summary><div class="answer"><p>DDP for data parallelism, FSDP or ZeRO to shard states, tensor and pipeline parallelism for huge transformers, activation checkpointing and gradient accumulation.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Training diffusion"><summary><span class="tag bad">Advanced</span> Why precompute latents and text embeddings?</summary><div class="answer"><p>The VAE and text encoders are frozen, so encoding once removes their cost from every epoch and frees GPU memory.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Training diffusion"><summary><span class="tag bad">Advanced</span> Estimate training cost for a 2B parameter denoiser.</summary><div class="answer"><p>About 6 x parameters x tokens x images FLOPs; for 2e9 parameters, 1,024 tokens and 1e9 images that is 1.2e22 FLOPs, roughly a thousand A100 GPU-days at realistic utilisation.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Training diffusion"><summary><span class="tag bad">Advanced</span> What is zero terminal SNR?</summary><div class="answer"><p>Rescaling the schedule so alpha_bar_T = 0 exactly, typically with v-prediction, so the model trains on the pure noise it will start from at sampling time.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="dx6-beyond-images.html"><span class="dir">Previous</span><span>DX6 Beyond images: video, audio, 3D, science, robotics and discrete diffusion</span></a>
+      <a class="next" href="index.html"><span class="dir">Next</span><span>Hub</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="X5">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Number theory, combinatorics and probability for interviews | DSA Master Guide</title>
+<meta name="description" content="Primes and sieves, gcd and modular arithmetic, fast exponentiation, modular inverses, the Chinese remainder theorem, counting with nCr modulo a prime, matrix exponentiation and expected value, all checked by brute force.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part X5</p>
+      <h1>Number theory, combinatorics and probability for interviews</h1>
+      <p class="lede">Many interview and contest problems hide a little mathematics: count something modulo 10^9+7, find a gcd, test primality or compute an expectation. This part collects the standard toolbox with tested code.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="gcd" data-track>
+      <h2>Divisibility, gcd and primes</h2>
+<p><strong>Euclid's algorithm</strong>: <code>gcd(a, b) = gcd(b, a mod b)</code>, in <code>O(log min(a, b))</code>. Then <code>lcm(a, b) = a / gcd(a, b) * b</code>. The <strong>extended</strong> version also returns <code>x, y</code> with <code>a x + b y = gcd(a, b)</code> (Bezout), the basis of modular inverses.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x5-01.py">import math, random
+random.seed(0)
+def gcd(a, b):
+    while b: a, b = b, a % b
+    return a
+def ext_gcd(a, b):
+    if b == 0: return a, 1, 0
+    g, x, y = ext_gcd(b, a % b)
+    return g, y, x - (a // b) * y
+for _ in range(500):
+    a, b = random.randint(1, 10**6), random.randint(1, 10**6)
+    assert gcd(a, b) == math.gcd(a, b)
+    g, x, y = ext_gcd(a, b)
+    assert a * x + b * y == g
+print("gcd and Bezout identity verified; ext_gcd(240, 46) =", ext_gcd(240, 46))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>gcd and Bezout identity verified; ext_gcd(240, 46) = (2, -9, 47)</code></pre>
+<h3>Primality and factorisation</h3>
+<p>Trial division up to <code>sqrt(n)</code> is <code>O(sqrt n)</code>. For many queries use a <strong>sieve</strong>; for huge numbers use <strong>Miller-Rabin</strong>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x5-02.py">def is_prime(n):
+    if n &lt; 2: return False
+    i = 2
+    while i * i &lt;= n:
+        if n % i == 0: return False
+        i += 1
+    return True
+def factorize(n):
+    f, d = {}, 2
+    while d * d &lt;= n:
+        while n % d == 0:
+            f[d] = f.get(d, 0) + 1
+            n //= d
+        d += 1
+    if n &gt; 1: f[n] = f.get(n, 0) + 1
+    return f
+print([p for p in range(30) if is_prime(p)])
+print(factorize(360), factorize(97), factorize(1001))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[2, 3, 5, 7, 11, 13, 17, 19, 23, 29]
+{2: 3, 3: 2, 5: 1} {97: 1} {7: 1, 11: 1, 13: 1}</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x5-q01" data-topic="Math and number theory" data-type="numeric" data-answer="12" data-tol="0">
+        <div class="q-stem"><p>What is gcd(84, 36)?</p></div>
+        <div class="q-explain"><p>84 = 2 x 36 + 12; 36 = 3 x 12.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does extended Euclid give you?</summary><div class="answer"><p>Integers x and y with a x + b y = gcd(a, b), from which modular inverses follow.</p></div></details>
+      </div>
+    </section>
+
+    <section id="sieve" data-track>
+      <h2>The sieve of Eratosthenes</h2>
+<p>Cross off multiples of each prime starting at <code>p^2</code>. Time <code>O(n log log n)</code>, memory <code>O(n)</code>. A <strong>smallest-prime-factor</strong> sieve then factorises any <code>x &lt;= n</code> in <code>O(log x)</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x5-03.py">def sieve(n):
+    is_p = [True] * (n + 1)
+    is_p[0:2] = [False, False]
+    for i in range(2, int(n ** 0.5) + 1):
+        if is_p[i]:
+            for j in range(i * i, n + 1, i): is_p[j] = False
+    return [i for i, v in enumerate(is_p) if v]
+def spf_sieve(n):
+    spf = list(range(n + 1))
+    for i in range(2, int(n ** 0.5) + 1):
+        if spf[i] == i:
+            for j in range(i * i, n + 1, i):
+                if spf[j] == j: spf[j] = i
+    return spf
+def fast_factor(x, spf):
+    out = {}
+    while x &gt; 1:
+        out[spf[x]] = out.get(spf[x], 0) + 1
+        x //= spf[x]
+    return out
+def is_prime(n):
+    if n &lt; 2: return False
+    return all(n % d for d in range(2, int(n ** 0.5) + 1))
+P = sieve(1000)
+assert P == [i for i in range(1001) if is_prime(i)]
+spf = spf_sieve(1000)
+print(len(P), "primes up to 1000; 840 =", fast_factor(840, spf), "; 997 =", fast_factor(997, spf))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>168 primes up to 1000; 840 = {2: 3, 3: 1, 5: 1, 7: 1} ; 997 = {997: 1}</code></pre>
+<div class="callout tip"><span class="callout-title">Useful counts</span><p>There are 168 primes below 1000 and 78,498 below a million. The number of divisors of <code>n = prod p^e</code> is <code>prod (e + 1)</code>; the sum of divisors is <code>prod (p^(e+1) - 1)/(p - 1)</code>. A segmented sieve handles ranges like <code>[10^12, 10^12 + 10^6]</code>.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x5-q02" data-topic="Math and number theory" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the time complexity of the sieve of Eratosthenes up to n?</p></div>
+        <ul class="q-options">
+          <li data-key="A">O(n^2) <span class="q-why">No.</span></li>
+          <li data-key="B">O(n log log n) <span class="q-why">Correct.</span></li>
+          <li data-key="C">O(n sqrt n) <span class="q-why">That is trial division for all.</span></li>
+          <li data-key="D">O(log n) <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Each composite is crossed off a few times, summing to n log log n.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why start crossing out from p squared?</summary><div class="answer"><p>Smaller multiples of p have a smaller prime factor and are already crossed off.</p></div></details>
+      </div>
+    </section>
+
+    <section id="modular" data-track>
+      <h2>Modular arithmetic</h2>
+<p>Contest and interview answers are often requested "modulo 10^9 + 7" (a prime). Rules: addition, subtraction and multiplication distribute over <code>mod</code>; <strong>division does not</strong>, you multiply by a modular inverse. Python integers never overflow, but in C++ or Java multiply in 64 bits and reduce each step.</p>
+<h3>Fast exponentiation</h3>
+<p><code>a^b mod m</code> in <code>O(log b)</code> by squaring. In Python use the built-in <code>pow(a, b, m)</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x5-04.py">def power(a, b, m):
+    result, a = 1, a % m
+    while b:
+        if b &amp; 1: result = result * a % m
+        a = a * a % m
+        b &gt;&gt;= 1
+    return result
+assert all(power(a, b, 1000003) == pow(a, b, 1000003) for a in range(1, 40) for b in range(0, 60))
+print(power(2, 10, 1000), power(3, 200, 10**9 + 7), pow(3, 200, 10**9 + 7))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>24 136318165 136318165</code></pre>
+<h3>Modular inverse</h3>
+<p><code>a^(-1) mod m</code> exists iff <code>gcd(a, m) = 1</code>. For prime <code>m</code>, <strong>Fermat</strong>: <code>a^(m-2) mod m</code>. For any coprime <code>m</code>, use extended Euclid (Python 3.8+: <code>pow(a, -1, m)</code>).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x5-05.py">MOD = 10**9 + 7
+inv = lambda a: pow(a, MOD - 2, MOD)
+for a in [2, 3, 12345, 10**9]:
+    assert a * inv(a) % MOD == 1 and pow(a, -1, MOD) == inv(a)
+print("inverse of 2 mod 1e9+7:", inv(2), "| 7/3 mod p =", 7 * inv(3) % MOD)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>inverse of 2 mod 1e9+7: 500000004 | 7/3 mod p = 333333338</code></pre>
+<h3>Chinese remainder theorem</h3>
+<p>If moduli are pairwise coprime, the system <code>x = r_i (mod m_i)</code> has a unique solution modulo the product.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x5-06.py">def crt(rems, mods):
+    x, M = 0, 1
+    for r, m in zip(rems, mods):
+        # solve x + M*t = r (mod m)
+        t = ((r - x) * pow(M, -1, m)) % m
+        x += M * t
+        M *= m
+    return x % M, M
+x, M = crt([2, 3, 2], [3, 5, 7])
+print("x =", x, "mod", M, "| check:", x % 3, x % 5, x % 7)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>x = 23 mod 105 | check: 2 3 2</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x5-q03" data-topic="Math and number theory" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you compute a / b modulo a prime p?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Integer-divide a by b first <span class="q-why">Wrong modulo p.</span></li>
+          <li data-key="B">Multiply a by b^(p-2) mod p (Fermat inverse) <span class="q-why">Correct.</span></li>
+          <li data-key="C">Subtract <span class="q-why">No.</span></li>
+          <li data-key="D">Use float division <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Division is multiplication by the modular inverse, which exists when gcd(b, p) = 1.</p></div>
+      </div>
+      <div class="quiz" data-qid="xd-x5-q04" data-topic="Math and number theory" data-type="numeric" data-answer="24" data-tol="0">
+        <div class="q-stem"><p>What is 2^10 mod 1000?</p></div>
+        <div class="q-explain"><p>1024 mod 1000 = 24.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>When does a modular inverse exist?</summary><div class="answer"><p>When gcd(a, m) = 1; for a prime modulus every non-zero a has one.</p></div></details>
+      </div>
+    </section>
+
+    <section id="comb" data-track>
+      <h2>Counting: permutations and combinations</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Quantity</th><th>Formula</th></tr></thead>
+<tbody>
+<tr><td>Permutations of n</td><td>n!</td></tr><tr><td>Arrangements of k from n</td><td>n! / (n - k)!</td></tr><tr><td>Combinations nCk</td><td>n! / (k! (n - k)!)</td></tr><tr><td>With repetition (multiset of size k from n types)</td><td>C(n + k - 1, k)</td></tr><tr><td>Derangements</td><td>D(n) = (n - 1)(D(n-1) + D(n-2))</td></tr><tr><td>Catalan number</td><td>C(2n, n) / (n + 1)</td></tr><tr><td>Stars and bars (non-negative solutions to x1+...+xk = n)</td><td>C(n + k - 1, k - 1)</td></tr>
+</tbody>
+</table>
+</div>
+<p>For large <code>n</code>, precompute factorials and inverse factorials modulo a prime to answer <code>nCr</code> in <code>O(1)</code>. For many small queries, Pascal's triangle works. Inclusion-exclusion counts unions: <code>|A u B| = |A| + |B| - |A n B|</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x5-07.py">import math, itertools
+MOD = 10**9 + 7
+N = 2000
+fact = [1] * (N + 1)
+for i in range(1, N + 1): fact[i] = fact[i - 1] * i % MOD
+ifact = [pow(f, MOD - 2, MOD) for f in fact]
+def ncr(n, r):
+    return 0 if r &lt; 0 or r &gt; n else fact[n] * ifact[r] % MOD * ifact[n - r] % MOD
+assert all(ncr(n, r) == math.comb(n, r) % MOD for n in range(0, 60) for r in range(0, n + 1))
+# derangements by recurrence vs brute force
+D = [1, 0]
+for n in range(2, 8): D.append((n - 1) * (D[-1] + D[-2]))
+brute = lambda n: sum(all(p[i] != i for i in range(n)) for p in itertools.permutations(range(n)))
+assert all(D[n] == brute(n) for n in range(0, 8))
+catalan = lambda n: math.comb(2 * n, n) // (n + 1)
+print("nCr table verified; C(1000,500) mod p =", ncr(1000, 500), "| derangements:", D, "| Catalan:", [catalan(n) for n in range(8)])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>nCr table verified; C(1000,500) mod p = 159835829 | derangements: [1, 0, 1, 2, 9, 44, 265, 1854] | Catalan: [1, 1, 2, 5, 14, 42, 132, 429]</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x5-q05" data-topic="Math and number theory" data-type="numeric" data-answer="35" data-tol="0">
+        <div class="q-stem"><p>How many ways to choose 3 items from 7? (7C3)</p></div>
+        <div class="q-explain"><p>7 x 6 x 5 / 6 = 35.</p></div>
+      </div>
+      <div class="quiz" data-qid="xd-x5-q06" data-topic="Math and number theory" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How many derangements does a set of 4 have?</p></div>
+        <ul class="q-options">
+          <li data-key="A">6 <span class="q-why">No.</span></li>
+          <li data-key="B">9 <span class="q-why">Correct: D4 = 3 (D3 + D2) = 3 (2 + 1).</span></li>
+          <li data-key="C">12 <span class="q-why">No.</span></li>
+          <li data-key="D">24 <span class="q-why">That is 4!.</span></li>
+        </ul>
+        <div class="q-explain"><p>Use D(n) = (n-1)(D(n-1) + D(n-2)).</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you answer many nCr mod p queries quickly?</summary><div class="answer"><p>Precompute factorials and inverse factorials, then nCr = fact[n] * ifact[r] * ifact[n-r] mod p.</p></div></details>
+      </div>
+    </section>
+
+    <section id="matrix" data-track>
+      <h2>Fast linear recurrences: matrix exponentiation</h2>
+<p>A linear recurrence of order <code>k</code> is a <code>k x k</code> matrix power, so <code>F(n)</code> takes <code>O(k^3 log n)</code>. Fibonacci: <code>[[1,1],[1,0]]^n</code>. The same idea counts walks of length <code>n</code> in a graph (powers of the adjacency matrix).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x5-08.py">MOD = 10**9 + 7
+def mat_mul(A, B):
+    return [[sum(A[i][k] * B[k][j] for k in range(len(B))) % MOD for j in range(len(B[0]))] for i in range(len(A))]
+def mat_pow(A, p):
+    n = len(A)
+    R = [[int(i == j) for j in range(n)] for i in range(n)]
+    while p:
+        if p &amp; 1: R = mat_mul(R, A)
+        A = mat_mul(A, A)
+        p &gt;&gt;= 1
+    return R
+def fib(n): return mat_pow([[1, 1], [1, 0]], n)[0][1]
+a, b = 0, 1
+for _ in range(90): a, b = b, a + b
+assert fib(90) == a % MOD
+# walks of length 3 on a triangle graph
+tri = [[0, 1, 1], [1, 0, 1], [1, 1, 0]]
+print("fib(90) mod p =", fib(90), "| fib(10**18) mod p =", fib(10**18), "| closed walks of length 3 per vertex:", [mat_pow(tri, 3)[i][i] for i in range(3)])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>fib(90) mod p = 210345902 | fib(10**18) mod p = 209783453 | closed walks of length 3 per vertex: [2, 2, 2]</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x5-q07" data-topic="Math and number theory" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Computing F(n) with matrix exponentiation costs:</p></div>
+        <ul class="q-options">
+          <li data-key="A">O(n) <span class="q-why">That is iteration.</span></li>
+          <li data-key="B">O(log n) for a fixed-size matrix <span class="q-why">Correct.</span></li>
+          <li data-key="C">O(2^n) <span class="q-why">No.</span></li>
+          <li data-key="D">O(n^2) <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Repeated squaring needs about log n multiplications of 2 x 2 matrices.</p></div>
+      </div>
+    </section>
+
+    <section id="prob" data-track>
+      <h2>Probability and expected value</h2>
+<ul><li><strong>Linearity of expectation</strong>: <code>E[X + Y] = E[X] + E[Y]</code> even when dependent. Split a count into indicator variables. Expected fixed points of a random permutation = n * (1/n) = 1.</li><li><strong>Conditional probability</strong> and <strong>Bayes</strong>: <code>P(A|B) = P(A n B) / P(B)</code>.</li><li><strong>Geometric trials</strong>: waiting for a success of probability <code>p</code> takes <code>1/p</code> attempts on average.</li><li><strong>Reservoir sampling</strong> picks a uniform random item from a stream of unknown length in one pass.</li><li><strong>Random permutation/shuffle</strong>: Fisher-Yates, <code>O(n)</code>; naive "swap with random index" is biased.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/x5-09.py">import random, itertools
+from fractions import Fraction
+random.seed(1)
+# expected number of fixed points of a random permutation, exactly
+n = 6
+total = sum(sum(p[i] == i for i in range(n)) for p in itertools.permutations(range(n)))
+print("E[fixed points] =", Fraction(total, 720))
+# reservoir sampling is uniform
+counts = [0] * 5
+for _ in range(50000):
+    pick = None
+    for i, x in enumerate(range(5)):
+        if random.randrange(i + 1) == 0: pick = x
+    counts[pick] += 1
+print("reservoir counts (each near 10000):", counts)
+# coupon collector expectation for n = 5: n * H_n
+print("coupon collector n=5:", float(sum(Fraction(5, k) for k in range(1, 6))))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>E[fixed points] = 1
+reservoir counts (each near 10000): [10026, 9875, 10016, 10048, 10035]
+coupon collector n=5: 11.416666666666666</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x5-q08" data-topic="Math and number theory" data-type="numeric" data-answer="6" data-tol="0">
+        <div class="q-stem"><p>Expected number of rolls of a fair die to see the first six?</p></div>
+        <div class="q-explain"><p>Geometric with p = 1/6 has mean 6.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why is linearity of expectation so powerful?</summary><div class="answer"><p>It needs no independence, so you can split a count into indicators and add their probabilities.</p></div></details>
+      </div>
+    </section>
+
+    <section id="bits" data-track>
+      <h2>Bit tricks and parity</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Trick</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>x &amp; (x - 1)</code></td><td>Clear the lowest set bit; zero iff power of two (or 0)</td></tr><tr><td><code>x &amp; -x</code></td><td>Isolate the lowest set bit</td></tr><tr><td><code>x ^ x = 0</code>, <code>x ^ 0 = x</code></td><td>Find the single non-duplicated element by XOR</td></tr><tr><td><code>bin(x).count("1")</code></td><td>Population count (<code>int.bit_count()</code> in 3.10+)</td></tr><tr><td><code>(1 &lt;&lt; k) - 1</code></td><td>Mask of k ones</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Reduce every step modulo the prime, use <code>pow(a, p-2, p)</code> for division, precompute factorials for combinations, and turn recurrences into matrix powers. Verify formulas on tiny inputs by brute force before trusting them on large ones.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x5-q09" data-topic="Math and number theory" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does x &amp; (x - 1) do?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Sets the lowest bit <span class="q-why">No.</span></li>
+          <li data-key="B">Clears the lowest set bit <span class="q-why">Correct.</span></li>
+          <li data-key="C">Flips all bits <span class="q-why">No.</span></li>
+          <li data-key="D">Negates x <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It is zero iff x is a power of two.</p></div>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Math and number theory</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Math and number theory">
+<details class="recall iq" data-level="basic" data-topic="Math and number theory"><summary><span class="tag ok">Basic</span> How do you compute gcd and lcm?</summary><div class="answer"><p>Euclid: gcd(a, b) = gcd(b, a mod b), O(log). lcm = a / gcd * b, dividing first to limit overflow.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Math and number theory"><summary><span class="tag ok">Basic</span> How do you test primality quickly?</summary><div class="answer"><p>Trial division to sqrt(n) for small n, a sieve for many queries, and Miller-Rabin for very large numbers.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Math and number theory"><summary><span class="tag ok">Basic</span> How do you check if n is a power of two?</summary><div class="answer"><p>n &gt; 0 and n &amp; (n - 1) == 0.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Math and number theory"><summary><span class="tag warn">Medium</span> Why use 10^9 + 7 as a modulus?</summary><div class="answer"><p>It is a prime below 2^30, so products fit in 64 bits and every non-zero residue has a modular inverse by Fermat&#x27;s little theorem.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Math and number theory"><summary><span class="tag warn">Medium</span> How do you compute a^b mod m efficiently?</summary><div class="answer"><p>Binary exponentiation: square the base and multiply when the bit is set, O(log b). Python: pow(a, b, m).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Math and number theory"><summary><span class="tag warn">Medium</span> How do you divide modulo a prime?</summary><div class="answer"><p>Multiply by the modular inverse, b^(p - 2) mod p, or pow(b, -1, p) in Python 3.8+.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Math and number theory"><summary><span class="tag warn">Medium</span> How do you compute nCr mod p for many queries?</summary><div class="answer"><p>Precompute factorials and inverse factorials up to n, then answer in O(1).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Math and number theory"><summary><span class="tag warn">Medium</span> Explain the sieve of Eratosthenes.</summary><div class="answer"><p>Mark multiples of each prime starting from p^2 as composite. O(n log log n) time and O(n) memory.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Math and number theory"><summary><span class="tag warn">Medium</span> What is the expected number of fixed points of a random permutation?</summary><div class="answer"><p>1, by linearity of expectation: n indicators each with probability 1/n.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Math and number theory"><summary><span class="tag bad">Advanced</span> State the Chinese remainder theorem.</summary><div class="answer"><p>For pairwise coprime moduli, x = r_i (mod m_i) has a unique solution modulo the product, found by combining congruences with modular inverses.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Math and number theory"><summary><span class="tag bad">Advanced</span> How do you compute Fibonacci(n) for huge n?</summary><div class="answer"><p>Matrix exponentiation of [[1,1],[1,0]] in O(log n) 2x2 multiplications, or fast doubling.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Math and number theory"><summary><span class="tag bad">Advanced</span> What is Euler&#x27;s totient and its use?</summary><div class="answer"><p>phi(n) counts integers up to n coprime to n. Euler&#x27;s theorem gives a^phi(n) = 1 (mod n) for coprime a, used for inverses and reducing exponents.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Math and number theory"><summary><span class="tag bad">Advanced</span> How do you uniformly sample one item from a stream of unknown length?</summary><div class="answer"><p>Reservoir sampling: replace the current pick with the i-th item with probability 1/i.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Math and number theory"><summary><span class="tag bad">Advanced</span> Why is a naive shuffle that swaps each element with a random index biased?</summary><div class="answer"><p>It generates n^n equally likely outcomes, which cannot divide evenly into n! permutations. Fisher-Yates swaps with a random later index and is uniform.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="x4-strings.html"><span class="dir">Previous</span><span>X4 String algorithms: KMP, Z, Rabin-Karp, Manacher, tries and suffix structures</span></a>
+      <a class="next" href="x6-complexity.html"><span class="dir">Next</span><span>X6 Complexity theory: amortised analysis, recurrences, NP-completeness and lower bounds</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

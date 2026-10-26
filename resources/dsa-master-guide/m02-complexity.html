@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="M02">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>M2 Time & Space Complexity | DSA Master Guide</title>
+<meta name="description" content="How to measure whether a solution is fast and small enough. You will use this on every single problem.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<link rel="stylesheet" href="viz.css">
+<script src="viz.js" defer></script>
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Module 2</p>
+      <h1>Time &amp; Space Complexity</h1>
+      <p class="lede">How to measure whether a solution is fast and small enough. You will use this on every single problem. Topics in this module: Big-O, Big-Omega, Big-Theta and common growth rates; analysing loops, recursion and choosing an algorithm.</p>
+      <div class="meta"><span class="tag ok">Essential</span><span class="tag">2 topics</span><span class="tag">0 problems</span><span class="tag">38 interview questions</span></div>
+    </div>
+
+    <section id="why-this-module" data-track>
+      <h2>Start from scratch: why this module exists</h2>
+      <p>Early programmers noticed that a program fast on 100 items could collapse on 1,000,000. Measuring seconds does not help because machines differ. Complexity analysis was invented to compare algorithms by how their cost GROWS, which is stable across machines and predictable before you write the code.</p>
+      <p>In a timed test, complexity is your calculator: it tells you in ten seconds whether an idea can pass the largest input. It is also how interviewers judge whether you understand why a solution is good.</p>
+      <p><strong>Who needs it:</strong> Every engineer who ships code that must scale: backend, data, game and mobile developers; every competitive-programming contestant.</p>
+      <p><strong>Before you start:</strong> Module 1 (loops and functions).</p>
+      <h3>After this module you can</h3>
+      <ul><li>Compute time and space complexity of loops, nested loops and recursion.</li><li>Estimate whether an approach will pass a given input size.</li><li>Explain best, average and worst case in plain words.</li><li>Choose between speed and memory deliberately.</li></ul>
+      <p><strong>Common pitfalls:</strong> Treating complexity as theory; forgetting hidden costs such as slicing, sorting and 'in list'; saying 'O(n)' without saying what n is.</p>
+      <p><strong>Typical interview questions here:</strong> Complexity of this loop? Compare two algorithms. Why O(n log n) for sorting? Time and space of recursion? Optimise this O(n^2) code.</p>
+    </section>
+
+    <section id="c2_1" data-track>
+      <h2>Big-O, Big-Omega, Big-Theta and common growth rates</h2>
+      <p><span class="tag ok">Essential</span> <span class="tag">Topic 2.1</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>Time complexity describes how the number of steps grows as the input size n grows. Space complexity describes how extra memory grows. Big-O gives an upper bound (worst case), Big-Omega a lower bound (best case) and Big-Theta a tight bound (both).</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>Computers differ in speed, so we count steps instead of seconds. Complexity lets you predict whether a solution will pass the time limit before you write it.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Finding a name in a phone book: reading every page is O(n), flipping to the middle and halving is O(log n), asking every person to shake hands with every other person is O(n^2).</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Imagine two friends each write a program to check whether a name is in a list. Friend A's runs in 2 seconds on her laptop. Friend B's runs in 5 seconds on an old laptop. Whose algorithm is better? You cannot tell: the machines differ. We need a way to compare ALGORITHMS, not machines.</p>
+      <p>The idea: count basic steps as a function of the input size n, because for large n the shape of that function dominates everything else. A program that takes 100n steps and one that takes n^2 steps look similar at n = 10 (1000 vs 100), but at n = 10,000 the first needs a million steps and the second a hundred million. The growth rate decides who wins.</p>
+      <p>That is Big-O: describe the growth rate, ignoring constants and lower terms because they stop mattering as n grows. 3n^2 + 50n + 7 behaves like n^2 for large n. We keep the shape, not the exact number.</p>
+      <p>Why worst case? When a company promises 'this will finish', the safe promise is the slowest possible input. Best case is rarely informative. Average case needs assumptions about the data. Interviews usually ask for the worst case unless you say otherwise.</p>
+      <p>Big-Omega and Big-Theta complete the picture. Big-O says 'no worse than', Omega says 'no better than', Theta says 'exactly this growth'. In everyday speech people use Big-O to mean 'the tight worst-case bound'.</p>
+      <p>Space complexity exists because memory is finite too. Sometimes a faster algorithm needs more memory (a hash set), and knowing both lets you make a deliberate trade.</p>
+      <h3>Visual explanation (interactive)</h3>
+      <div class="viz-slot" data-viz="complexity"></div>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Ignore constants and smaller terms: 3n^2 + 5n + 7 is O(n^2).</li><li>Common classes from fastest to slowest: O(1) &lt; O(log n) &lt; O(n) &lt; O(n log n) &lt; O(n^2) &lt; O(2^n) &lt; O(n!).</li><li>Rule of thumb for a ~1 second limit in Python: about 10^7 basic operations. n = 10^5 allows O(n log n); n = 10^3 allows O(n^2); n = 20 allows O(2^n).</li><li>Best/average/worst: searching for x in a list - best case 1 step (first item, Omega(1)), worst case n steps (O(n)). Quick sort is O(n log n) on average but O(n^2) in the worst case.</li><li>Big-Theta applies when the best and worst growth match: summing a list is Theta(n) always.</li><li>Use the interactive graph below: drag n and watch which curves explode.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>Time complexity answers one question: 'If I make the input 10 times bigger, how much slower does my code get?' O(n) gets 10 times slower, O(n^2) gets 100 times slower, O(log n) barely changes. We do not measure seconds because every computer is different. We count steps and look at the growth.</p>
+      <p>Big-O is the 'at most' (upper bound), Big-Omega is the 'at least' (lower bound) and Big-Theta is 'exactly this growth'. In interviews when people say 'the complexity is O(n)' they usually mean the worst-case Big-O. Best case is the luckiest input (finding the item at position 0), worst case is the unluckiest (item at the end or missing), average is the typical input.</p>
+      <p>How to simplify: (1) Drop constants: 5n becomes n. (2) Keep only the biggest term: n^2 + n becomes n^2. (3) Different inputs use different letters: looping over a list of size n and a list of size m is O(n + m) or O(n * m), not O(n). Practise by looking at a loop and asking 'how many times does the inside run?'</p>
+      <p>Space complexity counts EXTRA memory your algorithm needs, not the input itself. A few variables is O(1). A new list as big as the input is O(n). Recursion depth counts too. Often you can trade space for time: a set uses O(n) space but makes lookups O(1).</p>
+      <p>Memorise this order: O(1) &lt; O(log n) &lt; O(n) &lt; O(n log n) &lt; O(n^2) &lt; O(2^n) &lt; O(n!). Anything above O(n log n) is usually too slow for n = 10^5.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>A 'step' is one basic operation: compare, add, assign, index. Python executes roughly 10^7 to 5x10^7 of these per second in simple loops, which is where the '10^7-10^8 steps per second budget' guidance comes from.</li><li>Real time also depends on constants and memory: a list scan in C-implemented built-ins (like sum) can be 20-50 times faster per step than an equivalent Python for-loop. So two O(n) solutions can differ a lot in practice.</li><li>Hidden costs: slicing, concatenation and 'in list' are O(n) operations hiding inside one line. Dictionary lookups are O(1) on average because a hash maps the key straight to a slot.</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Interviewers</td><td>They ask for complexity after every solution because it shows whether you understand why your code is fast or slow, not only that it works.</td></tr><tr><td>Backend and database engineers</td><td>A query that is O(n^2) in rows works with 100 rows and takes down the server with 10 million; engineers reason about growth before shipping.</td></tr><tr><td>Game and mobile developers</td><td>Frame time budgets (16 ms per frame) make constant factors and growth rates matter every day.</td></tr><tr><td>Online judges</td><td>Time limits are fixed, so the complexity of your solution decides pass or fail.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Big-O vs actual running time</td><td>Big-O predicts how time grows, not exact seconds. For small n a 'worse' O(n^2) algorithm can beat an O(n log n) one because of smaller constants. For large n growth always wins.</td></tr><tr><td>Time vs space</td><td>You usually trade one for the other: hashing spends memory to save time; in-place algorithms save memory at some time cost. State both.</td></tr><tr><td>Amortised vs worst case</td><td>list.append is amortised O(1) though one call occasionally costs O(n) for a resize. Amortised is the average cost per operation over a long sequence.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>Python list operations: append/pop at the end are O(1); insert(0, x), pop(0), remove(x) and 'x in list' are O(n).</li><li>dict and set lookups are O(1) on average. Sorting with sorted() or .sort() is O(n log n).</li><li>String concatenation in a loop (s += ch) can be O(n^2). Use a list and ''.join(parts).</li><li>Slicing a[i:j] copies, so it costs O(j - i). Avoid slicing inside big loops.</li><li>Use time.perf_counter() to measure real time when experimenting.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c2_1.py">def ops_linear(n):
+    ops = 0
+    for i in range(n):          # n iterations
+        ops += 1
+    return ops
+
+def ops_quadratic(n):
+    ops = 0
+    for i in range(n):          # n x n iterations
+        for j in range(n):
+            ops += 1
+    return ops
+
+def ops_log(n):
+    ops = 0
+    while n &gt; 1:                # halves each time
+        n //= 2
+        ops += 1
+    return ops</code></pre>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>ops_log(16)</code>, returns <code>4</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>n (after)</th><th>ops (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">15</td><td><code>ops = 0</code></td><td><strong><code>16</code></strong></td><td><strong><code>0</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">16</td><td><code>while n &gt; 1:                # halves each time</code></td><td><code>16</code></td><td><code>0</code></td></tr>
+<tr><td class="num">3</td><td class="num">17</td><td><code>n //= 2</code></td><td><strong><code>8</code></strong></td><td><code>0</code></td></tr>
+<tr><td class="num">4</td><td class="num">18</td><td><code>ops += 1</code></td><td><code>8</code></td><td><strong><code>1</code></strong></td></tr>
+<tr><td class="num">5</td><td class="num">16</td><td><code>while n &gt; 1:                # halves each time</code></td><td><code>8</code></td><td><code>1</code></td></tr>
+<tr><td class="num">6</td><td class="num">17</td><td><code>n //= 2</code></td><td><strong><code>4</code></strong></td><td><code>1</code></td></tr>
+<tr><td class="num">7</td><td class="num">18</td><td><code>ops += 1</code></td><td><code>4</code></td><td><strong><code>2</code></strong></td></tr>
+<tr><td class="num">8</td><td class="num">16</td><td><code>while n &gt; 1:                # halves each time</code></td><td><code>4</code></td><td><code>2</code></td></tr>
+<tr><td class="num">9</td><td class="num">17</td><td><code>n //= 2</code></td><td><strong><code>2</code></strong></td><td><code>2</code></td></tr>
+<tr><td class="num">10</td><td class="num">18</td><td><code>ops += 1</code></td><td><code>2</code></td><td><strong><code>3</code></strong></td></tr>
+<tr><td class="num">11</td><td class="num">16</td><td><code>while n &gt; 1:                # halves each time</code></td><td><code>2</code></td><td><code>3</code></td></tr>
+<tr><td class="num">12</td><td class="num">17</td><td><code>n //= 2</code></td><td><strong><code>1</code></strong></td><td><code>3</code></td></tr>
+<tr><td class="num">13</td><td class="num">18</td><td><code>ops += 1</code></td><td><code>1</code></td><td><strong><code>4</code></strong></td></tr>
+<tr><td class="num">14</td><td class="num">16</td><td><code>while n &gt; 1:                # halves each time</code></td><td><code>1</code></td><td><code>4</code></td></tr>
+<tr><td class="num">15</td><td class="num">19</td><td><code>return ops</code></td><td><code>1</code></td><td><code>4</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>ops_linear does n steps, ops_quadratic does n*n, ops_log does about log2(n) because n is halved until it reaches 1.</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Thinking O(n) means exactly n steps (constants are dropped).</li><li>Mixing up best case with the typical case.</li><li>Counting only the loop and ignoring hidden costs such as slicing, "in list" or sort().</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>Halving or doubling inside a loop gives log n.</li><li>One loop over the input is n; a loop nested inside a loop over the same input is n^2.</li><li>Subsets/permutations give 2^n / n!.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m01-problems.html#prob-is_prime">Prime Check</a></td><td><span class="tag ok">Easy</span></td><td>Loops, math, sqrt optimisation</td></tr><tr><td><a href="m07-problems.html#prob-two_sum">Two Sum</a> <span class="tag">LC 1</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Hash map</td></tr><tr><td><a href="m17-problems.html#prob-count_divisors">Count Divisors</a></td><td><span class="tag ok">Easy</span></td><td>Number theory (pairs of divisors)</td></tr><tr><td><a href="m11-problems.html#prob-fast_power">Fast Exponentiation</a></td><td><span class="tag warn">Medium</span></td><td>Recursion (divide and conquer)</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why do we ignore constants in Big-O?</summary><div class="answer"><p>Constants depend on the machine and language. For large n the growth shape decides the winner, so 5n and 100n are both 'linear'.</p></div></details>
+        <details class="recall"><summary>Why not just measure seconds?</summary><div class="answer"><p>Seconds change with hardware, input and noise. Complexity predicts behaviour before running and compares algorithms fairly.</p></div></details>
+        <details class="recall"><summary>Why usually talk about the worst case?</summary><div class="answer"><p>It is a guarantee: no input can be slower. Best case is rarely realistic and average case needs assumptions about the data.</p></div></details>
+        <details class="recall"><summary>Why does O(log n) feel almost free?</summary><div class="answer"><p>Doubling the input adds only one step. log2 of a billion is about 30.</p></div></details>
+        <details class="recall"><summary>Why is O(n!) worse than O(2^n)?</summary><div class="answer"><p>n! multiplies by a bigger number each step (n, then n-1, ...) while 2^n multiplies by 2 each time. At n = 20, n! is about 2.4 x 10^18 versus 2^20 about 10^6.</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c2_1-q1" data-topic="Time &amp; Space Complexity" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Which grows fastest as n becomes large?</p></div>
+        <ul class="q-options">
+          <li data-key="A">n log n</li>
+          <li data-key="B">n^2</li>
+          <li data-key="C">2^n</li>
+          <li data-key="D">n^3</li>
+        </ul>
+        <div class="q-explain"><p>Exponential growth eventually dominates every polynomial.</p></div>
+      </div>
+      <div class="quiz" data-qid="c2_1-q2" data-topic="Time &amp; Space Complexity" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the time complexity of the code that halves n until it is 1?</p></div>
+        <ul class="q-options">
+          <li data-key="A">O(n)</li>
+          <li data-key="B">O(log n)</li>
+          <li data-key="C">O(sqrt n)</li>
+          <li data-key="D">O(1)</li>
+        </ul>
+        <div class="q-explain"><p>The number of halvings is log2(n).</p></div>
+      </div>
+    </section>
+
+    <section id="c2_2" data-track>
+      <h2>Analysing loops, recursion and choosing an algorithm</h2>
+      <p><span class="tag ok">Essential</span> <span class="tag">Topic 2.2</span></p>
+      <div class="callout note"><span class="callout-title">Simple definition</span><p>To find complexity, count how many times the most-repeated line runs as a function of n, then keep the dominant term. For recursion, count the calls and the work per call.</p></div>
+      <div class="callout tip"><span class="callout-title">Why it matters</span><p>In an assessment you must decide on the fly if a brute force solution will pass. Complexity analysis makes that a 10-second calculation instead of a guess.</p></div>
+      <div class="callout key"><span class="callout-title">Real-world analogy</span><p>Planning a delivery route: checking every possible route is a disaster (n!), checking every pair of towns is heavy (n^2), but using a sorted address list (n log n) scales.</p></div>
+      <h3>From scratch: why this idea exists and how you could invent it</h3>
+      <p>Knowing the definition of Big-O is not enough; you must be able to read code and produce the complexity quickly. Start with the simplest unit: a statement without loops costs O(1). A loop multiplies the cost of its body by how many times it runs. Statements one after another add. That is nearly all the rules.</p>
+      <p>For loops with a changing step: i *= 2 or n //= 2 halves or doubles, so it runs log n times. A loop that runs sqrt(n) times appears in primality tests. A loop inside a loop where the inner bound depends on the outer variable gives a sum like 1 + 2 + ... + n = n(n+1)/2, still O(n^2).</p>
+      <p>For recursion write the recurrence: how much work per call plus how many smaller calls. T(n) = T(n-1) + 1 solves to O(n). T(n) = 2T(n-1) + 1 solves to O(2^n). T(n) = T(n/2) + 1 is O(log n). T(n) = 2T(n/2) + n is O(n log n). Draw the recursion tree: levels times work per level.</p>
+      <p>Why does this matter so much? Because it lets you reject bad ideas before coding. If your idea is O(n^2) with n = 10^5, you do not code it. This single habit saves more time in a test than any syntax trick.</p>
+      <p>Space is analysed the same way: count the memory you create (lists, dictionaries) and the recursion depth.</p>
+      <h3>Step-by-step walkthrough</h3>
+      <ol class="steps"><li>Sequential blocks add: O(n) + O(n^2) = O(n^2).</li><li>Nested loops multiply: outer n x inner m = O(n*m).</li><li>A loop where the variable doubles (i *= 2) runs log n times.</li><li>Recursion: T(n) = T(n-1) + O(1) is O(n) (factorial). T(n) = 2T(n-1) is O(2^n) (naive Fibonacci). T(n) = 2T(n/2) + O(n) is O(n log n) (merge sort). T(n) = T(n/2) + O(1) is O(log n) (binary search).</li><li>Space counts extra memory: a few variables O(1); a new list of size n is O(n); recursion depth d adds O(d).</li><li>Example: has_duplicate_slow compares all pairs (O(n^2)); has_duplicate_fast uses a set (O(n) time, O(n) space) - we trade memory for speed.</li></ol>
+      <h3>Deep dive in simple words</h3>
+      <p>To find the complexity of code, find the line that runs the most times and count it. A simple for loop over n items: n times. A loop inside a loop: n times n. A loop where the counter doubles (i = i * 2): about log n times. Write the count as a formula and keep the biggest piece.</p>
+      <p>Recursion is the same idea: count the calls and the work per call. A function that calls itself once on n - 1 does n calls: O(n). A function that calls itself twice on n - 1 does about 2^n calls. A function that splits the input in half and does O(n) work (merge sort) has log n levels with n work each: O(n log n).</p>
+      <p>Hidden costs: sorted() is O(n log n). Slicing copies. 'x in list' scans. str concatenation copies. min(), max() and sum() scan all items. Always ask 'what does this one line really do inside Python?'.</p>
+      <p>A good habit before coding: estimate. Say n is 10^5 and your idea is O(n^2). That is 10^10 steps, far too slow, so think again. This takes ten seconds and saves a whole failed submission.</p>
+      <p>Trading space for time is the most common optimisation: store things you will need again (in a dict, set, prefix array). Saving a few thousand extra numbers in memory to avoid re-scanning is almost always worth it.</p>
+      <h3>Under the hood: what really happens inside Python</h3>
+      <ul><li>The master theorem gives T(n) = a T(n/b) + O(n^d): compare log_b(a) with d. If d is bigger the top level dominates (O(n^d)); if equal every level contributes equally (O(n^d log n)); if smaller the leaves dominate. Merge sort: a = 2, b = 2, d = 1 gives O(n log n).</li><li>Python built-ins have their own costs: sorted O(n log n), list.sort the same, 'x in set' O(1) average, min/max O(n), list.insert(0, x) O(n), str.join O(total length), dict iteration O(n).</li></ul>
+      <h3>Who uses it, and why</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Who</th><th>Why they need it</th></tr></thead>
+<tbody>
+<tr><td>Anyone under a time limit</td><td>Competitive programmers and exam candidates estimate operations before coding.</td></tr><tr><td>Performance engineers</td><td>They look for hidden quadratic behaviour in loops, queries and string building.</td></tr><tr><td>Interviewers</td><td>A frequent follow-up is 'can you do better?'; you can only answer if you can compute what you have.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Alternatives, trade-offs and when not to use it</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Compare</th><th>Explanation</th></tr></thead>
+<tbody>
+<tr><td>Counting steps vs recurrence</td><td>For loops count steps directly. For recursion write the recurrence. If a recursive function loops inside, include that loop in the work per call.</td></tr><tr><td>Worst vs average</td><td>Quick sort is O(n log n) average but O(n^2) worst. Hash lookups are O(1) average and O(n) worst. Say which one you mean.</td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Python tips and shortcuts for this topic</h3>
+      <ul><li>Counter, set and dict are your main tools to lower time from O(n^2) to O(n).</li><li>bisect works on sorted lists in O(log n); heapq gives the smallest item in O(1) and push/pop in O(log n).</li><li>collections.deque.popleft() is O(1), while list.pop(0) is O(n).</li><li>Use itertools and built-ins (sum, any, all, max with key) - they are written in C and run fast.</li></ul>
+      <h3>Python implementation</h3>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c2_2.py">def has_duplicate_slow(nums):
+    for i in range(len(nums)):              # n times
+        for j in range(i + 1, len(nums)):   # up to n times
+            if nums[i] == nums[j]:
+                return True
+    return False                            # O(n^2) time, O(1) space
+
+def has_duplicate_fast(nums):
+    seen = set()
+    for x in nums:                          # n times
+        if x in seen:                       # O(1) average
+            return True
+        seen.add(x)
+    return False                            # O(n) time, O(n) space</code></pre>
+      <h3>Build it step by step: from the simplest idea to the best</h3>
+      <p class="muted">Every stage is runnable and was checked against its stated result.</p>
+      <h4>Stage 1 - compare every pair</h4>
+      <p>Obvious and correct, but two nested loops cost O(n^2). Fails when n = 10^5.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c2_2_stage1.py">def has_duplicate(nums):
+    for i in range(len(nums)):
+        for j in range(i + 1, len(nums)):
+            if nums[i] == nums[j]:
+                return True
+    return False</code></pre>
+      <p class="muted small">Check: <code>has_duplicate([3, 1, 4, 1])</code> returns <code>True</code></p>
+      <h4>Stage 2 - sort first</h4>
+      <p>After sorting, equal values sit next to each other, so one pass compares neighbours. O(n log n) time and no hash table.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c2_2_stage2.py">def has_duplicate(nums):
+    nums = sorted(nums)
+    for i in range(1, len(nums)):
+        if nums[i] == nums[i - 1]:
+            return True
+    return False</code></pre>
+      <p class="muted small">Check: <code>has_duplicate([3, 1, 4, 1])</code> returns <code>True</code></p>
+      <h4>Stage 3 - remember what you have seen</h4>
+      <p>A set answers 'seen before?' in O(1) on average, so one pass is enough: O(n) time, O(n) space. We traded memory for speed.</p>
+      <pre><code class="lang-py" data-embed="solutions/concepts/c2_2_stage3.py">def has_duplicate(nums):
+    seen = set()
+    for x in nums:
+        if x in seen:
+            return True
+        seen.add(x)
+    return False</code></pre>
+      <p class="muted small">Check: <code>has_duplicate([3, 1, 4, 1])</code> returns <code>True</code></p>
+      <h3>Dry run (variable values at every step)</h3>
+      <p class="muted small">Call: <code>has_duplicate_fast([3, 1, 4, 1])</code>, returns <code>True</code>. Bold means the value just changed.</p><div class="table-wrap">
+<table>
+<thead><tr><th class="num">#</th><th class="num">line</th><th>statement executed</th><th>x (after)</th><th>seen (after)</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="num">9</td><td><code>seen = set()</code></td><td>-</td><td><strong><code>set()</code></strong></td></tr>
+<tr><td class="num">2</td><td class="num">10</td><td><code>for x in nums:                          # n times</code></td><td><strong><code>3</code></strong></td><td><code>set()</code></td></tr>
+<tr><td class="num">3</td><td class="num">11</td><td><code>if x in seen:                       # O(1) average</code></td><td><code>3</code></td><td><code>set()</code></td></tr>
+<tr><td class="num">4</td><td class="num">13</td><td><code>seen.add(x)</code></td><td><code>3</code></td><td><strong><code>{3}</code></strong></td></tr>
+<tr><td class="num">5</td><td class="num">10</td><td><code>for x in nums:                          # n times</code></td><td><strong><code>1</code></strong></td><td><code>{3}</code></td></tr>
+<tr><td class="num">6</td><td class="num">11</td><td><code>if x in seen:                       # O(1) average</code></td><td><code>1</code></td><td><code>{3}</code></td></tr>
+<tr><td class="num">7</td><td class="num">13</td><td><code>seen.add(x)</code></td><td><code>1</code></td><td><strong><code>{1, 3}</code></strong></td></tr>
+<tr><td class="num">8</td><td class="num">10</td><td><code>for x in nums:                          # n times</code></td><td><strong><code>4</code></strong></td><td><code>{1, 3}</code></td></tr>
+<tr><td class="num">9</td><td class="num">11</td><td><code>if x in seen:                       # O(1) average</code></td><td><code>4</code></td><td><code>{1, 3}</code></td></tr>
+<tr><td class="num">10</td><td class="num">13</td><td><code>seen.add(x)</code></td><td><code>4</code></td><td><strong><code>{1, 3, 4}</code></strong></td></tr>
+<tr><td class="num">11</td><td class="num">10</td><td><code>for x in nums:                          # n times</code></td><td><strong><code>1</code></strong></td><td><code>{1, 3, 4}</code></td></tr>
+<tr><td class="num">12</td><td class="num">11</td><td><code>if x in seen:                       # O(1) average</code></td><td><code>1</code></td><td><code>{1, 3, 4}</code></td></tr>
+<tr><td class="num">13</td><td class="num">12</td><td><code>return True</code></td><td><code>1</code></td><td><code>{1, 3, 4}</code></td></tr>
+</tbody>
+</table>
+</div>
+      <h3>Time and space complexity</h3>
+      <p>slow: about n(n-1)/2 comparisons -&gt; O(n^2). fast: n set operations -&gt; O(n).</p>
+      <h3>Common mistakes and edge cases</h3>
+      <ul><li>Forgetting that list.insert(0, x), "x in list" and slicing are O(n).</li><li>Ignoring the O(n log n) cost of sorting.</li><li>Saying a recursive solution is O(1) space - the call stack counts.</li></ul>
+      <h3>How to recognise problems that use this technique</h3>
+      <ul><li>If the brute force is O(n^2) and n is 10^5, look for sorting, hashing, two pointers or prefix sums.</li><li>If n &lt;= 20, an exponential search may be intended.</li></ul>
+      <h3>Practice problems (easy to challenging)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+<tr><td><a href="m07-problems.html#prob-contains_duplicate">Contains Duplicate</a> <span class="tag">LC 217</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Hash set</td></tr><tr><td><a href="m07-problems.html#prob-two_sum">Two Sum</a> <span class="tag">LC 1</span> <span class="tag accent">must-do</span></td><td><span class="tag ok">Easy</span></td><td>Hash map</td></tr><tr><td><a href="m07-problems.html#prob-longest_consecutive">Longest Consecutive Sequence</a> <span class="tag">LC 128</span> <span class="tag accent">must-do</span></td><td><span class="tag bad">Hard</span></td><td>Hash set trick</td></tr>
+</tbody>
+</table>
+</div>
+      <div class="selfcheck">
+        <h3>Why? and Why not?</h3>
+        <details class="recall"><summary>Why do nested loops multiply but sequential loops add?</summary><div class="answer"><p>A nested inner loop runs fully for every iteration of the outer loop (n x m). Sequential loops run one after another (n + m).</p></div></details>
+        <details class="recall"><summary>Why must you count recursion depth as space?</summary><div class="answer"><p>Each active call holds a stack frame in memory. Depth d means d frames at once, which is O(d) extra space.</p></div></details>
+        <details class="recall"><summary>Why is trading space for time common?</summary><div class="answer"><p>Memory is cheap compared with time limits. A set or dictionary can remove an entire inner loop.</p></div></details>
+        <details class="recall"><summary>Why not always choose the lowest time complexity?</summary><div class="answer"><p>A lower complexity may use much more memory, be harder to write or be slower for small n. Choose the simplest solution that passes the limits.</p></div></details>
+        <details class="recall"><summary>Why does slicing hide a cost?</summary><div class="answer"><p>a[i:j] copies j - i elements, so a slice inside a loop can turn O(n) into O(n^2).</p></div></details>
+      </div>
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="c2_2-q1" data-topic="Time &amp; Space Complexity" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Time complexity of two nested loops each running n times?</p></div>
+        <ul class="q-options">
+          <li data-key="A">O(n)</li>
+          <li data-key="B">O(2n)</li>
+          <li data-key="C">O(n^2)</li>
+          <li data-key="D">O(log n)</li>
+        </ul>
+        <div class="q-explain"><p>n x n iterations.</p></div>
+      </div>
+      <div class="quiz" data-qid="c2_2-q2" data-topic="Time &amp; Space Complexity" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Recurrence T(n) = 2T(n/2) + O(n) describes which algorithm?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Binary search</li>
+          <li data-key="B">Merge sort</li>
+          <li data-key="C">Linear search</li>
+          <li data-key="D">Naive Fibonacci</li>
+        </ul>
+        <div class="q-explain"><p>Two half-size subproblems plus linear merge work = O(n log n).</p></div>
+      </div>
+    </section>
+
+    <h2 id="practice-problems">Practice problems for this module</h2>
+
+    <p>0 problems with hints, approach, dry run and tested solutions on the <a href="m02-problems.html">problem set for this module</a>.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Problem</th><th>Difficulty</th><th>Topic</th></tr></thead>
+<tbody>
+
+</tbody>
+</table>
+</div>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Time &amp; Space Complexity</h2>
+      <p class="muted">38 questions: try to answer aloud in under a minute, then reveal. All questions from every module are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Time & Space Complexity">
+<details class="recall iq" data-level="basic" data-topic="Time &amp; Space Complexity"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the time complexity of binary search and why?</summary><div class="answer"><p>O(log n). Each step throws away half of the remaining items, so the number of steps is how many times you can halve n before reaching 1, which is log2(n).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Time &amp; Space Complexity"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the difference between O(n) and O(2n)?</summary><div class="answer"><p>No difference in Big-O. Constants are dropped, so O(2n) is O(n). Both grow in a straight line.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Time &amp; Space Complexity"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the complexity of two loops, one after the other, each running n times? What if one loop is inside the other?</summary><div class="answer"><p>One after the other: O(n) + O(n) = O(n). One inside the other: O(n * n) = O(n^2).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Time &amp; Space Complexity"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the worst case of searching a list with &#x27;x in nums&#x27;?</summary><div class="answer"><p>O(n). In the worst case x is last or missing and Python has to check every element.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Time &amp; Space Complexity"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Is O(n log n) faster than O(n^2)?</summary><div class="answer"><p>Yes for large n. For n = 1000: n log n is about 10,000 steps while n^2 is 1,000,000. The gap grows as n grows.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Time &amp; Space Complexity"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is amortised O(1)?</summary><div class="answer"><p>An operation that is occasionally expensive but cheap on average over many calls. list.append is amortised O(1): usually one step, sometimes it copies the list to a bigger memory block, but spread over all appends the average is constant.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Time &amp; Space Complexity"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why do we drop constants and lower-order terms?</summary><div class="answer"><p>Because for large n the dominant term decides the growth, and constants depend on hardware and language. 5n^2 + 100n is O(n^2); the 5 and the 100n become minor as n grows.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Time &amp; Space Complexity"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the difference between O, Omega and Theta?</summary><div class="answer"><p>O is an upper bound, Omega a lower bound, Theta a tight bound (both). Everyday speech uses O for the tight worst case.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Time &amp; Space Complexity"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the complexity of: for i in range(n): for j in range(i, n): ...?</summary><div class="answer"><p>The inside runs n + (n-1) + ... + 1 = n(n+1)/2 times, which is O(n^2).</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Time &amp; Space Complexity"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the complexity of: i = 1; while i &lt; n: i *= 2?</summary><div class="answer"><p>O(log n). i doubles each time, so it takes log2(n) steps to reach n.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Time &amp; Space Complexity"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> How would you reduce the time of checking if a list has duplicates?</summary><div class="answer"><p>Brute force compares all pairs in O(n^2). Put elements into a set while scanning; if an element is already in the set you found a duplicate. That is O(n) time and O(n) space.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Time &amp; Space Complexity"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the complexity of recursive Fibonacci and how can you improve it?</summary><div class="answer"><p>O(2^n) because each call makes two calls and subproblems repeat. Add memoisation (a dictionary or lru_cache) so each value is computed once: O(n) time, O(n) space.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Time &amp; Space Complexity"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> Why does appending with s += ch in a loop matter for strings?</summary><div class="answer"><p>Strings are immutable, so each += builds a new string copying all previous characters. Over n steps this can be O(n^2). Better: collect characters in a list and use &#x27;&#x27;.join(list) at the end.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Time &amp; Space Complexity"><summary><span class="tag ok">Basic</span> <span class="tag">Conceptual</span> What is the space complexity of recursion?</summary><div class="answer"><p>O(depth of recursion) because each active call holds a frame. For a balanced tree that is O(log n); for a linked-list-shaped tree O(n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time &amp; Space Complexity"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What is the time complexity of this?</summary><div class="answer"><pre><code class="lang-py">for i in range(n):
+    for j in range(i):
+        pass</code></pre><p>O(n^2). The inner loop runs 0 + 1 + ... + (n-1) = n(n-1)/2 times, which is quadratic.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time &amp; Space Complexity"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What is the complexity of this?</summary><div class="answer"><pre><code class="lang-py">i = n
+while i &gt; 0:
+    i //= 2</code></pre><p>O(log n). i halves every iteration.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time &amp; Space Complexity"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> Why does an O(n^2) feature work in testing and die in production?</summary><div class="answer"><p>Test data is small. Growth is invisible at n = 100 but at n = 10^6 the same feature does 10^12 steps. Reasoning about complexity before shipping avoids this.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time &amp; Space Complexity"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Return True if any two numbers in a list sum to k. Give two solutions and their complexity.</summary><div class="answer"><p>Brute force: two nested loops, O(n^2) time, O(1) space. Hash set: for each x check k - x in the set, then add x; O(n) time, O(n) space.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time &amp; Space Complexity"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why do we ignore constants in Big-O?</summary><div class="answer"><p>Constants depend on the machine and language. For large n the growth shape decides the winner, so 5n and 100n are both &#x27;linear&#x27;.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time &amp; Space Complexity"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not just measure seconds?</summary><div class="answer"><p>Seconds change with hardware, input and noise. Complexity predicts behaviour before running and compares algorithms fairly.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time &amp; Space Complexity"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why usually talk about the worst case?</summary><div class="answer"><p>It is a guarantee: no input can be slower. Best case is rarely realistic and average case needs assumptions about the data.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time &amp; Space Complexity"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does O(log n) feel almost free?</summary><div class="answer"><p>Doubling the input adds only one step. log2 of a billion is about 30.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time &amp; Space Complexity"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is O(n!) worse than O(2^n)?</summary><div class="answer"><p>n! multiplies by a bigger number each step (n, then n-1, ...) while 2^n multiplies by 2 each time. At n = 20, n! is about 2.4 x 10^18 versus 2^20 about 10^6.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time &amp; Space Complexity"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why can an O(n^2) algorithm beat O(n log n) for small n?</summary><div class="answer"><p>Complexity hides constants and overhead. For tiny inputs a simple loop with small constants can be faster than a clever method with setup cost. Growth wins only at larger n.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time &amp; Space Complexity"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> What is the complexity of this code and why?</summary><div class="answer"><pre><code class="lang-py">def f(n):
+    s = 0
+    for i in range(n):
+        for j in range(10):
+            s += 1
+    return s</code></pre><p>O(n). The inner loop always runs 10 times (a constant), so total steps are 10n.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time &amp; Space Complexity"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What is the complexity of recursive code that calls f(n-1) twice?</summary><div class="answer"><p>O(2^n). Each call spawns two calls, so the number of calls doubles per level for n levels.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time &amp; Space Complexity"><summary><span class="tag warn">Medium</span> <span class="tag">Coding</span> Optimise: for each number in a list count how many numbers are smaller than it.</summary><div class="answer"><p>Brute force is O(n^2). Sort a copy, then use binary search (bisect_left) for each number: O(n log n). If values are small, a counting + prefix sum approach is O(n + k).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time &amp; Space Complexity"><summary><span class="tag warn">Medium</span> <span class="tag">Real-world</span> A report is slow because it concatenates strings in a loop. Why?</summary><div class="answer"><p>Each += copies the existing string, so n appends cost O(n^2) total. Collect parts in a list and &#x27;&#x27;.join them once.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time &amp; Space Complexity"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why do nested loops multiply but sequential loops add?</summary><div class="answer"><p>A nested inner loop runs fully for every iteration of the outer loop (n x m). Sequential loops run one after another (n + m).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time &amp; Space Complexity"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why must you count recursion depth as space?</summary><div class="answer"><p>Each active call holds a stack frame in memory. Depth d means d frames at once, which is O(d) extra space.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time &amp; Space Complexity"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is trading space for time common?</summary><div class="answer"><p>Memory is cheap compared with time limits. A set or dictionary can remove an entire inner loop.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time &amp; Space Complexity"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why not always choose the lowest time complexity?</summary><div class="answer"><p>A lower complexity may use much more memory, be harder to write or be slower for small n. Choose the simplest solution that passes the limits.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time &amp; Space Complexity"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why does slicing hide a cost?</summary><div class="answer"><p>a[i:j] copies j - i elements, so a slice inside a loop can turn O(n) into O(n^2).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time &amp; Space Complexity"><summary><span class="tag warn">Medium</span> <span class="tag">Why / Why not</span> Why is &#x27;x in list&#x27; risky inside a loop?</summary><div class="answer"><p>It scans the list: O(n) per check, so the loop becomes O(n^2). Use a set for O(1) average membership.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Time &amp; Space Complexity"><summary><span class="tag warn">Medium</span> <span class="tag">Tricky output</span> What is the complexity of sorting inside a loop that runs n times on a list of size n?</summary><div class="answer"><p>O(n^2 log n). Each sort costs O(n log n) and it runs n times.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Time &amp; Space Complexity"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Your algorithm is O(n log n) and you have n = 10^6. Is that fine in Python?</summary><div class="answer"><p>About 2 x 10^7 basic steps: usually fine if the work per step is small and uses built-ins like sorted(); it may be tight with heavy Python loops. Prefer built-ins and avoid per-step overhead.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Time &amp; Space Complexity"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> Can you improve O(n log n) sorting-based duplicate detection?</summary><div class="answer"><p>Yes, use a set for O(n) average time at the price of O(n) space.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Time &amp; Space Complexity"><summary><span class="tag bad">Advanced</span> <span class="tag">Follow-up</span> How do you analyse a function that calls itself with n/2 twice and does O(1) extra work?</summary><div class="answer"><p>T(n) = 2T(n/2) + 1, which solves to O(n): the recursion tree has n leaves and about n total nodes.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="m01-problems.html"><span class="dir">Previous</span><span>Problems 1: Programming & Problem-Solving Foundations</span></a>
+      <a class="next" href="m02-problems.html"><span class="dir">Next</span><span>Problems 2: Time & Space Complexity</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

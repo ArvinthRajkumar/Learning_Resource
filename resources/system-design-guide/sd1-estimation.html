@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD1">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Back-of-the-envelope estimation | System Design</title>
+<meta name="description" content="Powers of two, latency numbers, QPS, storage and bandwidth math, availability nines, and fully worked estimates for real systems.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD1</p>
+      <h1>Back-of-the-envelope estimation</h1>
+      <p class="lede">Estimation turns vague user numbers into engineering numbers. You do not need exact answers. You need the right order of magnitude, quickly, and a clear chain of assumptions.</p>
+      <div class="meta"><span class="tag ok">Basic</span><span class="tag warn">Medium</span><span class="tag">~2 hours</span></div>
+    </div>
+
+    <section id="numbers" data-track>
+      <h2>Numbers every engineer should know</h2>
+<h3>Powers of two and units</h3>
+<p>Storage and memory are counted in powers of two, but for estimates we round.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Power</th><th>Exact value</th><th>Approximate</th><th>Name</th></tr></thead>
+<tbody>
+<tr><td>2^10</td><td>1,024</td><td>1 thousand</td><td>1 KB</td></tr><tr><td>2^20</td><td>1,048,576</td><td>1 million</td><td>1 MB</td></tr><tr><td>2^30</td><td>1,073,741,824</td><td>1 billion</td><td>1 GB</td></tr><tr><td>2^40</td><td>about 1.1 x 10^12</td><td>1 trillion</td><td>1 TB</td></tr><tr><td>2^50</td><td>about 1.1 x 10^15</td><td>1 quadrillion</td><td>1 PB</td></tr>
+</tbody>
+</table>
+</div>
+<p>A shortcut: <strong>1 million seconds is about 12 days, and a day has about 86,400 seconds, which we round to 10^5.</strong> Rounding 86,400 to 100,000 makes daily to per-second conversion trivial and errs by only 14%.</p>
+<h3>Time units</h3>
+<p>1 second = 1,000 ms = 1,000,000 microseconds = 1,000,000,000 ns.</p>
+<h3>Latency numbers (orders of magnitude)</h3>
+<p>These come from the well-known "latency numbers every programmer should know" list. Exact values vary by hardware and year. The <em>ratios</em> are what matter.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Operation</th><th>About</th></tr></thead>
+<tbody>
+<tr><td>L1 cache reference</td><td>1 ns</td></tr><tr><td>Branch mispredict</td><td>5 ns</td></tr><tr><td>L2 cache reference</td><td>4 ns to 15 ns</td></tr><tr><td>Mutex lock and unlock</td><td>25 ns</td></tr><tr><td>Main memory reference</td><td>100 ns</td></tr><tr><td>Compress 1 KB with a fast codec</td><td>2 to 10 microseconds</td></tr><tr><td>Send 1 KB over a 1 Gbps network</td><td>10 microseconds</td></tr><tr><td>Read 4 KB randomly from an SSD</td><td>15 to 150 microseconds</td></tr><tr><td>Read 1 MB sequentially from memory</td><td>50 to 250 microseconds</td></tr><tr><td>Round trip within one data center</td><td>0.5 ms</td></tr><tr><td>Read 1 MB sequentially from an SSD</td><td>0.3 to 1 ms</td></tr><tr><td>Disk seek (spinning disk)</td><td>5 to 10 ms</td></tr><tr><td>Read 1 MB sequentially from a spinning disk</td><td>5 to 30 ms</td></tr><tr><td>Round trip across continents</td><td>100 to 150 ms</td></tr>
+</tbody>
+</table>
+</div>
+<h3>What the table teaches</h3>
+<ul><li>Memory is about 100 times faster than an SSD read and about 100,000 times faster than a disk seek.</li><li>Sequential access is far faster than random access on every medium.</li><li>A network call inside a data center costs about as much as thousands of memory reads. Avoid chatty designs.</li><li>Crossing an ocean costs 100 ms or more, which is why we replicate data close to users and use CDNs.</li><li>Compression is cheap compared with network and disk time, so compress before sending large payloads.</li></ul>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Keep hot data in memory, do I/O in large sequential chunks, send fewer and bigger messages, and put data near users.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd1-q01" data-topic="Estimation" data-type="multi" data-answer="A,B,D">
+        <div class="q-stem"><p>Which statements about latency are true? Select all.</p></div>
+        <ul class="q-options">
+          <li data-key="A">A main memory read is much faster than an SSD read</li>
+          <li data-key="B">A round trip inside one data center is cheaper than a cross-continent one</li>
+          <li data-key="C">Random disk access is as fast as sequential access</li>
+          <li data-key="D">Compression is usually cheap compared with network time for large payloads</li>
+        </ul>
+        <div class="q-explain"><p>Sequential access beats random access on every medium, so the third statement is false.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Roughly how much slower is a disk seek than a memory read?</summary><div class="answer"><p>About 100,000 times (10 ms versus 100 ns).</p></div></details>
+        <details class="recall"><summary>Why is a chatty design bad?</summary><div class="answer"><p>Each network round trip inside a data center is about 0.5 ms, equal to thousands of memory reads, and across regions about 100 ms or more.</p></div></details>
+      </div>
+    </section>
+
+    <section id="qps" data-track>
+      <h2>Requests per second</h2>
+<h3>The basic conversion</h3>
+<p>Start from users and behaviour, end at requests per second (QPS).</p>
+<div class="formula"><div class="f-title">Average QPS</div><div class="f-body">QPS = daily active users x requests per user per day / 86,400</div><dl class="f-defs"><dt>DAU</dt><dd>daily active users</dd><dt>requests per user</dt><dd>average actions per user per day</dd><dt>86,400</dt><dd>seconds in a day (round to 10^5 for speed)</dd></dl></div>
+<p>Traffic is never flat. Real traffic has a daily peak. Use a <strong>peak factor</strong> of 2 to 5 times the average, and say which you chose.</p>
+<div class="worked"><span class="w-title">Worked example: a photo-sharing app</span><ol class="steps"><li>100 million daily active users, each views 50 photos and uploads 0.2 photos per day.</li><li>Reads per day = 100 M x 50 = 5 billion. Average read QPS = 5,000,000,000 / 86,400 = about 57,900.</li><li>Writes per day = 100 M x 0.2 = 20 million. Average write QPS = 20,000,000 / 86,400 = about 231.</li><li>Peak is 3 times the average: about 174,000 read QPS and 700 write QPS.</li></ol><span class="result">Read to write ratio is 250 to 1, so this is a read-heavy system that needs caching and a CDN.</span></div>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd1-01.py">dau = 100_000_000
+reads_per_user, writes_per_user = 50, 0.2
+sec = 86_400
+read_qps = dau * reads_per_user / sec
+write_qps = dau * writes_per_user / sec
+print(round(read_qps), round(write_qps))
+print("peak (x3):", round(read_qps * 3), round(write_qps * 3))
+print("read:write =", round(read_qps / write_qps))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>57870 231
+peak (x3): 173611 694
+read:write = 250</code></pre>
+<h3>What one server can do</h3>
+<p>A rough guide. Measure in real life, but use these to decide "one box or many".</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Component</th><th>Rough capacity</th></tr></thead>
+<tbody>
+<tr><td>Simple web server (in-memory work)</td><td>1,000 to 10,000 requests per second per core, 10 to 50 thousand per box</td></tr><tr><td>Typical application server with database calls</td><td>500 to 2,000 requests per second per box</td></tr><tr><td>Relational database (single node)</td><td>1,000 to 10,000 queries per second depending on query cost</td></tr><tr><td>Redis or Memcached (single node)</td><td>50,000 to 200,000 operations per second</td></tr><tr><td>Kafka broker</td><td>hundreds of thousands of messages per second, 100+ MB per second</td></tr><tr><td>NIC</td><td>1 Gbps is about 125 MB per second, 10 Gbps about 1.25 GB per second</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd1-q02" data-topic="Estimation" data-type="numeric" data-answer="2315" data-tol="2">
+        <div class="q-stem"><p>10 million daily active users each make 20 requests a day. What is the average QPS? (round to the nearest whole number, use 86,400 seconds)</p></div>
+        <div class="q-explain"><p>10,000,000 x 20 / 86,400 = 2,314.8, so about 2,315 requests per second.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd1-q03" data-topic="Estimation" data-type="fill" data-answer="86400|86,400|100000|10^5|1e5">
+        <div class="q-stem"><p>To convert a daily total into a per second rate, divide by <input class="q-input" aria-label="blank 1"> (use the usual rounded number of seconds in a day, 10 to the power of 5 is also fine).</p></div>
+        <div class="q-explain"><p>A day has 86,400 seconds, often rounded to 100,000 for speed.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Which peak factor do you use and why?</summary><div class="answer"><p>Two to five times the average, because real traffic has daily and event peaks. State the factor you chose.</p></div></details>
+      </div>
+    </section>
+
+    <section id="storage" data-track>
+      <h2>Storage and bandwidth</h2>
+<h3>Storage</h3>
+<div class="formula"><div class="f-title">Storage needed</div><div class="f-body">storage = items per day x size per item x retention days x replication factor</div><dl class="f-defs"><dt>replication factor</dt><dd>copies kept, commonly 3</dd></dl></div>
+<div class="worked"><span class="w-title">Worked example: storing 5 years of tweets</span><ol class="steps"><li>500 million tweets per day. Each tweet stores about 300 bytes of text and metadata.</li><li>Per day: 500 M x 300 B = 150 GB.</li><li>Per year: 150 GB x 365 = about 55 TB. Five years: about 274 TB.</li><li>With replication factor 3: about 820 TB.</li></ol><span class="result">About 0.8 PB of text storage, which tells you a single database server is not enough and you must shard.</span></div>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd1-02.py">tweets_per_day = 500_000_000
+bytes_each = 300
+per_day_gb = tweets_per_day * bytes_each / 1e9
+per_year_tb = per_day_gb * 365 / 1e3
+five_years_tb = per_year_tb * 5
+print(per_day_gb, "GB/day")
+print(round(per_year_tb, 1), "TB/year")
+print(round(five_years_tb), "TB for 5 years")
+print(round(five_years_tb * 3), "TB with 3 replicas")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>150.0 GB/day
+54.8 TB/year
+274 TB for 5 years
+821 TB with 3 replicas</code></pre>
+<h3>Media is different</h3>
+<p>Text is tiny. Images and video dominate storage and bandwidth. Estimate them separately: average image 200 KB to 2 MB, one minute of video 10 to 100 MB depending on resolution. Large media belongs in <strong>object storage</strong> (such as S3) served through a CDN, not in a database.</p>
+<h3>Bandwidth</h3>
+<div class="formula"><div class="f-title">Bandwidth</div><div class="f-body">bandwidth = QPS x average response size</div><dl class="f-defs"><dt>ingress</dt><dd>data coming in (uploads)</dd><dt>egress</dt><dd>data going out (downloads), usually larger and more expensive</dd></dl></div>
+<div class="worked"><span class="w-title">Worked example: outbound bandwidth</span><ol class="steps"><li>58,000 read QPS, each returns a 200 KB photo (mostly from a CDN).</li><li>58,000 x 200 KB = 11.6 GB per second = about 93 Gbps.</li><li>If the CDN absorbs 95 percent, origin egress is about 4.6 Gbps.</li></ol><span class="result">Without a CDN you would need around ten 10 Gbps links just for egress. The CDN is not optional.</span></div>
+<h3>Memory for caching</h3>
+<p>The 80/20 rule says about 20 percent of items cause about 80 percent of reads. To cache the hot set, estimate <strong>20 percent of daily unique reads x item size</strong>.</p>
+<div class="worked"><span class="w-title">Worked example: cache size</span><ol class="steps"><li>5 billion reads per day of 1 KB metadata objects. Suppose 10 percent are unique objects: 500 million unique reads.</li><li>Cache 20 percent of those: 100 million objects x 1 KB = 100 GB.</li></ol><span class="result">100 GB fits across a handful of cache nodes of 32 or 64 GB.</span></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd1-q04" data-topic="Estimation" data-type="numeric" data-answer="9" data-tol="0.01">
+        <div class="q-stem"><p>1 billion records per year at 1 KB each, kept 3 years with 3 replicas. How many TB in total? (1 TB = 10^12 bytes)</p></div>
+        <div class="q-explain"><p>1e9 x 1e3 B = 1e12 B = 1 TB per year; 3 years = 3 TB; x3 replicas = 9 TB.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What do you multiply by for durability?</summary><div class="answer"><p>The replication factor, commonly 3, and add headroom for indexes and growth.</p></div></details>
+      </div>
+    </section>
+
+    <section id="nines" data-track>
+      <h2>Availability and the nines</h2>
+<h3>What a percent of uptime means</h3>
+<p>Availability = uptime / (uptime + downtime). More nines means much less allowed downtime.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Availability</th><th>Downtime per year</th><th>Per month</th><th>Per day</th></tr></thead>
+<tbody>
+<tr><td>99% (two nines)</td><td>3.65 days</td><td>7.3 hours</td><td>14.4 minutes</td></tr><tr><td>99.9% (three nines)</td><td>8.76 hours</td><td>43.8 minutes</td><td>1.44 minutes</td></tr><tr><td>99.95%</td><td>4.38 hours</td><td>21.9 minutes</td><td>43 seconds</td></tr><tr><td>99.99% (four nines)</td><td>52.6 minutes</td><td>4.38 minutes</td><td>8.6 seconds</td></tr><tr><td>99.999% (five nines)</td><td>5.26 minutes</td><td>26 seconds</td><td>0.86 seconds</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd1-03.py">for a in (0.99, 0.999, 0.9995, 0.9999, 0.99999):
+    down_min = (1 - a) * 365 * 24 * 60
+    print("%.3f%% -&gt; %.1f minutes/year" % (a * 100, down_min))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>99.000% -&gt; 5256.0 minutes/year
+99.900% -&gt; 525.6 minutes/year
+99.950% -&gt; 262.8 minutes/year
+99.990% -&gt; 52.6 minutes/year
+99.999% -&gt; 5.3 minutes/year</code></pre>
+<h3>Combining components</h3>
+<ul><li><strong>In series</strong> (a request needs A and B): availability multiplies. Two 99.9% parts give 99.9% x 99.9% = about 99.8%. More dependencies means less availability.</li><li><strong>In parallel</strong> (either A or B can serve, with failover): failure probabilities multiply. Two 99% parts in parallel give 1 - 0.01 x 0.01 = 99.99%.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd1-04.py">a = 0.999
+series = a * a * a
+parallel_two = 1 - (1 - a) ** 2
+print("3 in series:", round(series * 100, 4))
+print("2 in parallel:", round(parallel_two * 100, 6))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>3 in series: 99.7003
+2 in parallel: 99.9999</code></pre>
+<div class="callout trap"><span class="callout-title">Trap</span><p>Redundancy only helps if failures are independent. Two replicas in the same rack, the same power feed, or running the same buggy deploy fail together. Spread across availability zones.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd1-q05" data-topic="Estimation" data-type="single" data-answer="C">
+        <div class="q-stem"><p>Two independent components, each 99.9% available, must both work for a request to succeed. The combined availability is closest to:</p></div>
+        <ul class="q-options">
+          <li data-key="A">99.99% <span class="q-why">That would require parallel redundancy.</span></li>
+          <li data-key="B">99.9% <span class="q-why">Dependencies reduce availability, not keep it.</span></li>
+          <li data-key="C">99.8% <span class="q-why">Correct.</span></li>
+          <li data-key="D">99.0% <span class="q-why">Too pessimistic.</span></li>
+        </ul>
+        <div class="q-explain"><p>In series availability multiplies: 0.999 x 0.999 = 0.998.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd1-q06" data-topic="Estimation" data-type="numeric" data-answer="53" data-tol="1">
+        <div class="q-stem"><p>How many minutes of downtime per year does 99.99% allow? (round to the nearest minute)</p></div>
+        <div class="q-explain"><p>0.0001 x 525,600 minutes = 52.56 minutes, about 53.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you compute availability for components in series and in parallel?</summary><div class="answer"><p>Series multiplies availabilities. Parallel multiplies failure probabilities, then subtracts from 1, assuming independent failures.</p></div></details>
+      </div>
+    </section>
+
+    <section id="practice" data-track>
+      <h2>Doing a full estimate</h2>
+<h3>A reusable template</h3>
+<ol><li>State assumptions and round them.</li><li>Users to QPS (average, then peak).</li><li>Payload sizes to bandwidth.</li><li>Items to storage (with retention and replication).</li><li>Hot set to cache memory.</li><li>Compare with single-machine capacity and decide: one box, replicas, shards?</li></ol>
+<div class="worked"><span class="w-title">Worked example: URL shortener</span><ol class="steps"><li>100 million new URLs per month, redirects are 100 times writes.</li><li>Write QPS = 100 M / (30 x 86,400) = about 39. Read QPS = 39 x 100 = about 3,900.</li><li>Record size is 500 bytes (short key, long URL, metadata). Ten years: 100 M x 12 x 10 = 12 billion records x 500 B = 6 TB.</li><li>Peak 3x: about 12,000 read QPS. A cache with 20 percent of daily reads (about 340 M reads per day, 20 percent hot) needs about 34 GB of 500 byte entries.</li></ol><span class="result">Reads fit on a few replicas plus a cache, and 6 TB fits on one modern database, so sharding is optional but replication and a cache are needed.</span></div>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd1-05.py">new_per_month = 100_000_000
+write_qps = new_per_month / (30 * 86_400)
+read_qps = write_qps * 100
+records_10y = new_per_month * 12 * 10
+storage_tb = records_10y * 500 / 1e12
+reads_per_day = read_qps * 86_400
+cache_gb = reads_per_day * 0.2 * 500 / 1e9
+print(round(write_qps), round(read_qps))
+print(records_10y, round(storage_tb, 1), "TB")
+print(round(reads_per_day / 1e6), "M reads/day;", round(cache_gb), "GB cache")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>39 3858
+12000000000 6.0 TB
+333 M reads/day; 33 GB cache</code></pre>
+<h3>Tips</h3>
+<ul><li>Say numbers out loud and round aggressively (86,400 to 10^5, 30 days to a month).</li><li>Label every number with its unit.</li><li>A wrong constant is fine if the logic is right and you state it.</li><li>Always finish by comparing to capacity: the point of estimating is the decision it supports.</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd1-q07" data-topic="Estimation" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Your estimate shows 1 TB of data and 2,000 read QPS. What is the most reasonable starting design?</p></div>
+        <ul class="q-options">
+          <li data-key="A">100 shards with a global lock <span class="q-why">Absurd for this size.</span></li>
+          <li data-key="B">One primary database with replicas and a cache <span class="q-why">Correct.</span></li>
+          <li data-key="C">A custom storage engine <span class="q-why">Never first.</span></li>
+          <li data-key="D">Move all data into memory <span class="q-why">1 TB in RAM is possible but needlessly costly.</span></li>
+        </ul>
+        <div class="q-explain"><p>The numbers are small. Start simple and scale only when a number demands it.</p></div>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Estimation</h2>
+      <p class="muted">9 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Estimation">
+<details class="recall iq" data-level="basic" data-topic="Estimation"><summary><span class="tag ok">Basic</span> Estimate the QPS of a service with 10 million daily active users each making 20 requests a day.</summary><div class="answer"><p>10 M x 20 = 200 M requests per day, divided by 86,400 seconds gives about 2,300 average QPS. With a peak factor of 3 that is about 7,000 QPS.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Estimation"><summary><span class="tag ok">Basic</span> How many seconds are in a day, and what do you use in estimates?</summary><div class="answer"><p>86,400. Round to 100,000 (10^5) to simplify, accepting about 14 percent error.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Estimation"><summary><span class="tag ok">Basic</span> What is 2^10, 2^20, 2^30, 2^40?</summary><div class="answer"><p>About a thousand (KB), a million (MB), a billion (GB), a trillion (TB).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Estimation"><summary><span class="tag warn">Medium</span> Compare memory, SSD and disk latencies.</summary><div class="answer"><p>Main memory about 100 ns, SSD random read about 100 microseconds (1,000 times slower), spinning disk seek about 10 ms (100,000 times slower than memory). Sequential access is far faster than random on all of them.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Estimation"><summary><span class="tag warn">Medium</span> How do you estimate storage for five years of data?</summary><div class="answer"><p>Items per day x size per item x 365 x 5 x replication factor, plus headroom for indexes and growth. Estimate media separately from text.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Estimation"><summary><span class="tag warn">Medium</span> What does 99.99 percent availability allow?</summary><div class="answer"><p>About 52 minutes of downtime per year, 4.4 minutes per month.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Estimation"><summary><span class="tag warn">Medium</span> How do you estimate cache size?</summary><div class="answer"><p>Take the hot set, often 20 percent of daily unique items, multiplied by item size, then add overhead. Check the expected hit rate against the load the database can take.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Estimation"><summary><span class="tag bad">Advanced</span> Two services in series each have 99.9 percent availability. What is the total, and how do you improve it?</summary><div class="answer"><p>About 99.8 percent. Improve with redundancy (parallel replicas across failure domains), fewer synchronous dependencies, caching and graceful degradation, remembering failures must be independent.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Estimation"><summary><span class="tag bad">Advanced</span> How do you sanity-check an estimate?</summary><div class="answer"><p>Compare with a known system, with single-machine capacity (does one box handle it?), and with unit costs. If the result implies absurd hardware, revisit assumptions.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd0-approach.html"><span class="dir">Previous</span><span>SD0 How to approach a system design interview</span></a>
+      <a class="next" href="sd2-networking.html"><span class="dir">Next</span><span>SD2 Networking, DNS, HTTP and CDN fundamentals</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

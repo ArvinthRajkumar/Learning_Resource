@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="PY9">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Clean code, SOLID and design patterns in Python | Python + SQL</title>
+<meta name="description" content="Readable code and refactoring, SOLID principles, and the design patterns Python programmers use: strategy, factory, observer, decorator, adapter, command, state, singleton alternatives, dependency injection, protocols and the repository pattern.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part PY9</p>
+      <h1>Clean code, SOLID and design patterns in Python</h1>
+      <p class="lede">Interviews and code reviews ask how you structure code, not only whether it runs. Python's first-class functions and duck typing make many classic patterns much smaller than in Java. This part shows each pattern in its Pythonic form with a working example.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="clean" data-track>
+      <h2>Clean code principles</h2>
+<ul><li><strong>Names reveal intent</strong>: <code>days_since_signup</code>, not <code>d</code>. Functions are verbs, classes are nouns.</li><li><strong>Small functions that do one thing</strong>, at one level of abstraction.</li><li><strong>No surprises</strong>: pure functions where possible, no hidden global state, no boolean flag arguments that change behaviour.</li><li><strong>Fail early</strong> with guard clauses instead of deep nesting.</li><li><strong>Don't repeat yourself</strong>, but don't abstract before the third repetition ("rule of three").</li><li><strong>Comments explain why</strong>, code explains what. Delete dead code.</li><li><strong>Prefer composition to inheritance</strong>, data classes for data, and explicit over implicit.</li></ul>
+<pre><code class="lang-py" data-embed="solutions/snippets/py9-01.py"># Before: nested, flag argument, unclear names
+def p(d, f):
+    if d:
+        if f:
+            return [x * 2 for x in d if x &gt; 0]
+        else:
+            return [x for x in d if x &gt; 0]
+    else:
+        return []
+# After: guard clause, two intention-revealing functions
+def positives(values): return [v for v in values if v &gt; 0]
+def doubled_positives(values): return [v * 2 for v in positives(values)]
+print(p([3, -1, 4], True), doubled_positives([3, -1, 4]), positives([]), p([3, -1, 4], False) == positives([3, -1, 4]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[6, 8] [6, 8] [] True</code></pre>
+<h3>Refactoring checklist</h3>
+<p>Extract function, rename, replace magic numbers with named constants, replace conditionals with polymorphism or a dispatch dict, introduce a parameter object, remove duplication, and make the change <strong>under tests</strong>: refactoring means behaviour stays identical.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py9-q01" data-topic="Design patterns" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does a guard clause do?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Adds a lock <span class="q-why">No.</span></li>
+          <li data-key="B">Handles invalid cases early and returns, reducing nesting <span class="q-why">Correct.</span></li>
+          <li data-key="C">Creates a class <span class="q-why">No.</span></li>
+          <li data-key="D">Catches all errors <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Fail early, keep the happy path flat.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Rule of three?</summary><div class="answer"><p>Tolerate duplication until the third occurrence, then abstract, so the abstraction fits real cases.</p></div></details>
+      </div>
+    </section>
+
+    <section id="solid" data-track>
+      <h2>SOLID, in Python terms</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Principle</th><th>Meaning</th><th>Python flavour</th></tr></thead>
+<tbody>
+<tr><td><strong>S</strong>ingle responsibility</td><td>A class has one reason to change</td><td>Split parsing, validation, storage, reporting</td></tr><tr><td><strong>O</strong>pen/closed</td><td>Open for extension, closed for modification</td><td>Add behaviour via new classes or registered functions, not editing a big <code>if</code> chain</td></tr><tr><td><strong>L</strong>iskov substitution</td><td>Subtypes must work wherever the base type does</td><td>Don't strengthen preconditions or raise new surprises in overrides</td></tr><tr><td><strong>I</strong>nterface segregation</td><td>Small focused interfaces</td><td>Small <code>Protocol</code>s instead of fat base classes</td></tr><tr><td><strong>D</strong>ependency inversion</td><td>Depend on abstractions, inject dependencies</td><td>Pass collaborators in the constructor</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="lang-py" data-embed="solutions/snippets/py9-02.py">from typing import Protocol
+class Notifier(Protocol):
+    def send(self, to: str, message: str) -&gt; None: ...
+class EmailNotifier:
+    def send(self, to, message): print(f"email to {to}: {message}")
+class FakeNotifier:                                  # a test double, no inheritance needed
+    def __init__(self): self.sent = []
+    def send(self, to, message): self.sent.append((to, message))
+class SignupService:
+    def __init__(self, notifier: Notifier): self.notifier = notifier      # dependency injection
+    def register(self, email):
+        self.notifier.send(email, "Welcome!")
+        return {"email": email}
+SignupService(EmailNotifier()).register("a@x.com")
+fake = FakeNotifier(); SignupService(fake).register("b@x.com")
+print("test double recorded:", fake.sent)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>email to a@x.com: Welcome!
+test double recorded: [('b@x.com', 'Welcome!')]</code></pre>
+<p>Duck typing plus <code>Protocol</code> gives dependency inversion without inheritance, and makes testing easy.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py9-q02" data-topic="Design patterns" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which principle says to depend on abstractions and inject dependencies?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Single responsibility <span class="q-why">No.</span></li>
+          <li data-key="B">Dependency inversion <span class="q-why">Correct.</span></li>
+          <li data-key="C">Liskov substitution <span class="q-why">No.</span></li>
+          <li data-key="D">Open/closed <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Pass collaborators into the constructor; test with fakes.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-py9-q03" data-topic="Design patterns" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does Liskov substitution require?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Subclasses must add methods <span class="q-why">No.</span></li>
+          <li data-key="B">A subclass instance must be usable wherever the base class is expected without surprises <span class="q-why">Correct.</span></li>
+          <li data-key="C">No inheritance <span class="q-why">No.</span></li>
+          <li data-key="D">Only abstract classes <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Overrides must honour the base contract.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why prefer Protocol over a fat base class?</summary><div class="answer"><p>Small structural interfaces keep classes decoupled and need no inheritance, supporting interface segregation.</p></div></details>
+      </div>
+    </section>
+
+    <section id="creational" data-track>
+      <h2>Creational patterns</h2>
+<h3>Factory: choose a class from data</h3>
+<p>A dict of constructors replaces a chain of <code>if</code>s and is open for extension.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py9-03.py">import json, csv, io
+class JsonReader:
+    def read(self, text): return json.loads(text)
+class CsvReader:
+    def read(self, text): return list(csv.DictReader(io.StringIO(text)))
+READERS = {"json": JsonReader, "csv": CsvReader}
+def make_reader(kind):
+    try: return READERS[kind]()
+    except KeyError: raise ValueError(f"unknown format {kind!r}; choose from {sorted(READERS)}") from None
+print(make_reader("json").read('[{"a": 1}]'), make_reader("csv").read("a,b\n1,2"))
+try: make_reader("xml")
+except ValueError as e: print(e)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[{'a': 1}] [{'a': '1', 'b': '2'}]
+unknown format 'xml'; choose from ['csv', 'json']</code></pre>
+<h3>Singleton: usually a module</h3>
+<p>A Python module is imported once, so a module-level object is a singleton. Avoid classes enforcing <code>__new__</code> tricks; global state makes testing hard, so prefer passing the object in.</p>
+<h3>Builder: construct complex objects step by step</h3>
+<p>Use keyword arguments, <code>dataclasses</code> with defaults, or a fluent builder when construction has many optional parts.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py9-04.py">from dataclasses import dataclass, field, replace
+@dataclass(frozen=True)
+class Query:
+    table: str
+    columns: tuple = ("*",)
+    where: tuple = ()
+    limit: int | None = None
+    def select(self, *cols): return replace(self, columns=cols)
+    def filter(self, cond): return replace(self, where=self.where + (cond,))
+    def take(self, n): return replace(self, limit=n)
+    def sql(self):
+        s = f"SELECT {', '.join(self.columns)} FROM {self.table}"
+        if self.where: s += " WHERE " + " AND ".join(self.where)
+        return s + (f" LIMIT {self.limit}" if self.limit is not None else "")
+base = Query("users")
+print(base.select("id", "name").filter("age &gt; 18").filter("active = 1").take(10).sql())
+print(base.sql(), "(the original is unchanged: frozen dataclass)")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>SELECT id, name FROM users WHERE age &gt; 18 AND active = 1 LIMIT 10
+SELECT * FROM users (the original is unchanged: frozen dataclass)</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py9-q04" data-topic="Design patterns" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the usual Pythonic singleton?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A metaclass trick <span class="q-why">Overkill.</span></li>
+          <li data-key="B">A module-level object <span class="q-why">Correct.</span></li>
+          <li data-key="C">A global lock <span class="q-why">No.</span></li>
+          <li data-key="D">An abstract class <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Modules are imported once.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why return a new object in a builder instead of mutating?</summary><div class="answer"><p>Immutability avoids shared-state surprises and lets partial builders be reused.</p></div></details>
+      </div>
+    </section>
+
+    <section id="structural" data-track>
+      <h2>Structural patterns</h2>
+<h3>Adapter: make an interface fit</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/py9-05.py">class LegacyTemperatureSensor:
+    def read_fahrenheit(self): return 98.6
+class CelsiusSensor:                                   # the interface the rest of the code wants
+    def __init__(self, legacy): self.legacy = legacy
+    def read_celsius(self): return round((self.legacy.read_fahrenheit() - 32) * 5 / 9, 1)
+print(CelsiusSensor(LegacyTemperatureSensor()).read_celsius())</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>37.0</code></pre>
+<h3>Decorator pattern (and Python decorators)</h3>
+<p>Wrap an object or function to add behaviour without changing it: logging, caching, retries, timing, authorisation.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py9-06.py">import functools, time
+def retry(times=3, exceptions=(Exception,)):
+    def deco(fn):
+        @functools.wraps(fn)
+        def wrapper(*a, **kw):
+            for attempt in range(1, times + 1):
+                try: return fn(*a, **kw)
+                except exceptions as e:
+                    if attempt == times: raise
+        return wrapper
+    return deco
+calls = {"n": 0}
+@retry(times=3, exceptions=(ConnectionError,))
+def fetch():
+    calls["n"] += 1
+    if calls["n"] &lt; 3: raise ConnectionError("flaky")
+    return "ok"
+print(fetch(), "after", calls["n"], "attempts | name preserved:", fetch.__name__)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>ok after 3 attempts | name preserved: fetch</code></pre>
+<h3>Facade and proxy</h3>
+<p>A <strong>facade</strong> gives a simple interface over a complex subsystem. A <strong>proxy</strong> stands in for another object (lazy loading, access control, caching) with the same interface.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py9-07.py">class ExpensiveReport:
+    def __init__(self): print("(building the report: slow)"); self.rows = [1, 2, 3]
+class LazyReport:                                       # proxy: build only when first used
+    def __init__(self): self._real = None
+    def __getattr__(self, name):
+        if self._real is None: self._real = ExpensiveReport()
+        return getattr(self._real, name)
+r = LazyReport()
+print("created the proxy, nothing built yet")
+print(r.rows, r.rows)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>created the proxy, nothing built yet
+(building the report: slow)
+[1, 2, 3] [1, 2, 3]</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py9-q05" data-topic="Design patterns" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which pattern wraps an incompatible interface to fit the one you need?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Strategy <span class="q-why">No.</span></li>
+          <li data-key="B">Adapter <span class="q-why">Correct.</span></li>
+          <li data-key="C">Observer <span class="q-why">No.</span></li>
+          <li data-key="D">Command <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The adapter translates calls.</p></div>
+      </div>
+    </section>
+
+    <section id="behavioural" data-track>
+      <h2>Behavioural patterns</h2>
+<h3>Strategy: swap an algorithm</h3>
+<p>In Python a strategy is often just a function.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py9-08.py">def flat(total): return total * 0.0
+def percent(p): return lambda total: total * p
+def tiered(total): return total * (0.2 if total &gt; 100 else 0.05)
+def checkout(total, discount): return round(total - discount(total), 2)
+print(checkout(200, flat), checkout(200, percent(0.1)), checkout(200, tiered), checkout(50, tiered))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>200.0 180.0 160.0 47.5</code></pre>
+<h3>Observer: notify subscribers</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/py9-09.py">class EventBus:
+    def __init__(self): self.handlers = {}
+    def subscribe(self, event, fn): self.handlers.setdefault(event, []).append(fn)
+    def publish(self, event, payload):
+        for fn in self.handlers.get(event, []): fn(payload)
+log = []
+bus = EventBus()
+bus.subscribe("order.paid", lambda o: log.append(f"email receipt for {o['id']}"))
+bus.subscribe("order.paid", lambda o: log.append(f"update stock for {o['id']}"))
+bus.publish("order.paid", {"id": 7}); bus.publish("order.cancelled", {"id": 8})
+print(log)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>['email receipt for 7', 'update stock for 7']</code></pre>
+<h3>Command: operations as objects (with undo)</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/py9-10.py">class TextEditor:
+    def __init__(self): self.text, self.history = "", []
+    def do(self, command):
+        command.apply(self); self.history.append(command)
+    def undo(self):
+        if self.history: self.history.pop().revert(self)
+class Insert:
+    def __init__(self, s): self.s = s
+    def apply(self, ed): ed.text += self.s
+    def revert(self, ed): ed.text = ed.text[: -len(self.s)]
+ed = TextEditor()
+ed.do(Insert("Hello")); ed.do(Insert(", world"))
+print(repr(ed.text)); ed.undo(); print(repr(ed.text))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>'Hello, world'
+'Hello'</code></pre>
+<h3>State: behaviour depends on state</h3>
+<p>Use a transition table, which is declarative and testable.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py9-11.py">TRANSITIONS = {("created", "pay"): "paid", ("paid", "ship"): "shipped", ("shipped", "deliver"): "delivered",
+               ("created", "cancel"): "cancelled", ("paid", "cancel"): "refunded"}
+class Order:
+    def __init__(self): self.state = "created"
+    def fire(self, event):
+        nxt = TRANSITIONS.get((self.state, event))
+        if nxt is None: raise ValueError(f"cannot {event} from {self.state}")
+        self.state = nxt; return self
+o = Order().fire("pay").fire("ship")
+print(o.state)
+try: o.fire("cancel")
+except ValueError as e: print("rejected:", e)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>shipped
+rejected: cannot cancel from shipped</code></pre>
+<h3>Iterator and generator pipeline</h3>
+<p>Python bakes the iterator pattern into the language (see <a href="py3-advanced.html">PY3</a>).</p>
+<h3>Template method and hooks</h3>
+<p>A base class defines the algorithm skeleton and subclasses override steps. Often a function that accepts callables is simpler.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py9-q06" data-topic="Design patterns" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In Python, a strategy is often just:</p></div>
+        <ul class="q-options">
+          <li data-key="A">A metaclass <span class="q-why">No.</span></li>
+          <li data-key="B">A function passed as an argument <span class="q-why">Correct.</span></li>
+          <li data-key="C">A global <span class="q-why">No.</span></li>
+          <li data-key="D">A thread <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>First-class functions replace strategy class hierarchies.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-py9-q07" data-topic="Design patterns" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does the command pattern make possible?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Faster code <span class="q-why">Not the goal.</span></li>
+          <li data-key="B">Queuing, logging and undoing operations because each is an object <span class="q-why">Correct.</span></li>
+          <li data-key="C">Multiple inheritance <span class="q-why">No.</span></li>
+          <li data-key="D">Type checking <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Operations carry the data to apply and revert them.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>State pattern in one line?</summary><div class="answer"><p>Replace if-chains on a state field with a transition table or state objects that decide the next state.</p></div></details>
+      </div>
+    </section>
+
+    <section id="architecture" data-track>
+      <h2>Architecture patterns for applications</h2>
+<h3>Repository: hide persistence behind an interface</h3>
+<p>The service talks to a repository; swap SQL for an in-memory fake in tests.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/py9-12.py">from dataclasses import dataclass
+@dataclass
+class User:
+    id: int
+    name: str
+class InMemoryUserRepo:
+    def __init__(self): self.data = {}
+    def add(self, u): self.data[u.id] = u
+    def get(self, uid): return self.data.get(uid)
+class UserService:
+    def __init__(self, repo): self.repo = repo
+    def rename(self, uid, name):
+        u = self.repo.get(uid)
+        if u is None: raise KeyError(f"user {uid} not found")
+        u.name = name; self.repo.add(u); return u
+repo = InMemoryUserRepo(); repo.add(User(1, "ana"))
+print(UserService(repo).rename(1, "Ana B."))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>User(id=1, name='Ana B.')</code></pre>
+<h3>Layers and ports and adapters</h3>
+<p>Keep <strong>domain logic</strong> (pure Python, no I/O) in the centre; put web, database and queue code at the edges behind interfaces. Dependencies point inward. Benefits: fast unit tests, replaceable infrastructure.</p>
+<h3>Anti-patterns to avoid</h3>
+<p>God classes, deep inheritance trees, mutable global state, stringly-typed code, catching bare <code>Exception</code> and passing, premature abstraction, and copy-paste with tiny changes.</p>
+<div class="callout key"><span class="callout-title">Key idea</span><p>In Python, functions are objects, so many patterns shrink to a dict of functions or a closure. Prefer composition, inject dependencies, keep domain logic free of I/O, and let tests tell you where the boundaries belong.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-py9-q08" data-topic="Design patterns" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why use a repository interface?</p></div>
+        <ul class="q-options">
+          <li data-key="A">To avoid SQL entirely <span class="q-why">No.</span></li>
+          <li data-key="B">So business logic does not depend on the storage technology and can be tested with a fake <span class="q-why">Correct.</span></li>
+          <li data-key="C">To speed up queries <span class="q-why">No.</span></li>
+          <li data-key="D">To cache everything <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Swap implementations without touching the service.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does ports and adapters buy you?</summary><div class="answer"><p>A pure domain core with infrastructure at the edges, enabling fast tests and replaceable technology.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Design patterns</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Design patterns">
+<details class="recall iq" data-level="basic" data-topic="Design patterns"><summary><span class="tag ok">Basic</span> What is the single responsibility principle?</summary><div class="answer"><p>A class or function should have one reason to change; split unrelated concerns such as parsing, validation, storage and reporting.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Design patterns"><summary><span class="tag ok">Basic</span> Why prefer composition over inheritance?</summary><div class="answer"><p>Composition is more flexible and avoids tight coupling and fragile hierarchies. Use inheritance for true is-a relationships and shared behaviour.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Design patterns"><summary><span class="tag warn">Medium</span> How is the strategy pattern implemented in Python?</summary><div class="answer"><p>Pass a function or callable that performs the varying step; a dict of functions can select among strategies.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Design patterns"><summary><span class="tag warn">Medium</span> What is dependency injection and why use it?</summary><div class="answer"><p>Passing collaborators (database, clock, notifier) to a class or function instead of creating them inside, so they can be replaced in tests and configuration.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Design patterns"><summary><span class="tag warn">Medium</span> What is a Protocol in Python?</summary><div class="answer"><p>A structural interface from typing: any class with the required methods satisfies it without inheriting, enabling duck typing with static checking.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Design patterns"><summary><span class="tag warn">Medium</span> How do you implement a singleton in Python?</summary><div class="answer"><p>Usually a module-level object, since modules are imported once. Prefer passing the shared object explicitly to keep tests simple.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Design patterns"><summary><span class="tag warn">Medium</span> Observer pattern in Python?</summary><div class="answer"><p>A publisher keeps a list of callables per event and calls them when the event fires; useful for decoupled notifications.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Design patterns"><summary><span class="tag warn">Medium</span> Explain the Liskov substitution principle.</summary><div class="answer"><p>Instances of a subclass must be usable wherever the base class is expected without breaking behaviour: do not strengthen preconditions or weaken postconditions.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Design patterns"><summary><span class="tag bad">Advanced</span> Factory versus builder?</summary><div class="answer"><p>A factory chooses which object to create; a builder constructs one complex object step by step, often immutably.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Design patterns"><summary><span class="tag bad">Advanced</span> What is the repository pattern?</summary><div class="answer"><p>An abstraction of data access that the domain code uses, hiding SQL or an ORM behind an interface so storage can be swapped and tested with fakes.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Design patterns"><summary><span class="tag bad">Advanced</span> State pattern versus a big if-chain?</summary><div class="answer"><p>State uses a transition table or state objects so each state&#x27;s behaviour is explicit and illegal transitions are rejected centrally.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Design patterns"><summary><span class="tag bad">Advanced</span> What is a code smell and name five?</summary><div class="answer"><p>A symptom of a design problem: long function, large class, duplicated code, feature envy, long parameter list, primitive obsession, deep nesting.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Design patterns"><summary><span class="tag bad">Advanced</span> How do you refactor safely?</summary><div class="answer"><p>Cover the behaviour with tests first, make small steps, run tests after each, and avoid mixing refactoring with feature changes.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Design patterns"><summary><span class="tag bad">Advanced</span> Ports and adapters (hexagonal) architecture?</summary><div class="answer"><p>Domain logic sits at the centre with no I/O; external systems connect through interfaces (ports) implemented by adapters, so dependencies point inward.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="py8-internals.html"><span class="dir">Previous</span><span>PY8 Python internals: objects, names, bytecode, memory, the import system and the data model</span></a>
+      <a class="next" href="sql6-dialects-nosql.html"><span class="dir">Next</span><span>SQL6 SQL dialects (PostgreSQL, MySQL, SQL Server, SQLite) and when to use NoSQL</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

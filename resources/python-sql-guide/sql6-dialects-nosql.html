@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="SQL6">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SQL dialects  and when to use NoSQL | Python + SQL</title>
+<meta name="description" content="Differences between database engines (limits, strings, dates, upserts, auto-increment, JSON, arrays), portable SQL habits, engine-specific features, and how relational modelling compares with document, key-value, wide-column and graph stores.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SQL6</p>
+      <h1>SQL dialects (PostgreSQL, MySQL, SQL Server, SQLite) and when to use NoSQL</h1>
+      <p class="lede">The SQL you learned is mostly portable, but real projects use a specific engine, and interviews love dialect questions. This part lists the differences that bite, shows portable alternatives that run here, and explains when a non-relational store is the better tool.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~4 hours</span></div>
+    </div>
+
+    <section id="why" data-track>
+      <h2>One standard, many dialects</h2>
+<p>SQL is standardised (ANSI/ISO), but each engine extends or deviates. The core (<code>SELECT</code>, joins, <code>GROUP BY</code>, CTEs, window functions) is portable; the edges are not. Write standard SQL first, then isolate engine-specific bits.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Engine</th><th>Strengths</th><th>Typical use</th></tr></thead>
+<tbody>
+<tr><td><strong>PostgreSQL</strong></td><td>Standards, rich types (arrays, JSONB, ranges), extensions (PostGIS), strong correctness</td><td>General purpose, analytics, geospatial</td></tr><tr><td><strong>MySQL / MariaDB</strong></td><td>Simple, fast reads, huge ecosystem</td><td>Web applications</td></tr><tr><td><strong>SQL Server</strong></td><td>Tight Microsoft integration, T-SQL, strong tooling</td><td>Enterprise on Windows</td></tr><tr><td><strong>Oracle</strong></td><td>Features, enterprise support, PL/SQL</td><td>Large enterprise</td></tr><tr><td><strong>SQLite</strong></td><td>Serverless single file, zero setup</td><td>Embedded, mobile, tests, small tools</td></tr><tr><td><strong>BigQuery / Snowflake / Redshift</strong></td><td>Columnar, massive scans, separate storage and compute</td><td>Analytics warehouses</td></tr>
+</tbody>
+</table>
+</div>
+    </section>
+
+    <section id="diffs" data-track>
+      <h2>The differences that bite</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Task</th><th>PostgreSQL</th><th>MySQL</th><th>SQL Server</th><th>SQLite</th></tr></thead>
+<tbody>
+<tr><td>Limit rows</td><td><code>LIMIT n OFFSET m</code></td><td><code>LIMIT n OFFSET m</code></td><td><code>TOP n</code> or <code>OFFSET m ROWS FETCH NEXT n ROWS ONLY</code></td><td><code>LIMIT n OFFSET m</code></td></tr><tr><td>Concatenate</td><td><code>a || b</code>, <code>CONCAT</code></td><td><code>CONCAT(a, b)</code> (<code>||</code> is OR unless ANSI mode)</td><td><code>a + b</code>, <code>CONCAT</code></td><td><code>a || b</code></td></tr><tr><td>Auto id</td><td><code>GENERATED ... AS IDENTITY</code>, <code>SERIAL</code></td><td><code>AUTO_INCREMENT</code></td><td><code>IDENTITY(1,1)</code></td><td><code>INTEGER PRIMARY KEY AUTOINCREMENT</code></td></tr><tr><td>Current time</td><td><code>now()</code></td><td><code>NOW()</code></td><td><code>GETDATE()</code></td><td><code>datetime('now')</code></td></tr><tr><td>Date arithmetic</td><td><code>d + INTERVAL '7 days'</code></td><td><code>DATE_ADD(d, INTERVAL 7 DAY)</code></td><td><code>DATEADD(day, 7, d)</code></td><td><code>date(d, '+7 days')</code></td></tr><tr><td>String aggregate</td><td><code>string_agg(x, ',')</code></td><td><code>GROUP_CONCAT(x)</code></td><td><code>STRING_AGG(x, ',')</code></td><td><code>group_concat(x, ',')</code></td></tr><tr><td>Upsert</td><td><code>ON CONFLICT DO UPDATE</code></td><td><code>ON DUPLICATE KEY UPDATE</code></td><td><code>MERGE</code></td><td><code>ON CONFLICT DO UPDATE</code></td></tr><tr><td>Return changed rows</td><td><code>RETURNING</code></td><td>none (use <code>LAST_INSERT_ID()</code>)</td><td><code>OUTPUT</code></td><td><code>RETURNING</code></td></tr><tr><td>Boolean</td><td>real <code>boolean</code></td><td><code>TINYINT(1)</code></td><td><code>BIT</code></td><td>integers 0/1</td></tr><tr><td>Quote identifier</td><td><code>"name"</code></td><td><code></code> <code>name</code> <code></code></td><td><code>[name]</code></td><td><code>"name"</code></td></tr><tr><td>Case-sensitive text compare</td><td>yes by default</td><td>no (default collation)</td><td>no (default)</td><td>yes (except <code>NOCASE</code>)</td></tr><tr><td>Integer division</td><td><code>7/2 = 3</code></td><td><code>7/2 = 3.5</code> (<code>DIV</code> for integer)</td><td><code>7/2 = 3</code></td><td><code>7/2 = 3</code></td></tr><tr><td>Empty string vs NULL</td><td>different</td><td>different</td><td>different</td><td>different (Oracle treats <code>''</code> as NULL)</td></tr>
+</tbody>
+</table>
+</div>
+<p>Run the portable ones here:</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql6-01.sql">SELECT 7 / 2 AS integer_division, 7 / 2.0 AS decimal_division, 7 % 3 AS remainder,
+       'ab' || 'cd' AS concatenated, date('2024-01-31', '+1 month') AS add_month,
+       group_concat('x') AS agg;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>integer_division</th><th>decimal_division</th><th>remainder</th><th>concatenated</th><th>add_month</th><th>agg</th></tr></thead>
+<tbody><tr><td>3</td><td>3.5</td><td>1</td><td>abcd</td><td>2024-03-02</td><td>x</td></tr></tbody>
+</table>
+</div>
+<p>Notice <code>date('2024-01-31', '+1 month')</code>: month arithmetic on the 31st rolls over, so check end-of-month behaviour in whichever engine you use.</p>
+<h3>Pagination across dialects</h3>
+<p>Offset pagination degrades with large offsets in every engine. Prefer <strong>keyset pagination</strong>, which is portable:</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql6-02.sql">-- page 2 of products ordered by id, 3 per page, using the last id seen on page 1
+SELECT id, name FROM products WHERE id &gt; 3 ORDER BY id LIMIT 3;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>id</th><th>name</th></tr></thead>
+<tbody><tr><td>4</td><td>Desk</td></tr><tr><td>5</td><td>Chair</td></tr><tr><td>6</td><td>Notebook</td></tr></tbody>
+</table>
+</div>
+<h3>NULL ordering and collation</h3>
+<p><code>NULLS FIRST/LAST</code> is supported by PostgreSQL, Oracle and SQLite 3.30+, but not MySQL or SQL Server (use <code>ORDER BY x IS NULL, x</code>). Collation controls comparison and sorting of text (case, accents, language): define it deliberately because it affects <code>UNIQUE</code> constraints and <code>LIKE</code>.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql6-03.sql">SELECT name, city FROM customers ORDER BY city IS NULL, city, name;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>name</th><th>city</th></tr></thead>
+<tbody><tr><td>Gus</td><td>Berlin</td></tr><tr><td>Ada</td><td>London</td></tr><tr><td>Chloe</td><td>London</td></tr><tr><td>Dev</td><td>Mumbai</td></tr><tr><td>Hana</td><td>Mumbai</td></tr><tr><td>Ben</td><td>Paris</td></tr><tr><td>Fay</td><td>Paris</td></tr><tr><td>Eli</td><td>NULL</td></tr></tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql6-q01" data-topic="SQL dialects and NoSQL" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which clause limits rows in SQL Server?</p></div>
+        <ul class="q-options">
+          <li data-key="A">LIMIT <span class="q-why">Not in T-SQL.</span></li>
+          <li data-key="B">TOP (or OFFSET ... FETCH) <span class="q-why">Correct.</span></li>
+          <li data-key="C">ROWNUM <span class="q-why">Oracle.</span></li>
+          <li data-key="D">FIRST <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>T-SQL uses TOP n.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-sql6-q02" data-topic="SQL dialects and NoSQL" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In MySQL default settings, what is 7 / 2?</p></div>
+        <ul class="q-options">
+          <li data-key="A">3 <span class="q-why">That is PostgreSQL.</span></li>
+          <li data-key="B">3.5 <span class="q-why">Correct; use DIV for integer division.</span></li>
+          <li data-key="C">4 <span class="q-why">No.</span></li>
+          <li data-key="D">Error <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Dialects differ on integer division.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-sql6-q03" data-topic="SQL dialects and NoSQL" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is keyset pagination preferred over large OFFSETs?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is shorter <span class="q-why">No.</span></li>
+          <li data-key="B">The database can seek using an index instead of scanning and discarding skipped rows <span class="q-why">Correct.</span></li>
+          <li data-key="C">It needs no ORDER BY <span class="q-why">It needs one.</span></li>
+          <li data-key="D">It works only in MySQL <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Cost stays flat for deep pages.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Which dialect clause returns generated rows after an insert?</summary><div class="answer"><p>RETURNING in PostgreSQL and SQLite; OUTPUT in SQL Server; MySQL has no direct equivalent.</p></div></details>
+        <details class="recall"><summary>How do you upsert in MySQL?</summary><div class="answer"><p>INSERT ... ON DUPLICATE KEY UPDATE.</p></div></details>
+      </div>
+    </section>
+
+    <section id="types" data-track>
+      <h2>Types worth knowing</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Need</th><th>PostgreSQL</th><th>MySQL</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>Exact money</td><td><code>NUMERIC(12,2)</code></td><td><code>DECIMAL(12,2)</code></td><td>Never <code>FLOAT</code> for money</td></tr><tr><td>Timestamps</td><td><code>timestamptz</code></td><td><code>DATETIME</code> / <code>TIMESTAMP</code></td><td>Store UTC; convert at the edge</td></tr><tr><td>UUID</td><td><code>uuid</code></td><td><code>BINARY(16)</code> / <code>CHAR(36)</code></td><td>Time-ordered ids index better</td></tr><tr><td>JSON</td><td><code>jsonb</code> (indexable)</td><td><code>JSON</code></td><td>Use for semi-structured extras, not core fields</td></tr><tr><td>Arrays</td><td><code>int[]</code>, <code>text[]</code></td><td>none</td><td>Handy but violates 1NF if overused</td></tr><tr><td>Ranges</td><td><code>daterange</code>, exclusion constraints</td><td>none</td><td>Prevent overlapping bookings in the database</td></tr><tr><td>Full-text</td><td><code>tsvector</code></td><td><code>FULLTEXT</code></td><td>Or use a search engine</td></tr><tr><td>Enum</td><td><code>ENUM</code> type, or lookup table</td><td><code>ENUM</code></td><td>Lookup tables evolve more easily</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql6-q04" data-topic="SQL dialects and NoSQL" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which type should hold money?</p></div>
+        <ul class="q-options">
+          <li data-key="A">FLOAT <span class="q-why">Rounding errors.</span></li>
+          <li data-key="B">NUMERIC/DECIMAL with fixed scale <span class="q-why">Correct.</span></li>
+          <li data-key="C">TEXT <span class="q-why">No.</span></li>
+          <li data-key="D">INTEGER dollars <span class="q-why">Loses cents.</span></li>
+        </ul>
+        <div class="q-explain"><p>Exact decimal arithmetic.</p></div>
+      </div>
+    </section>
+
+    <section id="postgres" data-track>
+      <h2>PostgreSQL features worth knowing</h2>
+<p>These are shown as text because the sandbox here runs SQLite.</p>
+<pre><code>-- JSONB with an index
+CREATE TABLE doc (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, data jsonb NOT NULL);
+CREATE INDEX doc_gin ON doc USING gin (data);
+SELECT * FROM doc WHERE data @&gt; '{"type": "invoice"}';
+
+-- Array and unnest
+SELECT unnest(ARRAY[1,2,3]);
+
+-- DISTINCT ON: first row per group
+SELECT DISTINCT ON (customer_id) customer_id, order_date, total
+FROM orders ORDER BY customer_id, order_date DESC;
+
+-- FILTER and percentile_cont
+SELECT count(*) FILTER (WHERE status = 'paid') AS paid,
+       percentile_cont(0.5) WITHIN GROUP (ORDER BY total) AS median
+FROM orders;
+
+-- Prevent double booking with an exclusion constraint
+CREATE EXTENSION btree_gist;
+ALTER TABLE booking ADD EXCLUDE USING gist (room WITH =, during WITH &amp;&amp;);
+
+-- Partial and expression indexes
+CREATE INDEX ON orders (customer_id) WHERE status = 'open';
+CREATE INDEX ON users (lower(email));
+
+-- LATERAL join: top 3 per group
+SELECT c.id, o.* FROM customers c
+CROSS JOIN LATERAL (SELECT * FROM orders WHERE customer_id = c.id ORDER BY order_date DESC LIMIT 3) o;</code></pre>
+<p>The SQLite equivalents you can run: <code>FILTER</code> is supported, and "first row per group" uses a window function.</p>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql6-04.sql">SELECT COUNT(*) FILTER (WHERE status = 'paid') AS paid, COUNT(*) FILTER (WHERE status &lt;&gt; 'paid') AS other
+FROM orders;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>paid</th><th>other</th></tr></thead>
+<tbody><tr><td>8</td><td>2</td></tr></tbody>
+</table>
+</div>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql6-05.sql">SELECT customer_id, order_date, status FROM (
+  SELECT customer_id, order_date, status, ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY order_date DESC) AS rn FROM orders)
+WHERE rn = 1 ORDER BY customer_id;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>customer_id</th><th>order_date</th><th>status</th></tr></thead>
+<tbody><tr><td>1</td><td>2024-03-18</td><td>pending</td></tr><tr><td>2</td><td>2024-03-12</td><td>paid</td></tr><tr><td>3</td><td>2024-02-25</td><td>paid</td></tr><tr><td>4</td><td>2024-03-05</td><td>paid</td></tr><tr><td>5</td><td>2024-03-22</td><td>paid</td></tr><tr><td>6</td><td>2024-04-01</td><td>paid</td></tr></tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql6-q05" data-topic="SQL dialects and NoSQL" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does DISTINCT ON do in PostgreSQL?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Removes all duplicates <span class="q-why">That is DISTINCT.</span></li>
+          <li data-key="B">Keeps the first row for each distinct key according to ORDER BY <span class="q-why">Correct.</span></li>
+          <li data-key="C">Creates an index <span class="q-why">No.</span></li>
+          <li data-key="D">Sorts descending <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>A convenient top-1-per-group.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is an exclusion constraint for?</summary><div class="answer"><p>Preventing overlapping ranges, such as double-booked rooms, inside the database.</p></div></details>
+      </div>
+    </section>
+
+    <section id="others" data-track>
+      <h2>MySQL and SQL Server notes</h2>
+<ul><li><strong>MySQL</strong>: storage engine matters (InnoDB for transactions, row locks, foreign keys); <code>sql_mode</code> controls strictness (always use <code>STRICT_TRANS_TABLES</code> so invalid data errors instead of truncating); <code>utf8mb4</code> is real UTF-8; <code>ON DUPLICATE KEY UPDATE</code> for upserts; <code>GROUP BY</code> quirks (<code>ONLY_FULL_GROUP_BY</code>); replication is binlog based. Window functions and CTEs arrived in 8.0.</li><li><strong>SQL Server</strong>: T-SQL with <code>@variables</code>, <code>BEGIN ... END</code>, <code>TRY ... CATCH</code>, <code>TOP</code>, <code>MERGE</code>, <code>OUTPUT</code>, temp tables <code>#t</code>, <code>ROW_NUMBER</code> windows, clustered versus nonclustered indexes, snapshot isolation option.</li><li><strong>Oracle</strong>: <code>ROWNUM</code>/<code>FETCH FIRST</code>, <code>DUAL</code>, <code>NVL</code>, <code>''</code> is NULL, sequences, PL/SQL packages.</li><li><strong>Warehouses</strong> (BigQuery, Snowflake): nested/semi-structured types, <code>QUALIFY</code> to filter window results, no row-level indexes, partition and cluster keys instead, cost proportional to data scanned.</li></ul>
+<pre><code class="lang-sql" data-embed="solutions/snippets/sql6-06.sql">-- QUALIFY (Snowflake/BigQuery) simulated with a subquery: the most expensive product per category
+SELECT category, name, price FROM (
+  SELECT category, name, price, RANK() OVER (PARTITION BY category ORDER BY price DESC) AS r FROM products)
+WHERE r = 1 ORDER BY category;</code></pre>
+<p class="muted small">Result</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>category</th><th>name</th><th>price</th></tr></thead>
+<tbody><tr><td>electronics</td><td>Laptop</td><td>1200.0</td></tr><tr><td>furniture</td><td>Desk</td><td>300.0</td></tr><tr><td>stationery</td><td>Notebook</td><td>5.0</td></tr></tbody>
+</table>
+</div>
+    </section>
+
+    <section id="portable" data-track>
+      <h2>Portable SQL habits</h2>
+<ol><li>Use explicit <code>JOIN ... ON</code>, never comma joins.</li><li>Use <code>COALESCE</code> and <code>CASE</code> (standard) instead of <code>IFNULL</code>, <code>ISNULL</code>, <code>NVL</code>.</li><li>Use <code>CAST(x AS type)</code> rather than shortcuts like <code>x::int</code>.</li><li>Avoid vendor functions in the core of your queries, or wrap them in views or a small data-access layer.</li><li>Quote nothing unless forced; use lowercase snake_case names.</li><li>Use standard date literals (<code>DATE '2024-01-31'</code>) where supported.</li><li>Test against the production engine; a green SQLite test suite does not prove PostgreSQL behaviour (type strictness, locking, collation).</li></ol>
+    </section>
+
+    <section id="nosql" data-track>
+      <h2>When relational is not the answer: NoSQL</h2>
+<p><strong>NoSQL</strong> is a family of stores that relax some relational features to gain scale, flexibility or speed for a specific access pattern.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Family</th><th>Model</th><th>Examples</th><th>Good for</th><th>Weak at</th></tr></thead>
+<tbody>
+<tr><td><strong>Key-value</strong></td><td><code>key -&gt; value</code></td><td>Redis, DynamoDB, Memcached</td><td>Sessions, caches, counters, simple lookups</td><td>Queries by value, relationships</td></tr><tr><td><strong>Document</strong></td><td>JSON-like documents</td><td>MongoDB, Couchbase, Firestore</td><td>Varied, nested records; flexible schema</td><td>Many-to-many joins, multi-document transactions (improving)</td></tr><tr><td><strong>Wide-column</strong></td><td>Rows with flexible column families, partitioned</td><td>Cassandra, HBase, Bigtable</td><td>Huge write volume, time series, known queries</td><td>Ad hoc queries, joins</td></tr><tr><td><strong>Graph</strong></td><td>Nodes and edges</td><td>Neo4j, Neptune</td><td>Deep relationship traversals, recommendations, fraud rings</td><td>Bulk analytics, horizontal scale</td></tr><tr><td><strong>Search</strong></td><td>Inverted index</td><td>Elasticsearch, OpenSearch</td><td>Full-text search, log analytics</td><td>Being a system of record</td></tr><tr><td><strong>Time series</strong></td><td>Timestamped measurements</td><td>InfluxDB, TimescaleDB, Prometheus</td><td>Metrics, sensors</td><td>General transactions</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Modelling the same data both ways</h3>
+<p>Relational: normalise and join. Document: embed what you read together, reference what grows without bound or is shared.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sql6-07.py">import json, sqlite3
+# Relational: three tables joined at read time
+db = sqlite3.connect(":memory:")
+db.executescript("""
+CREATE TABLE orders(id INTEGER PRIMARY KEY, customer TEXT);
+CREATE TABLE lines(order_id INT, sku TEXT, qty INT, price REAL);
+INSERT INTO orders VALUES (1, 'ana');
+INSERT INTO lines VALUES (1, 'pen', 3, 2.0), (1, 'book', 1, 15.0);""")
+rel = db.execute("SELECT o.id, o.customer, SUM(l.qty * l.price) FROM orders o JOIN lines l ON l.order_id = o.id GROUP BY o.id").fetchone()
+# Document: the order is one self-contained document, read in a single lookup
+doc = {"_id": 1, "customer": "ana", "lines": [{"sku": "pen", "qty": 3, "price": 2.0}, {"sku": "book", "qty": 1, "price": 15.0}]}
+total = sum(l["qty"] * l["price"] for l in doc["lines"])
+print("relational result:", rel)
+print("document total   :", (doc["_id"], doc["customer"], total))
+print("document as stored:", json.dumps(doc))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>relational result: (1, 'ana', 21.0)
+document total   : (1, 'ana', 21.0)
+document as stored: {"_id": 1, "customer": "ana", "lines": [{"sku": "pen", "qty": 3, "price": 2.0}, {"sku": "book", "qty": 1, "price": 15.0}]}</code></pre>
+<p>Trade-off: the document is one read and fits an aggregate, but "total quantity of pens sold across all orders" now scans documents (or needs an index on an array field), and shared data (product names) is duplicated and can go stale.</p>
+<h3>Choosing {choose}</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>If you need</th><th>Prefer</th></tr></thead>
+<tbody>
+<tr><td>Transactions across many entities, ad hoc queries, reporting</td><td>Relational</td></tr><tr><td>Flexible, evolving documents read as a unit</td><td>Document</td></tr><tr><td>Millions of writes per second with known queries</td><td>Wide-column or key-value</td></tr><tr><td>Caching and low-latency counters</td><td>Redis</td></tr><tr><td>Deep relationship queries</td><td>Graph</td></tr><tr><td>Full-text relevance</td><td>Search engine</td></tr>
+</tbody>
+</table>
+</div>
+<p>Most systems end up <strong>polyglot</strong>: a relational system of record, Redis for caching, a search engine for text, a warehouse for analytics, kept in sync through events or change data capture. Start with PostgreSQL unless a requirement clearly points elsewhere; it covers JSON, search, queues and geospatial well enough for a long time.</p>
+<h3>CAP and consistency, briefly</h3>
+<p>Under a network partition a distributed store must choose consistency or availability. Many NoSQL stores (Cassandra, DynamoDB) default to <strong>eventual consistency</strong> with tunable quorums; many relational clusters favour consistency. Details in the System Design guide (<a href="../system-design-guide/sd6-consistency.html">consistency</a>).</p>
+<div class="callout key"><span class="callout-title">Key idea</span><p>Learn the standard core, know the dialect differences that matter for your engine, and choose a data store from the access pattern, consistency need and scale. PostgreSQL is a strong default; add specialised stores when a measured need appears.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-sql6-q06" data-topic="SQL dialects and NoSQL" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which family suits deep relationship traversals?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Key-value <span class="q-why">No.</span></li>
+          <li data-key="B">Graph <span class="q-why">Correct.</span></li>
+          <li data-key="C">Wide-column <span class="q-why">No.</span></li>
+          <li data-key="D">Time series <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Edges are first-class and traversals are fast.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-sql6-q07" data-topic="SQL dialects and NoSQL" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is a risk of embedding shared data in documents?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Slower writes always <span class="q-why">No.</span></li>
+          <li data-key="B">Duplicates can go stale and updates must touch many documents <span class="q-why">Correct.</span></li>
+          <li data-key="C">No JSON support <span class="q-why">No.</span></li>
+          <li data-key="D">No indexes <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Normalisation trades read cost for update simplicity.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-sql6-q08" data-topic="SQL dialects and NoSQL" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is a sensible default when requirements are unclear?</p></div>
+        <ul class="q-options">
+          <li data-key="A">A graph database <span class="q-why">Too specific.</span></li>
+          <li data-key="B">PostgreSQL, adding specialised stores for measured needs <span class="q-why">Correct.</span></li>
+          <li data-key="C">A key-value store <span class="q-why">Too limited for ad hoc queries.</span></li>
+          <li data-key="D">Flat files <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>It handles relational, JSON, search and geospatial reasonably.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does polyglot persistence mean?</summary><div class="answer"><p>Using several data stores, each for what it does best, synchronised through events or CDC.</p></div></details>
+        <details class="recall"><summary>When do you pick a document store?</summary><div class="answer"><p>When records are varied, nested and read or written as a single unit with few cross-record joins.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: SQL dialects and NoSQL</h2>
+      <p class="muted">14 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="SQL dialects and NoSQL">
+<details class="recall iq" data-level="basic" data-topic="SQL dialects and NoSQL"><summary><span class="tag ok">Basic</span> How do you limit rows in MySQL, PostgreSQL, SQL Server and Oracle?</summary><div class="answer"><p>LIMIT n in MySQL, PostgreSQL and SQLite; TOP n or OFFSET FETCH in SQL Server; FETCH FIRST n ROWS ONLY (or ROWNUM) in Oracle.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="SQL dialects and NoSQL"><summary><span class="tag ok">Basic</span> What is an upsert and how is it written in different engines?</summary><div class="answer"><p>Insert or update on conflict: ON CONFLICT DO UPDATE in PostgreSQL and SQLite, ON DUPLICATE KEY UPDATE in MySQL, MERGE in SQL Server and Oracle.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL dialects and NoSQL"><summary><span class="tag warn">Medium</span> Name PostgreSQL features not in standard SQL that you find useful.</summary><div class="answer"><p>JSONB with GIN indexes, arrays, DISTINCT ON, range types and exclusion constraints, partial and expression indexes, LATERAL joins, extensions such as PostGIS.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL dialects and NoSQL"><summary><span class="tag warn">Medium</span> Why does 7/2 differ between engines?</summary><div class="answer"><p>Some engines do integer division for integer operands (PostgreSQL, SQL Server, SQLite give 3) while MySQL gives 3.5 and uses DIV for integers. Cast explicitly.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL dialects and NoSQL"><summary><span class="tag warn">Medium</span> How does collation affect queries?</summary><div class="answer"><p>It defines text comparison and sort order (case, accents, language), affecting ORDER BY, LIKE, UNIQUE and joins. Choose it deliberately and consistently.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL dialects and NoSQL"><summary><span class="tag warn">Medium</span> Why is OFFSET pagination a problem and what replaces it?</summary><div class="answer"><p>Large offsets scan and discard rows. Keyset pagination uses WHERE (key) &gt; last_seen ORDER BY key LIMIT n with an index for constant-cost pages.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL dialects and NoSQL"><summary><span class="tag warn">Medium</span> When would you choose a document database?</summary><div class="answer"><p>For varied, nested records read and written as a unit, with a flexible schema and few cross-document joins.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL dialects and NoSQL"><summary><span class="tag warn">Medium</span> When would you choose a key-value store?</summary><div class="answer"><p>For simple lookups by key at very high throughput and low latency: sessions, caches, counters, feature flags.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="SQL dialects and NoSQL"><summary><span class="tag warn">Medium</span> What is a wide-column store good at?</summary><div class="answer"><p>Huge write volumes and time-series-like data with known query patterns, partitioned by key, as in Cassandra and Bigtable.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SQL dialects and NoSQL"><summary><span class="tag bad">Advanced</span> Relational versus document modelling: embed or reference?</summary><div class="answer"><p>Embed data read together and owned by the parent; reference data that is shared, large or unbounded. Embedding speeds reads and complicates updates of duplicated data.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SQL dialects and NoSQL"><summary><span class="tag bad">Advanced</span> What is polyglot persistence?</summary><div class="answer"><p>Using several specialised stores, such as a relational database, a cache, a search engine and a warehouse, kept consistent through events or change data capture.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SQL dialects and NoSQL"><summary><span class="tag bad">Advanced</span> How does MySQL&#x27;s sql_mode matter?</summary><div class="answer"><p>Strict modes make invalid data raise errors instead of being silently truncated or coerced; ONLY_FULL_GROUP_BY rejects ambiguous aggregates.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SQL dialects and NoSQL"><summary><span class="tag bad">Advanced</span> What is QUALIFY?</summary><div class="answer"><p>A clause in warehouses such as Snowflake and BigQuery that filters on window function results without a subquery.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="SQL dialects and NoSQL"><summary><span class="tag bad">Advanced</span> Does eventual consistency mean data may be lost?</summary><div class="answer"><p>No. It means replicas may temporarily disagree and converge later; conflicts need a resolution rule, and durability is a separate property.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="py9-design-patterns.html"><span class="dir">Previous</span><span>PY9 Clean code, SOLID and design patterns in Python</span></a>
+      <a class="next" href="sql7-analytics.html"><span class="dir">Next</span><span>SQL7 Analytics SQL: funnels, cohorts, retention, percentiles and time series</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

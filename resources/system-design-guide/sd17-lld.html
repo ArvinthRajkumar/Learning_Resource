@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD17">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Low-level design and design patterns | System Design</title>
+<meta name="description" content="Object-oriented design principles, SOLID, the patterns that matter in interviews, and tested Python solutions for a parking lot, vending machine, elevator, notification hub and LRU cache.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD17</p>
+      <h1>Low-level design and design patterns</h1>
+      <p class="lede">High-level design decides which services exist. Low-level design decides which classes exist inside one of them. Interviews ask for it as 'design a parking lot': identify entities, give each one a clear job, and make the design easy to extend.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~4 hours</span></div>
+    </div>
+
+    <section id="method" data-track>
+      <h2>The LLD interview method</h2>
+<h3>Steps</h3>
+<ol><li><strong>Clarify requirements</strong> and list use cases ("park a car", "pay and exit").</li><li><strong>Identify entities (nouns)</strong> that become classes, and <strong>behaviours (verbs)</strong> that become methods.</li><li><strong>Define relationships</strong>: has-a (composition), is-a (inheritance), uses (dependency).</li><li><strong>Apply principles and patterns</strong> only where they solve a real extension point.</li><li><strong>Write the core code</strong> and walk through a scenario.</li><li><strong>Discuss extensions</strong> (new vehicle type, new pricing rule, concurrency).</li></ol>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="Do not start by coding. Name the classes first." style="min-width:760px"><defs><marker id="ah40" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah40a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah40b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah40d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah40)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah40)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah40)"/><line x1="747.0" y1="78.0" x2="747.0" y2="118.0" class="d-line" marker-end="url(#ah40)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">Requirements</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle" class="d-sm">Entities and relations</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle">Class design</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle">Code the core flow</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="151.5" text-anchor="middle">Extend and discuss</text></svg>
+</div>
+<figcaption>Do not start by coding. Name the classes first.</figcaption></figure>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What are the steps of an LLD answer?</summary><div class="answer"><p>Clarify, find entities and relations, design classes, code the core flow, discuss extensions.</p></div></details>
+      </div>
+    </section>
+
+    <section id="oop" data-track>
+      <h2>Object-oriented principles</h2>
+<h3>Four pillars</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Pillar</th><th>Meaning</th><th>Example</th></tr></thead>
+<tbody>
+<tr><td>Encapsulation</td><td>Hide state, expose behaviour</td><td>A <code>Account</code> hides <code>balance</code> and exposes <code>deposit</code></td></tr><tr><td>Abstraction</td><td>Depend on what something does, not how</td><td><code>PaymentMethod.pay(amount)</code></td></tr><tr><td>Inheritance</td><td>A subclass reuses and specialises a parent</td><td><code>Car</code> and <code>Truck</code> extend <code>Vehicle</code></td></tr><tr><td>Polymorphism</td><td>Same call, different behaviour by type</td><td><code>shape.area()</code> on a circle or square</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Prefer composition over inheritance.</strong> Inheritance couples subclasses to parent internals and creates deep hierarchies. Compose objects and delegate.</p>
+<h3>SOLID</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Principle</th><th>Rule</th><th>Violation smell</th></tr></thead>
+<tbody>
+<tr><td><strong>S</strong>ingle responsibility</td><td>A class has one reason to change</td><td>A class that parses, validates, saves and emails</td></tr><tr><td><strong>O</strong>pen/closed</td><td>Open for extension, closed for modification</td><td>An <code>if type == ...</code> chain you edit for every new type</td></tr><tr><td><strong>L</strong>iskov substitution</td><td>Subtypes must work wherever the parent is expected</td><td>A <code>Penguin</code> that raises in <code>Bird.fly()</code></td></tr><tr><td><strong>I</strong>nterface segregation</td><td>Many small interfaces beat one fat one</td><td>Forcing a printer to implement <code>fax()</code></td></tr><tr><td><strong>D</strong>ependency inversion</td><td>Depend on abstractions, inject dependencies</td><td>A service that constructs its own <code>MySQLDatabase</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>Other rules of thumb: <strong>DRY</strong> (do not repeat knowledge), <strong>KISS</strong> (keep it simple), <strong>YAGNI</strong> (do not build what you do not need), <strong>law of Demeter</strong> (talk only to your direct collaborators).</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd17-q01" data-topic="Low-level design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which SOLID principle is broken by a long if/elif chain you edit for each new payment type?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Single responsibility only <span class="q-why">Not the main one.</span></li>
+          <li data-key="B">Open/closed <span class="q-why">Correct.</span></li>
+          <li data-key="C">Interface segregation <span class="q-why">No.</span></li>
+          <li data-key="D">Liskov <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>New types should be added by extension (a new class), not by modifying existing code.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd17-q02" data-topic="Low-level design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>A Penguin subclass of Bird raises an error in fly(). Which principle is violated?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Dependency inversion <span class="q-why">No.</span></li>
+          <li data-key="B">Liskov substitution <span class="q-why">Correct.</span></li>
+          <li data-key="C">Single responsibility <span class="q-why">No.</span></li>
+          <li data-key="D">DRY <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>A subtype must be usable wherever its parent is expected without surprises.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Write out SOLID.</summary><div class="answer"><p>Single responsibility, open/closed, Liskov substitution, interface segregation, dependency inversion.</p></div></details>
+      </div>
+    </section>
+
+    <section id="patterns" data-track>
+      <h2>Patterns that matter</h2>
+<p>Patterns are named solutions to recurring design problems. Use the name as shared vocabulary, and only apply one when the problem is real.</p>
+<h3>Creational</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Pattern</th><th>Use</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td>Factory</td><td>Create objects without hard-coding the class</td><td><code>ShapeFactory.create("circle")</code></td></tr><tr><td>Builder</td><td>Construct complex objects step by step</td><td>Many optional parameters</td></tr><tr><td>Singleton</td><td>Exactly one instance</td><td>Often an anti-pattern (hidden global state); prefer dependency injection</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Structural</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Pattern</th><th>Use</th></tr></thead>
+<tbody>
+<tr><td>Adapter</td><td>Make an incompatible interface fit the one you expect</td></tr><tr><td>Decorator</td><td>Add behaviour by wrapping an object with the same interface (logging, caching)</td></tr><tr><td>Facade</td><td>A simple interface over a complicated subsystem</td></tr><tr><td>Proxy</td><td>A stand-in that controls access (lazy loading, access control, caching)</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Behavioural</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Pattern</th><th>Use</th></tr></thead>
+<tbody>
+<tr><td>Strategy</td><td>Swap an algorithm at runtime (pricing, sorting, routing)</td></tr><tr><td>Observer</td><td>Notify many listeners when something changes</td></tr><tr><td>State</td><td>Change behaviour when internal state changes (vending machine, order)</td></tr><tr><td>Command</td><td>Turn a request into an object (undo, queues)</td></tr><tr><td>Template method</td><td>Fixed algorithm skeleton with overridable steps</td></tr><tr><td>Chain of responsibility</td><td>Pass a request along handlers (middleware)</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Strategy and Observer in code</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd17-01.py">from abc import ABC, abstractmethod
+
+# Strategy: pricing algorithms are interchangeable
+class Pricing(ABC):
+    @abstractmethod
+    def fee(self, hours): ...
+class Hourly(Pricing):
+    def fee(self, hours): return 5 * hours
+class DayCap(Pricing):
+    def fee(self, hours): return min(5 * hours, 30)
+
+# Observer: listeners react to events
+class EventBus:
+    def __init__(self): self.subs = []
+    def subscribe(self, fn): self.subs.append(fn)
+    def publish(self, event):
+        for fn in self.subs: fn(event)
+
+bus = EventBus()
+bus.subscribe(lambda e: print("email:", e))
+bus.subscribe(lambda e: print("audit:", e))
+bus.publish("order_placed")
+print(Hourly().fee(10), DayCap().fee(10))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>email: order_placed
+audit: order_placed
+50 30</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd17-q03" data-topic="Low-level design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>You need to swap pricing algorithms at runtime. Which pattern?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Singleton <span class="q-why">No.</span></li>
+          <li data-key="B">Strategy <span class="q-why">Correct.</span></li>
+          <li data-key="C">Adapter <span class="q-why">No.</span></li>
+          <li data-key="D">Facade <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Strategy encapsulates interchangeable algorithms behind one interface.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd17-q04" data-topic="Low-level design" data-type="single" data-answer="A">
+        <div class="q-stem"><p>Several listeners must react when an order is placed. Which pattern?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Observer <span class="q-why">Correct.</span></li>
+          <li data-key="B">Builder <span class="q-why">No.</span></li>
+          <li data-key="C">Proxy <span class="q-why">No.</span></li>
+          <li data-key="D">Flyweight <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Observer (publish/subscribe) decouples the source from its listeners.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>When is Singleton a bad idea?</summary><div class="answer"><p>It hides global state and hinders testing; prefer injecting a shared instance.</p></div></details>
+      </div>
+    </section>
+
+    <section id="parking" data-track>
+      <h2>Problem 1: Parking lot</h2>
+<h3>Requirements</h3>
+<p>Multiple floors with spots of different sizes (motorcycle, car, large). Vehicles enter, get a ticket, park in the nearest suitable free spot, and pay on exit based on duration. Report availability.</p>
+<h3>Entities</h3>
+<p><code>ParkingLot</code> (floors, tickets), <code>Floor</code> (spots), <code>Spot</code> (size, free or occupied), <code>Vehicle</code> (type), <code>Ticket</code> (spot, entry time), <code>Pricing</code> (strategy).</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 638 362" role="img" aria-label="Parking lot class relationships." style="min-width:638px"><defs><marker id="ah41" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah41a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah41b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah41d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="168.3" y1="118.0" x2="255.7" y2="78.0" class="d-line" marker-end="url(#ah41)"/><text x="212.0" y="93.0" text-anchor="middle" class="d-sm d-muted">has many</text><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah41)"/><text x="426.0" y="44.0" text-anchor="middle" class="d-sm d-muted">has many</text><line x1="168.3" y1="176.0" x2="255.7" y2="216.0" class="d-line" marker-end="url(#ah41)"/><text x="212.0" y="191.0" text-anchor="middle" class="d-sm d-muted">issues</text><line x1="404.0" y1="245.0" x2="448.0" y2="245.0" class="d-line" marker-end="url(#ah41)"/><text x="426.0" y="240.0" text-anchor="middle" class="d-sm d-muted">for</text><line x1="105.0" y1="176.0" x2="105.0" y2="284.6" class="d-line" marker-end="url(#ah41)"/><text x="105.0" y="225.3" text-anchor="middle" class="d-sm d-muted">uses</text><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="151.5" text-anchor="middle">ParkingLot</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-b"/><text x="319.0" y="53.5" text-anchor="middle">Floor</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-b"/><text x="533.0" y="53.5" text-anchor="middle">Spot</text><rect x="234.0" y="216.0" width="170" height="58" rx="8" class="d-c"/><text x="319.0" y="249.5" text-anchor="middle">Ticket</text><rect x="448.0" y="216.0" width="170" height="58" rx="8" class="d-e"/><text x="533.0" y="249.5" text-anchor="middle">Vehicle</text><rect x="20.0" y="284.6" width="170" height="58" rx="8" class="d-d"/><text x="105.0" y="310.6" text-anchor="middle">Pricing</text><text x="105.0" y="325.6" text-anchor="middle">(strategy)</text></svg>
+</div>
+<figcaption>Parking lot class relationships.</figcaption></figure>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd17-02.py">from dataclasses import dataclass, field
+
+SIZES = {"moto": 1, "car": 2, "large": 3}
+
+@dataclass
+class Spot:
+    id: str
+    size: int
+    vehicle: str = None
+    def fits(self, kind): return self.vehicle is None and self.size &gt;= SIZES[kind]
+
+@dataclass
+class Ticket:
+    id: int
+    spot: Spot
+    vehicle: str
+    entry: float
+
+class ParkingLot:
+    def __init__(self, spots, rate_per_hour=5):
+        self.spots, self.rate, self.tickets, self.next_id = spots, rate_per_hour, {}, 1
+    def park(self, vehicle, kind, now):
+        # best fit: smallest free spot that fits (keeps big spots for big vehicles)
+        cands = [s for s in self.spots if s.fits(kind)]
+        if not cands:
+            raise RuntimeError("lot full for " + kind)
+        spot = min(cands, key=lambda s: s.size)
+        spot.vehicle = vehicle
+        t = Ticket(self.next_id, spot, vehicle, now)
+        self.tickets[t.id] = t
+        self.next_id += 1
+        return t
+    def leave(self, ticket_id, now):
+        t = self.tickets.pop(ticket_id)
+        t.spot.vehicle = None
+        hours = max(1, -(-int(now - t.entry) // 3600))       # round up to whole hours
+        return hours * self.rate
+
+lot = ParkingLot([Spot("A1", 1), Spot("A2", 2), Spot("A3", 3)])
+t1 = lot.park("bike", "moto", 0)
+t2 = lot.park("sedan", "car", 0)
+print(t1.spot.id, t2.spot.id)
+print("fee:", lot.leave(t2.id, 2 * 3600 + 1))
+print("free for large:", [s.id for s in lot.spots if s.fits("large")])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>A1 A2
+fee: 15
+free for large: ['A3']</code></pre>
+<h3>Extensions</h3>
+<p>New vehicle type: add an entry to <code>SIZES</code> (open/closed). New pricing: new <code>Pricing</code> strategy. Concurrency: guard <code>park</code> with a lock or use atomic spot reservation in a database. Many entrances: per-floor free lists (min-heaps) for O(log n) nearest-spot lookups.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd17-q05" data-topic="Low-level design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>To keep large spots free for large vehicles, which allocation is better?</p></div>
+        <ul class="q-options">
+          <li data-key="A">First free spot <span class="q-why">May waste large spots.</span></li>
+          <li data-key="B">Best fit: smallest free spot that fits <span class="q-why">Correct.</span></li>
+          <li data-key="C">Random spot <span class="q-why">Wasteful.</span></li>
+          <li data-key="D">Largest spot <span class="q-why">Wasteful.</span></li>
+        </ul>
+        <div class="q-explain"><p>Best fit preserves flexibility for future large vehicles.</p></div>
+      </div>
+    </section>
+
+    <section id="vending" data-track>
+      <h2>Problem 2: Vending machine (State pattern)</h2>
+<h3>Idea</h3>
+<p>Behaviour depends on state: with no money inserted, pressing "select" does nothing; with enough money, it dispenses. Model each state as a class or use a state table.</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 98" role="img" aria-label="States of a vending machine: insert coin, select item, dispense, return to idle." style="min-width:760px"><defs><marker id="ah42" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah42a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah42b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah42d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah42)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah42)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah42)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">Idle</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle">HasMoney</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle">Dispensing</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle">Idle</text></svg>
+</div>
+<figcaption>States of a vending machine: insert coin, select item, dispense, return to idle.</figcaption></figure>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd17-03.py">class VendingMachine:
+    def __init__(self, stock):
+        self.stock, self.balance, self.state = dict(stock), 0, "idle"
+    def insert(self, cents):
+        if self.state == "dispensing":
+            raise RuntimeError("busy")
+        self.balance += cents
+        self.state = "has_money"
+    def select(self, item):
+        if self.state != "has_money":
+            return "insert money first"
+        price, qty = self.stock[item]
+        if qty == 0:
+            return "sold out"
+        if self.balance &lt; price:
+            return "need %d more" % (price - self.balance)
+        self.state = "dispensing"
+        self.stock[item] = (price, qty - 1)
+        change, self.balance, self.state = self.balance - price, 0, "idle"
+        return "dispensed %s, change %d" % (item, change)
+    def cancel(self):
+        refund, self.balance, self.state = self.balance, 0, "idle"
+        return refund
+
+vm = VendingMachine({"cola": (150, 1)})
+print(vm.select("cola"))
+vm.insert(100); print(vm.select("cola"))
+vm.insert(100); print(vm.select("cola"))
+vm.insert(200); print(vm.select("cola"), vm.cancel())</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>insert money first
+need 50 more
+dispensed cola, change 50
+sold out 200</code></pre>
+<p>A full State pattern makes each state a class with <code>insert</code>, <code>select</code>, <code>cancel</code> methods, so adding a state (maintenance mode) adds a class instead of editing every <code>if</code>.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd17-q06" data-topic="Low-level design" data-type="single" data-answer="A">
+        <div class="q-stem"><p>Behaviour changes depending on whether money has been inserted. Which pattern models that cleanly?</p></div>
+        <ul class="q-options">
+          <li data-key="A">State <span class="q-why">Correct.</span></li>
+          <li data-key="B">Decorator <span class="q-why">No.</span></li>
+          <li data-key="C">Prototype <span class="q-why">No.</span></li>
+          <li data-key="D">Iterator <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The State pattern turns each state into its own behaviour and transitions.</p></div>
+      </div>
+    </section>
+
+    <section id="elevator" data-track>
+      <h2>Problem 3: Elevator system</h2>
+<h3>Requirements</h3>
+<p>Several elevators, many floors, hall calls (up or down) and cabin calls (go to floor N). Pick which elevator serves a call, and minimise waiting.</p>
+<h3>Design</h3>
+<p>Entities: <code>Elevator</code> (current floor, direction, queue of stops), <code>Controller</code> (dispatch policy), <code>Request</code>. Use the <strong>SCAN</strong> (elevator) algorithm: keep moving in one direction serving stops, then reverse. Dispatch uses a <strong>Strategy</strong>: nearest idle elevator, or the one already moving toward the call with the smallest added cost.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd17-04.py">class Elevator:
+    def __init__(self, floor=0):
+        self.floor, self.dir, self.up, self.down = floor, 0, set(), set()
+    def request(self, f):
+        (self.up if f &gt;= self.floor else self.down).add(f)
+    def step(self):
+        """Move one floor along SCAN order and return the floor visited."""
+        if self.dir &gt;= 0 and any(f &gt;= self.floor for f in self.up):
+            self.dir = 1
+        elif self.down:
+            self.dir = -1
+        elif self.up:
+            self.dir = 1
+        else:
+            self.dir = 0
+            return None
+        self.floor += self.dir
+        self.up.discard(self.floor); self.down.discard(self.floor)
+        return self.floor
+
+e = Elevator(0)
+for f in (3, 5, 2): e.request(f)
+trace = []
+for _ in range(7):
+    trace.append(e.step())
+print(trace)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[1, 2, 3, 4, 5, None, None]</code></pre>
+<p>The trace lists each floor the cabin passes. It serves requests 2, 3 and 5 in one upward sweep rather than jumping around. Real systems add door timing, capacity, priority and zones.</p>
+    </section>
+
+    <section id="lru" data-track>
+      <h2>Problem 4: LRU cache and thread safety</h2>
+<p>Implement <code>get</code> and <code>put</code> in O(1) with a hash map and doubly linked list (see <a href="sd7-caching.html">SD7</a>). The extra LLD discussion: <strong>thread safety</strong> and <strong>extensibility</strong>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd17-05.py">import threading
+from collections import OrderedDict
+
+class ThreadSafeLRU:
+    def __init__(self, capacity, on_evict=None):
+        self.cap, self.d, self.lock, self.on_evict = capacity, OrderedDict(), threading.Lock(), on_evict
+    def get(self, k):
+        with self.lock:
+            if k not in self.d: return None
+            self.d.move_to_end(k)
+            return self.d[k]
+    def put(self, k, v):
+        with self.lock:
+            self.d[k] = v
+            self.d.move_to_end(k)
+            if len(self.d) &gt; self.cap:
+                old = self.d.popitem(last=False)
+                if self.on_evict: self.on_evict(*old)
+
+evicted = []
+c = ThreadSafeLRU(2, on_evict=lambda k, v: evicted.append(k))
+for i in range(5):
+    c.put(i, i)
+print(list(c.d), evicted)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[3, 4] [0, 1, 2]</code></pre>
+<p>Discuss: a single lock is simple but a bottleneck; use <strong>striped locks</strong> (shard the cache into N independent LRUs by key hash) for more concurrency. The <code>on_evict</code> callback is an Observer-style extension point. An <strong>eviction policy interface</strong> (LRU, LFU) is a Strategy.</p>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you make an LRU thread safe and scalable?</summary><div class="answer"><p>A lock around operations, then striped locks by sharding keys across several independent LRUs.</p></div></details>
+      </div>
+    </section>
+
+    <section id="hub" data-track>
+      <h2>Problem 5: Notification hub</h2>
+<p>Requirements: send notifications through email, SMS and push; add channels without changing existing code; user preferences decide channels.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/sd17-06.py">from abc import ABC, abstractmethod
+
+class Channel(ABC):
+    @abstractmethod
+    def send(self, user, msg): ...
+
+class Email(Channel):
+    def send(self, user, msg): return "email to %s: %s" % (user["name"], msg)
+class Sms(Channel):
+    def send(self, user, msg): return "sms to %s: %s" % (user["name"], msg)
+class Push(Channel):
+    def send(self, user, msg): return "push to %s: %s" % (user["name"], msg)
+
+class ChannelFactory:
+    _reg = {"email": Email, "sms": Sms, "push": Push}
+    @classmethod
+    def create(cls, name): return cls._reg[name]()
+
+class NotificationHub:
+    def notify(self, user, msg):
+        return [ChannelFactory.create(c).send(user, msg) for c in user["prefs"]]
+
+hub = NotificationHub()
+print(hub.notify({"name": "Ada", "prefs": ["email", "push"]}, "Order shipped"))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>['email to Ada: Order shipped', 'push to Ada: Order shipped']</code></pre>
+<p>Adding Slack means one new class and one registry entry: <strong>open for extension, closed for modification</strong>. This combines Strategy (channels), Factory (creation) and dependency inversion (the hub depends on <code>Channel</code>).</p>
+    </section>
+
+    <section id="concurrency" data-track>
+      <h2>Concurrency in LLD</h2>
+<ul><li><strong>Race condition</strong>: two threads read-modify-write shared state. Fix with a lock, an atomic operation or by confining state to one thread.</li><li><strong>Deadlock</strong>: threads wait for each other's locks. Avoid by locking in a consistent global order, using timeouts or lock-free structures.</li><li>Prefer <strong>immutable objects</strong> and message passing (queues) over shared mutable state.</li><li>Make operations <strong>idempotent</strong> where retries can happen.</li><li>In a distributed setting, in-process locks do not help: use database constraints, atomic conditional updates or a coordination service (<a href="sd12-data-systems.html">SD12</a>).</li></ul>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd17-q07" data-topic="Low-level design" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Two threads must lock accounts A and B. How do you avoid deadlock?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Lock in whatever order arrives <span class="q-why">Can deadlock.</span></li>
+          <li data-key="B">Always acquire locks in a fixed global order <span class="q-why">Correct.</span></li>
+          <li data-key="C">Never unlock <span class="q-why">No.</span></li>
+          <li data-key="D">Use sleep <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>A consistent lock ordering removes circular waits.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name a race condition fix and a deadlock fix.</summary><div class="answer"><p>Use locks or atomic operations for races; use a consistent lock order or timeouts for deadlocks.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Low-level design</h2>
+      <p class="muted">8 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Low-level design">
+<details class="recall iq" data-level="basic" data-topic="Low-level design"><summary><span class="tag ok">Basic</span> What are the SOLID principles?</summary><div class="answer"><p>Single responsibility, open/closed, Liskov substitution, interface segregation and dependency inversion.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Low-level design"><summary><span class="tag ok">Basic</span> Composition versus inheritance?</summary><div class="answer"><p>Prefer composition: it is more flexible and avoids tight coupling and deep hierarchies. Use inheritance for real is-a relationships.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Low-level design"><summary><span class="tag warn">Medium</span> When do you use the Strategy pattern?</summary><div class="answer"><p>When an algorithm should be swappable at runtime, such as pricing, routing or eviction policy, replacing conditionals with polymorphism.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Low-level design"><summary><span class="tag warn">Medium</span> State pattern example?</summary><div class="answer"><p>A vending machine or order lifecycle where behaviour depends on state; each state encapsulates its behaviour and transitions.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Low-level design"><summary><span class="tag warn">Medium</span> Design a parking lot.</summary><div class="answer"><p>Entities: ParkingLot, Floor, Spot, Vehicle, Ticket, Pricing strategy. Allocate best-fit spots, issue a ticket, compute fee on exit; extend with new vehicle types and pricing rules without modifying core code.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Low-level design"><summary><span class="tag warn">Medium</span> Why is Singleton often discouraged?</summary><div class="answer"><p>It is global mutable state that hides dependencies and complicates testing. Inject a single shared instance instead.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Low-level design"><summary><span class="tag bad">Advanced</span> How do you make a class thread safe?</summary><div class="answer"><p>Protect shared mutable state with locks or atomics, prefer immutability and message passing, keep critical sections small, avoid deadlocks with consistent lock ordering.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Low-level design"><summary><span class="tag bad">Advanced</span> How do you make an LRU cache scale across threads?</summary><div class="answer"><p>Shard keys into independent LRU segments each with its own lock (striped locking) to reduce contention.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd16-case-4.html"><span class="dir">Previous</span><span>SD16 Case studies 4: metrics, ad click aggregation, leaderboard, message queue, collaborative editing</span></a>
+      <a class="next" href="sd18-storage-engines.html"><span class="dir">Next</span><span>SD18 Storage engine internals: B-trees, LSM trees, WAL, bloom filters and indexes</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

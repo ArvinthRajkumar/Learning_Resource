@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en" data-resource="system-design-guide" data-page="SD2">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Networking, DNS, HTTP and CDN fundamentals | System Design</title>
+<meta name="description" content="What happens from typing a URL to seeing a page: TCP/IP, DNS, TLS, HTTP versions, WebSockets, CDNs and how to design with network behaviour in mind.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">System Design</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part SD2</p>
+      <h1>Networking, DNS, HTTP and CDN fundamentals</h1>
+      <p class="lede">Every distributed system is built on a network that is slower, less reliable and less predictable than a function call. This part explains the layers you will constantly reference in a design: IP, TCP, DNS, TLS, HTTP and CDNs.</p>
+      <div class="meta"><span class="tag ok">Basic</span><span class="tag warn">Medium</span><span class="tag">~2.5 hours</span></div>
+    </div>
+
+    <section id="journey" data-track>
+      <h2>From URL to page</h2>
+<h3>Intuition</h3>
+<p>When you type <code>https://shop.example.com/cart</code> and press Enter, a dozen cooperating systems wake up. Knowing the order lets you point at the step where latency, caching, security or failure fits into a design.</p>
+<h3>The sequence</h3>
+<ol><li><strong>Browser cache and OS cache</strong>: have we seen this name or page recently? If so, skip steps.</li><li><strong>DNS resolution</strong>: turn <code>shop.example.com</code> into an IP address.</li><li><strong>TCP handshake</strong>: open a reliable connection to that IP and port 443 (one round trip).</li><li><strong>TLS handshake</strong>: agree on encryption keys and verify the server's certificate (one more round trip with TLS 1.3).</li><li><strong>HTTP request</strong>: send <code>GET /cart</code> with headers and cookies.</li><li><strong>Server side</strong>: a CDN or load balancer receives the request, forwards it to an application server, which may check a cache and query a database.</li><li><strong>HTTP response</strong>: status code, headers, body travel back.</li><li><strong>Browser renders</strong> and fetches more resources (images, scripts), usually over the same connection.</li></ol>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="The journey of a request. Each arrow can add latency or fail." style="min-width:760px"><defs><marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah3a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah3b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah3d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah3)"/><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah3)"/><line x1="618.0" y1="49.0" x2="662.0" y2="49.0" class="d-line" marker-end="url(#ah3)"/><line x1="747.0" y1="78.0" x2="747.0" y2="118.0" class="d-line" marker-end="url(#ah3)"/><line x1="662.0" y1="147.0" x2="618.0" y2="147.0" class="d-line" marker-end="url(#ah3)"/><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="53.5" text-anchor="middle">Browser</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="319.0" y="53.5" text-anchor="middle">DNS</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="53.5" text-anchor="middle">TCP + TLS</text><rect x="662.0" y="20.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="53.5" text-anchor="middle">Load balancer</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="747.0" y="151.5" text-anchor="middle">App server</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-box"/><text x="533.0" y="151.5" text-anchor="middle">Cache / DB</text></svg>
+</div>
+<figcaption>The journey of a request. Each arrow can add latency or fail.</figcaption></figure>
+<h3>Where time goes</h3>
+<p>For a user 100 ms from the server: DNS lookup (0 to 100 ms or cached), TCP handshake (1 round trip, 100 ms), TLS (1 round trip with TLS 1.3, 100 ms), request and response (1 round trip plus server time). That is <strong>at least 300 ms</strong> before the first byte on a cold connection. Reusing connections (keep-alive, HTTP/2, QUIC) and putting servers or CDNs near users removes round trips.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd2-q01" data-topic="Networking" data-type="single" data-answer="C">
+        <div class="q-stem"><p>On a cold connection with TLS 1.3 and a user 100 ms from the server, roughly how long until the first byte of the response can arrive (ignoring DNS and server time)?</p></div>
+        <ul class="q-options">
+          <li data-key="A">100 ms <span class="q-why">That is only the request and response round trip.</span></li>
+          <li data-key="B">200 ms <span class="q-why">TCP plus request, but TLS adds a round trip.</span></li>
+          <li data-key="C">300 ms <span class="q-why">Correct: TCP, TLS and the request/response each cost one round trip.</span></li>
+          <li data-key="D">1 s <span class="q-why">Too high for one region.</span></li>
+        </ul>
+        <div class="q-explain"><p>TCP handshake (1 RTT) + TLS 1.3 handshake (1 RTT) + request and response (1 RTT) = 3 RTT = 300 ms.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name the steps from URL to page.</summary><div class="answer"><p>Cache check, DNS, TCP handshake, TLS handshake, HTTP request, server work (load balancer, app, cache, database), response, rendering.</p></div></details>
+      </div>
+    </section>
+
+    <section id="stack" data-track>
+      <h2>The network stack</h2>
+<h3>Layers in one table</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Layer</th><th>Job</th><th>Example</th></tr></thead>
+<tbody>
+<tr><td>Application</td><td>What the programs say to each other</td><td>HTTP, gRPC, DNS, SMTP</td></tr><tr><td>Transport</td><td>Reliable or fast delivery between processes</td><td>TCP, UDP, QUIC</td></tr><tr><td>Network</td><td>Addressing and routing between machines</td><td>IP (IPv4, IPv6)</td></tr><tr><td>Link</td><td>Moving frames over one hop</td><td>Ethernet, Wi-Fi</td></tr>
+</tbody>
+</table>
+</div>
+<h3>IP addresses and ports</h3>
+<p>An <strong>IP address</strong> identifies a network interface. A <strong>port</strong> (0 to 65535) identifies a process on that machine. A connection is identified by the 4-tuple: source IP, source port, destination IP, destination port. IPv4 has 2^32 (about 4.3 billion) addresses, so private ranges (<code>10.0.0.0/8</code>, <code>172.16.0.0/12</code>, <code>192.168.0.0/16</code>) are reused inside networks and translated by NAT. IPv6 has 2^128 addresses.</p>
+<h3>TCP versus UDP</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>TCP</th><th>UDP</th></tr></thead>
+<tbody>
+<tr><td>Connection</td><td>Handshake first</td><td>None</td></tr><tr><td>Delivery</td><td>Reliable, ordered, retransmits</td><td>Best effort, may drop, may reorder</td></tr><tr><td>Flow and congestion control</td><td>Yes</td><td>No (application must handle it)</td></tr><tr><td>Overhead</td><td>Higher</td><td>Lower</td></tr><tr><td>Use for</td><td>Web, databases, file transfer, email</td><td>DNS lookups, video calls, games, QUIC underneath HTTP/3</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>TCP handshake</strong>: SYN, SYN-ACK, ACK. That costs one round trip before data. <strong>Slow start</strong> begins with a small window and grows it, so new connections are slow at first. This is another reason to reuse connections.</p>
+<h3>Latency, bandwidth and throughput</h3>
+<ul><li><strong>Latency</strong>: time for one bit to travel (limited by the speed of light in fibre, about 200,000 km per second, so 1,000 km adds about 5 ms one way).</li><li><strong>Bandwidth</strong>: maximum data per second the link can carry.</li><li><strong>Throughput</strong>: what you actually achieve, often lower because of latency, packet loss and the TCP window.</li></ul>
+<p>A high-bandwidth, high-latency link (a satellite) still feels slow for chatty protocols.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd2-q02" data-topic="Networking" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which transport is the better fit for a live video call where an old packet is useless?</p></div>
+        <ul class="q-options">
+          <li data-key="A">TCP, because it is reliable <span class="q-why">Retransmitting stale data adds delay.</span></li>
+          <li data-key="B">UDP, because it avoids retransmission delays <span class="q-why">Correct.</span></li>
+          <li data-key="C">Neither <span class="q-why">One of them is used.</span></li>
+          <li data-key="D">SMTP <span class="q-why">That is an application protocol for email.</span></li>
+        </ul>
+        <div class="q-explain"><p>Real-time media prefers late-dropping to late-delivering, so UDP (or QUIC) is used.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why reuse connections?</summary><div class="answer"><p>Each new connection costs TCP and TLS round trips and starts with a small congestion window (slow start).</p></div></details>
+      </div>
+    </section>
+
+    <section id="dns" data-track>
+      <h2>DNS</h2>
+<h3>What DNS does</h3>
+<p>DNS is a distributed, hierarchical, cached database that maps names to records. The main record types:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Record</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>A / AAAA</td><td>Name to IPv4 / IPv6 address</td></tr><tr><td>CNAME</td><td>Alias to another name</td></tr><tr><td>MX</td><td>Mail server for the domain</td></tr><tr><td>NS</td><td>Which name servers are authoritative</td></tr><tr><td>TXT</td><td>Free text, used for verification and email policy</td></tr><tr><td>SRV</td><td>Service host and port</td></tr>
+</tbody>
+</table>
+</div>
+<h3>Resolution path</h3>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 638 294" role="img" aria-label="Resolving shop.example.com with an empty cache. Each hop is cached according to its TTL." style="min-width:638px"><defs><marker id="ah4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah4a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah4b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah4d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="49.0" x2="234.0" y2="49.0" class="d-line" marker-end="url(#ah4)"/><text x="212.0" y="44.0" text-anchor="middle" class="d-sm d-muted">asks</text><line x1="404.0" y1="49.0" x2="448.0" y2="49.0" class="d-line" marker-end="url(#ah4)"/><text x="426.0" y="44.0" text-anchor="middle" class="d-sm d-muted">who runs .com?</text><line x1="382.3" y1="78.0" x2="469.7" y2="118.0" class="d-line" marker-end="url(#ah4)"/><text x="426.0" y="93.0" text-anchor="middle" class="d-sm d-muted">who runs example.com?</text><line x1="350.7" y1="78.0" x2="501.3" y2="216.0" class="d-line" marker-end="url(#ah4)"/><text x="426.0" y="142.0" text-anchor="middle" class="d-sm d-muted">A record?</text><rect x="20.0" y="20.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="46.0" text-anchor="middle">Browser / OS</text><text x="105.0" y="61.0" text-anchor="middle">stub resolver</text><rect x="234.0" y="20.0" width="170" height="58" rx="8" class="d-b"/><text x="319.0" y="46.0" text-anchor="middle">Recursive resolver</text><text x="319.0" y="61.0" text-anchor="middle">(ISP or 8.8.8.8)</text><rect x="448.0" y="20.0" width="170" height="58" rx="8" class="d-c"/><text x="533.0" y="53.5" text-anchor="middle">Root servers</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-c"/><text x="533.0" y="151.5" text-anchor="middle">.com TLD servers</text><rect x="448.0" y="216.0" width="170" height="58" rx="8" class="d-c"/><text x="533.0" y="242.0" text-anchor="middle" class="d-sm">Authoritative</text><text x="533.0" y="257.0" text-anchor="middle" class="d-sm">server for example.com</text></svg>
+</div>
+<figcaption>Resolving shop.example.com with an empty cache. Each hop is cached according to its TTL.</figcaption></figure>
+<h3>TTL and caching</h3>
+<p>Every answer has a <strong>time to live</strong>. Short TTLs (30 to 60 seconds) allow fast failover but cause more lookups. Long TTLs (hours) reduce load and latency but slow down changes. Before a planned migration, lower the TTL days earlier.</p>
+<h3>DNS in system design</h3>
+<ul><li><strong>Load balancing</strong>: return several A records (round robin) or different answers per client.</li><li><strong>Geo routing</strong>: return the nearest region's address. Used by Route 53, Cloudflare and others.</li><li><strong>Failover</strong>: a health check removes an unhealthy address from DNS answers (slow, because of TTL and client caching).</li><li><strong>Anycast</strong>: the same IP is announced from many places and routing delivers you to the nearest. Used by DNS and CDNs.</li></ul>
+<div class="callout trap"><span class="callout-title">Trap</span><p>DNS failover is not instant. Clients and resolvers ignore TTLs, browsers cache, and connections stay open. Use DNS for coarse regional routing, and a load balancer for fast failover inside a region.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd2-q03" data-topic="Networking" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Why is DNS-based failover slow?</p></div>
+        <ul class="q-options">
+          <li data-key="A">DNS cannot return multiple addresses <span class="q-why">It can.</span></li>
+          <li data-key="B">Resolvers, OS and browsers cache answers past TTL, and open connections persist <span class="q-why">Correct.</span></li>
+          <li data-key="C">DNS only works over UDP <span class="q-why">Irrelevant.</span></li>
+          <li data-key="D">Certificates must be reissued <span class="q-why">Not related.</span></li>
+        </ul>
+        <div class="q-explain"><p>Caching at many layers means clients keep using the old address for minutes. Use a load balancer for fast failover.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What are A, CNAME, MX and NS records?</summary><div class="answer"><p>Name to IPv4, alias to another name, mail server, and the authoritative name servers.</p></div></details>
+      </div>
+    </section>
+
+    <section id="tls" data-track>
+      <h2>TLS and HTTPS</h2>
+<h3>What TLS provides</h3>
+<ul><li><strong>Encryption</strong>: eavesdroppers cannot read the traffic.</li><li><strong>Integrity</strong>: tampering is detected.</li><li><strong>Authentication</strong>: the client verifies the server (and optionally the server verifies the client, in mutual TLS) using certificates signed by a trusted certificate authority.</li></ul>
+<h3>The handshake in plain language</h3>
+<ol><li>The client says which TLS version and ciphers it supports.</li><li>The server sends its certificate (containing its public key, signed by a CA).</li><li>Both sides perform a key exchange (Diffie-Hellman) to derive a shared session key without ever sending it.</li><li>Everything after that is encrypted with fast symmetric encryption.</li></ol>
+<p>TLS 1.3 needs one round trip (and zero for resumed sessions, with caveats). TLS 1.2 needs two.</p>
+<h3>Where TLS ends</h3>
+<p>Common designs <strong>terminate TLS at the load balancer</strong> (it decrypts, then talks plain HTTP inside the private network) to save CPU on application servers and simplify certificates. Zero-trust networks re-encrypt inside with mutual TLS.</p>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd2-q04" data-topic="Networking" data-type="fill" data-answer="termination|offloading|offload">
+        <div class="q-stem"><p>TLS terminated at the load balancer is called TLS <input class="q-input" aria-label="blank 1">.</p></div>
+        <div class="q-explain"><p>The load balancer decrypts traffic and forwards plain or re-encrypted requests inside the network.</p></div>
+      </div>
+    </section>
+
+    <section id="http" data-track>
+      <h2>HTTP</h2>
+<h3>Request and response</h3>
+<pre><code>GET /cart?user=42 HTTP/1.1
+Host: shop.example.com
+Accept: application/json
+Cookie: session=abc123
+
+HTTP/1.1 200 OK
+Content-Type: application/json
+Cache-Control: private, max-age=0
+ETag: "v17"
+
+{"items": 3}</code></pre>
+<h3>Methods and idempotency</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Method</th><th>Meaning</th><th>Safe (no change)</th><th>Idempotent (repeat is harmless)</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td>Read</td><td>Yes</td><td>Yes</td></tr><tr><td>HEAD</td><td>Read headers</td><td>Yes</td><td>Yes</td></tr><tr><td>PUT</td><td>Replace a resource</td><td>No</td><td>Yes</td></tr><tr><td>DELETE</td><td>Remove</td><td>No</td><td>Yes</td></tr><tr><td>POST</td><td>Create or run an action</td><td>No</td><td>No</td></tr><tr><td>PATCH</td><td>Partial update</td><td>No</td><td>Usually no</td></tr>
+</tbody>
+</table>
+</div>
+<p>Idempotency matters for retries: a client or proxy that times out may resend. A <code>PUT</code> can be safely retried, a <code>POST</code> charge cannot unless you add an idempotency key (<a href="sd8-messaging.html">SD8</a>).</p>
+<h3>Status codes</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Range</th><th>Meaning</th><th>Examples</th></tr></thead>
+<tbody>
+<tr><td>2xx</td><td>Success</td><td>200 OK, 201 Created, 204 No Content</td></tr><tr><td>3xx</td><td>Redirect</td><td>301 permanent, 302 temporary, 304 not modified</td></tr><tr><td>4xx</td><td>Client error</td><td>400 bad request, 401 unauthenticated, 403 forbidden, 404 not found, 409 conflict, 429 too many requests</td></tr><tr><td>5xx</td><td>Server error</td><td>500 internal, 502 bad gateway, 503 unavailable, 504 gateway timeout</td></tr>
+</tbody>
+</table>
+</div>
+<h3>HTTP versions</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Version</th><th>Key idea</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td>HTTP/1.1</td><td>Text protocol, keep-alive, one request at a time per connection</td><td>Browsers open about 6 connections per host</td></tr><tr><td>HTTP/2</td><td>Binary, many multiplexed streams on one connection, header compression</td><td>Fewer connections, still blocked by TCP packet loss</td></tr><tr><td>HTTP/3</td><td>Runs over QUIC (UDP), streams independent, faster handshake</td><td>Better on lossy mobile networks</td></tr>
+</tbody>
+</table>
+</div>
+<h3>HTTP caching</h3>
+<ul><li><code>Cache-Control: max-age=3600</code> lets caches reuse a response for an hour.</li><li><code>ETag</code> plus <code>If-None-Match</code> lets a client revalidate cheaply: the server answers <code>304 Not Modified</code> with no body.</li><li><code>private</code> means only the user's browser may cache, <code>public</code> allows shared caches such as CDNs.</li></ul>
+<h3>Real-time options</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Technique</th><th>How it works</th><th>Use when</th></tr></thead>
+<tbody>
+<tr><td>Short polling</td><td>Client asks every few seconds</td><td>Simple, low update frequency</td></tr><tr><td>Long polling</td><td>Server holds the request until data exists</td><td>Moderate real-time, simple infrastructure</td></tr><tr><td>Server-Sent Events</td><td>One-way server push over HTTP</td><td>Live feeds, notifications</td></tr><tr><td>WebSocket</td><td>Full duplex persistent connection</td><td>Chat, collaboration, games</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd2-q05" data-topic="Networking" data-type="multi" data-answer="A,B,D">
+        <div class="q-stem"><p>Which HTTP methods are idempotent? Select all.</p></div>
+        <ul class="q-options">
+          <li data-key="A">GET</li>
+          <li data-key="B">PUT</li>
+          <li data-key="C">POST</li>
+          <li data-key="D">DELETE</li>
+        </ul>
+        <div class="q-explain"><p>Repeating GET, PUT or DELETE leaves the same server state. POST usually creates a new thing each time.</p></div>
+      </div>
+      <div class="quiz" data-qid="sd-sd2-q06" data-topic="Networking" data-type="single" data-answer="D">
+        <div class="q-stem"><p>Which status code means the gateway timed out waiting for an upstream server?</p></div>
+        <ul class="q-options">
+          <li data-key="A">401 <span class="q-why">Not authenticated.</span></li>
+          <li data-key="B">429 <span class="q-why">Too many requests.</span></li>
+          <li data-key="C">502 <span class="q-why">Bad response from upstream.</span></li>
+          <li data-key="D">504 <span class="q-why">Correct.</span></li>
+        </ul>
+        <div class="q-explain"><p>504 Gateway Timeout. 502 means the upstream returned an invalid response, 503 means unavailable.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Which codes are 401, 403 and 429?</summary><div class="answer"><p>Unauthenticated, forbidden (authenticated but not allowed) and too many requests (rate limited).</p></div></details>
+      </div>
+    </section>
+
+    <section id="cdn" data-track>
+      <h2>CDNs</h2>
+<h3>What a CDN is</h3>
+<p>A <strong>content delivery network</strong> is a global fleet of cache servers (points of presence, or PoPs) close to users. A user's request goes to the nearest PoP. On a <strong>hit</strong> it is answered immediately. On a <strong>miss</strong> the PoP fetches from the <strong>origin</strong> and stores the copy according to cache headers.</p>
+<figure class="diagram">
+<div class="scroll-x">
+<svg viewBox="0 0 852 196" role="img" aria-label="Request path with a CDN. Most traffic never reaches the origin." style="min-width:760px"><defs><marker id="ah5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head"/></marker><marker id="ah5a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-a"/></marker><marker id="ah5b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-b"/></marker><marker id="ah5d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-head-d"/></marker></defs><line x1="190.0" y1="147.0" x2="234.0" y2="147.0" class="d-line" marker-end="url(#ah5)"/><text x="212.0" y="142.0" text-anchor="middle" class="d-sm d-muted">hit: 20 ms</text><line x1="404.0" y1="147.0" x2="448.0" y2="147.0" class="d-line" marker-end="url(#ah5)"/><text x="426.0" y="142.0" text-anchor="middle" class="d-sm d-muted">miss</text><line x1="618.0" y1="147.0" x2="662.0" y2="147.0" class="d-line" marker-end="url(#ah5)"/><text x="640.0" y="142.0" text-anchor="middle" class="d-sm d-muted">miss</text><rect x="20.0" y="118.0" width="170" height="58" rx="8" class="d-a"/><text x="105.0" y="151.5" text-anchor="middle">User</text><rect x="234.0" y="118.0" width="170" height="58" rx="8" class="d-e"/><text x="319.0" y="144.0" text-anchor="middle">CDN PoP</text><text x="319.0" y="159.0" text-anchor="middle">(nearby)</text><rect x="448.0" y="118.0" width="170" height="58" rx="8" class="d-e"/><text x="533.0" y="144.0" text-anchor="middle">Origin shield</text><text x="533.0" y="159.0" text-anchor="middle">(regional cache)</text><rect x="662.0" y="118.0" width="170" height="58" rx="8" class="d-b"/><text x="747.0" y="144.0" text-anchor="middle">Origin</text><text x="747.0" y="159.0" text-anchor="middle">(your servers / S3)</text></svg>
+</div>
+<figcaption>Request path with a CDN. Most traffic never reaches the origin.</figcaption></figure>
+<h3>Push versus pull</h3>
+<ul><li><strong>Pull CDN</strong>: the CDN fetches content on first request. Easy to run. First visitors pay a miss.</li><li><strong>Push CDN</strong>: you upload content to the CDN ahead of time. Good for large, rarely changing files such as software releases or video segments.</li></ul>
+<h3>What to put on a CDN</h3>
+<p>Static assets (images, JS, CSS, fonts), video segments, downloads and even cacheable API responses. Dynamic, per-user content generally stays at the origin, though CDNs can also accelerate it with persistent connections and edge compute.</p>
+<h3>Invalidation and versioning</h3>
+<p>Purging a CDN is slow and sometimes incomplete. The reliable trick is <strong>versioned file names</strong>: <code>app.3f9a1c.js</code>. A new release has a new name, so there is nothing to invalidate, and you can cache with <code>max-age</code> of a year.</p>
+<h3>Benefits and costs</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Benefit</th><th>Cost or risk</th></tr></thead>
+<tbody>
+<tr><td>Lower latency (shorter distance)</td><td>Stale content until TTL or purge</td></tr><tr><td>Origin offload (95 percent or more of traffic)</td><td>Per-GB cost for egress</td></tr><tr><td>DDoS absorption at the edge</td><td>Extra complexity with cookies and cache keys</td></tr><tr><td>TLS terminated near users</td><td>Debugging becomes harder</td></tr>
+</tbody>
+</table>
+</div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="sd-sd2-q07" data-topic="Networking" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What is the most reliable way to ship a new version of a static file that is cached for a year?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Purge the CDN and hope <span class="q-why">Purges are slow and can miss PoPs.</span></li>
+          <li data-key="B">Change the file name with a content hash <span class="q-why">Correct.</span></li>
+          <li data-key="C">Lower max-age to 1 second <span class="q-why">Defeats caching.</span></li>
+          <li data-key="D">Use POST <span class="q-why">Not relevant.</span></li>
+        </ul>
+        <div class="q-explain"><p>Versioned names (app.3f9a1c.js) mean there is nothing to invalidate.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is the difference between a push and a pull CDN?</summary><div class="answer"><p>Push: you upload content ahead of time. Pull: the CDN fetches on first request and caches.</p></div></details>
+      </div>
+    </section>
+
+    <section id="design" data-track>
+      <h2>Designing with the network in mind</h2>
+<h3>Rules that follow from the physics</h3>
+<ul><li>Minimise round trips: batch requests, use HTTP/2 or HTTP/3, reuse connections.</li><li>Put data near users: CDNs for static data, regional replicas for dynamic data.</li><li>Assume the network fails or is slow: set <strong>timeouts</strong> everywhere, retry only idempotent operations, use backoff with jitter (<a href="sd10-reliability.html">SD10</a>).</li><li>Compress large payloads and use efficient encodings (Protocol Buffers instead of verbose JSON where it matters).</li><li>Keep large payloads off the critical path (upload media directly to object storage with a signed URL instead of through your app servers).</li></ul>
+<div class="callout key"><span class="callout-title">The fallacies of distributed computing</span><p>The network is reliable. Latency is zero. Bandwidth is infinite. The network is secure. Topology does not change. There is one administrator. Transport cost is zero. The network is homogeneous. Every design that assumes one of these breaks in production.</p></div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>List the fallacies of distributed computing.</summary><div class="answer"><p>Network reliable, latency zero, bandwidth infinite, secure, topology constant, one admin, transport free, homogeneous.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Networking</h2>
+      <p class="muted">9 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Networking">
+<details class="recall iq" data-level="basic" data-topic="Networking"><summary><span class="tag ok">Basic</span> What happens when you type a URL into a browser?</summary><div class="answer"><p>Cache check, DNS resolution, TCP handshake, TLS handshake, HTTP request, server processing (load balancer, application, cache, database), response, rendering and further requests.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Networking"><summary><span class="tag ok">Basic</span> TCP versus UDP?</summary><div class="answer"><p>TCP is connection-oriented, reliable and ordered with congestion control. UDP is connectionless and best effort with lower overhead, used for DNS, real-time media and QUIC.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Networking"><summary><span class="tag ok">Basic</span> What does DNS do and what is TTL?</summary><div class="answer"><p>It maps names to addresses through a hierarchy of resolvers and authoritative servers. TTL is how long an answer may be cached.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Networking"><summary><span class="tag warn">Medium</span> Why is DNS-based failover slow?</summary><div class="answer"><p>Resolvers, operating systems and browsers cache answers beyond TTL and existing connections persist, so clients keep using a dead address for minutes.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Networking"><summary><span class="tag warn">Medium</span> HTTP/1.1 versus HTTP/2 versus HTTP/3?</summary><div class="answer"><p>HTTP/1.1 uses one request at a time per connection. HTTP/2 multiplexes streams on one TCP connection. HTTP/3 runs over QUIC on UDP, removing TCP head-of-line blocking and speeding handshakes.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Networking"><summary><span class="tag warn">Medium</span> Explain what a CDN does and how you invalidate content.</summary><div class="answer"><p>It caches content at edge locations near users, cutting latency and origin load. Invalidate by versioned file names (content hashes) or purge APIs, preferring versioning.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Networking"><summary><span class="tag warn">Medium</span> WebSocket, SSE or long polling for real-time updates?</summary><div class="answer"><p>WebSocket for two-way low-latency (chat, collaboration), SSE for one-way server push over HTTP (feeds, notifications), long polling as a simple fallback.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Networking"><summary><span class="tag bad">Advanced</span> Why does TLS add latency and how do you reduce it?</summary><div class="answer"><p>The handshake needs one to two round trips. Reduce with TLS 1.3, session resumption, connection reuse (keep-alive, HTTP/2), terminating TLS near users at a CDN or edge, and OCSP stapling.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Networking"><summary><span class="tag bad">Advanced</span> What is anycast and where is it used?</summary><div class="answer"><p>Many locations announce the same IP and routing delivers a client to the nearest. DNS providers and CDNs use it for low latency and DDoS absorption.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="sd1-estimation.html"><span class="dir">Previous</span><span>SD1 Back-of-the-envelope estimation</span></a>
+      <a class="next" href="sd3-load-balancing.html"><span class="dir">Next</span><span>SD3 Scaling, load balancing and proxies</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

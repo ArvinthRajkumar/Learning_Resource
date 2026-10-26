@@ -1,0 +1,684 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="X7">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>More interview problems with verified solutions | DSA Master Guide</title>
+<meta name="description" content="Twenty more classic interview problems across arrays, strings, hashing, heaps, intervals, trees, graphs, backtracking and design, each with the idea, a solution and a randomised check against brute force.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part X7</p>
+      <h1>More interview problems with verified solutions</h1>
+      <p class="lede">Practice consolidates the patterns. Each problem here states the task, the key observation and complexity, then gives code that is compared against a brute-force version on random inputs, so you can trust it and adapt it.</p>
+      <div class="meta"><span class="tag bad">Advanced</span><span class="tag">~6 hours</span></div>
+    </div>
+
+    <section id="how" data-track>
+      <h2>How to use these</h2>
+<p>For each problem: try it for 15 minutes first, name the pattern, then read the idea and compare. The built-in assertions compare against an obviously correct slow version, the habit to copy in interviews: write the brute force, then the fast one, then cross-check.</p>
+    </section>
+
+    <section id="arrays" data-track>
+      <h2>Arrays and hashing</h2>
+<h3>1. Subarray sum equals k (negative numbers allowed)</h3>
+<p>Prefix sums plus a hash map of seen prefix counts: a subarray ending here sums to <code>k</code> if <code>prefix - k</code> was seen. <code>O(n)</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x7-01.py">import random
+from collections import defaultdict
+random.seed(0)
+def subarray_sum(a, k):
+    seen, cur, ans = defaultdict(int), 0, 0
+    seen[0] = 1
+    for x in a:
+        cur += x
+        ans += seen[cur - k]
+        seen[cur] += 1
+    return ans
+brute = lambda a, k: sum(sum(a[i:j]) == k for i in range(len(a)) for j in range(i + 1, len(a) + 1))
+for _ in range(300):
+    a = [random.randint(-3, 3) for _ in range(random.randint(0, 10))]
+    k = random.randint(-4, 4)
+    assert subarray_sum(a, k) == brute(a, k)
+print("subarray sum = k verified; example:", subarray_sum([1, 2, 3, -3, 3], 3))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>subarray sum = k verified; example: 5</code></pre>
+<h3>2. Product of array except self (no division)</h3>
+<p>Left products times right products. <code>O(n)</code> time, <code>O(1)</code> extra besides the output.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x7-02.py">import random
+random.seed(1)
+def product_except_self(a):
+    n, out = len(a), [1] * len(a)
+    left = 1
+    for i in range(n):
+        out[i] = left; left *= a[i]
+    right = 1
+    for i in range(n - 1, -1, -1):
+        out[i] *= right; right *= a[i]
+    return out
+def brute(a):
+    out = []
+    for i in range(len(a)):
+        p = 1
+        for j, x in enumerate(a):
+            if j != i: p *= x
+        out.append(p)
+    return out
+for _ in range(200):
+    a = [random.randint(-3, 3) for _ in range(random.randint(1, 8))]
+    assert product_except_self(a) == brute(a)
+print("verified;", product_except_self([1, 2, 3, 4]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>verified; [24, 12, 8, 6]</code></pre>
+<h3>3. Longest consecutive sequence in O(n)</h3>
+<p>Put values in a set; start counting only from values with no predecessor.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x7-03.py">import random
+random.seed(2)
+def longest_consecutive(a):
+    s, best = set(a), 0
+    for x in s:
+        if x - 1 not in s:
+            y = x
+            while y + 1 in s: y += 1
+            best = max(best, y - x + 1)
+    return best
+def brute(a):
+    s, best = set(a), 0
+    for x in s:
+        y = x
+        while y in s: y += 1
+        best = max(best, y - x)
+    return best
+for _ in range(300):
+    a = [random.randint(0, 15) for _ in range(random.randint(0, 12))]
+    assert longest_consecutive(a) == brute(a)
+print("verified;", longest_consecutive([100, 4, 200, 1, 3, 2]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>verified; 4</code></pre>
+<h3>4. Majority element (Boyer-Moore voting)</h3>
+<p>Keep a candidate and a counter; a true majority survives cancellation. <code>O(n)</code> time, <code>O(1)</code> space.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x7-04.py">import random
+from collections import Counter
+random.seed(3)
+def majority(a):
+    cand, cnt = None, 0
+    for x in a:
+        if cnt == 0: cand = x
+        cnt += 1 if x == cand else -1
+    return cand if a.count(cand) &gt; len(a) // 2 else None
+for _ in range(300):
+    a = [random.randint(0, 2) for _ in range(random.randint(1, 11))]
+    c, f = Counter(a).most_common(1)[0]
+    assert majority(a) == (c if f &gt; len(a) // 2 else None)
+print("verified;", majority([2, 2, 1, 1, 2, 2, 3]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>verified; 2</code></pre>
+<h3>5. Trapping rain water (two pointers)</h3>
+<p>Water above a bar is <code>min(maxLeft, maxRight) - height</code>. Move the pointer on the smaller side.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x7-05.py">import random
+random.seed(4)
+def trap(h):
+    l, r, lm, rm, water = 0, len(h) - 1, 0, 0, 0
+    while l &lt; r:
+        if h[l] &lt; h[r]:
+            lm = max(lm, h[l]); water += lm - h[l]; l += 1
+        else:
+            rm = max(rm, h[r]); water += rm - h[r]; r -= 1
+    return water
+brute = lambda h: sum(max(0, min(max(h[:i + 1]), max(h[i:])) - h[i]) for i in range(len(h)))
+for _ in range(300):
+    h = [random.randint(0, 6) for _ in range(random.randint(1, 12))]
+    assert trap(h) == brute(h)
+print("verified;", trap([0, 1, 0, 2, 1, 0, 1, 3, 2, 1, 2, 1]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>verified; 6</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x7-q01" data-topic="Extra problems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which technique solves 'count subarrays with sum k' when negative numbers are allowed?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Sliding window <span class="q-why">It requires non-negative values.</span></li>
+          <li data-key="B">Prefix sums with a hash map of counts <span class="q-why">Correct.</span></li>
+          <li data-key="C">Sorting <span class="q-why">Destroys order.</span></li>
+          <li data-key="D">Binary search <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Count earlier prefixes equal to current - k.</p></div>
+      </div>
+      <div class="quiz" data-qid="xd-x7-q02" data-topic="Extra problems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In Boyer-Moore voting, why does the majority element survive?</p></div>
+        <ul class="q-options">
+          <li data-key="A">It appears first <span class="q-why">No.</span></li>
+          <li data-key="B">Each non-majority element cancels at most one majority vote, and the majority outnumbers the rest <span class="q-why">Correct.</span></li>
+          <li data-key="C">Sorting <span class="q-why">No.</span></li>
+          <li data-key="D">Hashing <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Pair off distinct elements; something remains only for a strict majority.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How do you get product except self without division?</summary><div class="answer"><p>Multiply the product of everything to the left by the product of everything to the right using two passes.</p></div></details>
+      </div>
+    </section>
+
+    <section id="heaps" data-track>
+      <h2>Heaps and intervals</h2>
+<h3>6. K most frequent elements</h3>
+<p>Count, then take the top <code>k</code> by frequency with a heap: <code>O(n log k)</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x7-06.py">import heapq, random
+from collections import Counter
+random.seed(5)
+def top_k(a, k):
+    cnt = Counter(a)
+    return sorted(heapq.nlargest(k, cnt, key=lambda x: (cnt[x], -x)))
+def brute(a, k):
+    cnt = Counter(a)
+    return sorted(sorted(cnt, key=lambda x: (-cnt[x], x))[:k])
+for _ in range(300):
+    a = [random.randint(0, 5) for _ in range(random.randint(1, 15))]
+    k = random.randint(1, len(set(a)))
+    assert top_k(a, k) == brute(a, k)
+print("verified;", top_k([1, 1, 1, 2, 2, 3], 2))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>verified; [1, 2]</code></pre>
+<h3>7. Merge intervals and the minimum meeting rooms</h3>
+<p>Sort by start. Merging extends the last interval; meeting rooms use a min-heap of end times (or sweep the sorted starts and ends).</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x7-07.py">import heapq, random
+random.seed(6)
+def merge(iv):
+    out = []
+    for s, e in sorted(iv):
+        if out and s &lt;= out[-1][1]: out[-1][1] = max(out[-1][1], e)
+        else: out.append([s, e])
+    return out
+def min_rooms(iv):
+    heap, best = [], 0
+    for s, e in sorted(iv):
+        while heap and heap[0] &lt;= s: heapq.heappop(heap)
+        heapq.heappush(heap, e)
+        best = max(best, len(heap))
+    return best
+def rooms_brute(iv):
+    return max((sum(s &lt;= t &lt; e for s, e in iv) for t in range(0, 20)), default=0)
+for _ in range(300):
+    iv = []
+    for _ in range(random.randint(1, 8)):
+        s = random.randint(0, 15); iv.append((s, s + random.randint(1, 4)))
+    assert min_rooms(iv) == rooms_brute(iv)
+print("rooms verified;", merge([(1, 3), (2, 6), (8, 10), (15, 18)]), min_rooms([(0, 30), (5, 10), (15, 20)]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>rooms verified; [[1, 6], [8, 10], [15, 18]] 2</code></pre>
+<h3>8. Median of a data stream</h3>
+<p>Two heaps: a max-heap for the lower half and a min-heap for the upper half, kept balanced. <code>O(log n)</code> per insert, <code>O(1)</code> per median.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x7-08.py">import heapq, random, statistics
+random.seed(7)
+class MedianFinder:
+    def __init__(self): self.lo, self.hi = [], []
+    def add(self, x):
+        heapq.heappush(self.lo, -x)
+        heapq.heappush(self.hi, -heapq.heappop(self.lo))
+        if len(self.hi) &gt; len(self.lo): heapq.heappush(self.lo, -heapq.heappop(self.hi))
+    def median(self):
+        return -self.lo[0] if len(self.lo) &gt; len(self.hi) else (-self.lo[0] + self.hi[0]) / 2
+m, seen = MedianFinder(), []
+for _ in range(500):
+    x = random.randint(-50, 50); m.add(x); seen.append(x)
+    assert m.median() == statistics.median(seen)
+print("running median verified over 500 inserts")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>running median verified over 500 inserts</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x7-q03" data-topic="Extra problems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How does a running median stay O(log n) per insert?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Sorting every time <span class="q-why">O(n log n).</span></li>
+          <li data-key="B">A max-heap for the lower half and a min-heap for the upper half <span class="q-why">Correct.</span></li>
+          <li data-key="C">A stack <span class="q-why">No.</span></li>
+          <li data-key="D">Binary search on an array <span class="q-why">Insert is O(n).</span></li>
+        </ul>
+        <div class="q-explain"><p>The tops of the two heaps give the middle values.</p></div>
+      </div>
+      <div class="quiz" data-qid="xd-x7-q04" data-topic="Extra problems" data-type="single" data-answer="A">
+        <div class="q-stem"><p>Minimum meeting rooms is best computed by:</p></div>
+        <ul class="q-options">
+          <li data-key="A">Sorting by start and keeping a min-heap of end times <span class="q-why">Correct.</span></li>
+          <li data-key="B">DFS <span class="q-why">No.</span></li>
+          <li data-key="C">DP over days <span class="q-why">No.</span></li>
+          <li data-key="D">Union find <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The heap size is the number of overlapping meetings.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why sort intervals by start when merging?</summary><div class="answer"><p>So overlapping intervals are adjacent and only the last merged interval needs checking.</p></div></details>
+      </div>
+    </section>
+
+    <section id="trees" data-track>
+      <h2>Trees and graphs</h2>
+<h3>9. Lowest common ancestor in a binary tree</h3>
+<p>If both sides return a node, the current node is the LCA.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x7-09.py">import random
+random.seed(8)
+class Node:
+    def __init__(self, v): self.v, self.l, self.r = v, None, None
+def build(vals):
+    nodes = [Node(v) for v in vals]
+    for i, n in enumerate(nodes):
+        if 2 * i + 1 &lt; len(nodes): n.l = nodes[2 * i + 1]
+        if 2 * i + 2 &lt; len(nodes): n.r = nodes[2 * i + 2]
+    return nodes
+def lca(root, p, q):
+    if root is None or root is p or root is q: return root
+    L, R = lca(root.l, p, q), lca(root.r, p, q)
+    return root if L and R else (L or R)
+def path(root, target, acc=()):
+    if root is None: return None
+    acc = acc + (root,)
+    if root is target: return acc
+    return path(root.l, target, acc) or path(root.r, target, acc)
+nodes = build(list(range(15)))
+for _ in range(200):
+    p, q = random.sample(nodes, 2)
+    a, b = path(nodes[0], p), path(nodes[0], q)
+    expected = [x for x, y in zip(a, b) if x is y][-1]
+    assert lca(nodes[0], p, q) is expected
+print("LCA verified on a 15-node tree")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>LCA verified on a 15-node tree</code></pre>
+<h3>10. Validate a BST and the k-th smallest element</h3>
+<p>Pass min and max bounds down. In-order traversal of a BST is sorted, so the k-th element is the k-th visited.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x7-10.py">import random
+random.seed(9)
+class T:
+    def __init__(self, v, l=None, r=None): self.v, self.l, self.r = v, l, r
+def insert(t, v):
+    if not t: return T(v)
+    if v &lt; t.v: t.l = insert(t.l, v)
+    else: t.r = insert(t.r, v)
+    return t
+def is_bst(t, lo=float("-inf"), hi=float("inf")):
+    return t is None or (lo &lt; t.v &lt; hi and is_bst(t.l, lo, t.v) and is_bst(t.r, t.v, hi))
+def inorder(t): return inorder(t.l) + [t.v] + inorder(t.r) if t else []
+vals = random.sample(range(100), 20)
+root = None
+for v in vals: root = insert(root, v)
+assert is_bst(root) and inorder(root) == sorted(vals)
+bad = T(5, T(1), T(4, T(3), T(6)))
+print("valid BST:", is_bst(root), "| invalid tree detected:", not is_bst(bad), "| 5th smallest:", inorder(root)[4] == sorted(vals)[4])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>valid BST: True | invalid tree detected: True | 5th smallest: True</code></pre>
+<h3>11. Number of islands (grid components) and word ladder (BFS)</h3>
+<p>Islands: flood fill each unvisited land cell. Word ladder: BFS where neighbours differ by one letter.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x7-11.py">import random
+from collections import deque
+random.seed(10)
+def islands(g):
+    R, C, seen, count = len(g), len(g[0]), set(), 0
+    for r in range(R):
+        for c in range(C):
+            if g[r][c] == 1 and (r, c) not in seen:
+                count += 1
+                stack = [(r, c)]; seen.add((r, c))
+                while stack:
+                    y, x = stack.pop()
+                    for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                        ny, nx = y + dy, x + dx
+                        if 0 &lt;= ny &lt; R and 0 &lt;= nx &lt; C and g[ny][nx] == 1 and (ny, nx) not in seen:
+                            seen.add((ny, nx)); stack.append((ny, nx))
+    return count
+def islands_uf(g):
+    R, C = len(g), len(g[0]); p = list(range(R * C))
+    def f(x):
+        while p[x] != x: p[x] = p[p[x]]; x = p[x]
+        return x
+    for r in range(R):
+        for c in range(C):
+            if g[r][c]:
+                for dr, dc in ((1, 0), (0, 1)):
+                    if r + dr &lt; R and c + dc &lt; C and g[r + dr][c + dc]: p[f(r * C + c)] = f((r + dr) * C + c + dc)
+    return len({f(r * C + c) for r in range(R) for c in range(C) if g[r][c]})
+for _ in range(200):
+    g = [[random.randint(0, 1) for _ in range(5)] for _ in range(4)]
+    assert islands(g) == islands_uf(g)
+def ladder(begin, end, words):
+    words, q = set(words), deque([(begin, 1)])
+    while q:
+        w, d = q.popleft()
+        if w == end: return d
+        for i in range(len(w)):
+            for ch in "abcdefghijklmnopqrstuvwxyz":
+                nw = w[:i] + ch + w[i + 1:]
+                if nw in words: words.remove(nw); q.append((nw, d + 1))
+    return 0
+print("islands verified two ways; ladder length:", ladder("hit", "cog", ["hot", "dot", "dog", "lot", "log", "cog"]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>islands verified two ways; ladder length: 5</code></pre>
+<h3>12. Course schedule: detect a cycle with topological sort</h3>
+<p>Kahn's algorithm: if fewer than <code>n</code> nodes are output, a cycle exists.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x7-12.py">import random, itertools
+from collections import deque
+random.seed(11)
+def can_finish(n, pre):
+    g, indeg = [[] for _ in range(n)], [0] * n
+    for a, b in pre: g[b].append(a); indeg[a] += 1
+    q, seen = deque(i for i in range(n) if indeg[i] == 0), 0
+    while q:
+        u = q.popleft(); seen += 1
+        for v in g[u]:
+            indeg[v] -= 1
+            if indeg[v] == 0: q.append(v)
+    return seen == n
+def brute(n, pre):
+    return any(all(pos[b] &lt; pos[a] for a, b in pre) for perm in itertools.permutations(range(n)) for pos in [{v: i for i, v in enumerate(perm)}])
+for _ in range(300):
+    n = random.randint(1, 5)
+    pre = [(random.randrange(n), random.randrange(n)) for _ in range(random.randint(0, 6))]
+    assert can_finish(n, pre) == brute(n, pre)
+print("verified;", can_finish(2, [(1, 0)]), can_finish(2, [(1, 0), (0, 1)]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>verified; True False</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x7-q05" data-topic="Extra problems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>BST validation by only comparing each node to its children is wrong because:</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is too slow <span class="q-why">No.</span></li>
+          <li data-key="B">A deeper node can violate an ancestor's bound <span class="q-why">Correct.</span></li>
+          <li data-key="C">Trees are cyclic <span class="q-why">No.</span></li>
+          <li data-key="D">Duplicates <span class="q-why">Unrelated.</span></li>
+        </ul>
+        <div class="q-explain"><p>Pass min and max bounds down.</p></div>
+      </div>
+      <div class="quiz" data-qid="xd-x7-q06" data-topic="Extra problems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you detect a cycle with Kahn's algorithm?</p></div>
+        <ul class="q-options">
+          <li data-key="A">The queue is empty at the start <span class="q-why">Not necessarily.</span></li>
+          <li data-key="B">Fewer than n nodes are processed <span class="q-why">Correct.</span></li>
+          <li data-key="C">A node has indegree 0 <span class="q-why">Normal.</span></li>
+          <li data-key="D">Recursion depth <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Nodes on a cycle never reach indegree zero.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>How does the LCA recursion decide?</summary><div class="answer"><p>If the left and right subtrees both return a node, the current node is the lowest common ancestor.</p></div></details>
+      </div>
+    </section>
+
+    <section id="design" data-track>
+      <h2>Backtracking and design</h2>
+<h3>13. Subsets, permutations and combination sum</h3>
+<p>Choose, explore, un-choose. Counts: <code>2^n</code>, <code>n!</code>, and for combination sum, the count of multisets reaching the target.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x7-13.py">import itertools
+def subsets(a):
+    out = []
+    def go(i, cur):
+        if i == len(a): out.append(cur[:]); return
+        go(i + 1, cur)
+        cur.append(a[i]); go(i + 1, cur); cur.pop()
+    go(0, []); return out
+def combination_sum(c, t):
+    out = []
+    def go(i, rem, cur):
+        if rem == 0: out.append(cur[:]); return
+        for j in range(i, len(c)):
+            if c[j] &lt;= rem:
+                cur.append(c[j]); go(j, rem - c[j], cur); cur.pop()
+    go(0, t, []); return out
+assert len(subsets([1, 2, 3, 4])) == 16
+assert sorted(map(tuple, subsets([1, 2, 3]))) == sorted(sum((list(itertools.combinations([1, 2, 3], r)) for r in range(4)), []))
+print(combination_sum([2, 3, 6, 7], 7), len(combination_sum([1, 2, 5], 11)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[[2, 2, 3], [7]] 11</code></pre>
+<h3>14. N-Queens count</h3>
+<p>Place one queen per row; track used columns and both diagonals.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x7-14.py">def n_queens(n):
+    cols, d1, d2 = set(), set(), set()
+    def go(r):
+        if r == n: return 1
+        total = 0
+        for c in range(n):
+            if c in cols or r - c in d1 or r + c in d2: continue
+            cols.add(c); d1.add(r - c); d2.add(r + c)
+            total += go(r + 1)
+            cols.remove(c); d1.remove(r - c); d2.remove(r + c)
+        return total
+    return go(0)
+known = {1: 1, 4: 2, 5: 10, 6: 4, 7: 40, 8: 92}
+assert all(n_queens(n) == v for n, v in known.items())
+print("n-queens counts match the known sequence:", [n_queens(n) for n in range(1, 9)])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>n-queens counts match the known sequence: [1, 0, 0, 2, 10, 4, 40, 92]</code></pre>
+<h3>15. LRU cache and an iterator over nested lists</h3>
+<p>LRU uses a hash map plus recency order (<code>OrderedDict</code>). A flattening iterator keeps an explicit stack.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x7-15.py">from collections import OrderedDict
+class LRU:
+    def __init__(self, cap): self.cap, self.d = cap, OrderedDict()
+    def get(self, k):
+        if k not in self.d: return -1
+        self.d.move_to_end(k); return self.d[k]
+    def put(self, k, v):
+        self.d[k] = v; self.d.move_to_end(k)
+        if len(self.d) &gt; self.cap: self.d.popitem(last=False)
+c = LRU(2)
+c.put(1, 1); c.put(2, 2); assert c.get(1) == 1
+c.put(3, 3); assert c.get(2) == -1
+c.put(4, 4); assert c.get(1) == -1 and c.get(3) == 3 and c.get(4) == 4
+def flatten(x):
+    stack = [iter(x)]
+    while stack:
+        for item in stack[-1]:
+            if isinstance(item, list): stack.append(iter(item)); break
+            yield item
+        else:
+            stack.pop()
+print("LRU behaves; flatten:", list(flatten([1, [2, [3, [4]], 5], [], [[6]]])))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>LRU behaves; flatten: [1, 2, 3, 4, 5, 6]</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x7-q07" data-topic="Extra problems" data-type="numeric" data-answer="4" data-tol="0">
+        <div class="q-stem"><p>How many solutions does the 6-queens problem have?</p></div>
+        <div class="q-explain"><p>The known counts for n = 1..8 are 1, 0, 0, 2, 10, 4, 40, 92.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What is the backtracking template?</summary><div class="answer"><p>Choose an option, recurse, then undo the choice; prune branches that cannot succeed.</p></div></details>
+      </div>
+    </section>
+
+    <section id="search" data-track>
+      <h2>Searching and sorting twists</h2>
+<h3>16. Search in a rotated sorted array and find the minimum</h3>
+<p>Binary search; one half is always sorted.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x7-16.py">import random
+random.seed(12)
+def search_rotated(a, t):
+    lo, hi = 0, len(a) - 1
+    while lo &lt;= hi:
+        mid = (lo + hi) // 2
+        if a[mid] == t: return mid
+        if a[lo] &lt;= a[mid]:
+            if a[lo] &lt;= t &lt; a[mid]: hi = mid - 1
+            else: lo = mid + 1
+        else:
+            if a[mid] &lt; t &lt;= a[hi]: lo = mid + 1
+            else: hi = mid - 1
+    return -1
+def find_min(a):
+    lo, hi = 0, len(a) - 1
+    while lo &lt; hi:
+        mid = (lo + hi) // 2
+        if a[mid] &gt; a[hi]: lo = mid + 1
+        else: hi = mid
+    return a[lo]
+for _ in range(300):
+    base = sorted(random.sample(range(40), random.randint(1, 10)))
+    k = random.randrange(len(base))
+    a = base[k:] + base[:k]
+    t = random.randint(-1, 41)
+    got = search_rotated(a, t)
+    assert (got == -1 and t not in a) or a[got] == t
+    assert find_min(a) == min(a)
+print("rotated search and min verified")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>rotated search and min verified</code></pre>
+<h3>17. Kth largest element with quickselect</h3>
+<p>Partition around a pivot and recurse into one side: <code>O(n)</code> expected.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x7-17.py">import random
+random.seed(13)
+def quickselect(a, k):  # k-th smallest, 0-indexed
+    a = a[:]
+    lo, hi = 0, len(a) - 1
+    while True:
+        p = a[random.randint(lo, hi)]
+        lt = [x for x in a[lo:hi + 1] if x &lt; p]
+        eq = [x for x in a[lo:hi + 1] if x == p]
+        gt = [x for x in a[lo:hi + 1] if x &gt; p]
+        if k - lo &lt; len(lt): hi = lo + len(lt) - 1; a[lo:hi + 1] = lt
+        elif k - lo &lt; len(lt) + len(eq): return p
+        else:
+            new_lo = lo + len(lt) + len(eq)
+            a[lo:hi + 1] = lt + eq + gt
+            lo = new_lo
+for _ in range(300):
+    a = [random.randint(0, 20) for _ in range(random.randint(1, 15))]
+    k = random.randrange(len(a))
+    assert quickselect(a, k) == sorted(a)[k]
+print("quickselect verified")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>quickselect verified</code></pre>
+<h3>18. Dutch national flag, next permutation and rotate</h3>
+<p>Three-way partition sorts 0/1/2 in one pass. Next permutation: find the rightmost ascent, swap with the next larger suffix element, reverse the suffix.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x7-18.py">import itertools
+def dutch(a):
+    lo, mid, hi = 0, 0, len(a) - 1
+    while mid &lt;= hi:
+        if a[mid] == 0: a[lo], a[mid] = a[mid], a[lo]; lo += 1; mid += 1
+        elif a[mid] == 1: mid += 1
+        else: a[mid], a[hi] = a[hi], a[mid]; hi -= 1
+    return a
+def next_perm(a):
+    a = a[:]
+    i = len(a) - 2
+    while i &gt;= 0 and a[i] &gt;= a[i + 1]: i -= 1
+    if i &gt;= 0:
+        j = len(a) - 1
+        while a[j] &lt;= a[i]: j -= 1
+        a[i], a[j] = a[j], a[i]
+    a[i + 1:] = a[i + 1:][::-1]
+    return a
+assert dutch([2, 0, 2, 1, 1, 0]) == [0, 0, 1, 1, 2, 2]
+perms = list(itertools.permutations([1, 2, 3, 4]))
+assert all(tuple(next_perm(list(perms[i]))) == perms[i + 1] for i in range(len(perms) - 1))
+print("verified; next of [3,2,1] wraps to", next_perm([3, 2, 1]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>verified; next of [3,2,1] wraps to [1, 2, 3]</code></pre>
+<h3>19. Largest rectangle in a histogram</h3>
+<p>A monotonic stack finds, for each bar, how far it extends. <code>O(n)</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x7-19.py">import random
+random.seed(14)
+def largest_rect(h):
+    stack, best = [], 0
+    for i, x in enumerate(h + [0]):
+        start = i
+        while stack and stack[-1][1] &gt;= x:
+            idx, height = stack.pop()
+            best = max(best, height * (i - idx)); start = idx
+        stack.append((start, x))
+    return best
+brute = lambda h: max((min(h[i:j + 1]) * (j - i + 1) for i in range(len(h)) for j in range(i, len(h))), default=0)
+for _ in range(300):
+    h = [random.randint(0, 6) for _ in range(random.randint(1, 10))]
+    assert largest_rect(h) == brute(h)
+print("verified;", largest_rect([2, 1, 5, 6, 2, 3]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>verified; 10</code></pre>
+<h3>20. Maximum subarray, the circular variant</h3>
+<p>Kadane for the linear case; for circular, the answer is the larger of the Kadane maximum and <code>total - minimum subarray</code>.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/x7-20.py">import random
+random.seed(15)
+def kadane(a, f=max):
+    best = cur = a[0]
+    for x in a[1:]:
+        cur = f(x, cur + x); best = f(best, cur)
+    return best
+def circular(a):
+    mx, mn, total = kadane(a), kadane(a, min), sum(a)
+    return mx if mx &lt; 0 else max(mx, total - mn)
+def brute(a):
+    n = len(a)
+    return max(sum(a[(i + k) % n] for k in range(L)) for i in range(n) for L in range(1, n + 1))
+for _ in range(300):
+    a = [random.randint(-5, 5) for _ in range(random.randint(1, 9))]
+    assert circular(a) == brute(a)
+print("circular Kadane verified")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>circular Kadane verified</code></pre>
+<div class="callout key"><span class="callout-title">Key idea</span><p>For every new problem, name the pattern first (prefix sums, two pointers, heap, monotonic stack, BFS, backtracking), write the brute force, then the optimised version, then cross-check them on random small inputs. That routine finds off-by-one bugs before the interviewer does.</p></div>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="xd-x7-q08" data-topic="Extra problems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>In a rotated sorted array, binary search works because:</p></div>
+        <ul class="q-options">
+          <li data-key="A">It is fully sorted <span class="q-why">No.</span></li>
+          <li data-key="B">At every step at least one half is sorted, so you can tell which half holds the target <span class="q-why">Correct.</span></li>
+          <li data-key="C">It uses hashing <span class="q-why">No.</span></li>
+          <li data-key="D">Duplicates are absent <span class="q-why">Not the reason.</span></li>
+        </ul>
+        <div class="q-explain"><p>Compare the target with the sorted half's endpoints.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>What does quickselect guarantee?</summary><div class="answer"><p>Expected O(n) time to find the k-th smallest by partitioning and recursing into one side.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Extra problems</h2>
+      <p class="muted">19 questions. Try to answer aloud in under a minute, then reveal. Tags show the level.</p>
+      <div class="iq-list" data-iq="Extra problems">
+<details class="recall iq" data-level="basic" data-topic="Extra problems"><summary><span class="tag ok">Basic</span> Two Sum: what are the approaches?</summary><div class="answer"><p>Hash map of complement values in O(n) time; or sort and use two pointers in O(n log n) if indexes are not needed.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Extra problems"><summary><span class="tag ok">Basic</span> How do you reverse a linked list?</summary><div class="answer"><p>Iterate keeping prev, curr and next, flipping each pointer. O(n) time, O(1) space; recursion uses O(n) stack.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Extra problems"><summary><span class="tag ok">Basic</span> How do you detect a cycle in a linked list?</summary><div class="answer"><p>Floyd&#x27;s tortoise and hare: a fast and a slow pointer meet inside a cycle. To find the start, reset one pointer to the head and move both one step at a time.</p></div></details>
+<details class="recall iq" data-level="basic" data-topic="Extra problems"><summary><span class="tag ok">Basic</span> Valid parentheses?</summary><div class="answer"><p>Use a stack: push openers, and each closer must match the top.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Extra problems"><summary><span class="tag warn">Medium</span> Subarray sum equals k with negatives?</summary><div class="answer"><p>Prefix sums with a hash map counting earlier prefixes equal to current - k. O(n).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Extra problems"><summary><span class="tag warn">Medium</span> Merge k sorted lists?</summary><div class="answer"><p>A min-heap of the current heads, popping the smallest and pushing its successor. O(N log k).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Extra problems"><summary><span class="tag warn">Medium</span> Find the median of two sorted arrays in O(log(min(m, n)))?</summary><div class="answer"><p>Binary search the partition of the smaller array so that left halves are all &lt;= right halves.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Extra problems"><summary><span class="tag warn">Medium</span> Trapping rain water?</summary><div class="answer"><p>Water above each bar is min(left max, right max) - height. Two pointers do it in O(n) and O(1) space.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Extra problems"><summary><span class="tag warn">Medium</span> Longest substring without repeating characters?</summary><div class="answer"><p>Sliding window with a map of last seen indexes; move the left edge past the previous occurrence.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Extra problems"><summary><span class="tag warn">Medium</span> Group anagrams?</summary><div class="answer"><p>Key each word by its sorted letters (or a 26-count tuple) in a hash map.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Extra problems"><summary><span class="tag warn">Medium</span> Number of islands?</summary><div class="answer"><p>Flood fill with DFS/BFS or union-find over the grid; count the components of land.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Extra problems"><summary><span class="tag warn">Medium</span> Lowest common ancestor of a binary tree?</summary><div class="answer"><p>Recurse; return the node if it matches, and the current node is the LCA when both subtrees report a hit.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Extra problems"><summary><span class="tag bad">Advanced</span> Serialise and deserialise a binary tree?</summary><div class="answer"><p>Pre-order with null markers (or level order), parsed with the same order; unambiguous because nulls mark every missing child.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Extra problems"><summary><span class="tag bad">Advanced</span> Design an LRU cache.</summary><div class="answer"><p>A hash map to doubly linked list nodes (or OrderedDict) giving O(1) get and put, evicting from the tail.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Extra problems"><summary><span class="tag bad">Advanced</span> Largest rectangle in a histogram?</summary><div class="answer"><p>Monotonic stack of increasing heights; when a shorter bar arrives, pop and compute the area using the popped bar as the minimum. O(n).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Extra problems"><summary><span class="tag bad">Advanced</span> Word ladder shortest transformation?</summary><div class="answer"><p>BFS over words differing by one letter, using wildcard buckets or letter substitution to generate neighbours.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Extra problems"><summary><span class="tag bad">Advanced</span> Course schedule feasibility?</summary><div class="answer"><p>Topological sort: Kahn&#x27;s algorithm processes all nodes iff there is no cycle.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Extra problems"><summary><span class="tag bad">Advanced</span> Kth largest element in an array?</summary><div class="answer"><p>Quickselect in O(n) expected, or a min-heap of size k in O(n log k).</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Extra problems"><summary><span class="tag bad">Advanced</span> How do you present a solution in an interview?</summary><div class="answer"><p>Clarify the input and constraints, give a brute force, state complexity, optimise by naming the pattern, code cleanly, test with small and edge cases, then restate the complexity.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="x6-complexity.html"><span class="dir">Previous</span><span>X6 Complexity theory: amortised analysis, recurrences, NP-completeness and lower bounds</span></a>
+      <a class="next" href="index.html"><span class="dir">Next</span><span>Hub</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

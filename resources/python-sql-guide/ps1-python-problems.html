@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="en" data-resource="python-sql-guide" data-page="PS1">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Python interview problems and predict-the-output puzzles | Python + SQL</title>
+<meta name="description" content="Eighteen Python coding problems (iterators, decorators, parsing, data wrangling, a bank account, SQL and Python together) with tested solutions, plus fourteen predict-the-output gotchas with the real output.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Python + SQL</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part PS1</p>
+      <h1>Python interview problems and predict-the-output puzzles</h1>
+      <p class="lede">Interviewers test whether you know the language, not only algorithms. These problems cover idioms, the standard library and the traps of Python. Try each one before reading the solution. All outputs shown are real.</p>
+      <div class="meta"><span class="tag warn">Medium</span><span class="tag bad">Advanced</span><span class="tag">~5 hours</span></div>
+    </div>
+
+    <section id="problems" data-track>
+      <h2>Coding problems</h2>
+<h3>1. Word frequency: top k</h3>
+<p>Return the <code>k</code> most common words, ignoring case and punctuation; break ties alphabetically.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-01.py">import re
+from collections import Counter
+
+def top_words(text, k):
+    words = re.findall(r"[a-z']+", text.lower())
+    counts = Counter(words)
+    return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:k]
+
+print(top_words("The cat and the hat. The bat sat; the cat ran!", 3))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[('the', 4), ('cat', 2), ('and', 1)]</code></pre>
+<p>Time O(n log n) for the sort (use <code>heapq.nsmallest</code> with the same key for O(n log k)).</p>
+<h3>2. Group anagrams</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-02.py">from collections import defaultdict
+def group_anagrams(words):
+    groups = defaultdict(list)
+    for w in words:
+        groups["".join(sorted(w))].append(w)
+    return sorted(groups.values())
+print(group_anagrams(["eat", "tea", "tan", "ate", "nat", "bat"]))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[['bat'], ['eat', 'tea', 'ate'], ['tan', 'nat']]</code></pre>
+<h3>3. Flatten an arbitrarily nested list (lazily)</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-03.py">def flatten(items):
+    for x in items:
+        if isinstance(x, (list, tuple)):
+            yield from flatten(x)
+        else:
+            yield x
+print(list(flatten([1, [2, (3, [4])], 5, [[6]]])))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[1, 2, 3, 4, 5, 6]</code></pre>
+<h3>4. Chunk an iterable and slide a window</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-04.py">from itertools import islice
+from collections import deque
+
+def chunked(iterable, n):
+    it = iter(iterable)
+    while chunk := list(islice(it, n)):
+        yield chunk
+
+def windows(iterable, n):
+    it = iter(iterable)
+    win = deque(islice(it, n), maxlen=n)
+    if len(win) == n:
+        yield tuple(win)
+    for x in it:
+        win.append(x)
+        yield tuple(win)
+
+print(list(chunked(range(7), 3)))
+print(list(windows([1, 2, 3, 4, 5], 3)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[[0, 1, 2], [3, 4, 5], [6]]
+[(1, 2, 3), (2, 3, 4), (3, 4, 5)]</code></pre>
+<p>Both work on any iterable, including generators of unknown length, in constant memory.</p>
+<h3>5. Run-length encoding</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-05.py">from itertools import groupby
+def rle(s):
+    return "".join(f"{len(list(g))}{ch}" for ch, g in groupby(s))
+def unrle(s):
+    import re
+    return "".join(ch * int(n) for n, ch in re.findall(r"(\d+)(\D)", s))
+enc = rle("aaabccdddd")
+print(enc, unrle(enc) == "aaabccdddd")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>3a1b2c4d True</code></pre>
+<h3>6. First non-repeating character</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-06.py">from collections import Counter
+def first_unique(s):
+    c = Counter(s)
+    return next((i for i, ch in enumerate(s) if c[ch] == 1), -1)
+print(first_unique("leetcode"), first_unique("aabb"))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>0 -1</code></pre>
+<h3>7. Deep merge of dictionaries</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-07.py">def deep_merge(a, b):
+    out = dict(a)
+    for k, v in b.items():
+        if k in out and isinstance(out[k], dict) and isinstance(v, dict):
+            out[k] = deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+print(deep_merge({"a": 1, "b": {"x": 1, "y": 2}}, {"b": {"y": 3, "z": 4}, "c": 5}))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>{'a': 1, 'b': {'x': 1, 'y': 3, 'z': 4}, 'c': 5}</code></pre>
+<p>It returns a new dict and does not mutate the inputs.</p>
+<h3>8. A memoising decorator with expiry</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-08.py">import functools
+
+def cache_with_ttl(ttl, clock):
+    def deco(fn):
+        store = {}
+        @functools.wraps(fn)
+        def wrapper(*args):
+            now = clock()
+            if args in store and now - store[args][1] &lt; ttl:
+                return store[args][0]
+            value = fn(*args)
+            store[args] = (value, now)
+            return value
+        return wrapper
+    return deco
+
+t = [0]
+calls = []
+@cache_with_ttl(10, lambda: t[0])
+def slow(x):
+    calls.append(x)
+    return x * 2
+
+print(slow(2), slow(2), len(calls))
+t[0] = 11                                  # time passes
+print(slow(2), len(calls))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>4 4 1
+4 2</code></pre>
+<p>The clock is injected so the behaviour is testable without sleeping.</p>
+<h3>9. A context manager that restores state</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-09.py">from contextlib import contextmanager
+import os
+
+@contextmanager
+def temp_env(**values):
+    old = {k: os.environ.get(k) for k in values}
+    os.environ.update({k: str(v) for k, v in values.items()})
+    try:
+        yield
+    finally:
+        for k, v in old.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+with temp_env(MODE="test"):
+    print(os.environ["MODE"])
+print(os.environ.get("MODE"))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>test
+None</code></pre>
+<h3>10. Parse log lines and aggregate</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-10.py">import re
+from collections import Counter, defaultdict
+LOG = """\
+2024-03-01 10:00:01 GET /home 200 12ms
+2024-03-01 10:00:02 GET /cart 500 250ms
+2024-03-01 10:00:03 POST /pay 200 80ms
+2024-03-01 10:00:04 GET /cart 500 310ms
+bad line
+2024-03-01 10:00:05 GET /home 200 8ms
+"""
+pat = re.compile(r"^(?P&lt;ts&gt;\S+ \S+) (?P&lt;method&gt;[A-Z]+) (?P&lt;path&gt;\S+) (?P&lt;status&gt;\d{3}) (?P&lt;ms&gt;\d+)ms$")
+status, slow = Counter(), defaultdict(list)
+bad = 0
+for line in LOG.splitlines():
+    m = pat.match(line)
+    if not m:
+        bad += 1
+        continue
+    status[m["status"]] += 1
+    slow[m["path"]].append(int(m["ms"]))
+print(dict(status), "unparsed:", bad)
+print({p: round(sum(v) / len(v), 1) for p, v in sorted(slow.items())})</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>{'200': 3, '500': 2} unparsed: 1
+{'/cart': 280.0, '/home': 10.0, '/pay': 80.0}</code></pre>
+<h3>11. A bank account with validation (classes and exceptions)</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-11.py">from dataclasses import dataclass, field
+
+class InsufficientFunds(Exception): pass
+
+@dataclass
+class Account:
+    owner: str
+    balance: int = 0
+    history: list = field(default_factory=list)
+
+    def deposit(self, amount):
+        if amount &lt;= 0:
+            raise ValueError("amount must be positive")
+        self.balance += amount
+        self.history.append(("deposit", amount))
+
+    def withdraw(self, amount):
+        if amount &gt; self.balance:
+            raise InsufficientFunds(f"balance {self.balance}, requested {amount}")
+        self.balance -= amount
+        self.history.append(("withdraw", amount))
+
+a = Account("Ada")
+a.deposit(100); a.withdraw(30)
+try:
+    a.withdraw(500)
+except InsufficientFunds as e:
+    print("error:", e)
+print(a.balance, a.history)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>error: balance 70, requested 500
+70 [('deposit', 100), ('withdraw', 30)]</code></pre>
+<h3>12. Merge k sorted iterables lazily</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-12.py">import heapq
+a, b, c = [1, 4, 9], [2, 3, 10], [0, 5]
+merged = heapq.merge(a, b, c)                 # an iterator: nothing is built yet
+print(list(merged))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[0, 1, 2, 3, 4, 5, 9, 10]</code></pre>
+<h3>13. Validate and normalise phone numbers</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-13.py">import re
+def normalise(raw, default_country="1"):
+    digits = re.sub(r"\D", "", raw)
+    if len(digits) == 10:
+        digits = default_country + digits
+    if not re.fullmatch(r"\d{11,15}", digits):
+        raise ValueError(f"invalid phone: {raw!r}")
+    return "+" + digits
+for p in ["(555) 123-4567", "+44 20 7946 0958", "12-34"]:
+    try:
+        print(normalise(p))
+    except ValueError as e:
+        print(e)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>+15551234567
++442079460958
+invalid phone: '12-34'</code></pre>
+<h3>14. A thread-safe counter</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-14.py">import threading
+class Counter:
+    def __init__(self):
+        self._n, self._lock = 0, threading.Lock()
+    def incr(self):
+        with self._lock:
+            self._n += 1
+    @property
+    def value(self): return self._n
+c = Counter()
+ts = [threading.Thread(target=lambda: [c.incr() for _ in range(5000)]) for _ in range(4)]
+[t.start() for t in ts]; [t.join() for t in ts]
+print(c.value)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>20000</code></pre>
+<h3>15. Limit concurrent async tasks</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-15.py">import asyncio
+
+async def main():
+    sem = asyncio.Semaphore(3)
+    running, peak = 0, 0
+    async def task(i):
+        nonlocal running, peak
+        async with sem:
+            running += 1
+            peak = max(peak, running)
+            await asyncio.sleep(0.01)
+            running -= 1
+        return i * i
+    results = await asyncio.gather(*(task(i) for i in range(10)))
+    print(results, "peak concurrency:", peak)
+asyncio.run(main())</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[0, 1, 4, 9, 16, 25, 36, 49, 64, 81] peak concurrency: 3</code></pre>
+<h3>16. From CSV text to a SQL report (Python and SQL together)</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-16.py">import csv, io, sqlite3
+data = "region,product,units\nEU,pen,10\nEU,book,3\nUS,pen,7\nUS,pen,5\nUS,book,9\n"
+con = sqlite3.connect(":memory:")
+con.execute("CREATE TABLE sales (region TEXT, product TEXT, units INTEGER)")
+rows = [(r["region"], r["product"], int(r["units"])) for r in csv.DictReader(io.StringIO(data))]
+with con:
+    con.executemany("INSERT INTO sales VALUES (?, ?, ?)", rows)
+q = """
+SELECT region, product, SUM(units) AS total,
+       RANK() OVER (PARTITION BY region ORDER BY SUM(units) DESC) AS rnk
+FROM sales GROUP BY region, product ORDER BY region, rnk
+"""
+for row in con.execute(q):
+    print(row)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>('EU', 'pen', 10, 1)
+('EU', 'book', 3, 2)
+('US', 'pen', 12, 1)
+('US', 'book', 9, 2)</code></pre>
+<h3>17. Safe SQL search with optional filters</h3>
+<p>Build the WHERE clause from known fragments and pass values as parameters.</p>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-17.py">import sqlite3
+def search(con, name=None, min_age=None, order="name"):
+    sql, params = ["SELECT name, age FROM users WHERE 1=1"], []
+    if name:
+        sql.append("AND name LIKE ?"); params.append(f"%{name}%")
+    if min_age is not None:
+        sql.append("AND age &gt;= ?"); params.append(min_age)
+    col = {"name": "name", "age": "age"}[order]          # allow-listed identifier
+    sql.append(f"ORDER BY {col}")
+    return con.execute(" ".join(sql), params).fetchall()
+
+con = sqlite3.connect(":memory:")
+con.execute("CREATE TABLE users (name TEXT, age INTEGER)")
+con.executemany("INSERT INTO users VALUES (?, ?)", [("ada", 36), ("ben", 25), ("alan", 41)])
+print(search(con, name="a", min_age=30, order="age"))
+print(search(con, name="x' OR '1'='1"))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[('ada', 36), ('alan', 41)]
+[]</code></pre>
+<h3>18. Implement <code>functools.reduce</code>-style pipeline composition</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-18.py">from functools import reduce
+def compose(*fns):
+    return reduce(lambda f, g: lambda x: g(f(x)), fns)
+pipeline = compose(str.strip, str.lower, lambda s: s.replace(" ", "-"))
+print(pipeline("  Hello Big World  "))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>hello-big-world</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-ps1-q01" data-topic="Python problems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which tool lazily merges several sorted iterables?</p></div>
+        <ul class="q-options">
+          <li data-key="A">sorted(a + b + c) <span class="q-why">Builds everything in memory.</span></li>
+          <li data-key="B">heapq.merge <span class="q-why">Correct.</span></li>
+          <li data-key="C">zip <span class="q-why">Pairs items.</span></li>
+          <li data-key="D">itertools.chain <span class="q-why">Concatenates, not merges.</span></li>
+        </ul>
+        <div class="q-explain"><p>heapq.merge returns an iterator that keeps the combined order.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-ps1-q02" data-topic="Python problems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>How do you make a function like a TTL cache testable without sleeping?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Use real time.sleep <span class="q-why">Slow and flaky.</span></li>
+          <li data-key="B">Inject the clock as a parameter <span class="q-why">Correct.</span></li>
+          <li data-key="C">Disable the cache <span class="q-why">No.</span></li>
+          <li data-key="D">Use threads <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Dependency injection makes time controllable in tests.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-ps1-q03" data-topic="Python problems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>Which is safe for an optional filter search in SQL from Python?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Format values into the string <span class="q-why">Injection risk.</span></li>
+          <li data-key="B">Build the WHERE from fixed fragments and pass values as parameters <span class="q-why">Correct.</span></li>
+          <li data-key="C">Escape quotes by hand <span class="q-why">Error-prone.</span></li>
+          <li data-key="D">Use eval <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Only fixed SQL fragments and bound values.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Why accept any iterable in chunked and windows?</summary><div class="answer"><p>So they work lazily on generators and files without loading everything into memory.</p></div></details>
+        <details class="recall"><summary>How should an optional search query be built safely?</summary><div class="answer"><p>Fixed SQL fragments, bound parameters and allow-listed identifiers.</p></div></details>
+      </div>
+    </section>
+
+    <section id="gotchas" data-track>
+      <h2>Predict the output</h2>
+<p>Cover the output, decide what you think prints, then check. Each result below was produced by running the code.</p>
+<h3>Puzzle 1: mutable default</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-19.py">def add(x, bucket=[]):
+    bucket.append(x)
+    return bucket
+add(1)
+print(add(2))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[1, 2]</code></pre>
+<h3>Puzzle 2: late binding</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-20.py">fs = [lambda: i for i in range(3)]
+print([f() for f in fs])</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[2, 2, 2]</code></pre>
+<h3>Puzzle 3: tuple with a list</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-21.py">t = (1, [2])
+t[1].append(3)
+print(t)
+try:
+    t[0] = 9
+except TypeError:
+    print("immutable")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>(1, [2, 3])
+immutable</code></pre>
+<h3>Puzzle 4: copying</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-22.py">a = [[0] * 2] * 2
+a[0][0] = 5
+b = list(a)
+b[1] = "new"
+print(a, b)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[[5, 0], [5, 0]] [[5, 0], 'new']</code></pre>
+<h3>Puzzle 5: sort is stable, and sorted does not mutate</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-23.py">words = ["bb", "a", "cc", "d"]
+print(sorted(words, key=len), words)
+print(words.sort(), words)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>['a', 'd', 'bb', 'cc'] ['bb', 'a', 'cc', 'd']
+None ['a', 'bb', 'cc', 'd']</code></pre>
+<h3>Puzzle 6: chained comparison and identity</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-24.py">print(1 &lt; 2 &lt; 3, 3 &gt; 2 &gt; 2, [] == [], [] is [])
+x = 256; y = 256
+print(x is y, 0.1 + 0.2 == 0.3)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>True False True False
+True False</code></pre>
+<h3>Puzzle 7: dict ordering and updating while iterating</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-25.py">d = {"a": 1, "b": 2}
+d["c"] = 3
+del d["a"]
+d["a"] = 9
+print(list(d))
+try:
+    for k in d:
+        d[k + "x"] = 0
+except RuntimeError as e:
+    print("RuntimeError:", e)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>['b', 'c', 'a']
+RuntimeError: dictionary changed size during iteration</code></pre>
+<h3>Puzzle 8: string multiplication, slicing and immutability</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-26.py">s = "abc"
+print(s * 2, s[::-1], s[5:], s[-1:], "x".join(s))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>abcabc cba  c axbxc</code></pre>
+<h3>Puzzle 9: generator exhaustion</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-27.py">g = (n * n for n in range(3))
+print(list(g), list(g), sum(n for n in range(4)))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[0, 1, 4] [] 6</code></pre>
+<h3>Puzzle 10: <code>finally</code> and return</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-28.py">def f():
+    try:
+        return "try"
+    finally:
+        print("finally runs")
+print(f())</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>finally runs
+try</code></pre>
+<h3>Puzzle 11: class attributes shared across instances</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-29.py">class C:
+    items = []
+    count = 0
+    def add(self, x):
+        self.items.append(x)
+        self.count += 1
+a, b = C(), C()
+a.add(1); b.add(2)
+print(a.items, b.items, a.count, b.count, C.count)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>[1, 2] [1, 2] 1 1 0</code></pre>
+<h3>Puzzle 12: boolean arithmetic and truthiness</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-30.py">print(True + True, sum([True, False, True]), bool("False"), bool([]), None or "default", 0 or [] or "last")</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>2 2 True False default last</code></pre>
+<h3>Puzzle 13: integer division, modulo and rounding</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-31.py">print(7 // 2, -7 // 2, 7 % -3, round(2.5), round(3.5), int(-2.7))</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>3 -4 -2 2 4 -2</code></pre>
+<h3>Puzzle 14: unpacking and star</h3>
+<pre><code class="lang-py" data-embed="solutions/snippets/ps1-32.py">a, *b, c = range(5)
+x, y = 1, 2
+x, y = y, x
+print(a, b, c, x, y)</code></pre>
+<p class="muted small">Output</p>
+<pre class="no-enhance"><code>0 [1, 2, 3] 4 2 1</code></pre>
+
+      <h3>How this gets asked</h3>
+      <div class="quiz" data-qid="ps-ps1-q04" data-topic="Python problems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>What does <code>add(1); print(add(2))</code> print for <code>def add(x, bucket=[])</code>?</p></div>
+        <ul class="q-options">
+          <li data-key="A">[2] <span class="q-why">The list persists.</span></li>
+          <li data-key="B">[1, 2] <span class="q-why">Correct.</span></li>
+          <li data-key="C">Error <span class="q-why">No.</span></li>
+          <li data-key="D">[1] <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>The default list is created once and reused.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-ps1-q05" data-topic="Python problems" data-type="single" data-answer="B">
+        <div class="q-stem"><p><code>print(sorted(words, key=len), words)</code>: is <code>words</code> changed by sorted?</p></div>
+        <ul class="q-options">
+          <li data-key="A">Yes, sorted works in place <span class="q-why">That is list.sort.</span></li>
+          <li data-key="B">No, sorted returns a new list <span class="q-why">Correct.</span></li>
+          <li data-key="C">Only for strings <span class="q-why">No.</span></li>
+          <li data-key="D">It raises <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>list.sort() mutates and returns None; sorted() returns a new list.</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-ps1-q06" data-topic="Python problems" data-type="numeric" data-answer="-2" data-tol="0">
+        <div class="q-stem"><p>What is <code>7 % -3</code> in Python?</p></div>
+        <div class="q-explain"><p>The result takes the sign of the divisor: 7 = (-3) x (-3) + (-2).</p></div>
+      </div>
+      <div class="quiz" data-qid="ps-ps1-q07" data-topic="Python problems" data-type="single" data-answer="B">
+        <div class="q-stem"><p>After <code>g = (n for n in range(3)); list(g)</code>, what does a second <code>list(g)</code> give?</p></div>
+        <ul class="q-options">
+          <li data-key="A">[0, 1, 2] <span class="q-why">The generator is exhausted.</span></li>
+          <li data-key="B">[] <span class="q-why">Correct.</span></li>
+          <li data-key="C">Error <span class="q-why">No.</span></li>
+          <li data-key="D">None <span class="q-why">No.</span></li>
+        </ul>
+        <div class="q-explain"><p>Generators are single-use.</p></div>
+      </div>
+      <div class="selfcheck">
+        <h3>Self-check</h3>
+        <details class="recall"><summary>Name four classic Python gotchas.</summary><div class="answer"><p>Mutable default arguments, late-binding closures, shared references in [[0]*n]*m, and mutating a list while iterating.</p></div></details>
+      </div>
+    </section>
+
+    <section id="interview-questions" data-track>
+      <h2>Interview questions: Python problems</h2>
+      <p class="muted">8 questions. Try to answer aloud in under a minute, then reveal. Tags show the level. All questions are also in the <a href="interview-questions.html">interview bank</a>.</p>
+      <div class="iq-list" data-iq="Python problems">
+<details class="recall iq" data-level="basic" data-topic="Python problems"><summary><span class="tag ok">Basic</span> How would you count word frequencies?</summary><div class="answer"><p>Normalise with lower() and a regex, then collections.Counter and most_common or a sort by (-count, word).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python problems"><summary><span class="tag warn">Medium</span> How do you group anagrams?</summary><div class="answer"><p>Use the sorted letters as a dictionary key with defaultdict(list).</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python problems"><summary><span class="tag warn">Medium</span> How do you flatten a nested list lazily?</summary><div class="answer"><p>A recursive generator with yield from for lists and tuples, yielding other items.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python problems"><summary><span class="tag warn">Medium</span> How do you process a huge file?</summary><div class="answer"><p>Iterate over it line by line or in chunks with generators, keeping only aggregates in memory.</p></div></details>
+<details class="recall iq" data-level="medium" data-topic="Python problems"><summary><span class="tag warn">Medium</span> Explain why this prints [2, 2, 2]: fs = [lambda: i for i in range(3)].</summary><div class="answer"><p>Late binding: each lambda looks up i when called, after the loop ended at 2. Bind with a default argument lambda i=i: i.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python problems"><summary><span class="tag bad">Advanced</span> Implement a decorator with arguments.</summary><div class="answer"><p>A three-level function: the outer takes the arguments and returns a decorator that returns a wrapper, using functools.wraps.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python problems"><summary><span class="tag bad">Advanced</span> How do you limit concurrent downloads in asyncio?</summary><div class="answer"><p>Wrap each task body in an asyncio.Semaphore and gather the tasks, or use a bounded queue with a fixed worker pool.</p></div></details>
+<details class="recall iq" data-level="advanced" data-topic="Python problems"><summary><span class="tag bad">Advanced</span> How do you write a safe dynamic SQL search with optional filters?</summary><div class="answer"><p>Append fixed SQL fragments for each provided filter, collect values in a parameter list, and allow-list any column used in ORDER BY.</p></div></details>
+</div><!-- /iq -->
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="ps0-python-sql.html"><span class="dir">Previous</span><span>PS0 Using SQL from Python: DB-API, transactions, ORMs, pandas and pipelines</span></a>
+      <a class="next" href="ps2-projects.html"><span class="dir">Next</span><span>PS2 Python and SQL projects: migrations, repositories, data quality, reports and an API</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

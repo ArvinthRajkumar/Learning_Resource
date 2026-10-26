@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en" data-resource="diffusion-from-scratch" data-page="D1">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Phase 1: Setup | Diffusion from scratch</title>
+<meta name="description" content="GPU driver, Python, virtual environment, PyTorch with CUDA, the other libraries and an editor.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">Diffusion from scratch</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Part D1</p>
+      <h1>Phase 1: Setup</h1>
+      <p class="lede">Get your laptop ready. No model-building yet, just making sure the tools work and your GPU is actually being used.</p>
+      <div class="meta"><span class="tag ok">Basic</span><span class="tag">~1 hour</span></div>
+    </div>
+
+    <section id="p1-check-gpu" data-track>
+      <h2>Step 1: Check your GPU and driver</h2>
+<p>
+        Your laptop has an <strong>RTX 2050</strong>. That's an NVIDIA graphics card
+        with <strong>4GB of VRAM</strong>.
+      </p>
+<div class="callout note"><span class="callout-title">Term: VRAM</span><p>
+          <strong>VRAM</strong> (video RAM) is memory that lives
+          physically on the graphics card itself, separate from your laptop's main
+          16GB of system RAM. When you train a neural network on a GPU, the model's
+          weights, the data currently being processed, and a lot of temporary
+          working numbers all have to fit inside VRAM at the same time. Your system
+          RAM (16GB) barely matters for GPU training, <strong>4GB of VRAM is your real,
+          tight constraint</strong>, and almost every design decision later in this
+          project comes back to respecting that number.
+        </p></div>
+<div class="callout note"><span class="callout-title">Term: GPU vs CPU</span><p>
+          Your <strong>CPU</strong> (the Intel i5) is good at doing a few complex
+          things quickly, one after another. Your <strong>GPU</strong> (the RTX 2050)
+          is good at doing thousands of simple things, mostly multiplication and
+          addition, all at the same time. Neural networks are almost entirely
+          multiplication and addition on grids of numbers, so GPUs train them
+          10 to 50 times faster than a CPU would. You want every part of training to
+          run on the GPU, not the CPU.
+        </p></div>
+<p>
+        Before installing anything, find out what <strong>driver</strong> and
+        <strong>CUDA</strong> version your GPU currently supports.
+      </p>
+<div class="callout note"><span class="callout-title">Term: Driver</span><p>
+          A <strong>driver</strong> is the software that lets your
+          operating system talk to a piece of hardware. An NVIDIA driver is what lets
+          Windows or Linux even see the RTX 2050 exists and send work to it.
+        </p></div>
+<div class="callout note"><span class="callout-title">Term: CUDA</span><p>
+          <strong>CUDA</strong> is NVIDIA's platform that lets normal
+          programs (like PyTorch) send instructions to run on the GPU. Think of it as
+          a translator: your Python code says "multiply these two grids of numbers,"
+          and CUDA is what actually hands that job to the thousands of tiny cores on
+          your graphics card. Every GPU driver version supports up to a certain CUDA
+          version, so you need to check yours before picking which PyTorch to install.
+        </p></div>
+<ol class="steps"><li><p><strong>Open a terminal</strong></p><p>
+              On Windows, that's <strong>Command Prompt</strong> or
+              <strong>PowerShell</strong>. On Linux, any terminal app.
+            </p></li><li><p><strong>Run the driver check command</strong></p><p class="muted small"><strong>Command</strong></p><pre><code>nvidia-smi</code></pre><p>
+              If this prints a table with your GPU name, temperature, and memory
+              usage, your driver is installed and working. If you get
+              "command not found," you need to install the NVIDIA driver for your
+              GPU first, search "RTX 2050 driver download" on NVIDIA's own site and
+              install that before continuing.
+            </p></li><li><p><strong>Read the CUDA version from the output</strong></p><p>
+              In the top-right of the <code>nvidia-smi</code> table you'll see
+              something like <code>CUDA Version: 12.4</code>. That is the
+              <strong>maximum</strong> CUDA version your current driver supports, write this number down, you'll need it in Step 4 (installing PyTorch).
+              You do not need to separately install a CUDA Toolkit for this project;
+              PyTorch ships its own CUDA internally, matched to the version you
+              choose when installing it.
+            </p></li></ol>
+<div class="callout trap"><span class="callout-title">Watch out</span><p>
+          Don't confuse "CUDA Version" shown by <code>nvidia-smi</code> (your driver's
+          ceiling) with a CUDA Toolkit you'd install separately. For this project you
+          only need the driver to already support a CUDA version equal to or newer
+          than whatever PyTorch build you install. You almost never need to install
+          the full NVIDIA CUDA Toolkit by hand for plain PyTorch use.
+        </p></div>
+    </section>
+
+    <section id="p1-python" data-track>
+      <h2>Step 2: Install Python properly</h2>
+<p>
+        You likely already have Python from other work, but let's make sure the
+        version is compatible with current PyTorch releases.
+      </p>
+<ol class="steps"><li><p><strong>Check your current version</strong></p><p class="muted small"><strong>Command</strong></p><pre><code>python --version</code></pre><p>
+              You want <strong>Python 3.10, 3.11, or 3.12</strong>. If you're on
+              something much older (3.8 or earlier) or don't have Python at all,
+              install a fresh Python 3.11 from the official python.org installer
+              (on Windows, tick "Add python.exe to PATH" during install, this is
+              what makes the <code>python</code> command work from any terminal).
+            </p></li></ol>
+    </section>
+
+    <section id="p1-venv" data-track>
+      <h2>Step 3: Virtual environments</h2>
+<div class="callout note"><span class="callout-title">Term: Virtual environment</span><p>
+          A <strong>virtual environment</strong> (often shortened to
+          "venv") is an isolated folder containing its own copy of Python and its own
+          set of installed libraries, separate from the rest of your system. You
+          create one per project.
+        </p></div>
+<div class="callout tip"><span class="callout-title">Analogy</span><p>
+          Think of it like separate toolboxes for separate jobs. If you installed
+          every tool you ever bought into one giant shared toolbox, you'd eventually
+          get conflicts, two different wrenches both claiming to be "the 10mm
+          wrench," incompatible with each other. A virtual environment is a fresh
+          toolbox just for this project, so nothing from any other Python project
+          you've done (or will do) can quietly break this one, and vice versa.
+        </p></div>
+<p>Why this matters specifically for you: PyTorch with GPU support needs very
+      exact-matching versions of several libraries. If you install this project's
+      libraries into your "main" Python (no virtual environment), you risk breaking
+      some other project you have, or having some other project's older library
+      silently break this one. Always make a new virtual environment per project.</p>
+<ol class="steps"><li><p><strong>Create a project folder</strong></p><p class="muted small"><strong>Command</strong></p><pre><code>mkdir diffusion-project
+cd diffusion-project</code></pre></li><li><p><strong>Create the virtual environment</strong></p><p class="muted small"><strong>Command</strong></p><pre><code>python -m venv venv</code></pre><p>
+              This creates a folder named <code>venv</code> inside your project
+              folder containing a private copy of Python. Nothing has changed
+              system-wide yet, you have to explicitly turn this environment "on"
+              (that's called <strong>activating</strong> it) before it does anything.
+            </p></li><li><p><strong>Activate it</strong></p><p class="muted small"><strong>Command (Windows, PowerShell)</strong></p><pre><code>venv\Scripts\Activate.ps1</code></pre><p class="muted small"><strong>Command (Windows, cmd.exe)</strong></p><pre><code>venv\Scripts\activate.bat</code></pre><p class="muted small"><strong>Command (Linux / macOS)</strong></p><pre><code>source venv/bin/activate</code></pre><p>
+              After activating, your terminal prompt will show
+              <code>(venv)</code> at the start of the line. Every
+              <code>pip install</code> you now run goes into this isolated folder,
+              not your system Python. You need to re-run the activate command every
+              time you open a new terminal window for this project.
+            </p></li></ol>
+<div class="callout trap"><span class="callout-title">Watch out</span><p>
+          If <code>Activate.ps1</code> gives a "running scripts is disabled" error
+          on Windows, open PowerShell as Administrator once and run
+          <code>Set-ExecutionPolicy RemoteSigned</code>, then try activating again.
+          This is a one-time fix for your whole machine.
+        </p></div>
+    </section>
+
+    <section id="p1-pytorch" data-track>
+      <h2>Step 4: Install PyTorch, with CUDA support</h2>
+<div class="callout note"><span class="callout-title">Term: PyTorch</span><p>
+          <strong>PyTorch</strong> is the library you'll use to build
+          and train the neural network. It gives you <strong>tensors</strong> (grids
+          of numbers, explained properly in Phase 2), the ability to run operations
+          on those grids on the GPU via CUDA, and <strong>automatic differentiation</strong>, meaning PyTorch automatically works out how to adjust every weight during
+          training, so you never have to hand-derive that calculus yourself.
+        </p></div>
+<p>
+        The exact install command depends on your CUDA version from Step 1. Rather
+        than copy a command from anywhere else (these change over time), always get
+        the current command from PyTorch's own site.
+      </p>
+<ol class="steps"><li><p><strong>Go to the official PyTorch install page</strong></p><p>
+              Visit <code>pytorch.org</code> and find the "Install" / "Get Started"
+              section. Select: <strong>Stable</strong> build, your OS, <strong>Pip</strong>
+              as the package manager, <strong>Python</strong> as the language, and a
+              CUDA version at or below the number you saw from <code>nvidia-smi</code>
+              earlier. The page will generate the exact <code>pip install</code>
+              command for that combination.
+            </p></li><li><p><strong>Run the generated command inside your activated venv</strong></p><p>
+              Make sure you see <code>(venv)</code> in your prompt first. Then paste
+              and run the command the site gave you. This will download a few
+              hundred MB, with 200GB free, disk space is not a concern anywhere in
+              this project.
+            </p></li></ol>
+    </section>
+
+    <section id="p1-verify" data-track>
+      <h2>Step 5: Verify PyTorch actually sees your GPU</h2>
+<p>
+        This is the single most important check in Phase 1. It's very common to
+        successfully install PyTorch but accidentally get the CPU-only version, and
+        not notice until training is mysteriously 30x slower than expected.
+      </p>
+<ol class="steps"><li><p><strong>Open Python inside your venv</strong></p><p class="muted small"><strong>Command</strong></p><pre><code>python</code></pre><p>This drops you into an interactive Python prompt (you'll see <code>&gt;&gt;&gt;</code>).</p></li><li><p><strong>Run this check</strong></p><p class="muted small"><strong>Python</strong></p><pre><code class="lang-py">import torch
+print(torch.__version__)
+print(torch.cuda.is_available())
+print(torch.cuda.get_device_name(0))</code></pre><p>
+              You want to see your PyTorch version, then <code>True</code>, then
+              something like <code>NVIDIA GeForce RTX 2050</code>. If
+              <code>cuda.is_available()</code> prints <code>False</code>, you
+              installed the CPU-only build by mistake, go back to Step 4 and
+              re-select a CUDA version on the PyTorch site, then reinstall inside
+              this same venv.
+            </p></li></ol>
+<div class="callout key"><span class="callout-title">Checkpoint: Phase 1, halfway</span><ul><li><code>nvidia-smi</code> runs and shows my GPU</li><li>Python 3.10-3.12 is installed</li><li>Virtual environment created and activated</li><li>PyTorch installed with matching CUDA version</li><li><code>torch.cuda.is_available()</code> prints True</li></ul></div>
+    </section>
+
+    <section id="p1-libraries" data-track>
+      <h2>Step 6: Install the other libraries you'll need</h2>
+<p>
+        A short list, each with one job. Install all of these inside the same
+        activated venv.
+      </p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Library</th><th>What it's for</th></tr></thead>
+<tbody>
+<tr><td><code>torch</code></td><td>Already installed in Step 4, the core deep learning engine.</td></tr>
+<tr><td><code>torchvision</code></td><td>Ready-made tools for working with images: loading standard datasets, resizing, cropping, converting images to tensors.</td></tr>
+<tr><td><code>numpy</code></td><td>General-purpose numerical arrays. PyTorch tensors and numpy arrays interoperate constantly.</td></tr>
+<tr><td><code>matplotlib</code></td><td>For plotting, you'll use this to look at generated images and loss curves while training.</td></tr>
+<tr><td><code>tqdm</code></td><td>Adds a simple progress bar to loops, so a training run shows you a live percentage and time estimate instead of a silent frozen terminal.</td></tr>
+<tr><td><code>einops</code></td><td>A small library for reshaping and rearranging tensors using readable names instead of confusing index juggling. Very commonly used inside U-Net code you'll read.</td></tr>
+<tr><td><code>diffusers</code></td><td>Hugging Face's library of pre-built diffusion model components. You're writing your own U-Net to learn, but you'll read this library's source code as a reference several times, install it now.</td></tr>
+</tbody>
+</table>
+</div>
+<p class="muted small"><strong>Command (run once, inside your activated venv)</strong></p>
+<pre><code>pip install torchvision numpy matplotlib tqdm einops diffusers</code></pre>
+<div class="callout tip"><span class="callout-title">Analogy</span><p>
+          <code>diffusers</code> here is like keeping a well-written reference
+          textbook on your desk while you do your own homework by hand. You're not
+          going to copy its U-Net wholesale, the whole point is building your own
+          so you understand every piece, but when you're unsure "wait, how does a
+          real implementation handle this part," it's the best place to look.
+        </p></div>
+    </section>
+
+    <section id="p1-editor" data-track>
+      <h2>Step 7: Set up somewhere to write and run code</h2>
+<p>
+        You need an editor and a way to run code interactively (so you can inspect a
+        tensor's shape immediately after creating it, rather than re-running an
+        entire script each time). Two good, simple options:
+      </p>
+<h3>Option A: Jupyter Notebook</h3>
+<div class="callout note"><span class="callout-title">Term: Jupyter Notebook</span><p>
+          A <strong>notebook</strong> is a document made of "cells" you
+          run one at a time in any order, each cell showing its output directly
+          underneath it, including images and plots, inline. This is extremely
+          useful for a diffusion project because you can, for example, run the
+          "add noise to an image" cell and immediately see the noisy image appear
+          right there, without writing separate plotting scripts.
+        </p></div>
+<p class="muted small"><strong>Install</strong></p>
+<pre><code>pip install notebook
+jupyter notebook</code></pre>
+<p>The second command opens a notebook interface in your browser.</p>
+<h3>Option B: VS Code</h3>
+<p>
+        If you already use VS Code, install the official "Python" and "Jupyter"
+        extensions from its marketplace. This lets you open <code>.ipynb</code>
+        notebook files directly inside VS Code, get the same cell-by-cell running,
+        plus proper code autocomplete. This is the setup most people settle into
+        long-term, recommended if you're comfortable installing VS Code extensions.
+      </p>
+<div class="callout trap"><span class="callout-title">Watch out</span><p>
+          Whichever you pick, make sure the notebook's Python "kernel" (the Python
+          process actually running your code) is the one from your <code>venv</code>,
+          not a different system Python. In VS Code, click the kernel picker in the
+          top-right of the notebook and select the interpreter path inside your
+          project's <code>venv</code> folder. In Jupyter, run
+          <code>pip install ipykernel</code> inside the venv first, then the venv's
+          Python will appear as a selectable kernel.
+        </p></div>
+    </section>
+
+    <section id="p1-checklist" data-track>
+      <h2>Phase 1 complete: final checklist</h2>
+<div class="callout key"><span class="callout-title">Checkpoint: Phase 1 done</span><ul><li>GPU driver confirmed working via <code>nvidia-smi</code></li><li>Virtual environment created for this project</li><li>PyTorch installed and confirmed using CUDA (GPU), not CPU</li><li>torchvision, numpy, matplotlib, tqdm, einops, diffusers installed</li><li>Notebook environment (Jupyter or VS Code) set up and kernel pointed at the venv</li><li>Ran a test cell and confirmed no import errors</li></ul></div>
+<p>
+        Once every box above is ticked, your laptop is fully ready. Before moving into
+        theory, the next section walks through every single library you just
+        installed, not just what it's for in one sentence, but the actual functions
+        and classes inside it you will call, with what each one does and why. Come
+        back to this section constantly once you start writing code; treat it as a
+        dictionary sitting right next to the theory.
+      </p>
+<p>
+        You don't need to memorize any of this. The goal is that when you're writing
+        your training script later and you hit <code>torch.nn.Conv2d(...)</code>, you
+        can come back to this exact page and immediately know what every argument in
+        the parentheses means, instead of guessing or hunting through official docs
+        mid-flow.
+      </p>
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="d0-start-here.html"><span class="dir">Previous</span><span>D0 Start here: terms and Python primer</span></a>
+      <a class="next" href="d2-package-reference.html"><span class="dir">Next</span><span>D2 Python package reference</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

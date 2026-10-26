@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="en" data-resource="dsa-master-guide" data-page="PAT">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pattern playbook | DSA Master Guide</title>
+<meta name="description" content="30 patterns: when to use each, the steps, a Python template and the problems that use it.">
+<script>try{var t=JSON.parse(localStorage.getItem("lr:site:theme"));if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="../../assets/base.css">
+<script src="parts.js"></script>
+<script src="../../assets/base.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="../../index.html"><span class="brand-mark">LR</span><span class="brand-text">Learning Resources</span></a>
+  <a class="crumb" href="index.html">DSA Master Guide</a>
+  <span class="spacer"></span>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="On this page"></nav>
+  <main id="main" class="content">
+    <div class="page-head">
+      <p class="eyebrow">Practice</p>
+      <h1>Pattern playbook</h1>
+      <p class="lede">Most interview problems are one of about 30 patterns. For each: when to use it, the steps, a short Python template and the practice problems that use it. Learn to recognise the pattern first; the code follows.</p>
+      <div class="meta"><span class="tag">30 patterns</span><span class="tag">tested templates</span></div>
+    </div>
+
+    <section id="pat-hash-map-set-complement-and-counting" data-track>
+      <h2>Hash map / set (complement and counting)</h2>
+      <p><strong>Use it when:</strong> "Seen before?", "count of each", "pair that sums to", "group by key". Any time a nested search can become a lookup.</p>
+      <ol class="steps"><li>Decide what to store: value -&gt; index, value -&gt; count, canonical key -&gt; list.</li><li>Loop once; look up what you need BEFORE inserting the current item.</li><li>State the O(n) time / O(n) space trade.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/hash-map-set-complement-and-counting.py">def two_sum(nums, target):
+    seen = {}
+    for i, x in enumerate(nums):
+        if target - x in seen:
+            return [seen[target - x], i]
+        seen[x] = i</code></pre>
+      <p><strong>Practise:</strong> <a href="m07-problems.html#prob-two_sum">Two Sum (LC 1)</a>, <a href="m07-problems.html#prob-group_anagrams">Group Anagrams (LC 49)</a>, <a href="m07-problems.html#prob-longest_consecutive">Longest Consecutive Sequence (LC 128)</a>, <a href="m07-problems.html#prob-subarray_sum_k">Subarrays with Sum K (LC 560)</a>, <a href="m07-problems.html#prob-four_sum_count">4Sum II (LC 454)</a>, <a href="m07-problems.html#prob-word_pattern">Word Pattern (LC 290)</a></p>
+    </section>
+
+    <section id="pat-prefix-sums" data-track>
+      <h2>Prefix sums</h2>
+      <p><strong>Use it when:</strong> Many range-sum questions; "subarray with sum k"; counts of remainders.</p>
+      <ol class="steps"><li>Build prefix with a leading 0.</li><li>Range sum = prefix[r+1] - prefix[l].</li><li>For "count subarrays" store prefix frequencies in a dict.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/prefix-sums.py">def count_subarrays(nums, k):
+    seen, pre, ans = {0: 1}, 0, 0
+    for x in nums:
+        pre += x
+        ans += seen.get(pre - k, 0)
+        seen[pre] = seen.get(pre, 0) + 1
+    return ans</code></pre>
+      <p><strong>Practise:</strong> <a href="m03-problems.html#prob-range_sum_queries">Range Sum Queries</a>, <a href="m07-problems.html#prob-subarray_sum_k">Subarrays with Sum K (LC 560)</a>, <a href="m03-problems.html#prob-subarrays_div_k">Subarray Sums Divisible by K (LC 974)</a>, <a href="m03-problems.html#prob-product_except_self">Product of Array Except Self (LC 238)</a>, <a href="m18-problems.html#prob-range_sum_2d">2D Range Sum Queries</a></p>
+    </section>
+
+    <section id="pat-kadane-s-running-best" data-track>
+      <h2>Kadane's / running best</h2>
+      <p><strong>Use it when:</strong> Maximum or minimum contiguous subarray; best time to buy and sell.</p>
+      <ol class="steps"><li>cur = best ending here: extend or restart.</li><li>best = max(best, cur).</li><li>If negatives flip signs (product), track both max and min.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/kadane-s-running-best.py">def kadane(nums):
+    cur = best = nums[0]
+    for x in nums[1:]:
+        cur = max(x, cur + x)
+        best = max(best, cur)
+    return best</code></pre>
+      <p><strong>Practise:</strong> <a href="m03-problems.html#prob-max_subarray">Maximum Subarray Sum (Kadane) (LC 53)</a>, <a href="m03-problems.html#prob-max_product_subarray">Maximum Product Subarray (LC 152)</a>, <a href="m03-problems.html#prob-max_sum_circular">Maximum Sum Circular Subarray (LC 918)</a>, <a href="m03-problems.html#prob-max_profit">Best Time to Buy and Sell Stock (LC 121)</a></p>
+    </section>
+
+    <section id="pat-two-pointers-opposite-ends" data-track>
+      <h2>Two pointers (opposite ends)</h2>
+      <p><strong>Use it when:</strong> Sorted array pair/triple sums, palindromes, container, trapping water.</p>
+      <ol class="steps"><li>lo at start, hi at end.</li><li>Compare, then move the pointer that can improve the result.</li><li>Each move must permanently discard an element.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/two-pointers-opposite-ends.py">def pair_sum_sorted(nums, target):
+    lo, hi = 0, len(nums) - 1
+    while lo &lt; hi:
+        s = nums[lo] + nums[hi]
+        if s == target:
+            return [lo, hi]
+        if s &lt; target:
+            lo += 1
+        else:
+            hi -= 1
+    return [-1, -1]</code></pre>
+      <p><strong>Practise:</strong> <a href="m08-problems.html#prob-two_sum_sorted">Pair Sum in a Sorted Array (LC 167)</a>, <a href="m08-problems.html#prob-three_sum">Three Sum (LC 15)</a>, <a href="m08-problems.html#prob-max_area">Container With Most Water (LC 11)</a>, <a href="m03-problems.html#prob-trapping_rain">Trapping Rain Water (LC 42)</a>, <a href="m04-problems.html#prob-valid_palindrome_ii">Valid Palindrome II (LC 680)</a></p>
+    </section>
+
+    <section id="pat-reader-writer-pointers-in-place" data-track>
+      <h2>Reader / writer pointers (in place)</h2>
+      <p><strong>Use it when:</strong> Remove or move items in place with O(1) extra space.</p>
+      <ol class="steps"><li>write = 0.</li><li>For each item (reader): if it should be kept, store at write and increase write.</li><li>Return write or fill the rest.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/reader-writer-pointers-in-place.py">def remove_value(nums, val):
+    w = 0
+    for x in nums:
+        if x != val:
+            nums[w] = x
+            w += 1
+    return w</code></pre>
+      <p><strong>Practise:</strong> <a href="m03-problems.html#prob-move_zeroes">Move Zeroes to the End (LC 283)</a>, <a href="m03-problems.html#prob-remove_duplicates">Remove Duplicates from Sorted Array (LC 26)</a>, <a href="m08-problems.html#prob-remove_element">Remove Element (LC 27)</a>, <a href="m06-problems.html#prob-sort_colors">Sort 0s, 1s and 2s (Dutch National Flag) (LC 75)</a></p>
+    </section>
+
+    <section id="pat-fast-slow-pointers" data-track>
+      <h2>Fast / slow pointers</h2>
+      <p><strong>Use it when:</strong> Linked list middle, cycle detection, nth from end, repeated states.</p>
+      <ol class="steps"><li>slow moves 1, fast moves 2.</li><li>Meeting means a cycle; fast at the end means no cycle or slow is the middle.</li><li>For cycle start reset one pointer to head and move both by 1.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/fast-slow-pointers.py">def has_cycle(head):
+    slow = fast = head
+    while fast and fast.next:
+        slow, fast = slow.next, fast.next.next
+        if slow is fast:
+            return True
+    return False</code></pre>
+      <p><strong>Practise:</strong> <a href="m09-problems.html#prob-has_cycle">Detect a Cycle (Floyd) (LC 141)</a>, <a href="m09-problems.html#prob-cycle_start">Find the Start of a Cycle (LC 142)</a>, <a href="m09-problems.html#prob-middle_node">Middle of a Linked List (LC 876)</a>, <a href="m17-problems.html#prob-happy_number">Happy Number (LC 202)</a>, <a href="m03-problems.html#prob-find_duplicate_number">Find the Duplicate Number (LC 287)</a></p>
+    </section>
+
+    <section id="pat-sliding-window-fixed-size" data-track>
+      <h2>Sliding window (fixed size)</h2>
+      <p><strong>Use it when:</strong> "Every subarray/substring of length k".</p>
+      <ol class="steps"><li>Build the first window.</li><li>Slide: add the new element, remove the old one.</li><li>Update the answer each step.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/sliding-window-fixed-size.py">def best_window(nums, k):
+    w = sum(nums[:k])
+    best = w
+    for i in range(k, len(nums)):
+        w += nums[i] - nums[i - k]
+        best = max(best, w)
+    return best</code></pre>
+      <p><strong>Practise:</strong> <a href="m08-problems.html#prob-max_sum_window">Maximum Sum of K Consecutive Elements</a>, <a href="m08-problems.html#prob-check_inclusion">Permutation in String (LC 567)</a>, <a href="m04-problems.html#prob-find_all_anagrams">Find All Anagrams in a String (LC 438)</a>, <a href="m10-problems.html#prob-sliding_window_max">Sliding Window Maximum (LC 239)</a></p>
+    </section>
+
+    <section id="pat-sliding-window-variable-size" data-track>
+      <h2>Sliding window (variable size)</h2>
+      <p><strong>Use it when:</strong> Longest/shortest substring or subarray satisfying a condition; non-negative numbers.</p>
+      <ol class="steps"><li>Expand right.</li><li>While the window is invalid (or valid, for shortest) shrink from the left.</li><li>Record the answer at the right moment.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/sliding-window-variable-size.py">def longest_at_most_k_distinct(s, k):
+    cnt, left, best = {}, 0, 0
+    for right, ch in enumerate(s):
+        cnt[ch] = cnt.get(ch, 0) + 1
+        while len(cnt) &gt; k:
+            cnt[s[left]] -= 1
+            if cnt[s[left]] == 0:
+                del cnt[s[left]]
+            left += 1
+        best = max(best, right - left + 1)
+    return best</code></pre>
+      <p><strong>Practise:</strong> <a href="m08-problems.html#prob-longest_unique_substring">Longest Substring Without Repeating Characters (LC 3)</a>, <a href="m08-problems.html#prob-min_subarray_len">Smallest Subarray With Sum &gt;= Target (LC 209)</a>, <a href="m08-problems.html#prob-longest_ones">Longest Run of 1s With K Flips (LC 1004)</a>, <a href="m04-problems.html#prob-min_window">Minimum Window Substring (LC 76)</a>, <a href="m04-problems.html#prob-longest_repeating_replace">Longest Repeating Character Replacement (LC 424)</a>, <a href="m08-problems.html#prob-fruit_baskets">Fruit Into Baskets (LC 904)</a></p>
+    </section>
+
+    <section id="pat-binary-search-boundary-lower-bound" data-track>
+      <h2>Binary search (boundary / lower bound)</h2>
+      <p><strong>Use it when:</strong> Sorted data, first/last position, insertion point, rotated arrays, peaks.</p>
+      <ol class="steps"><li>Define the invariant: answer is inside [lo, hi].</li><li>Pick the style (lo &lt;= hi or lo &lt; hi) and keep it consistent.</li><li>Test length 0, 1, 2.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/binary-search-boundary-lower-bound.py">def lower_bound(a, x):
+    lo, hi = 0, len(a)
+    while lo &lt; hi:
+        mid = (lo + hi) // 2
+        if a[mid] &lt; x:
+            lo = mid + 1
+        else:
+            hi = mid
+    return lo</code></pre>
+      <p><strong>Practise:</strong> <a href="m05-problems.html#prob-binary_search">Binary Search</a>, <a href="m05-problems.html#prob-first_last">First and Last Occurrence (LC 34)</a>, <a href="m05-problems.html#prob-search_insert">Search Insert Position</a>, <a href="m05-problems.html#prob-search_rotated">Search in Rotated Sorted Array (LC 33)</a>, <a href="m05-problems.html#prob-find_min_rotated">Minimum in Rotated Sorted Array (LC 153)</a>, <a href="m05-problems.html#prob-find_peak">Find a Peak Element (LC 162)</a>, <a href="m05-problems.html#prob-k_closest_elements">Find K Closest Elements (LC 658)</a>, <a href="m05-problems.html#prob-median_two_sorted">Median of Two Sorted Arrays (LC 4)</a></p>
+    </section>
+
+    <section id="pat-binary-search-on-the-answer" data-track>
+      <h2>Binary search on the answer</h2>
+      <p><strong>Use it when:</strong> "Minimum possible maximum", "smallest x such that", feasibility check is monotonic.</p>
+      <ol class="steps"><li>Bound the answer range.</li><li>Write can_do(x) (usually a greedy simulation).</li><li>Minimise: hi = mid on success. Maximise: lo = mid with mid rounded up.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/binary-search-on-the-answer.py">def smallest_feasible(lo, hi, can_do):
+    while lo &lt; hi:
+        mid = (lo + hi) // 2
+        if can_do(mid):
+            hi = mid
+        else:
+            lo = mid + 1
+    return lo</code></pre>
+      <p><strong>Practise:</strong> <a href="m05-problems.html#prob-my_sqrt">Integer Square Root (LC 69)</a>, <a href="m05-problems.html#prob-ship_capacity">Minimum Capacity to Ship in D Days (LC 1011)</a></p>
+    </section>
+
+    <section id="pat-monotonic-stack" data-track>
+      <h2>Monotonic stack</h2>
+      <p><strong>Use it when:</strong> Next greater/smaller element, spans, histogram rectangles, remove digits.</p>
+      <ol class="steps"><li>Keep a stack of INDICES with decreasing (or increasing) values.</li><li>While the new item breaks the order, pop and resolve.</li><li>Push the new index.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/monotonic-stack.py">def next_greater(nums):
+    res, st = [-1] * len(nums), []
+    for i, x in enumerate(nums):
+        while st and nums[st[-1]] &lt; x:
+            res[st.pop()] = x
+        st.append(i)
+    return res</code></pre>
+      <p><strong>Practise:</strong> <a href="m10-problems.html#prob-next_greater">Next Greater Element</a>, <a href="m10-problems.html#prob-daily_temperatures">Days Until a Warmer Temperature (LC 739)</a>, <a href="m10-problems.html#prob-largest_rectangle">Largest Rectangle in a Histogram (LC 84)</a>, <a href="m10-problems.html#prob-remove_k_digits">Remove K Digits (LC 402)</a>, <a href="m10-problems.html#prob-asteroid_collision">Asteroid Collision (LC 735)</a></p>
+    </section>
+
+    <section id="pat-heap-top-k-merge-scheduling" data-track>
+      <h2>Heap (top-K, merge, scheduling)</h2>
+      <p><strong>Use it when:</strong> K largest/smallest, merge K sorted, repeated min/max with inserts, running median.</p>
+      <ol class="steps"><li>Min-heap of size K keeps the K largest.</li><li>Push tuples (priority, tie-breaker, item).</li><li>Negate values for a max-heap.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/heap-top-k-merge-scheduling.py">import heapq
+
+def kth_largest(nums, k):
+    h = []
+    for x in nums:
+        heapq.heappush(h, x)
+        if len(h) &gt; k:
+            heapq.heappop(h)
+    return h[0]</code></pre>
+      <p><strong>Practise:</strong> <a href="m13-problems.html#prob-kth_largest">Kth Largest Element (LC 215)</a>, <a href="m13-problems.html#prob-top_k_frequent">Top K Frequent Elements (LC 347)</a>, <a href="m13-problems.html#prob-merge_k_sorted">Merge K Sorted Lists (LC 23)</a>, <a href="m13-problems.html#prob-running_median">Median of a Data Stream (LC 295)</a>, <a href="m13-problems.html#prob-meeting_rooms_ii">Meeting Rooms II (LC 253)</a>, <a href="m13-problems.html#prob-task_scheduler">Task Scheduler (LC 621)</a>, <a href="m13-problems.html#prob-reorganize_string">Reorganize String (LC 767)</a></p>
+    </section>
+
+    <section id="pat-intervals-sort-then-sweep" data-track>
+      <h2>Intervals (sort then sweep)</h2>
+      <p><strong>Use it when:</strong> Merge, insert, schedule, count overlaps.</p>
+      <ol class="steps"><li>Sort by start (merge) or end (selection).</li><li>Compare with the last kept interval.</li><li>Use max for the merged end.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/intervals-sort-then-sweep.py">def merge(intervals):
+    out = []
+    for s, e in sorted(intervals):
+        if out and s &lt;= out[-1][1]:
+            out[-1][1] = max(out[-1][1], e)
+        else:
+            out.append([s, e])
+    return out</code></pre>
+      <p><strong>Practise:</strong> <a href="m18-problems.html#prob-merge_intervals">Merge Intervals (LC 56)</a>, <a href="m18-problems.html#prob-insert_interval">Insert Interval (LC 57)</a>, <a href="m15-problems.html#prob-non_overlapping_intervals">Non-overlapping Intervals (LC 435)</a>, <a href="m13-problems.html#prob-meeting_rooms_ii">Meeting Rooms II (LC 253)</a>, <a href="m15-problems.html#prob-min_platforms">Minimum Platforms (Meeting Rooms)</a></p>
+    </section>
+
+    <section id="pat-linked-list-reversal-and-dummy-node" data-track>
+      <h2>Linked list reversal and dummy node</h2>
+      <p><strong>Use it when:</strong> Reverse (part of) a list, reorder, merge, delete with head cases.</p>
+      <ol class="steps"><li>dummy = ListNode(0, head) removes the head special case.</li><li>Save next before changing next.</li><li>Draw the pointers for 3 nodes.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/linked-list-reversal-and-dummy-node.py">def reverse(head):
+    prev, cur = None, head
+    while cur:
+        nxt = cur.next
+        cur.next = prev
+        prev, cur = cur, nxt
+    return prev</code></pre>
+      <p><strong>Practise:</strong> <a href="m09-problems.html#prob-reverse_list">Reverse a Linked List (LC 206)</a>, <a href="m09-problems.html#prob-reverse_k_group">Reverse Nodes in k-Group (LC 25)</a>, <a href="m09-problems.html#prob-reorder_list">Reorder List (LC 143)</a>, <a href="m09-problems.html#prob-merge_two_lists">Merge Two Sorted Linked Lists (LC 21)</a>, <a href="m09-problems.html#prob-remove_nth_from_end">Remove N-th Node From End (LC 19)</a>, <a href="m09-problems.html#prob-add_two_numbers">Add Two Numbers (Linked Lists) (LC 2)</a></p>
+    </section>
+
+    <section id="pat-tree-dfs-return-a-value-up" data-track>
+      <h2>Tree DFS (return a value up)</h2>
+      <p><strong>Use it when:</strong> Height, balance, diameter, path sums, LCA, validate BST.</p>
+      <ol class="steps"><li>Base case: None.</li><li>Get answers from left and right.</li><li>Combine; if the answer differs from what you return, update a nonlocal best.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/tree-dfs-return-a-value-up.py">def height(node):
+    if node is None:
+        return 0
+    return 1 + max(height(node.left), height(node.right))</code></pre>
+      <p><strong>Practise:</strong> <a href="m12-problems.html#prob-max_depth">Maximum Depth of a Binary Tree (LC 104)</a>, <a href="m12-problems.html#prob-diameter_tree">Diameter of a Binary Tree (LC 543)</a>, <a href="m12-problems.html#prob-max_path_sum">Binary Tree Maximum Path Sum (LC 124)</a>, <a href="m12-problems.html#prob-lca">Lowest Common Ancestor (LC 236)</a>, <a href="m12-problems.html#prob-is_valid_bst">Validate a Binary Search Tree (LC 98)</a>, <a href="m12-problems.html#prob-good_nodes">Count Good Nodes in a Binary Tree (LC 1448)</a></p>
+    </section>
+
+    <section id="pat-tree-bfs-levels" data-track>
+      <h2>Tree BFS (levels)</h2>
+      <p><strong>Use it when:</strong> Level order, right view, zigzag, minimum depth.</p>
+      <ol class="steps"><li>Queue the root.</li><li>Process len(queue) nodes per level.</li><li>Append children for the next level.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/tree-bfs-levels.py">from collections import deque
+
+def level_order(root):
+    res, q = [], deque([root] if root else [])
+    while q:
+        res.append([n.val for n in q])
+        for _ in range(len(q)):
+            n = q.popleft()
+            if n.left: q.append(n.left)
+            if n.right: q.append(n.right)
+    return res</code></pre>
+      <p><strong>Practise:</strong> <a href="m12-problems.html#prob-level_order">Level Order Traversal (LC 102)</a>, <a href="m12-problems.html#prob-zigzag_level_order">Binary Tree Zigzag Level Order (LC 103)</a>, <a href="m12-problems.html#prob-right_side_view">Right Side View of a Tree</a></p>
+    </section>
+
+    <section id="pat-backtracking-choose-explore-un-choose" data-track>
+      <h2>Backtracking (choose, explore, un-choose)</h2>
+      <p><strong>Use it when:</strong> "All subsets / permutations / combinations", constraint puzzles, grid paths.</p>
+      <ol class="steps"><li>Record the answer when complete.</li><li>For each option: choose, recurse, undo.</li><li>Store a COPY of the path.</li><li>Prune early; skip duplicates by sorting.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/backtracking-choose-explore-un-choose.py">def subsets(nums):
+    res, path = [], []
+    def go(start):
+        res.append(path[:])
+        for i in range(start, len(nums)):
+            path.append(nums[i])
+            go(i + 1)
+            path.pop()
+    go(0)
+    return res</code></pre>
+      <p><strong>Practise:</strong> <a href="m11-problems.html#prob-subsets">All Subsets (Power Set) (LC 78)</a>, <a href="m11-problems.html#prob-permutations">All Permutations (LC 46)</a>, <a href="m11-problems.html#prob-combination_sum">Combination Sum (LC 39)</a>, <a href="m11-problems.html#prob-combination_sum_ii">Combination Sum II (LC 40)</a>, <a href="m11-problems.html#prob-word_search">Word Search (LC 79)</a>, <a href="m11-problems.html#prob-n_queens_count">N-Queens (Count Solutions) (LC 52)</a>, <a href="m11-problems.html#prob-restore_ip">Restore IP Addresses (LC 93)</a></p>
+    </section>
+
+    <section id="pat-graph-bfs-shortest-path-levels" data-track>
+      <h2>Graph BFS (shortest path, levels)</h2>
+      <p><strong>Use it when:</strong> Fewest steps in an unweighted graph or grid, multi-source spreading.</p>
+      <ol class="steps"><li>Queue the start (or all sources).</li><li>Mark visited when enqueuing.</li><li>Distance = BFS level.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/graph-bfs-shortest-path-levels.py">from collections import deque
+
+def bfs_dist(graph, start):
+    dist, q = {start: 0}, deque([start])
+    while q:
+        u = q.popleft()
+        for v in graph[u]:
+            if v not in dist:
+                dist[v] = dist[u] + 1
+                q.append(v)
+    return dist</code></pre>
+      <p><strong>Practise:</strong> <a href="m14-problems.html#prob-bfs_order">BFS Traversal Order</a>, <a href="m14-problems.html#prob-shortest_path_grid">Shortest Path in a Grid</a>, <a href="m14-problems.html#prob-rotting_oranges">Rotting Oranges (LC 994)</a>, <a href="m14-problems.html#prob-word_ladder">Word Ladder (LC 127)</a>, <a href="m14-problems.html#prob-pacific_atlantic">Pacific Atlantic Water Flow (LC 417)</a></p>
+    </section>
+
+    <section id="pat-graph-dfs-components-cycles-flood-fill" data-track>
+      <h2>Graph DFS (components, cycles, flood fill)</h2>
+      <p><strong>Use it when:</strong> Count regions, connectivity, cycle detection, backtracking on graphs.</p>
+      <ol class="steps"><li>Visited set.</li><li>Recurse on unvisited neighbours (or use a stack).</li><li>Count a component each time you start a fresh DFS.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/graph-dfs-components-cycles-flood-fill.py">def count_components(n, edges):
+    g = [[] for _ in range(n)]
+    for a, b in edges:
+        g[a].append(b); g[b].append(a)
+    seen = set()
+    def dfs(u):
+        seen.add(u)
+        for v in g[u]:
+            if v not in seen:
+                dfs(v)
+    comps = 0
+    for i in range(n):
+        if i not in seen:
+            comps += 1
+            dfs(i)
+    return comps</code></pre>
+      <p><strong>Practise:</strong> <a href="m14-problems.html#prob-num_islands">Number of Islands (LC 200)</a>, <a href="m14-problems.html#prob-count_components">Connected Components (LC 323)</a>, <a href="m14-problems.html#prob-flood_fill">Flood Fill (LC 733)</a>, <a href="m14-problems.html#prob-surrounded_regions">Surrounded Regions (LC 130)</a>, <a href="m14-problems.html#prob-is_bipartite">Is the Graph Bipartite? (LC 785)</a></p>
+    </section>
+
+    <section id="pat-topological-sort-kahn" data-track>
+      <h2>Topological sort (Kahn)</h2>
+      <p><strong>Use it when:</strong> Prerequisites, build order, detect a cycle in a directed graph.</p>
+      <ol class="steps"><li>Compute in-degrees.</li><li>Queue in-degree 0 nodes.</li><li>Pop, output, decrement neighbours.</li><li>If output is shorter than n there is a cycle.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/topological-sort-kahn.py">from collections import deque
+
+def topo(n, edges):
+    g, indeg = [[] for _ in range(n)], [0] * n
+    for a, b in edges:
+        g[a].append(b); indeg[b] += 1
+    q = deque(i for i in range(n) if indeg[i] == 0)
+    order = []
+    while q:
+        u = q.popleft(); order.append(u)
+        for v in g[u]:
+            indeg[v] -= 1
+            if indeg[v] == 0:
+                q.append(v)
+    return order if len(order) == n else []</code></pre>
+      <p><strong>Practise:</strong> <a href="m14-problems.html#prob-can_finish">Course Schedule (Topological Sort) (LC 207)</a>, <a href="m14-problems.html#prob-course_order">Course Schedule II (LC 210)</a></p>
+    </section>
+
+    <section id="pat-union-find" data-track>
+      <h2>Union-Find</h2>
+      <p><strong>Use it when:</strong> Dynamic connectivity, redundant edge, number of groups, Kruskal.</p>
+      <ol class="steps"><li>parent = list(range(n)).</li><li>find with path compression.</li><li>union returns False if already connected.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/union-find.py">parent = list(range(10))
+
+def find(x):
+    while parent[x] != x:
+        parent[x] = parent[parent[x]]
+        x = parent[x]
+    return x</code></pre>
+      <p><strong>Practise:</strong> <a href="m14-problems.html#prob-has_cycle_undirected">Cycle in an Undirected Graph</a>, <a href="m14-problems.html#prob-redundant_connection">Redundant Connection (LC 684)</a>, <a href="m14-problems.html#prob-number_of_provinces">Number of Provinces (LC 547)</a>, <a href="m14-problems.html#prob-mst_weight">Minimum Spanning Tree (Kruskal)</a></p>
+    </section>
+
+    <section id="pat-dijkstra-weighted-shortest-path" data-track>
+      <h2>Dijkstra (weighted shortest path)</h2>
+      <p><strong>Use it when:</strong> Non-negative weights, cheapest route from one source.</p>
+      <ol class="steps"><li>dist = infinity; dist[src] = 0.</li><li>Min-heap of (distance, node).</li><li>Skip stale entries; relax edges.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/dijkstra-weighted-shortest-path.py">import heapq
+
+def dijkstra(graph, src):
+    dist, heap = {src: 0}, [(0, src)]
+    while heap:
+        d, u = heapq.heappop(heap)
+        if d &gt; dist.get(u, float("inf")):
+            continue
+        for v, w in graph[u]:
+            if d + w &lt; dist.get(v, float("inf")):
+                dist[v] = d + w
+                heapq.heappush(heap, (d + w, v))
+    return dist</code></pre>
+      <p><strong>Practise:</strong> <a href="m14-problems.html#prob-network_delay">Network Delay Time (Dijkstra) (LC 743)</a>, <a href="m14-problems.html#prob-cheapest_flights">Cheapest Flights Within K Stops (LC 787)</a></p>
+    </section>
+
+    <section id="pat-dp-1d-linear-decisions" data-track>
+      <h2>DP 1D (linear decisions)</h2>
+      <p><strong>Use it when:</strong> "Number of ways", "minimum cost", adjacent restrictions, stairs, robber, coin change.</p>
+      <ol class="steps"><li>State: dp[i] means ... (say it in words).</li><li>Transition from smaller states.</li><li>Base cases and answer cell.</li><li>Reduce to two variables if only the last two are needed.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/dp-1d-linear-decisions.py">def climb(n):
+    a, b = 1, 1
+    for _ in range(n - 1):
+        a, b = b, a + b
+    return b</code></pre>
+      <p><strong>Practise:</strong> <a href="m16-problems.html#prob-climb_stairs">Climbing Stairs (LC 70)</a>, <a href="m16-problems.html#prob-house_robber">House Robber (LC 198)</a>, <a href="m16-problems.html#prob-house_robber_ii">House Robber II (LC 213)</a>, <a href="m16-problems.html#prob-coin_change">Coin Change (Minimum Coins) (LC 322)</a>, <a href="m16-problems.html#prob-coin_change_ii">Coin Change II (LC 518)</a>, <a href="m16-problems.html#prob-decode_ways">Decode Ways (LC 91)</a>, <a href="m16-problems.html#prob-word_break">Word Break (LC 139)</a>, <a href="m16-problems.html#prob-lis">Longest Increasing Subsequence (LC 300)</a></p>
+    </section>
+
+    <section id="pat-dp-2d-grids-and-two-strings" data-track>
+      <h2>DP 2D (grids and two strings)</h2>
+      <p><strong>Use it when:</strong> Grid paths, LCS, edit distance, palindromic subsequence, regex matching.</p>
+      <ol class="steps"><li>Add a zero row/column for the empty prefix.</li><li>dp[i][j] from up, left and diagonal.</li><li>Check loop order and index offsets (dp is 1-based, strings 0-based).</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/dp-2d-grids-and-two-strings.py">def lcs(a, b):
+    dp = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
+    for i in range(1, len(a) + 1):
+        for j in range(1, len(b) + 1):
+            if a[i - 1] == b[j - 1]:
+                dp[i][j] = dp[i - 1][j - 1] + 1
+            else:
+                dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])
+    return dp[-1][-1]</code></pre>
+      <p><strong>Practise:</strong> <a href="m16-problems.html#prob-unique_paths">Unique Grid Paths (LC 62)</a>, <a href="m16-problems.html#prob-unique_paths_obstacles">Unique Paths II (LC 63)</a>, <a href="m16-problems.html#prob-min_path_sum">Minimum Path Sum (LC 64)</a>, <a href="m16-problems.html#prob-lcs">Longest Common Subsequence (LC 1143)</a>, <a href="m16-problems.html#prob-edit_distance">Edit Distance (LC 72)</a>, <a href="m16-problems.html#prob-longest_palindromic_subseq">Longest Palindromic Subsequence (LC 516)</a>, <a href="m16-problems.html#prob-regex_match">Regular Expression Matching (LC 10)</a>, <a href="m16-problems.html#prob-maximal_square">Maximal Square (LC 221)</a></p>
+    </section>
+
+    <section id="pat-knapsack-subset-sum" data-track>
+      <h2>Knapsack / subset sum</h2>
+      <p><strong>Use it when:</strong> Choose items under a capacity; split into equal sums; count ways to a target.</p>
+      <ol class="steps"><li>dp[w] = best/possible/ways with capacity w.</li><li>0/1: iterate capacity downward. Unbounded: upward.</li><li>Reduce sign problems to subset sums.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/knapsack-subset-sum.py">def can_make(nums, target):
+    reach = [True] + [False] * target
+    for x in nums:
+        for s in range(target, x - 1, -1):
+            if reach[s - x]:
+                reach[s] = True
+    return reach[target]</code></pre>
+      <p><strong>Practise:</strong> <a href="m16-problems.html#prob-knapsack_01">0/1 Knapsack</a>, <a href="m16-problems.html#prob-partition_equal_subset">Partition Equal Subset Sum (LC 416)</a>, <a href="m16-problems.html#prob-target_sum">Target Sum (LC 494)</a>, <a href="m16-problems.html#prob-coin_change_ii">Coin Change II (LC 518)</a></p>
+    </section>
+
+    <section id="pat-greedy-sort-then-scan" data-track>
+      <h2>Greedy (sort then scan)</h2>
+      <p><strong>Use it when:</strong> Intervals, scheduling, jumping, assigning; a local choice is provably safe.</p>
+      <ol class="steps"><li>Choose the sort key (end time, difference, ratio).</li><li>Scan once keeping the greedy choice.</li><li>Try a counterexample before trusting it.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/greedy-sort-then-scan.py">def max_activities(intervals):
+    count, last_end = 0, float("-inf")
+    for s, e in sorted(intervals, key=lambda x: x[1]):
+        if s &gt;= last_end:
+            count += 1
+            last_end = e
+    return count</code></pre>
+      <p><strong>Practise:</strong> <a href="m15-problems.html#prob-max_activities">Activity Selection</a>, <a href="m15-problems.html#prob-can_jump">Jump Game (LC 55)</a>, <a href="m15-problems.html#prob-jump_game_ii">Jump Game II (Minimum Jumps) (LC 45)</a>, <a href="m15-problems.html#prob-gas_station">Gas Station (LC 134)</a>, <a href="m15-problems.html#prob-candy">Candy (LC 135)</a>, <a href="m15-problems.html#prob-partition_labels">Partition Labels (LC 763)</a>, <a href="m15-problems.html#prob-two_city_cost">Two City Scheduling (LC 1029)</a></p>
+    </section>
+
+    <section id="pat-bit-manipulation-xor" data-track>
+      <h2>Bit manipulation / XOR</h2>
+      <p><strong>Use it when:</strong> Appears twice except one, powers of two, subsets by mask, counting bits.</p>
+      <ol class="steps"><li>x ^ x = 0, x ^ 0 = x.</li><li>n &amp; (n - 1) clears the lowest set bit.</li><li>Use masks for subsets.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/bit-manipulation-xor.py">def single(nums):
+    r = 0
+    for x in nums:
+        r ^= x
+    return r</code></pre>
+      <p><strong>Practise:</strong> <a href="m17-problems.html#prob-single_number">Single Number (XOR) (LC 136)</a>, <a href="m17-problems.html#prob-single_number_ii">Single Number II (LC 137)</a>, <a href="m17-problems.html#prob-is_power_of_two">Power of Two (LC 231)</a>, <a href="m17-problems.html#prob-count_set_bits">Count Set Bits (LC 191)</a>, <a href="m17-problems.html#prob-reverse_bits">Reverse Bits (LC 190)</a>, <a href="m17-problems.html#prob-range_bitwise_and">Bitwise AND of Numbers Range (LC 201)</a></p>
+    </section>
+
+    <section id="pat-trie-prefix-tree" data-track>
+      <h2>Trie (prefix tree)</h2>
+      <p><strong>Use it when:</strong> Prefix queries, autocomplete, word dictionaries with wildcards.</p>
+      <ol class="steps"><li>Node = dict of children plus an end flag.</li><li>Insert/search walk one character at a time.</li><li>Wildcards recurse over children.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/trie-prefix-tree.py">def insert(root, word):
+    node = root
+    for ch in word:
+        node = node.setdefault(ch, {})
+    node["$"] = True</code></pre>
+      <p><strong>Practise:</strong> <a href="m18-problems.html#prob-trie_class">Implement a Trie (LC 208)</a>, <a href="m18-problems.html#prob-word_dictionary">Design Add and Search Words (LC 211)</a></p>
+    </section>
+
+    <section id="pat-matrix-traversal-and-in-place-tricks" data-track>
+      <h2>Matrix traversal and in-place tricks</h2>
+      <p><strong>Use it when:</strong> Spiral, rotate, zero rows/columns, simulation grids.</p>
+      <ol class="steps"><li>Draw a 3 x 3 with indices.</li><li>Use four boundaries for layered traversals.</li><li>Transpose + reverse rows for rotation.</li><li>Use a copy when updates must be simultaneous.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/matrix-traversal-and-in-place-tricks.py">def rotate(matrix):
+    return [list(r) for r in zip(*matrix[::-1])]</code></pre>
+      <p><strong>Practise:</strong> <a href="m18-problems.html#prob-spiral_order">Spiral Matrix Traversal (LC 54)</a>, <a href="m18-problems.html#prob-rotate_matrix">Rotate Matrix 90 Degrees (LC 48)</a>, <a href="m18-problems.html#prob-set_matrix_zeroes">Set Matrix Zeroes (LC 73)</a>, <a href="m18-problems.html#prob-game_of_life">Game of Life (LC 289)</a>, <a href="m05-problems.html#prob-search_matrix">Search a Sorted Matrix (LC 74)</a></p>
+    </section>
+
+    <section id="pat-design-hash-map-ordering" data-track>
+      <h2>Design (hash map + ordering)</h2>
+      <p><strong>Use it when:</strong> LRU cache, O(1) random set, min stack, queue from stacks.</p>
+      <ol class="steps"><li>List the required operations and their target complexity.</li><li>Combine structures: dict for lookup, list/linked list/OrderedDict for order.</li><li>Keep both structures consistent on every operation.</li></ol>
+      <pre><code class="lang-py" data-embed="solutions/patterns/design-hash-map-ordering.py">from collections import OrderedDict
+
+class LRU:
+    def __init__(self, cap):
+        self.cap, self.d = cap, OrderedDict()
+    def get(self, k):
+        if k not in self.d:
+            return -1
+        self.d.move_to_end(k)
+        return self.d[k]
+    def put(self, k, v):
+        self.d[k] = v
+        self.d.move_to_end(k)
+        if len(self.d) &gt; self.cap:
+            self.d.popitem(last=False)</code></pre>
+      <p><strong>Practise:</strong> <a href="m10-problems.html#prob-lru_cache">LRU Cache (LC 146)</a>, <a href="m07-problems.html#prob-randomized_set">Insert Delete GetRandom O(1) (LC 380)</a>, <a href="m10-problems.html#prob-min_stack">Min Stack (LC 155)</a>, <a href="m10-problems.html#prob-my_queue">Queue Using Two Stacks (LC 232)</a></p>
+    </section>
+
+    <nav class="pager" aria-label="Previous and next">
+      <a class="prev" href="m18-problems.html"><span class="dir">Previous</span><span>Problems 18: Additional Important Topics</span></a>
+      <a class="next" href="classics.html"><span class="dir">Next</span><span>Interview classics</span></a>
+    </nav>
+  </main>
+</div>
+</body>
+</html>

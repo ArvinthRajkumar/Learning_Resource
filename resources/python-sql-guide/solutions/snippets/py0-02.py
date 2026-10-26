@@ -1,0 +1,5 @@
+price = 20          # a whole number (int)
+rate = 0.15         # a decimal number (float)
+name = "Ada"        # text (str)
+total = price * (1 + rate)
+print(name, "pays", total)
